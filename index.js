@@ -69,26 +69,8 @@ async function testNoble() {
 }
 
 function convertJwkToCompressedBytes(jwk) {
-    // Helper function to convert base64url to Uint8Array
-    function base64urlToUint8Array(base64url) {
-        // Pad base64url string
-        base64url = base64url.padEnd(base64url.length + (4 - base64url.length % 4) % 4, '=');
-
-        // Replace URL-safe characters
-        const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-
-        // Decode base64 and convert to Uint8Array
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        return bytes;
-    }
-
-    // Extract x and y coordinates
-    const xBytes = base64urlToUint8Array(jwk.x);
-    const yBytes = base64urlToUint8Array(jwk.y);
+    const xBytes = base64url.baseDecode(jwk.x);
+    const yBytes = base64url.baseDecode(jwk.y);
 
     // Determine the prefix (02 for even y, 03 for odd y)
     const prefix = yBytes[yBytes.length - 1] % 2 === 0 ? 0x02 : 0x03;
