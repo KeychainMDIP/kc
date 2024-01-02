@@ -1,12 +1,31 @@
 import axios from 'axios';
+import { writeFileSync, readFileSync } from 'fs';
 import { sign, webcrypto } from 'node:crypto';
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 import * as secp from '@noble/secp256k1';
 import { base64url } from 'multiformats/bases/base64';
 import { DID, generateKeyPair } from '@decentralized-identity/ion-tools';
+import { IonRequest, LocalSigner } from '@decentralized-identity/ion-sdk';
 
-async function test() {
+async function sendRequest(request) {
+    try {
+        const getAnchor = await axios.post('http://localhost:3000/operations/', request);
+        const anchor = getAnchor.data;
+
+        console.log(`response: ${JSON.stringify(anchor, null, 4)}`);
+
+        const getQueueSize = await axios.get('http://localhost:3000/monitor/operation-queue-size');
+        const queueSize = getQueueSize.data;
+
+        console.log(`queue size = ${JSON.stringify(queueSize, null, 4)}`);
+
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function createDid() {
     let authnKeys = await generateKeyPair();
 
     console.log(`keys: ${JSON.stringify(authnKeys, null, 4)}`);
@@ -18,14 +37,24 @@ async function test() {
                     id: 'key-1',
                     type: 'EcdsaSecp256k1VerificationKey2019',
                     publicKeyJwk: authnKeys.publicJwk,
-                    purposes: ['authentication']
+                    purposes: ['authentication'],
                 }
             ],
+            services: [
+                {
+                    id: 'domain-1',
+                    type: 'LinkedDomains',
+                    serviceEndpoint: 'https://foo.example.com'
+                }
+            ]
         }
     });
 
-    console.log(`DID short form: ${await did.getURI('short')}`);
-    console.log(`DID long form: ${await did.getURI()}`);
+    const shortform = await did.getURI('short');
+    const longform = await did.getURI();
+
+    console.log(`DID short form: ${shortform}`);
+    console.log(`DID long form: ${longform}`);
 
     console.log(`DID: ${JSON.stringify(did)}`);
 
@@ -33,23 +62,47 @@ async function test() {
     const createRequest = await did.generateRequest(0);
     console.log(`request: ${JSON.stringify(createRequest, null, 4)}`);
 
-    // try {
-    //     const getAnchor = await axios.post('http://localhost:3000/operations/', createRequest);
-    //     const anchor = getAnchor.data;
+    const ionOps = await did.getAllOperations();
+    console.log(`all ops: ${JSON.stringify(ionOps, null, 4)}`);
 
-    //     console.log(`response: ${JSON.stringify(anchor, null, 4)}`);
+    writeFileSync(`${shortform}.json`, JSON.stringify(ionOps, null, 4));
 
-    //     const ionOps = await did.getAllOperations();
-    //     console.log(`all ops: ${JSON.stringify(ionOps, null, 4)}`);
+    await sendRequest(did, createRequest);
+}
 
-    //     const getQueueSize = await axios.get('http://localhost:3000/monitor/operation-queue-size', createRequest);
-    //     const queueSize = getQueueSize.data;
 
-    //     console.log(`queue size = ${JSON.stringify(queueSize, null, 4)}`);
+async function updateDid() {
+    //const didJson = readFileSync('did:mdip:test:EiBnYsnwBUkvECssPUxs85ErPcHp92fNTNTq3SWnPpf-jA.json');
+    const didJson = readFileSync('did:ion:EiA077Jm_uJeNvjo2KfCRUQ2DxyTyIFS93tXEW2JU-LLbw.json');
+    const ionOps = JSON.parse(didJson);
+    const did = new DID(ionOps);
+    const suffix = await did.getSuffix();
 
-    // } catch (error) {
-    //     console.log(error);
-    // }
+    const jwkEs256k1Public = ionOps[0].update.publicJwk;
+    const jwkEs256k1Private = ionOps[0].update.privateJwk;
+    const newServices = [
+        {
+            'id': 'some-service-2',
+            'type': 'SomeServiceType',
+            'serviceEndpoint': 'http://www.example.com'
+        }
+    ];
+
+    const input = {
+        didSuffix: suffix,
+        updatePublicKey: jwkEs256k1Public,
+        nextUpdatePublicKey: jwkEs256k1Public,
+        signer: LocalSigner.create(jwkEs256k1Private),
+        servicesToAdd: newServices,
+        idsOfServicesToRemove: [],
+        publicKeysToAdd: [],
+        idsOfPublicKeysToRemove: []
+    };
+
+    const updateRequest = await IonRequest.createUpdateRequest(input);
+    console.log(`result: ${JSON.stringify(updateRequest, null, 4)}`);
+
+    await sendRequest(updateRequest);
 }
 
 // https://www.npmjs.com/package/@noble/secp256k1
@@ -132,6 +185,7 @@ async function testKey() {
     verifySig(msgHash, sigHex, publicJwk);
 }
 
-//test();
+//create();
+updateDid();
 //testNoble();
-testKey();
+//testKey();

@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@decentralized-identity/ion-sdk": "^1.0.1",
     "@decentralized-identity/ion-tools": "^1.1.4",
     "@noble/secp256k1": "^2.0.0",
     "axios": "^1.6.2",
