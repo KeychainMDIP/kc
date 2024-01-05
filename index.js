@@ -44,7 +44,7 @@ async function createDid() {
                 {
                     id: 'domain-1',
                     type: 'LinkedDomains',
-                    serviceEndpoint: 'https://foo.example.com'
+                    serviceEndpoint: 'https://foo-10.com'
                 }
             ]
         }
@@ -52,11 +52,11 @@ async function createDid() {
 
     const shortform = await did.getURI('short');
     const longform = await did.getURI();
+    const suffix = await did.getSuffix();
 
-    console.log(`DID short form: ${shortform}`);
-    console.log(`DID long form: ${longform}`);
-
-    console.log(`DID: ${JSON.stringify(did)}`);
+    // console.log(`DID short form: ${shortform}`);
+    // console.log(`DID long form: ${longform}`);
+    // console.log(`DID: ${JSON.stringify(did)}`);
 
     // Generate and publish create request to an ION node
     const createRequest = await did.generateRequest(0);
@@ -65,18 +65,19 @@ async function createDid() {
     const ionOps = await did.getAllOperations();
     console.log(`all ops: ${JSON.stringify(ionOps, null, 4)}`);
 
-    writeFileSync(`${shortform}.json`, JSON.stringify(ionOps, null, 4));
+    writeFileSync(`did:mdip:test:${suffix}.json`, JSON.stringify(ionOps, null, 4));
 
-    await sendRequest(did, createRequest);
+    await sendRequest(createRequest);
 }
 
 
-async function updateDid() {
-    //const didJson = readFileSync('did:mdip:test:EiBnYsnwBUkvECssPUxs85ErPcHp92fNTNTq3SWnPpf-jA.json');
-    const didJson = readFileSync('did:ion:EiA077Jm_uJeNvjo2KfCRUQ2DxyTyIFS93tXEW2JU-LLbw.json');
+async function updateDid(suffix) {
+    let authnKeys = await generateKeyPair();
+
+    const didJson = readFileSync(`did:mdip:test:${suffix}.json`);
     const ionOps = JSON.parse(didJson);
-    const did = new DID(ionOps);
-    const suffix = await did.getSuffix();
+    // const did = new DID(ionOps);
+    // const suffix = await did.getSuffix();
 
     const jwkEs256k1Public = ionOps[0].update.publicJwk;
     const jwkEs256k1Private = ionOps[0].update.privateJwk;
@@ -84,17 +85,17 @@ async function updateDid() {
         {
             'id': 'some-service-2',
             'type': 'SomeServiceType',
-            'serviceEndpoint': 'http://www.example.com'
+            'serviceEndpoint': 'http://bar-99.com'
         }
     ];
 
     const input = {
         didSuffix: suffix,
         updatePublicKey: jwkEs256k1Public,
-        nextUpdatePublicKey: jwkEs256k1Public,
+        nextUpdatePublicKey: authnKeys.publicJwk,
         signer: LocalSigner.create(jwkEs256k1Private),
         servicesToAdd: newServices,
-        idsOfServicesToRemove: [],
+        idsOfServicesToRemove: ['domain-1'],
         publicKeysToAdd: [],
         idsOfPublicKeysToRemove: []
     };
@@ -185,7 +186,7 @@ async function testKey() {
     verifySig(msgHash, sigHex, publicJwk);
 }
 
-//create();
-updateDid();
+//createDid();
+updateDid('EiD_u_9devpuQr7fAYHdrb_AGXPAm-r9bPOHfwxXACASWw');
 //testNoble();
 //testKey();
