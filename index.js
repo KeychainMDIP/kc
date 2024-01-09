@@ -4,6 +4,11 @@ import { sign, webcrypto } from 'node:crypto';
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 import * as secp from '@noble/secp256k1';
+import { sha256 } from '@noble/hashes/sha256';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { managedNonce } from '@noble/ciphers/webcrypto/utils'
+import { bytesToUtf8, hexToBytes, utf8ToBytes } from '@noble/ciphers/utils';
+
 import { base64url } from 'multiformats/bases/base64';
 import { DID, generateKeyPair } from '@decentralized-identity/ion-tools';
 import { IonRequest, LocalSigner } from '@decentralized-identity/ion-sdk';
@@ -176,6 +181,10 @@ async function testKey() {
 
     console.log(JSON.stringify(publicJwk, null, 4));
 
+    const msg = 'hello world';
+    const hash = sha256(msg);
+    const msgHash2 = Buffer.from(hash).toString('hex');
+
     const msgHash = 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
     const signature = await secp.signAsync(msgHash, privateKeyBytes); // sign
     const sigHex = signature.toCompactHex();
@@ -186,7 +195,50 @@ async function testKey() {
     verifySig(msgHash, sigHex, publicJwk);
 }
 
+function encryptMessage(pubKey, privKey, message) {
+    const priv = base64url.baseDecode(privKey.d);
+    const pub = convertJwkToCompressedBytes(pubKey);
+    const ss = secp.getSharedSecret(priv, pub);
+    const key = ss.slice(0, 32);
+
+    console.log(key);
+
+    const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
+    const data = utf8ToBytes(message);
+    const ciphertext = chacha.encrypt(data);
+
+    return base64url.baseEncode(ciphertext);
+}
+
+function decryptMessage(pubKey, privKey, ciphertext) {
+    const priv = base64url.baseDecode(privKey.d);
+    const pub = convertJwkToCompressedBytes(pubKey);
+    const ss = secp.getSharedSecret(priv, pub);
+    const key = ss.slice(0, 32);
+
+    console.log(key);
+
+    const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
+    const cipherdata = base64url.baseDecode(ciphertext);
+    const data = chacha.decrypt(cipherdata);
+
+    return bytesToUtf8(data);
+}
+
+async function encryptTest() {
+    const pair1 = await generateKeyPair();
+    const pair2 = await generateKeyPair();
+
+    const cipherText = encryptMessage(pair1.publicJwk, pair2.privateJwk, 'Chancellor on brink of second bailout for banks');
+    const plainText = decryptMessage(pair2.publicJwk, pair1.privateJwk, cipherText);
+
+    console.log(cipherText);
+    console.log(plainText);
+}
+
 //createDid();
-updateDid('EiD_u_9devpuQr7fAYHdrb_AGXPAm-r9bPOHfwxXACASWw');
+//updateDid('EiD_u_9devpuQr7fAYHdrb_AGXPAm-r9bPOHfwxXACASWw');
 //testNoble();
 //testKey();
+
+encryptTest();
