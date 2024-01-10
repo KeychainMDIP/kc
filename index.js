@@ -171,7 +171,9 @@ function generateJwk(privateKeyBytes) {
         y
     };
 
-    return publicJwk;
+    const privateJwk = { ...publicJwk, d };
+
+    return { publicJwk: publicJwk, privateJwk: privateJwk };
 }
 
 async function testKey() {
@@ -293,11 +295,40 @@ function hdtest() {
     console.log(generateJwk(childkey.privateKey));
 }
 
+function hdencrypttest() {
+
+    function newHDkey() {
+        const mnemonic = bip39.generateMnemonic();
+        const seed = bip39.mnemonicToSeedSync(mnemonic);
+        const hdkey = HDKey.fromMasterSeed(seed);
+        const childkey = hdkey.derive("m/44'/0'/0'/0/0");
+
+        console.log(childkey.toJSON())
+
+        return childkey;
+    }
+
+    const hdkey1 = newHDkey();
+    const hdkey2 = newHDkey();
+
+    const pair1 = generateJwk(hdkey1.privateKey);
+    const pair2 = generateJwk(hdkey2.privateKey);
+
+    const msg = JSON.stringify({ pub: pair1.publicJwk, msg: 'Chancellor on brink of second bailout for banks' });
+    const cipherText = encryptMessage(pair1.publicJwk, pair2.privateJwk, msg);
+    const plainText = decryptMessage(pair2.publicJwk, pair1.privateJwk, cipherText);
+
+    console.log(msg);
+    console.log(cipherText);
+    console.log(plainText);
+}
+
 //createDid();
 //updateDid('EiD_u_9devpuQr7fAYHdrb_AGXPAm-r9bPOHfwxXACASWw');
 //testNoble();
 //testKey();
 //encryptTest();
 
-hdtest()
+//hdtest()
+hdencrypttest();
 
