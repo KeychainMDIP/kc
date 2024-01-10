@@ -9,6 +9,9 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, hexToBytes, utf8ToBytes } from '@noble/ciphers/utils';
 
+import * as bip39 from 'bip39';
+import HDKey from 'hdkey';
+
 import { base64url } from 'multiformats/bases/base64';
 import { DID, generateKeyPair } from '@decentralized-identity/ion-tools';
 import { IonRequest, LocalSigner } from '@decentralized-identity/ion-sdk';
@@ -146,6 +149,31 @@ async function verifySig(msgHash, sigHex, publicJwk) {
     console.log(`verifySig: isValid = ${isValid}`);
 }
 
+function generateJwk(privateKeyBytes) {
+    const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
+    const compressedPublicKeyHex = secp.etc.bytesToHex(compressedPublicKeyBytes);
+    const curvePoints = secp.ProjectivePoint.fromHex(compressedPublicKeyHex);
+    const uncompressedPublicKeyBytes = curvePoints.toRawBytes(false); // false = uncompressed
+    // we need uncompressed public key so that it contains both the x and y values for the JWK format:
+    // the first byte is a header that indicates whether the key is uncompressed (0x04 if uncompressed).
+    // bytes 1 - 32 represent X
+    // bytes 33 - 64 represent Y
+    const d = base64url.baseEncode(privateKeyBytes);
+    // skip the first byte because it's used as a header to indicate whether the key is uncompressed
+    const x = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(1, 33));
+    const y = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(33, 65));
+
+    const publicJwk = {
+        // alg: 'ES256K',
+        kty: 'EC',
+        crv: 'secp256k1',
+        x,
+        y
+    };
+
+    return publicJwk;
+}
+
 async function testKey() {
 
     const privateJwk = {
@@ -200,9 +228,6 @@ function encryptMessage(pubKey, privKey, message) {
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
     const key = ss.slice(0, 32);
-
-    console.log(key);
-
     const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
     const data = utf8ToBytes(message);
     const ciphertext = chacha.encrypt(data);
@@ -215,9 +240,6 @@ function decryptMessage(pubKey, privKey, ciphertext) {
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
     const key = ss.slice(0, 32);
-
-    console.log(key);
-
     const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
     const cipherdata = base64url.baseDecode(ciphertext);
     const data = chacha.decrypt(cipherdata);
@@ -229,16 +251,53 @@ async function encryptTest() {
     const pair1 = await generateKeyPair();
     const pair2 = await generateKeyPair();
 
-    const cipherText = encryptMessage(pair1.publicJwk, pair2.privateJwk, 'Chancellor on brink of second bailout for banks');
+    const msg = JSON.stringify({ pub: pair1.publicJwk, msg: 'Chancellor on brink of second bailout for banks' });
+    const cipherText = encryptMessage(pair1.publicJwk, pair2.privateJwk, msg);
     const plainText = decryptMessage(pair2.publicJwk, pair1.privateJwk, cipherText);
 
+    console.log(msg);
     console.log(cipherText);
     console.log(plainText);
+}
+
+function hdtest() {
+    const mnemonic = bip39.generateMnemonic();
+    const seed = bip39.mnemonicToSeedSync(mnemonic);
+    const seedHex = seed.toString('hex');
+
+    console.log(mnemonic);
+    console.log(seedHex);
+
+    const hdkey = HDKey.fromMasterSeed(seed);
+    console.log(hdkey.toJSON())
+
+    const childkey = hdkey.derive("m/44'/0'/0'/0/0");
+    console.log(childkey.toJSON())
+
+    const msg = 'hello world';
+    const hash = sha256(msg);
+    const msgHex = Buffer.from(hash).toString('hex');
+    const sig = childkey.sign(hash);
+    const sigHex = Buffer.from(sig).toString('hex');
+    const valid = childkey.verify(hash, sig);
+
+    console.log("hash", msgHex);
+    console.log("sig", sigHex);
+    console.log("valid", valid);
+
+    const pubkey = secp.getPublicKey(childkey.privateKey);
+    console.log("privkey", childkey.privateKey, childkey.privateKey.length);
+    console.log("pubkey", pubkey);
+    console.log("pubkey", childkey.publicKey, childkey.publicKey.length);
+
+    console.log(generateJwk(childkey.privateKey));
 }
 
 //createDid();
 //updateDid('EiD_u_9devpuQr7fAYHdrb_AGXPAm-r9bPOHfwxXACASWw');
 //testNoble();
 //testKey();
+//encryptTest();
 
-encryptTest();
+hdtest()
+
