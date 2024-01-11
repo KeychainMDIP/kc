@@ -69,7 +69,7 @@ function generateJwk(privateKeyBytes) {
     return { publicJwk: publicJwk, privateJwk: privateJwk };
 }
 
-function createDid(name) {
+async function createDid(name) {
     if (wallet.dids && wallet.dids.hasOwnProperty(name)) {
         return `Already have a DID named ${name}`;
     }
@@ -79,7 +79,7 @@ function createDid(name) {
     const path = `m/44'/0'/${account}'/0/0`;
     const didkey = hdkey.derive(path);
     const keypair = generateJwk(didkey.privateKey);
-    const did = keychain.createDid(keypair.publicJwk);
+    const did = await keychain.createDid(keypair.publicJwk);
     const didobj = {
         did: did,
         jwk: keypair,
@@ -111,8 +111,8 @@ program
 program
     .command('create-did <name>')
     .description('Create a new Decentralized IDentity (DID)')
-    .action((name) => {
-        console.log(createDid(name));
+    .action(async (name) => {
+        console.log(await createDid(name));
     });
 
 program.parse(process.argv);

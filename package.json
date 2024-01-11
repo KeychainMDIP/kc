@@ -13,6 +13,7 @@
   "dependencies": {
     "@decentralized-identity/ion-sdk": "^1.0.1",
     "@decentralized-identity/ion-tools": "^1.1.4",
+    "@helia/json": "^2.0.0",
     "@noble/ciphers": "^0.4.1",
     "@noble/hashes": "^1.3.3",
     "@noble/secp256k1": "^2.0.0",
@@ -20,6 +21,7 @@
     "bip39": "^3.1.0",
     "commander": "^11.1.0",
     "hdkey": "^2.1.0",
+    "helia": "^3.0.0",
     "multiformats": "^13.0.0"
   }
 }
