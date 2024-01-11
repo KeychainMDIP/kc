@@ -18,6 +18,7 @@
     "@noble/secp256k1": "^2.0.0",
     "axios": "^1.6.2",
     "bip39": "^3.1.0",
+    "commander": "^11.1.0",
     "hdkey": "^2.1.0",
     "multiformats": "^13.0.0"
   }
