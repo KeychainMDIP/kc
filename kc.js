@@ -122,6 +122,13 @@ function useId(name) {
     }
 }
 
+async function encrypt(msg, did) {
+    const doc = await keychain.resolveDid(did);
+
+    console.log(`encrypt "${msg}" for ${did}`);
+    console.log(doc);
+}
+
 program
     .version('1.0.0')
     .description('Keychain CLI tool');
@@ -152,5 +159,10 @@ program
     .command('resolve-did <did>')
     .description('Return document associated with DID')
     .action((did) => { keychain.resolveDid(did) });
+
+program
+    .command('encrypt <msg> <did>')
+    .description('Encrypt a message for a DID')
+    .action((msg, did) => { encrypt(msg, did) });
 
 program.parse(process.argv);
