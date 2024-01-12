@@ -6,6 +6,9 @@ import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import * as secp from '@noble/secp256k1';
 import { base64url } from 'multiformats/bases/base64';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { managedNonce } from '@noble/ciphers/webcrypto/utils'
+import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import * as keychain from './keychain.js';
 
 const walletName = 'wallet.json';
@@ -71,6 +74,24 @@ function generateJwk(privateKeyBytes) {
     return { publicJwk: publicJwk, privateJwk: privateJwk };
 }
 
+function convertJwkToCompressedBytes(jwk) {
+    const xBytes = base64url.baseDecode(jwk.x);
+    const yBytes = base64url.baseDecode(jwk.y);
+
+    // Determine the prefix (02 for even y, 03 for odd y)
+    const prefix = yBytes[yBytes.length - 1] % 2 === 0 ? 0x02 : 0x03;
+
+    // Construct compressed key
+    return new Uint8Array([prefix, ...xBytes]);
+}
+
+async function verifySig(msgHash, sigHex, publicJwk) {
+    const compressedPublicKeyBytes = convertJwkToCompressedBytes(publicJwk);
+    const signature = secp.Signature.fromCompact(sigHex);
+    const isValid = secp.verify(signature, msgHash, compressedPublicKeyBytes);
+    return isValid;
+}
+
 async function createId(name) {
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         return `Already have an ID named ${name}`;
@@ -122,11 +143,70 @@ function useId(name) {
     }
 }
 
-async function encrypt(msg, did) {
-    const doc = await keychain.resolveDid(did);
+function encryptMessage(pubKey, privKey, message) {
+    const priv = base64url.baseDecode(privKey.d);
+    const pub = convertJwkToCompressedBytes(pubKey);
+    const ss = secp.getSharedSecret(priv, pub);
+    const key = ss.slice(0, 32);
+    const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
+    const data = utf8ToBytes(message);
+    const ciphertext = chacha.encrypt(data);
 
+    return base64url.baseEncode(ciphertext);
+}
+
+function decryptMessage(pubKey, privKey, ciphertext) {
+    const priv = base64url.baseDecode(privKey.d);
+    const pub = convertJwkToCompressedBytes(pubKey);
+    const ss = secp.getSharedSecret(priv, pub);
+    const key = ss.slice(0, 32);
+    const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
+    const cipherdata = base64url.baseDecode(ciphertext);
+    const data = chacha.decrypt(cipherdata);
+
+    return bytesToUtf8(data);
+}
+
+async function encrypt(msg, did) {
     console.log(`encrypt "${msg}" for ${did}`);
-    console.log(doc);
+
+    if (!wallet.current) {
+        console.log("No current ID");
+        return;
+    }
+
+    const id = wallet.ids[wallet.current];
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
+    const didkey = hdkey.derive(path);
+    const keypair = generateJwk(didkey.privateKey);
+    const diddoc = await keychain.resolveDid(did);
+    const doc = JSON.parse(diddoc);
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const ciphertext = encryptMessage(publicJwk, keypair.privateJwk, msg);
+
+    console.log(ciphertext);
+}
+
+async function decrypt(msg, did) {
+    console.log(`decrypt "${msg}" from ${did}`);
+
+    if (!wallet.current) {
+        console.log("No current ID");
+        return;
+    }
+
+    const id = wallet.ids[wallet.current];
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
+    const didkey = hdkey.derive(path);
+    const keypair = generateJwk(didkey.privateKey);
+    const diddoc = await keychain.resolveDid(did);
+    const doc = JSON.parse(diddoc);
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const plaintext = decryptMessage(publicJwk, keypair.privateJwk, msg);
+
+    console.log(plaintext);
 }
 
 program
@@ -164,5 +244,10 @@ program
     .command('encrypt <msg> <did>')
     .description('Encrypt a message for a DID')
     .action((msg, did) => { encrypt(msg, did) });
+
+program
+    .command('decrypt <msg> <did>')
+    .description('Decrypt a message from a DID')
+    .action((msg, did) => { decrypt(msg, did) });
 
 program.parse(process.argv);
