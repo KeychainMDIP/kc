@@ -72,7 +72,7 @@ function generateJwk(privateKeyBytes) {
 }
 
 async function createId(name) {
-    if (wallet.dids && wallet.dids.hasOwnProperty(name)) {
+    if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         return `Already have an ID named ${name}`;
     }
 
@@ -88,7 +88,7 @@ async function createId(name) {
         keys: didkey.toJSON(),
     };
 
-    wallet.dids[name] = didobj;
+    wallet.ids[name] = didobj;
 
     wallet.counter += 1;
     saveWallet(wallet);
