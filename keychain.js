@@ -11,7 +11,7 @@ async function generateDid(jwkPubkey) {
     const j = json(helia);
     const cid = await j.add(jwkPubkey);
     helia.stop();
-    return `did:mdip:${cid.toString()}`;
+    return `did:mdip:${cid.toV1().toString()}`;
 }
 
 async function resolveDid(did) {
@@ -19,7 +19,6 @@ async function resolveDid(did) {
     try {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
-        console.log(cid.toString());
         const j = json(helia);
         const keys = await j.get(cid);
         const template = fs.readFileSync('did-doc.template');

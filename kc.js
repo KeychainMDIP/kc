@@ -86,7 +86,7 @@ async function createId(name) {
     const doc = await keychain.resolveDid(did);
     const didobj = {
         did: did,
-        doc: doc,
+        doc: JSON.parse(doc),
         account: account,
         index: index,
     };
