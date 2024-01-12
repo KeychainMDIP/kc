@@ -94,8 +94,32 @@ async function createId(name) {
     wallet.ids[name] = didobj;
 
     wallet.counter += 1;
+    wallet.current = name;
+
     saveWallet(wallet);
-    return did;
+    console.log(did);
+}
+
+function listIds() {
+    for (let id of Object.keys(wallet.ids)) {
+        if (id === wallet.current) {
+            console.log(id, ' <<< current');
+        }
+        else {
+            console.log(id);
+        }
+    }
+}
+
+function useId(name) {
+    if (wallet.ids.hasOwnProperty(name)) {
+        wallet.current = name;
+        saveWallet(wallet);
+        listIds();
+    }
+    else {
+        console.log(`No ID named ${name}`);
+    }
 }
 
 program
@@ -112,16 +136,21 @@ program
 program
     .command('create-id <name>')
     .description('Create a new decentralized ID')
-    .action(async (name) => {
-        console.log(await createId(name));
-    });
+    .action((name) => { createId(name) });
+
+program
+    .command('list')
+    .description('List IDs')
+    .action(async () => { listIds() });
+
+program
+    .command('use <name>')
+    .description('Set the current ID')
+    .action((name) => { useId(name) });
 
 program
     .command('resolve-did <did>')
     .description('Return document associated with DID')
-    .action(async (did) => {
-        console.log(await keychain.resolveDid(did));
-    });
+    .action((did) => { keychain.resolveDid(did) });
 
 program.parse(process.argv);
-
