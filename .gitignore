@@ -2,3 +2,4 @@ node_modules/
 did*.json
 did*.doc
 wallet.json
+ipfs/

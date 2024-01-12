@@ -37,7 +37,7 @@ function initializeWallet() {
             hdkey: hdkey.toJSON(),
         },
         counter: 0,
-        ids : {},
+        ids: {},
     }
 
     saveWallet(wallet);
@@ -77,15 +77,18 @@ async function createId(name) {
     }
 
     const account = wallet.counter;
+    const index = 0;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${account}'/0/0`;
+    const path = `m/44'/0'/${account}'/0/${index}`;
     const didkey = hdkey.derive(path);
     const keypair = generateJwk(didkey.privateKey);
     const did = await keychain.generateDid(keypair.publicJwk);
+    const doc = await keychain.resolveDid(did);
     const didobj = {
         did: did,
+        doc: doc,
         account: account,
-        keys: didkey.toJSON(),
+        index: index,
     };
 
     wallet.ids[name] = didobj;
@@ -111,6 +114,13 @@ program
     .description('Create a new decentralized ID')
     .action(async (name) => {
         console.log(await createId(name));
+    });
+
+program
+    .command('resolve-did <did>')
+    .description('Return document associated with DID')
+    .action(async (did) => {
+        console.log(await keychain.resolveDid(did));
     });
 
 program.parse(process.argv);
