@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { program } from 'commander';
 import fs from 'fs';
 import * as bip39 from 'bip39';
