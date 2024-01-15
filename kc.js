@@ -94,6 +94,16 @@ function useId(name) {
     }
 }
 
+function currentKeyPair() {
+    const id = wallet.ids[wallet.current];
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
+    const didkey = hdkey.derive(path);
+    const keypair = cipher.generateJwk(didkey.privateKey);
+
+    return keypair;
+}
+
 async function encrypt(msg, did) {
     console.log(`encrypt "${msg}" for ${did}`);
 
@@ -103,10 +113,7 @@ async function encrypt(msg, did) {
     }
 
     const id = wallet.ids[wallet.current];
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
-    const didkey = hdkey.derive(path);
-    const keypair = cipher.generateJwk(didkey.privateKey);
+    const keypair = currentKeyPair();
     const diddoc = await keychain.resolveDid(did);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -131,11 +138,7 @@ async function decrypt(did) {
     const dataDoc = JSON.parse(dataDocJson);
     const origin = dataDoc.didDocumentMetadata.data.origin;
     const msg = dataDoc.didDocumentMetadata.data.ciphertext;
-    const id = wallet.ids[wallet.current];
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
-    const didkey = hdkey.derive(path);
-    const keypair = cipher.generateJwk(didkey.privateKey);
+    const keypair = currentKeyPair();
     const diddoc = await keychain.resolveDid(origin);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
