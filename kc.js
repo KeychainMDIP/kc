@@ -105,8 +105,6 @@ function currentKeyPair() {
 }
 
 async function encrypt(msg, did) {
-    console.log(`encrypt "${msg}" for ${did}`);
-
     if (!wallet.current) {
         console.log("No current ID");
         return;
@@ -126,9 +124,17 @@ async function encrypt(msg, did) {
     console.log(cipherDid);
 }
 
-async function decrypt(did) {
-    console.log(`decrypt ${did}`);
+async function encryptFile(file, did) {
+    if (fs.existsSync(file)) {
+        const contents = fs.readFileSync(file).toString();
+        await encrypt(contents, did);
+    }
+    else {
+        console.log(`${file} does not exit`);
+    }
+}
 
+async function decrypt(did) {
     if (!wallet.current) {
         console.log("No current ID");
         return;
@@ -183,9 +189,14 @@ program
     .action((did) => { resolveDid(did) });
 
 program
-    .command('encrypt <msg> <did>')
+    .command('encrypt-msg <msg> <did>')
     .description('Encrypt a message for a DID')
     .action((msg, did) => { encrypt(msg, did) });
+
+program
+    .command('encrypt-file <file> <did>')
+    .description('Encrypt a file for a DID')
+    .action((file, did) => { encryptFile(file, did) });
 
 program
     .command('decrypt <did>')
