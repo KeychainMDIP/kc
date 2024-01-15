@@ -52,7 +52,7 @@ async function createId(name) {
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${account}'/0/${index}`;
     const didkey = hdkey.derive(path);
-    const keypair = generateJwk(didkey.privateKey);
+    const keypair = cipher.generateJwk(didkey.privateKey);
     const did = await keychain.generateDid(keypair.publicJwk);
     const doc = await keychain.resolveDid(did);
     const didobj = {
@@ -109,7 +109,7 @@ async function encrypt(msg, did) {
     }
 
     const id = wallet.ids[wallet.current];
-    const keypair = currentKeyPair();
+    const keypair = currentKeyPair(id);
     const diddoc = await keychain.resolveDid(did);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -138,18 +138,22 @@ async function decrypt(did) {
         return;
     }
 
-    const dataDocJson = await keychain.resolveDid(did);
-    const dataDoc = JSON.parse(dataDocJson);
-    const origin = dataDoc.didDocumentMetadata.data.origin;
-    const msg = dataDoc.didDocumentMetadata.data.ciphertext;
-    const id = wallet.ids[wallet.current];
-    const keypair = currentKeyPair(id);
-    const diddoc = await keychain.resolveDid(origin);
-    const doc = JSON.parse(diddoc);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, msg);
-
-    console.log(plaintext);
+    try {
+        const dataDocJson = await keychain.resolveDid(did);
+        const dataDoc = JSON.parse(dataDocJson);
+        const origin = dataDoc.didDocumentMetadata.data.origin;
+        const msg = dataDoc.didDocumentMetadata.data.ciphertext;
+        const id = wallet.ids[wallet.current];
+        const keypair = currentKeyPair(id);
+        const diddoc = await keychain.resolveDid(origin);
+        const doc = JSON.parse(diddoc);
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, msg);
+        console.log(plaintext);
+    }
+    catch (error) {
+        console.log('Error decrypting:', error);
+    }
 }
 
 async function resolveDid(did) {
@@ -210,6 +214,59 @@ async function verify(file) {
     }
 }
 
+async function decryptDid(did) {
+    const dataDocJson = await keychain.resolveDid(did);
+    const dataDoc = JSON.parse(dataDocJson);
+    const origin = dataDoc.didDocumentMetadata.data.origin;
+    const msg = dataDoc.didDocumentMetadata.data.ciphertext;
+    const id = wallet.ids[wallet.current];
+    const keypair = currentKeyPair(id);
+    const diddoc = await keychain.resolveDid(origin);
+    const doc = JSON.parse(diddoc);
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, msg);
+    return plaintext;
+}
+
+async function verifySig(json) {
+    const jsonFile = JSON.parse(json);
+
+    if (!jsonFile.signature) {
+        console.log("No signature found");
+        return;
+    }
+
+    const signature = jsonFile.signature;
+    delete jsonFile.signature;
+    const msg = JSON.stringify(canonicalize(jsonFile));
+    const msgHash = cipher.hashMessage(msg);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        console.log("Hash does not match");
+        return;
+    }
+
+    const diddoc = await keychain.resolveDid(signature.signer);
+    const doc = JSON.parse(diddoc);
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+    return isValid;
+}
+
+async function verifyVP(did) {
+    try {
+        const plaintext = await decryptDid(did);
+        const isValid = await verifySig(plaintext);
+
+        console.log(plaintext);
+        console.log('signature is ', isValid ? 'valid' : 'NOT valid');
+    }
+    catch (error) {
+
+    }
+}
+
 program
     .version('1.0.0')
     .description('Keychain CLI tool');
@@ -265,5 +322,10 @@ program
     .command('verify <file>')
     .description('Verify the signature in a JSON file')
     .action((file) => { verify(file) });
+
+program
+    .command('verify-vp <did>')
+    .description('Decrypt and verify the signature in a Verifiable Presentation')
+    .action((did) => { verifyVP(did) });
 
 program.parse(process.argv);
