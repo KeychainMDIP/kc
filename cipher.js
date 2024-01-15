@@ -1,9 +1,13 @@
 
+import { webcrypto } from 'node:crypto';
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
 import * as secp from '@noble/secp256k1';
-import { base64url } from 'multiformats/bases/base64';
+import { sha256 } from '@noble/hashes/sha256';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
+import { base64url } from 'multiformats/bases/base64';
 
 function generateJwk(privateKeyBytes) {
     const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
@@ -43,7 +47,20 @@ function convertJwkToCompressedBytes(jwk) {
     return new Uint8Array([prefix, ...xBytes]);
 }
 
-async function verifySig(msgHash, sigHex, publicJwk) {
+function hashMessage(msg) {
+    const hash = sha256(msg);
+    const msgHash = Buffer.from(hash).toString('hex');
+    return msgHash;
+}
+
+async function signHash(msgHash, privateJwk) {
+    const privKey = base64url.baseDecode(privateJwk.d);
+    const signature = await secp.signAsync(msgHash, privKey);
+    const sigHex = signature.toCompactHex();
+    return sigHex;
+}
+
+function verifySig(msgHash, sigHex, publicJwk) {
     const compressedPublicKeyBytes = convertJwkToCompressedBytes(publicJwk);
     const signature = secp.Signature.fromCompact(sigHex);
     const isValid = secp.verify(signature, msgHash, compressedPublicKeyBytes);
@@ -76,6 +93,8 @@ function decryptMessage(pubKey, privKey, ciphertext) {
 
 export {
     generateJwk,
+    hashMessage,
+    signHash,
     verifySig,
     encryptMessage,
     decryptMessage,

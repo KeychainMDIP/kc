@@ -2,6 +2,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
+import canonicalize from 'canonicalize';
 import * as keychain from './keychain.js';
 import * as cipher from './cipher.js';
 
@@ -92,8 +93,7 @@ function useId(name) {
     }
 }
 
-function currentKeyPair() {
-    const id = wallet.ids[wallet.current];
+function currentKeyPair(id) {
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
@@ -142,7 +142,8 @@ async function decrypt(did) {
     const dataDoc = JSON.parse(dataDocJson);
     const origin = dataDoc.didDocumentMetadata.data.origin;
     const msg = dataDoc.didDocumentMetadata.data.ciphertext;
-    const keypair = currentKeyPair();
+    const id = wallet.ids[wallet.current];
+    const keypair = currentKeyPair(id);
     const diddoc = await keychain.resolveDid(origin);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -153,6 +154,60 @@ async function decrypt(did) {
 
 async function resolveDid(did) {
     console.log(await keychain.resolveDid(did));
+}
+
+async function sign(file) {
+    if (fs.existsSync(file)) {
+        const id = wallet.ids[wallet.current];
+        const keypair = currentKeyPair(id);
+        const contents = fs.readFileSync(file).toString();
+        const msg = JSON.stringify(canonicalize(JSON.parse(contents)));
+        const msgHash = cipher.hashMessage(msg);
+        const sig = await cipher.signHash(msgHash, keypair.privateJwk);
+        const jsonFile = JSON.parse(contents);
+        jsonFile.signature = {
+            signer: id.did,
+            created: new Date().toISOString(),
+            hash: msgHash,
+            value: sig,
+        }
+        console.log(JSON.stringify(jsonFile, null, 4));
+    }
+    else {
+        console.log(`${file} does not exit`);
+    }
+}
+
+async function verify(file) {
+    if (fs.existsSync(file)) {
+        const contents = fs.readFileSync(file).toString();
+        const jsonFile = JSON.parse(contents);
+
+        if (!jsonFile.signature) {
+            console.log("No signature found");
+            return;
+        }
+
+        const signature = jsonFile.signature;
+        delete jsonFile.signature;
+        const msg = JSON.stringify(canonicalize(jsonFile));
+        const msgHash = cipher.hashMessage(msg);
+
+        if (signature.hash && signature.hash !== msgHash) {
+            console.log("Hash does not match");
+            return;
+        }
+
+        const diddoc = await keychain.resolveDid(signature.signer);
+        const doc = JSON.parse(diddoc);
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+        console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
+    }
+    else {
+        console.log(`${file} does not exit`);
+    }
 }
 
 program
@@ -200,5 +255,15 @@ program
     .command('decrypt <did>')
     .description('Decrypt a DID')
     .action((did) => { decrypt(did) });
+
+program
+    .command('sign <file>')
+    .description('Sign a JSON file')
+    .action((file) => { sign(file) });
+
+program
+    .command('verify <file>')
+    .description('Verify the signature in a JSON file')
+    .action((file) => { verify(file) });
 
 program.parse(process.argv);

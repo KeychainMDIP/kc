@@ -20,6 +20,7 @@
     "axios": "^1.6.2",
     "bip39": "^3.1.0",
     "blockstore-fs": "^1.1.9",
+    "canonicalize": "^2.0.0",
     "commander": "^11.1.0",
     "hdkey": "^2.1.0",
     "helia": "^3.0.0",
