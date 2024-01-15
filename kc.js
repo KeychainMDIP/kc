@@ -111,29 +111,41 @@ async function encrypt(msg, did) {
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const ciphertext = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
+    const cipherDid = await keychain.generateDid({
+        origin: id.did,
+        ciphertext: ciphertext,
+    });
 
-    console.log(ciphertext);
+    console.log(cipherDid);
 }
 
-async function decrypt(msg, did) {
-    console.log(`decrypt "${msg}" from ${did}`);
+async function decrypt(did) {
+    console.log(`decrypt ${did}`);
 
     if (!wallet.current) {
         console.log("No current ID");
         return;
     }
 
+    const dataDocJson = await keychain.resolveDid(did);
+    const dataDoc = JSON.parse(dataDocJson);
+    const origin = dataDoc.didDocumentMetadata.data.origin;
+    const msg = dataDoc.didDocumentMetadata.data.ciphertext;
     const id = wallet.ids[wallet.current];
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
-    const diddoc = await keychain.resolveDid(did);
+    const diddoc = await keychain.resolveDid(origin);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, msg);
 
     console.log(plaintext);
+}
+
+async function resolveDid(did) {
+    console.log(await keychain.resolveDid(did));
 }
 
 program
@@ -165,7 +177,7 @@ program
 program
     .command('resolve-did <did>')
     .description('Return document associated with DID')
-    .action((did) => { keychain.resolveDid(did) });
+    .action((did) => { resolveDid(did) });
 
 program
     .command('encrypt <msg> <did>')
@@ -173,8 +185,8 @@ program
     .action((msg, did) => { encrypt(msg, did) });
 
 program
-    .command('decrypt <msg> <did>')
-    .description('Decrypt a message from a DID')
-    .action((msg, did) => { decrypt(msg, did) });
+    .command('decrypt <did>')
+    .description('Decrypt a DID')
+    .action((did) => { decrypt(did) });
 
 program.parse(process.argv);
