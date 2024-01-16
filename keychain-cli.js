@@ -71,6 +71,17 @@ async function createId(name) {
     console.log(did);
 }
 
+async function removeId(name) {
+    if (wallet.ids.hasOwnProperty(name)) {
+        delete wallet.ids[name];
+        saveWallet(wallet);
+        console.log(`ID ${name} removed`);
+    }
+    else {
+        console.log(`No ID named ${name}`);
+    }
+}
+
 function listIds() {
     for (let id of Object.keys(wallet.ids)) {
         if (id === wallet.current) {
@@ -251,6 +262,14 @@ async function verify(file) {
     }
 }
 
+async function createVC(file, did) {
+
+}
+
+async function saveVC(did) {
+
+}
+
 async function verifyVP(did) {
     try {
         const plaintext = await decryptDid(did);
@@ -283,6 +302,11 @@ program
     .command('create-id <name>')
     .description('Create a new decentralized ID')
     .action((name) => { createId(name) });
+
+program
+    .command('remove-id <name>')
+    .description('Deletes named ID')
+    .action((name) => { removeId(name) });
 
 program
     .command('list')
@@ -328,6 +352,11 @@ program
     .command('create-vc <file> <did>')
     .description('Create verifiable credential for a DID')
     .action((file, did) => { createVC(did) });
+
+program
+    .command('create-vc <file> <did>')
+    .description('Save verifiable credential for current ID')
+    .action((did) => { saveVC(did) });
 
 program
     .command('verify-vp <did>')
