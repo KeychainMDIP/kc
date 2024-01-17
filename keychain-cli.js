@@ -130,13 +130,18 @@ async function encrypt(msg, did) {
         ciphertext: ciphertext,
     });
 
-    console.log(cipherDid);
+    return cipherDid;
+}
+
+function encryptMessage(msg, did) {
+    console.log(encryptMessage(msg, did));
 }
 
 async function encryptFile(file, did) {
     if (fs.existsSync(file)) {
         const contents = fs.readFileSync(file).toString();
-        await encrypt(contents, did);
+        const cipherDid = await encrypt(contents, did);
+        console.log(cipherDid);
     }
     else {
         console.log(`${file} does not exit`);
@@ -176,7 +181,23 @@ async function resolveDid(did) {
     console.log(await keychain.resolveDid(did));
 }
 
-async function sign(file) {
+async function signJson(id, json) {
+    const keypair = currentKeyPair(id);
+    const msg = JSON.stringify(canonicalize(json));
+    const msgHash = cipher.hashMessage(msg);
+    const sig = await cipher.signHash(msgHash, keypair.privateJwk);
+    json.signature = {
+        signer: id.did,
+        created: new Date().toISOString(),
+        hash: msgHash,
+        value: sig,
+    };
+    return json;
+
+    // TBD use in signFile
+}
+
+async function signFile(file) {
     if (fs.existsSync(file)) {
         const id = wallet.ids[wallet.current];
         const keypair = currentKeyPair(id);
@@ -266,8 +287,38 @@ async function createVC(file, did) {
 
 }
 
-async function saveVC(did) {
+async function updateDoc(id, doc) {
+    const txn = {
+        op: "replace",
+        time: new Date().toISOString(),
+        doc: doc,
+    };
 
+    const signed = await signJson(id, txn);
+    const ok = keychain.updateDid(signed);
+}
+
+async function saveVC(did) {
+    const vc = JSON.parse(await decryptDid(did));
+    const id = wallet.ids[wallet.current];
+    const doc = JSON.parse(await keychain.resolveDid(id.did));
+    const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
+
+    console.log(vc);
+    console.log(doc);
+
+    if (!manifest.didDocumentMetadata.data) {
+        const msg = JSON.stringify([vc], null, 4);
+        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
+        await updateDoc(id, manifest);
+    }
+    else {
+        // fetch and decrypt VC list
+        // add new vc to list
+        // set data to new encrypt DID
+    }
+
+    console.log(manifest);
 }
 
 async function verifyVP(did) {
@@ -326,7 +377,7 @@ program
 program
     .command('encrypt-msg <msg> <did>')
     .description('Encrypt a message for a DID')
-    .action((msg, did) => { encrypt(msg, did) });
+    .action((msg, did) => { encryptMessage(msg, did) });
 
 program
     .command('encrypt-file <file> <did>')
@@ -341,7 +392,7 @@ program
 program
     .command('sign <file>')
     .description('Sign a JSON file')
-    .action((file) => { sign(file) });
+    .action((file) => { signFile(file) });
 
 program
     .command('verify <file>')
@@ -354,7 +405,7 @@ program
     .action((file, did) => { createVC(did) });
 
 program
-    .command('create-vc <file> <did>')
+    .command('save-vc <file>')
     .description('Save verifiable credential for current ID')
     .action((did) => { saveVC(did) });
 
