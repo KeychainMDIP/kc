@@ -3,6 +3,7 @@ import fs from 'fs';
 import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
+import { JSONSchemaFaker } from "json-schema-faker";
 import * as keychain from './keychain.js';
 import * as cipher from './cipher.js';
 
@@ -54,10 +55,8 @@ async function createId(name) {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
     const did = await keychain.generateDid(keypair.publicJwk);
-    const doc = await keychain.resolveDid(did);
     const didobj = {
         did: did,
-        doc: JSON.parse(doc),
         account: account,
         index: index,
     };
@@ -258,7 +257,29 @@ async function verify(file) {
 }
 
 async function createVC(file, did) {
+    try {
+        const id = wallet.ids[wallet.current];
+        const schema = JSON.parse(fs.readFileSync(file).toString());
+        const schemaDid = await keychain.generateDid(schema);
+        const vc = JSON.parse(fs.readFileSync('vc.template').toString());
+        const atom = JSONSchemaFaker.generate(schema);
 
+        vc.issuer = id.did;
+        vc.credentialSubject.id = did;
+        vc.validFrom = new Date().toISOString();
+        vc.type.push(schemaDid);
+
+        for (let key in atom) {
+            if (atom.hasOwnProperty(key)) {
+                vc.credentialSubject[key] = atom[key];
+            }
+        }
+
+        console.log(JSON.stringify(vc, null, 4));
+    }
+    catch (error) {
+        console.error('cannot create VC');
+    }
 }
 
 async function updateDoc(id, doc) {
@@ -376,7 +397,7 @@ program
 program
     .command('create-vc <file> <did>')
     .description('Create verifiable credential for a DID')
-    .action((file, did) => { createVC(did) });
+    .action((file, did) => { createVC(file, did) });
 
 program
     .command('save-vc <file>')

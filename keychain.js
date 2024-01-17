@@ -123,6 +123,7 @@ async function resolveDid(did) {
     if (db.hasOwnProperty(did)) {
         for (const txn of db[did]) {
             const valid = await verifySig(txn);
+            // TBD verify txn matches doc controller
             if (valid) {
                 if (txn.op === 'replace') {
                     doc = JSON.stringify(txn.doc, null, 4);
