@@ -3,6 +3,8 @@ import { json } from '@helia/json';
 import { FsBlockstore } from 'blockstore-fs';
 import { CID } from 'multiformats/cid';
 import fs from 'fs';
+import canonicalize from 'canonicalize';
+import * as cipher from './cipher.js';
 
 const blockstore = new FsBlockstore('./ipfs');
 const dbName = 'mdip.json';
@@ -18,6 +20,33 @@ function loadDb() {
 
 function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
+}
+
+async function verifySig(json) {
+    if (!json.signature) {
+        return false;
+    }
+
+    const jsonCopy = JSON.parse(JSON.stringify(json));
+
+    const signature = jsonCopy.signature;
+    delete jsonCopy.signature;
+    const msg = JSON.stringify(canonicalize(jsonCopy));
+    const msgHash = cipher.hashMessage(msg);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        return false;
+    }
+
+    // TBD resolve DID as of signature timestamp
+    const diddoc = await resolveDid(signature.signer);
+    const doc = JSON.parse(diddoc);
+
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+    return isValid;
 }
 
 async function generateDid(jsonData) {
@@ -93,8 +122,11 @@ async function resolveDid(did) {
 
     if (db.hasOwnProperty(did)) {
         for (const txn of db[did]) {
-            if (txn.op === 'replace') {
-                doc = JSON.stringify(txn.doc, null, 4);
+            const valid = await verifySig(txn);
+            if (valid) {
+                if (txn.op === 'replace') {
+                    doc = JSON.stringify(txn.doc, null, 4);
+                }
             }
         }
     }
@@ -124,5 +156,6 @@ export {
     generateDid,
     resolveDid,
     updateDid,
+    verifySig,
 }
 

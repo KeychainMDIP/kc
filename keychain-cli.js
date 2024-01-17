@@ -241,32 +241,6 @@ async function attest(file) {
     }
 }
 
-async function verifySig(json) {
-    const jsonFile = JSON.parse(json);
-
-    if (!jsonFile.signature) {
-        console.log("No signature found");
-        return;
-    }
-
-    const signature = jsonFile.signature;
-    delete jsonFile.signature;
-    const msg = JSON.stringify(canonicalize(jsonFile));
-    const msgHash = cipher.hashMessage(msg);
-
-    if (signature.hash && signature.hash !== msgHash) {
-        console.log("Hash does not match");
-        return;
-    }
-
-    const diddoc = await keychain.resolveDid(signature.signer);
-    const doc = JSON.parse(diddoc);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-    return isValid;
-}
-
 async function verify(file) {
     if (!fs.existsSync(file)) {
         console.log(`${file} does not exit`);
@@ -274,8 +248,8 @@ async function verify(file) {
     }
 
     try {
-        const json = fs.readFileSync(file).toString();
-        const isValid = verifySig(json);
+        const json = JSON.parse(fs.readFileSync(file).toString());
+        const isValid = keychain.verifySig(json);
         console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
     }
     catch (error) {
