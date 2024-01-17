@@ -52,7 +52,7 @@ async function verifySig(json) {
 async function generateDid(jsonData) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
-    const cid = await j.add(jsonData);
+    const cid = await j.add(JSON.parse(canonicalize(jsonData)));
     helia.stop();
     return `did:mdip:${cid.toV1().toString()}`;
 }
@@ -69,18 +69,6 @@ async function generateDoc(did) {
             return '{}'; // not found error
         }
 
-        if (data.ciphertext) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = data.origin;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = data;
-
-            return JSON.stringify(doc, null, 4);
-        }
-
         if (data.kty) {
             const template = fs.readFileSync('did-doc.template');
             const doc = JSON.parse(template);
@@ -94,6 +82,18 @@ async function generateDoc(did) {
             return JSON.stringify(doc, null, 4);
         }
 
+        if (data.ciphertext) {
+            const template = fs.readFileSync('did-data.template');
+            const doc = JSON.parse(template);
+
+            doc.didDocument.id = did;
+            doc.didDocument.controller = data.origin;
+            doc.didDocumentMetadata.canonicalId = did;
+            doc.didDocumentMetadata.data = data;
+
+            return JSON.stringify(doc, null, 4);
+        }
+
         if (data.holder) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
@@ -102,6 +102,18 @@ async function generateDoc(did) {
             doc.didDocument.controller = data.holder;
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = "";
+
+            return JSON.stringify(doc, null, 4);
+        }
+
+        if (data.schema) {
+            const template = fs.readFileSync('did-data.template');
+            const doc = JSON.parse(template);
+
+            doc.didDocument.id = did;
+            doc.didDocument.controller = data.controller;
+            doc.didDocumentMetadata.canonicalId = did;
+            doc.didDocumentMetadata.data = data;
 
             return JSON.stringify(doc, null, 4);
         }

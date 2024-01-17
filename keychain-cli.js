@@ -260,7 +260,11 @@ async function createVC(file, did) {
     try {
         const id = wallet.ids[wallet.current];
         const schema = JSON.parse(fs.readFileSync(file).toString());
-        const schemaDid = await keychain.generateDid(schema);
+        const schemaDid = await keychain.generateDid({
+            controller: id.did,
+            file: file,
+            schema: schema,
+        });
         const vc = JSON.parse(fs.readFileSync('vc.template').toString());
         const atom = JSONSchemaFaker.generate(schema);
 
@@ -298,9 +302,6 @@ async function saveVC(did) {
     const id = wallet.ids[wallet.current];
     const doc = JSON.parse(await keychain.resolveDid(id.did));
     const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
-
-    console.log(vc);
-    console.log(doc);
 
     let vclist = {};
 
