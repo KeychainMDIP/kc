@@ -307,16 +307,16 @@ async function saveVC(did) {
     console.log(vc);
     console.log(doc);
 
-    if (!manifest.didDocumentMetadata.data) {
-        const msg = JSON.stringify([vc], null, 4);
-        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-        await updateDoc(id, manifest);
+    let vclist = {};
+
+    if (manifest.didDocumentMetadata.data) {
+        vclist = JSON.parse(await decryptDid(manifest.didDocumentMetadata.data));
     }
-    else {
-        // fetch and decrypt VC list
-        // add new vc to list
-        // set data to new encrypt DID
-    }
+
+    vclist[did] = vc;
+    const msg = JSON.stringify(vclist);
+    manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
+    await updateDoc(id, manifest);
 
     console.log(manifest);
 }
