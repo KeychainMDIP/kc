@@ -196,61 +196,27 @@ async function resolveDid(did) {
 
 async function signJson(id, json) {
     const keypair = currentKeyPair(id);
-    const msg = JSON.stringify(canonicalize(json));
+    const msg = canonicalize(json);
     const msgHash = cipher.hashMessage(msg);
-    const sig = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
     json.signature = {
         signer: id.did,
         created: new Date().toISOString(),
         hash: msgHash,
-        value: sig,
+        value: signature,
     };
     return json;
-
-    // TBD use in signFile
 }
 
 async function signFile(file) {
-    if (fs.existsSync(file)) {
+    try {
         const id = wallet.ids[wallet.current];
-        const keypair = currentKeyPair(id);
         const contents = fs.readFileSync(file).toString();
-        const msg = JSON.stringify(canonicalize(JSON.parse(contents)));
-        const msgHash = cipher.hashMessage(msg);
-        const sig = await cipher.signHash(msgHash, keypair.privateJwk);
-        const jsonFile = JSON.parse(contents);
-        jsonFile.signature = {
-            signer: id.did,
-            created: new Date().toISOString(),
-            hash: msgHash,
-            value: sig,
-        }
-        console.log(JSON.stringify(jsonFile, null, 4));
+        const json = await signJson(id, JSON.parse(contents));
+        console.log(JSON.stringify(json, null, 4));
     }
-    else {
-        console.log(`${file} does not exit`);
-    }
-}
-
-async function attest(file) {
-    if (fs.existsSync(file)) {
-        const id = wallet.ids[wallet.current];
-        const keypair = currentKeyPair(id);
-        const contents = fs.readFileSync(file).toString();
-        const msg = JSON.stringify(canonicalize(JSON.parse(contents)));
-        const msgHash = cipher.hashMessage(msg);
-        const sig = await cipher.signHash(msgHash, keypair.privateJwk);
-        const jsonFile = JSON.parse(contents);
-        jsonFile.proof = {
-            signer: id.did,
-            created: new Date().toISOString(),
-            hash: msgHash,
-            value: sig,
-        }
-        console.log(JSON.stringify(jsonFile, null, 4));
-    }
-    else {
-        console.log(`${file} does not exit`);
+    catch (error) {
+        console.log(`cannot sign ${file}`);
     }
 }
 
@@ -262,7 +228,7 @@ async function verify(file) {
 
     try {
         const json = JSON.parse(fs.readFileSync(file).toString());
-        const isValid = keychain.verifySig(json);
+        const isValid = await keychain.verifySig(json);
         console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
     }
     catch (error) {
@@ -297,6 +263,19 @@ async function createVC(file, did) {
     }
     catch (error) {
         console.error('cannot create VC');
+    }
+}
+
+async function attestVC(file) {
+    try {
+        const id = wallet.ids[wallet.current];
+        const vc = JSON.parse(fs.readFileSync(file).toString());
+        const signed = await signJson(id, vc);
+        const encrypted = await encrypt(JSON.stringify(signed), vc.credentialSubject.id);
+        console.log(encrypted);
+    }
+    catch (error) {
+        console.error(`cannot attest ${file}`)
     }
 }
 
@@ -444,6 +423,11 @@ program
     .command('create-vc <file> <did>')
     .description('Create verifiable credential for a DID')
     .action((file, did) => { createVC(file, did) });
+
+program
+    .command('attest-vc <file>')
+    .description('Sign and encrypt VC')
+    .action((file) => { attestVC(file) });
 
 program
     .command('revoke-vc <did>')

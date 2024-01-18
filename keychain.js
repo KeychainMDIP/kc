@@ -31,8 +31,12 @@ async function verifySig(json) {
 
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
-    const msg = JSON.stringify(canonicalize(jsonCopy));
+    //const msg = JSON.stringify(canonicalize(jsonCopy));
+    const msg = canonicalize(jsonCopy);
     const msgHash = cipher.hashMessage(msg);
+
+    // console.log(`msgHash        = ${msgHash}`);
+    // console.log(`signature.hash = ${signature.hash}`);
 
     if (signature.hash && signature.hash !== msgHash) {
         return false;
@@ -157,6 +161,8 @@ async function verifyUpdate(txn, doc) {
 }
 
 async function resolveDid(did, asof = null) {
+    //console.log(`resolveDid(${did},${asof})`);
+
     const db = loadDb();
     let doc = await generateDoc(did);
 
