@@ -320,7 +320,7 @@ async function saveVC(did) {
 async function verifyVP(did) {
     try {
         const plaintext = await decryptDid(did);
-        const isValid = await verifySig(plaintext);
+        const isValid = await keychain.verifySig(JSON.parse(plaintext));
 
         if (isValid) {
             console.log(plaintext);
