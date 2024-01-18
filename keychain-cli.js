@@ -133,8 +133,8 @@ async function encrypt(msg, did) {
     return cipherDid;
 }
 
-function encryptMessage(msg, did) {
-    console.log(encryptMessage(msg, did));
+async function encryptMessage(msg, did) {
+    console.log(await encrypt(msg, did));
 }
 
 async function encryptFile(file, did) {
@@ -160,13 +160,12 @@ async function decryptDid(did) {
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
 
     let index = id.index;
-    while (index > 0) {
+    while (index >= 0) {
         const path = `m/44'/0'/${id.account}'/0/${index}`;
         const didkey = hdkey.derive(path);
         const keypair = cipher.generateJwk(didkey.privateKey);
         try {
-            const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, crypt.ciphertext);
-            return plaintext;
+            return cipher.decryptMessage(publicJwk, keypair.privateJwk, crypt.ciphertext);
         }
         catch (error) {
             index -= 1;

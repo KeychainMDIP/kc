@@ -176,7 +176,7 @@ async function resolveDid(did, asof = null) {
         }
     }
 
-    return JSON.stringify(doc, null, 4);
+    return JSON.stringify(doc);
 }
 
 function updateDid(txn) {
