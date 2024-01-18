@@ -38,8 +38,7 @@ async function verifySig(json) {
         return false;
     }
 
-    // TBD resolve DID as of signature timestamp
-    const diddoc = await resolveDid(signature.signer);
+    const diddoc = await resolveDid(signature.signer, signature.created);
     const doc = JSON.parse(diddoc);
 
     // TBD get the right signature, not just the first one
@@ -66,7 +65,7 @@ async function generateDoc(did) {
         const data = await j.get(cid);
 
         if (!data) {
-            return '{}'; // not found error
+            return {}; // not found error
         }
 
         if (data.kty) {
@@ -79,7 +78,7 @@ async function generateDoc(did) {
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.manifest = await generateDid({ holder: did });
 
-            return JSON.stringify(doc, null, 4);
+            return doc;
         }
 
         if (data.ciphertext) {
@@ -91,7 +90,7 @@ async function generateDoc(did) {
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = data;
 
-            return JSON.stringify(doc, null, 4);
+            return doc;
         }
 
         if (data.holder) {
@@ -103,7 +102,7 @@ async function generateDoc(did) {
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = "";
 
-            return JSON.stringify(doc, null, 4);
+            return doc;
         }
 
         if (data.schema) {
@@ -115,10 +114,10 @@ async function generateDoc(did) {
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = data;
 
-            return JSON.stringify(doc, null, 4);
+            return doc;
         }
 
-        return '{}'; // unknown type error
+        return {}; // unknown type error
     }
     catch (error) {
         console.log(error);
@@ -128,23 +127,56 @@ async function generateDoc(did) {
     }
 }
 
-async function resolveDid(did) {
+async function verifyUpdate(txn, doc) {
+
+    if (doc.didDocument.controller) {
+        const controllerDoc = await resolveDid(doc.didDocument.controller, txn.time);
+        return verifyUpdate(txn, controllerDoc);
+    }
+
+    if (doc.didDocument.verificationMethod) {
+        const jsonCopy = JSON.parse(JSON.stringify(txn));
+
+        const signature = jsonCopy.signature;
+        delete jsonCopy.signature;
+        const msg = JSON.stringify(canonicalize(jsonCopy));
+        const msgHash = cipher.hashMessage(msg);
+
+        if (signature.hash && signature.hash !== msgHash) {
+            return false;
+        }
+
+        // TBD get the right signature, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+        return isValid;
+    }
+
+    return false;
+}
+
+async function resolveDid(did, asof = null) {
     const db = loadDb();
     let doc = await generateDoc(did);
 
     if (db.hasOwnProperty(did)) {
         for (const txn of db[did]) {
-            const valid = await verifySig(txn);
-            // TBD verify txn matches doc controller
+            if (asof && new Date(txn.time) > new Date(asof)) {
+                break;
+            }
+
+            const valid = await verifyUpdate(txn, doc);
+
             if (valid) {
                 if (txn.op === 'replace') {
-                    doc = JSON.stringify(txn.doc, null, 4);
+                    doc = txn.doc;
                 }
             }
         }
     }
 
-    return doc;
+    return JSON.stringify(doc, null, 4);
 }
 
 function updateDid(txn) {

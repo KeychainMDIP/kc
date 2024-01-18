@@ -126,6 +126,7 @@ async function encrypt(msg, did) {
     const ciphertext = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const cipherDid = await keychain.generateDid({
         origin: id.did,
+        created: new Date().toISOString(),
         ciphertext: ciphertext,
     });
 
@@ -150,15 +151,29 @@ async function encryptFile(file, did) {
 async function decryptDid(did) {
     const dataDocJson = await keychain.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
-    const origin = dataDoc.didDocumentMetadata.data.origin;
-    const msg = dataDoc.didDocumentMetadata.data.ciphertext;
+    const crypt = dataDoc.didDocumentMetadata.data;
     const id = wallet.ids[wallet.current];
-    const keypair = currentKeyPair(id);
-    const diddoc = await keychain.resolveDid(origin);
+
+    const diddoc = await keychain.resolveDid(crypt.origin, crypt.created);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, msg);
-    return plaintext;
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+
+    let index = id.index;
+    while (index > 0) {
+        const path = `m/44'/0'/${id.account}'/0/${index}`;
+        const didkey = hdkey.derive(path);
+        const keypair = cipher.generateJwk(didkey.privateKey);
+        try {
+            const plaintext = cipher.decryptMessage(publicJwk, keypair.privateJwk, crypt.ciphertext);
+            return plaintext;
+        }
+        catch (error) {
+            index -= 1;
+        }
+    }
+
+    throw 'nope!';
 }
 
 async function decrypt(did) {
@@ -286,6 +301,10 @@ async function createVC(file, did) {
     }
 }
 
+async function revokeVC(did) {
+    console.log('TBD');
+}
+
 async function updateDoc(id, doc) {
     const txn = {
         op: "replace",
@@ -331,6 +350,33 @@ async function verifyVP(did) {
     }
     catch (error) {
         console.error('cannot verify');
+    }
+}
+
+async function rotateKeys() {
+    try {
+        const id = wallet.ids[wallet.current];
+        const nextIndex = id.index + 1;
+        const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+        const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
+        const didkey = hdkey.derive(path);
+        const keypair = cipher.generateJwk(didkey.privateKey);
+        const doc = JSON.parse(await keychain.resolveDid(id.did));
+        const vmethod = doc.didDocument.verificationMethod[0];
+
+        vmethod.id = `#key-${nextIndex + 1}`;
+        vmethod.publicKeyJwk = keypair.publicJwk;
+        doc.didDocument.authentication = [vmethod.id];
+
+        await updateDoc(id, doc);
+
+        id.index = nextIndex;
+        saveWallet(wallet);
+
+        console.log(JSON.stringify(doc, null, 2));
+    }
+    catch (error) {
+        console.error('cannot rotate keys');
     }
 }
 
@@ -401,6 +447,11 @@ program
     .action((file, did) => { createVC(file, did) });
 
 program
+    .command('revoke-vc <did>')
+    .description('Revokes a verifiable credential')
+    .action((did) => { revokeVC(did) });
+
+program
     .command('save-vc <file>')
     .description('Save verifiable credential for current ID')
     .action((did) => { saveVC(did) });
@@ -409,5 +460,10 @@ program
     .command('verify-vp <did>')
     .description('Decrypt and verify the signature in a Verifiable Presentation')
     .action((did) => { verifyVP(did) });
+
+program
+    .command('rotate-keys')
+    .description('Rotates keys for current user')
+    .action(() => { rotateKeys() });
 
 program.parse(process.argv);
