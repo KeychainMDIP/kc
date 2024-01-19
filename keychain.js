@@ -31,7 +31,6 @@ async function verifySig(json) {
 
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
-    //const msg = JSON.stringify(canonicalize(jsonCopy));
     const msg = canonicalize(jsonCopy);
     const msgHash = cipher.hashMessage(msg);
 
@@ -135,7 +134,7 @@ async function verifyUpdate(txn, doc) {
 
     if (doc.didDocument.controller) {
         const controllerDoc = await resolveDid(doc.didDocument.controller, txn.time);
-        return verifyUpdate(txn, controllerDoc);
+        return verifyUpdate(txn, JSON.parse(controllerDoc));
     }
 
     if (doc.didDocument.verificationMethod) {
@@ -143,7 +142,7 @@ async function verifyUpdate(txn, doc) {
 
         const signature = jsonCopy.signature;
         delete jsonCopy.signature;
-        const msg = JSON.stringify(canonicalize(jsonCopy));
+        const msg = canonicalize(jsonCopy);
         const msgHash = cipher.hashMessage(msg);
 
         if (signature.hash && signature.hash !== msgHash) {

@@ -68,9 +68,16 @@ function verifySig(msgHash, sigHex, publicJwk) {
 }
 
 function encryptMessage(pubKey, privKey, message) {
+
+    console.log('encryptMessage pub', pubKey);
+    console.log('encryptMessage prv', privKey);
+
     const priv = base64url.baseDecode(privKey.d);
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
+
+    console.log('encryptMessage ss', ss);
+
     const key = ss.slice(0, 32);
     const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
     const data = utf8ToBytes(message);
@@ -80,9 +87,16 @@ function encryptMessage(pubKey, privKey, message) {
 }
 
 function decryptMessage(pubKey, privKey, ciphertext) {
+
+    console.log('decryptMessage pub', pubKey);
+    console.log('decryptMessage prv', privKey);
+
     const priv = base64url.baseDecode(privKey.d);
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
+
+    console.log('decryptMessage ss', ss);
+
     const key = ss.slice(0, 32);
     const chacha = managedNonce(xchacha20poly1305)(key); // manages nonces for you
     const cipherdata = base64url.baseDecode(ciphertext);
