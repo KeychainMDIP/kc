@@ -148,7 +148,7 @@ async function encryptFile(file, did) {
     }
 }
 
-async function decryptDid(did) {
+async function decrypt(did) {
     const dataDocJson = await keychain.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
     const crypt = dataDoc.didDocumentMetadata.data;
@@ -175,14 +175,9 @@ async function decryptDid(did) {
     throw 'nope!';
 }
 
-async function decrypt(did) {
-    if (!wallet.current) {
-        console.log("No current ID");
-        return;
-    }
-
+async function decryptDid(did) {
     try {
-        const plaintext = await decryptDid(did);
+        const plaintext = await decrypt(did);
         console.log(plaintext);
     }
     catch (error) {
@@ -295,7 +290,7 @@ async function updateDoc(id, doc) {
 }
 
 async function saveVC(did) {
-    const vc = JSON.parse(await decryptDid(did));
+    const vc = JSON.parse(await decrypt(did));
     const id = wallet.ids[wallet.current];
     const doc = JSON.parse(await keychain.resolveDid(id.did));
     const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
@@ -303,7 +298,7 @@ async function saveVC(did) {
     let vclist = {};
 
     if (manifest.didDocumentMetadata.data) {
-        vclist = JSON.parse(await decryptDid(manifest.didDocumentMetadata.data));
+        vclist = JSON.parse(await decrypt(manifest.didDocumentMetadata.data));
     }
 
     vclist[did] = vc;
@@ -316,7 +311,7 @@ async function saveVC(did) {
 
 async function verifyVP(did) {
     try {
-        const plaintext = await decryptDid(did);
+        const plaintext = await decrypt(did);
         const isValid = await keychain.verifySig(JSON.parse(plaintext));
 
         if (isValid) {
@@ -405,9 +400,9 @@ program
     .action((file, did) => { encryptFile(file, did) });
 
 program
-    .command('decrypt <did>')
-    .description('Decrypt a DID')
-    .action((did) => { decrypt(did) });
+    .command('decrypt-did <did>')
+    .description('Decrypt an encrypted data DID')
+    .action((did) => { decryptDid(did) });
 
 program
     .command('sign <file>')
