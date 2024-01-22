@@ -123,11 +123,15 @@ async function encrypt(msg, did) {
     const diddoc = await keychain.resolveDid(did);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const ciphertext = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
+    const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+    const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
+    const msgHash = cipher.hashMessage(msg);
     const cipherDid = await keychain.generateDid({
         origin: id.did,
         created: new Date().toISOString(),
-        ciphertext: ciphertext,
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
     });
 
     return cipherDid;
@@ -158,6 +162,7 @@ async function decrypt(did) {
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const ciphertext = crypt.origin === id.did ? crypt.cipher_sender : crypt.cipher_receiver;
 
     let index = id.index;
     while (index >= 0) {
@@ -165,7 +170,7 @@ async function decrypt(did) {
         const didkey = hdkey.derive(path);
         const keypair = cipher.generateJwk(didkey.privateKey);
         try {
-            return cipher.decryptMessage(publicJwk, keypair.privateJwk, crypt.ciphertext);
+            return cipher.decryptMessage(publicJwk, keypair.privateJwk, ciphertext);
         }
         catch (error) {
             index -= 1;
@@ -237,22 +242,16 @@ async function createVC(file, did) {
         const schema = JSON.parse(fs.readFileSync(file).toString());
         const schemaDid = await keychain.generateDid({
             controller: id.did,
-            file: file,
             schema: schema,
         });
-        const vc = JSON.parse(fs.readFileSync('vc.template').toString());
+        const vc = JSON.parse(fs.readFileSync('did-vc.template').toString());
         const atom = JSONSchemaFaker.generate(schema);
 
         vc.issuer = id.did;
         vc.credentialSubject.id = did;
         vc.validFrom = new Date().toISOString();
         vc.type.push(schemaDid);
-
-        for (let key in atom) {
-            if (atom.hasOwnProperty(key)) {
-                vc.credentialSubject[key] = atom[key];
-            }
-        }
+        vc.credential = atom;
 
         console.log(JSON.stringify(vc, null, 4));
     }

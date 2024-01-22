@@ -84,7 +84,7 @@ async function generateDoc(did) {
             return doc;
         }
 
-        if (data.ciphertext) {
+        if (data.cipher_hash) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 
