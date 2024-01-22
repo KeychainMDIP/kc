@@ -143,8 +143,9 @@ async function encryptMessage(msg, did) {
 
 async function encryptFile(file, did) {
     if (fs.existsSync(file)) {
-        const contents = fs.readFileSync(file).toString();
-        const cipherDid = await encrypt(contents, did);
+        const json = JSON.parse(fs.readFileSync(file).toString());
+        const msg = canonicalize(json);
+        const cipherDid = await encrypt(msg, did);
         console.log(cipherDid);
     }
     else {
@@ -265,8 +266,9 @@ async function attestVC(file) {
         const id = wallet.ids[wallet.current];
         const vc = JSON.parse(fs.readFileSync(file).toString());
         const signed = await signJson(id, vc);
-        const encrypted = await encrypt(JSON.stringify(signed), vc.credentialSubject.id);
-        console.log(encrypted);
+        const msg = canonicalize(signed);
+        const cipherDid = await encrypt(msg, vc.credentialSubject.id);
+        console.log(cipherDid);
     }
     catch (error) {
         console.error(`cannot attest ${file}`)
