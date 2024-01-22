@@ -215,7 +215,7 @@ async function signFile(file) {
     }
 }
 
-async function verify(file) {
+async function verifyFile(file) {
     if (!fs.existsSync(file)) {
         console.log(`${file} does not exit`);
         return;
@@ -375,12 +375,12 @@ program
     .action((name) => { removeId(name) });
 
 program
-    .command('list')
-    .description('List IDs')
+    .command('list-id')
+    .description('List IDs and show current ID')
     .action(async () => { listIds() });
 
 program
-    .command('use <name>')
+    .command('use-id <name>')
     .description('Set the current ID')
     .action((name) => { useId(name) });
 
@@ -405,14 +405,14 @@ program
     .action((did) => { decryptDid(did) });
 
 program
-    .command('sign <file>')
+    .command('sign-file <file>')
     .description('Sign a JSON file')
     .action((file) => { signFile(file) });
 
 program
-    .command('verify <file>')
+    .command('verify-file <file>')
     .description('Verify the signature in a JSON file')
-    .action((file) => { verify(file) });
+    .action((file) => { verifyFile(file) });
 
 program
     .command('create-vc <file> <did>')
