@@ -89,7 +89,7 @@ async function generateDoc(did) {
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
-            doc.didDocument.controller = data.origin;
+            doc.didDocument.controller = data.sender;
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = data;
 
@@ -109,6 +109,18 @@ async function generateDoc(did) {
         }
 
         if (data.schema) {
+            const template = fs.readFileSync('did-data.template');
+            const doc = JSON.parse(template);
+
+            doc.didDocument.id = did;
+            doc.didDocument.controller = data.controller;
+            doc.didDocumentMetadata.canonicalId = did;
+            doc.didDocumentMetadata.data = data;
+
+            return doc;
+        }
+
+        if (data.vp) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 

@@ -127,7 +127,7 @@ async function encrypt(msg, did) {
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
     const cipherDid = await keychain.generateDid({
-        origin: id.did,
+        sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
@@ -143,9 +143,8 @@ async function encryptMessage(msg, did) {
 
 async function encryptFile(file, did) {
     if (fs.existsSync(file)) {
-        const json = JSON.parse(fs.readFileSync(file).toString());
-        const msg = canonicalize(json);
-        const cipherDid = await encrypt(msg, did);
+        const contents = fs.readFileSync(file).toString();
+        const cipherDid = await encrypt(contents, did);
         console.log(cipherDid);
     }
     else {
@@ -159,11 +158,11 @@ async function decrypt(did) {
     const crypt = dataDoc.didDocumentMetadata.data;
     const id = wallet.ids[wallet.current];
 
-    const diddoc = await keychain.resolveDid(crypt.origin, crypt.created);
+    const diddoc = await keychain.resolveDid(crypt.sender, crypt.created);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const ciphertext = crypt.origin === id.did ? crypt.cipher_sender : crypt.cipher_receiver;
+    const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
 
     let index = id.index;
     while (index >= 0) {
@@ -267,7 +266,7 @@ async function attestVC(file) {
         const vc = JSON.parse(fs.readFileSync(file).toString());
         const signed = await signJson(id, vc);
         const msg = canonicalize(signed);
-        const cipherDid = await encrypt(msg, vc.credentialSubject.id);
+        const cipherDid = await encrypt(signed, vc.credentialSubject.id);
         console.log(cipherDid);
     }
     catch (error) {
@@ -308,6 +307,20 @@ async function saveVC(did) {
     await updateDoc(id, manifest);
 
     console.log(manifest);
+}
+
+async function createVP(vcDid, receiverDid) {
+    const id = wallet.ids[wallet.current];
+    const plaintext = await decrypt(vcDid);
+    const cipherDid = await encrypt(plaintext, receiverDid);
+    const vp = {
+        controller: id.did,
+        vc: vcDid,
+        vp: cipherDid
+    };
+    const vpDid = await keychain.generateDid(vp);
+
+    console.log(vpDid);
 }
 
 async function verifyVP(did) {
@@ -434,6 +447,11 @@ program
     .command('save-vc <file>')
     .description('Save verifiable credential for current ID')
     .action((did) => { saveVC(did) });
+
+program
+    .command('create-vp <vc-did> <receiver-did>')
+    .description('Decrypt and verify the signature in a Verifiable Presentation')
+    .action((vc, receiver) => { createVP(vc, receiver) });
 
 program
     .command('verify-vp <did>')
