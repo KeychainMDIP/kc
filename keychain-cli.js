@@ -221,11 +221,6 @@ async function signFile(file) {
 }
 
 async function verifyFile(file) {
-    if (!fs.existsSync(file)) {
-        console.log(`${file} does not exit`);
-        return;
-    }
-
     try {
         const json = JSON.parse(fs.readFileSync(file).toString());
         const isValid = await keychain.verifySig(json);
@@ -290,53 +285,74 @@ async function updateDoc(id, doc) {
 }
 
 async function saveVC(did) {
-    const vc = JSON.parse(await decrypt(did));
-    const id = wallet.ids[wallet.current];
-    const doc = JSON.parse(await keychain.resolveDid(id.did));
-    const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
+    try {
+        const vc = JSON.parse(await decrypt(did));
+        const id = wallet.ids[wallet.current];
+        const doc = JSON.parse(await keychain.resolveDid(id.did));
+        const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
 
-    let vclist = {};
+        let vclist = {};
 
-    if (manifest.didDocumentMetadata.data) {
-        vclist = JSON.parse(await decrypt(manifest.didDocumentMetadata.data));
+        if (manifest.didDocumentMetadata.data) {
+            vclist = JSON.parse(await decrypt(manifest.didDocumentMetadata.data));
+        }
+
+        vclist[did] = vc;
+        const msg = JSON.stringify(vclist);
+        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
+        await updateDoc(id, manifest);
+
+        console.log(manifest);
     }
-
-    vclist[did] = vc;
-    const msg = JSON.stringify(vclist);
-    manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-    await updateDoc(id, manifest);
-
-    console.log(manifest);
+    catch (error) {
+        console.error('cannot save VC');
+    }
 }
 
 async function createVP(vcDid, receiverDid) {
-    const id = wallet.ids[wallet.current];
-    const plaintext = await decrypt(vcDid);
-    const cipherDid = await encrypt(plaintext, receiverDid);
-    const vp = {
-        controller: id.did,
-        vc: vcDid,
-        vp: cipherDid
-    };
-    const vpDid = await keychain.generateDid(vp);
-
-    console.log(vpDid);
+    try {
+        const id = wallet.ids[wallet.current];
+        const plaintext = await decrypt(vcDid);
+        const cipherDid = await encrypt(plaintext, receiverDid);
+        const vp = {
+            controller: id.did,
+            vc: vcDid,
+            vp: cipherDid
+        };
+        const vpDid = await keychain.generateDid(vp);
+        console.log(vpDid);
+    }
+    catch (error) {
+        console.error('cannot create verifiable presentation');
+    }
 }
 
 async function verifyVP(did) {
     try {
-        const plaintext = await decrypt(did);
-        const isValid = await keychain.verifySig(JSON.parse(plaintext));
+        const vpsdoc = JSON.parse(await keychain.resolveDid(did));
+        const vcdid = vpsdoc.didDocumentMetadata.data.vc;
+        const vpdid = vpsdoc.didDocumentMetadata.data.vp;
+        const vcdoc = JSON.parse(await keychain.resolveDid(vcdid));
+        const vpdoc = JSON.parse(await keychain.resolveDid(vpdid));
+        const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
+        const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
 
-        if (isValid) {
-            console.log(plaintext);
+        if (vchash !== vphash) {
+            console.log('cannot verify (VP does not match VC)');
+            return;
         }
-        else {
-            console.error('cannot verify');
+
+        const vp = JSON.parse(await decrypt(vpdid));
+        const isValid = await keychain.verifySig(vp);
+
+        if (!isValid) {
+            console.log('cannot verify (signature invalid)');
         }
+
+        console.log(vp);
     }
     catch (error) {
-        console.error('cannot verify');
+        console.error('cannot verify VP');
     }
 }
 
