@@ -6,6 +6,7 @@ import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as keychain from './keychain.js';
 import * as cipher from './cipher.js';
+import assert from 'assert';
 
 const walletName = 'wallet.json';
 const wallet = loadWallet() || initializeWallet();
@@ -260,8 +261,8 @@ async function attestVC(file) {
         const id = wallet.ids[wallet.current];
         const vc = JSON.parse(fs.readFileSync(file).toString());
         const signed = await signJson(id, vc);
-        const msg = canonicalize(signed);
-        const cipherDid = await encrypt(signed, vc.credentialSubject.id);
+        const msg = JSON.stringify(signed);
+        const cipherDid = await encrypt(msg, vc.credentialSubject.id);
         console.log(cipherDid);
     }
     catch (error) {
@@ -270,18 +271,32 @@ async function attestVC(file) {
 }
 
 async function revokeVC(did) {
-    console.log('TBD');
+    try {
+        const id = wallet.ids[wallet.current];
+        const vc = JSON.parse(await decrypt(did));
+
+        assert.equal(vc.issuer, id.did, 'Only issuer can revoke a VC');
+
+        const ok = await updateDoc(id, did, {});
+        assert.ok(ok);
+        console.log('OK revoked');
+    }
+    catch (error) {
+        console.error(`cannot revoke ${did}`);
+    }
 }
 
-async function updateDoc(id, doc) {
+async function updateDoc(id, did, doc) {
     const txn = {
         op: "replace",
         time: new Date().toISOString(),
+        did: did,
         doc: doc,
     };
 
     const signed = await signJson(id, txn);
     const ok = keychain.updateDid(signed);
+    return ok;
 }
 
 async function saveVC(did) {
@@ -289,7 +304,8 @@ async function saveVC(did) {
         const vc = JSON.parse(await decrypt(did));
         const id = wallet.ids[wallet.current];
         const doc = JSON.parse(await keychain.resolveDid(id.did));
-        const manifest = JSON.parse(await keychain.resolveDid(doc.didDocumentMetadata.manifest));
+        const manifestDid = doc.didDocumentMetadata.manifest;
+        const manifest = JSON.parse(await keychain.resolveDid(manifestDid));
 
         let vclist = {};
 
@@ -300,7 +316,7 @@ async function saveVC(did) {
         vclist[did] = vc;
         const msg = JSON.stringify(vclist);
         manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-        await updateDoc(id, manifest);
+        await updateDoc(id, manifestDid, manifest);
 
         console.log(manifest);
     }
@@ -371,12 +387,17 @@ async function rotateKeys() {
         vmethod.publicKeyJwk = keypair.publicJwk;
         doc.didDocument.authentication = [vmethod.id];
 
-        await updateDoc(id, doc);
+        const ok = await updateDoc(id, id.did, doc);
 
-        id.index = nextIndex;
-        saveWallet(wallet);
+        if (ok) {
+            id.index = nextIndex;
+            saveWallet(wallet);
 
-        console.log(JSON.stringify(doc, null, 2));
+            console.log(JSON.stringify(doc, null, 2));
+        }
+        else {
+            console.error('cannot rotate keys');
+        }
     }
     catch (error) {
         console.error('cannot rotate keys');

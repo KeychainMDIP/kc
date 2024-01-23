@@ -190,24 +190,31 @@ async function resolveDid(did, asof = null) {
                     doc = txn.doc;
                 }
             }
+            else {
+                console.error(`txn not valid: ${JSON.stringify(txn)}`);
+            }
         }
     }
 
     return JSON.stringify(doc);
 }
 
-function updateDid(txn) {
+async function updateDid(txn) {
+    const isValid = await verifySig(txn);
+
+    if (!isValid) {
+        return false;
+    }
+
     const db = loadDb();
 
-    const did = txn.doc.didDocument.id;
+    // TBD: validate did
 
-    // TBD verify sig
-
-    if (db.hasOwnProperty(did)) {
-        db[did].push(txn);
+    if (db.hasOwnProperty(txn.did)) {
+        db[txn.did].push(txn);
     }
     else {
-        db[did] = [txn];
+        db[txn.did] = [txn];
     }
 
     writeDb(db);
