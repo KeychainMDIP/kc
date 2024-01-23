@@ -273,10 +273,6 @@ async function attestVC(file) {
 async function revokeVC(did) {
     try {
         const id = wallet.ids[wallet.current];
-        const vc = JSON.parse(await decrypt(did));
-
-        assert.equal(vc.issuer, id.did, 'Only issuer can revoke a VC');
-
         const ok = await updateDoc(id, did, {});
         assert.ok(ok);
         console.log('OK revoked');
@@ -295,7 +291,7 @@ async function updateDoc(id, did, doc) {
     };
 
     const signed = await signJson(id, txn);
-    const ok = keychain.updateDid(signed);
+    const ok = keychain.saveUpdateTxn(signed);
     return ok;
 }
 

@@ -199,10 +199,17 @@ async function resolveDid(did, asof = null) {
     return JSON.stringify(doc);
 }
 
-async function updateDid(txn) {
-    const isValid = await verifySig(txn);
+async function saveUpdateTxn(txn) {
+    const sigValid = await verifySig(txn);
 
-    if (!isValid) {
+    if (!sigValid) {
+        return false;
+    }
+
+    const doc = JSON.parse(await resolveDid(txn.did));
+    const updateValid = await verifyUpdate(txn, doc);
+
+    if (!updateValid) {
         return false;
     }
 
@@ -224,7 +231,7 @@ async function updateDid(txn) {
 export {
     generateDid,
     resolveDid,
-    updateDid,
+    saveUpdateTxn,
     verifySig,
 }
 
