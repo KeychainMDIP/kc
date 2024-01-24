@@ -4,6 +4,7 @@ import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
+import * as sdk from './keychain-sdk.js';
 import * as keychain from './keychain.js';
 import * as cipher from './cipher.js';
 import assert from 'assert';
@@ -224,7 +225,7 @@ async function signFile(file) {
 async function verifyFile(file) {
     try {
         const json = JSON.parse(fs.readFileSync(file).toString());
-        const isValid = await keychain.verifySig(json);
+        const isValid = await sdk.verifySig(json);
         console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
     }
     catch (error) {
@@ -297,24 +298,31 @@ async function updateDoc(id, did, doc) {
 
 async function saveVC(did) {
     try {
-        const vc = JSON.parse(await decrypt(did));
         const id = wallet.ids[wallet.current];
         const doc = JSON.parse(await keychain.resolveDid(id.did));
         const manifestDid = doc.didDocumentMetadata.manifest;
         const manifest = JSON.parse(await keychain.resolveDid(manifestDid));
 
-        let vclist = {};
+        const vc = JSON.parse(await decrypt(did));
 
-        if (manifest.didDocumentMetadata.data) {
-            vclist = JSON.parse(await decrypt(manifest.didDocumentMetadata.data));
+        if (vc.credentialSubject.id !== id.did) {
+            throw 'VC not valid or not assigned to this ID';
         }
 
-        vclist[did] = vc;
-        const msg = JSON.stringify(vclist);
+        //console.log(JSON.stringify(vc, null, 4));
+
+        let vcSet = new Set();
+
+        if (manifest.didDocumentMetadata.data) {
+            vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
+        }
+
+        vcSet.add(did);
+        const msg = JSON.stringify(Array.from(vcSet));
         manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
         await updateDoc(id, manifestDid, manifest);
 
-        console.log(manifest);
+        console.log(vcSet);
     }
     catch (error) {
         console.error('cannot save VC');
@@ -355,7 +363,7 @@ async function verifyVP(did) {
         }
 
         const vp = JSON.parse(await decrypt(vpdid));
-        const isValid = await keychain.verifySig(vp);
+        const isValid = await sdk.verifySig(vp);
 
         if (!isValid) {
             console.log('cannot verify (signature invalid)');

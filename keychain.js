@@ -22,35 +22,6 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function verifySig(json) {
-    if (!json.signature) {
-        return false;
-    }
-
-    const jsonCopy = JSON.parse(JSON.stringify(json));
-
-    const signature = jsonCopy.signature;
-    delete jsonCopy.signature;
-    const msg = canonicalize(jsonCopy);
-    const msgHash = cipher.hashMessage(msg);
-
-    // console.log(`msgHash        = ${msgHash}`);
-    // console.log(`signature.hash = ${signature.hash}`);
-
-    if (signature.hash && signature.hash !== msgHash) {
-        return false;
-    }
-
-    const diddoc = await resolveDid(signature.signer, signature.created);
-    const doc = JSON.parse(diddoc);
-
-    // TBD get the right signature, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-    return isValid;
-}
-
 async function generateDid(jsonData) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
@@ -200,12 +171,6 @@ async function resolveDid(did, asof = null) {
 }
 
 async function saveUpdateTxn(txn) {
-    const sigValid = await verifySig(txn);
-
-    if (!sigValid) {
-        return false;
-    }
-
     const doc = JSON.parse(await resolveDid(txn.did));
     const updateValid = await verifyUpdate(txn, doc);
 
@@ -214,8 +179,6 @@ async function saveUpdateTxn(txn) {
     }
 
     const db = loadDb();
-
-    // TBD: validate did
 
     if (db.hasOwnProperty(txn.did)) {
         db[txn.did].push(txn);
@@ -232,6 +195,5 @@ export {
     generateDid,
     resolveDid,
     saveUpdateTxn,
-    verifySig,
 }
 
