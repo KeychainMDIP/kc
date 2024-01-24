@@ -4,8 +4,8 @@ import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as sdk from './keychain-sdk.js';
-import * as keychain from './keychain.js';
+import * as keymaster from './keymaster.js';
+import * as gatekeeper from './gatekeeper.js';
 import * as cipher from './cipher.js';
 import assert from 'assert';
 
@@ -56,7 +56,7 @@ async function createId(name) {
     const path = `m/44'/0'/${account}'/0/${index}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
-    const did = await keychain.generateDid(keypair.publicJwk);
+    const did = await gatekeeper.generateDid(keypair.publicJwk);
     const didobj = {
         did: did,
         account: account,
@@ -122,13 +122,13 @@ async function encrypt(msg, did) {
 
     const id = wallet.ids[wallet.current];
     const keypair = currentKeyPair(id);
-    const diddoc = await keychain.resolveDid(did);
+    const diddoc = await gatekeeper.resolveDid(did);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
-    const cipherDid = await keychain.generateDid({
+    const cipherDid = await gatekeeper.generateDid({
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
@@ -155,12 +155,12 @@ async function encryptFile(file, did) {
 }
 
 async function decrypt(did) {
-    const dataDocJson = await keychain.resolveDid(did);
+    const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
     const crypt = dataDoc.didDocumentMetadata.data;
     const id = wallet.ids[wallet.current];
 
-    const diddoc = await keychain.resolveDid(crypt.sender, crypt.created);
+    const diddoc = await gatekeeper.resolveDid(crypt.sender, crypt.created);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
@@ -193,7 +193,7 @@ async function decryptDid(did) {
 }
 
 async function resolveDid(did) {
-    console.log(await keychain.resolveDid(did));
+    console.log(await gatekeeper.resolveDid(did));
 }
 
 async function signJson(id, json) {
@@ -225,7 +225,7 @@ async function signFile(file) {
 async function verifyFile(file) {
     try {
         const json = JSON.parse(fs.readFileSync(file).toString());
-        const isValid = await sdk.verifySig(json);
+        const isValid = await keymaster.verifySig(json);
         console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
     }
     catch (error) {
@@ -237,7 +237,7 @@ async function createVC(file, did) {
     try {
         const id = wallet.ids[wallet.current];
         const schema = JSON.parse(fs.readFileSync(file).toString());
-        const schemaDid = await keychain.generateDid({
+        const schemaDid = await gatekeeper.generateDid({
             controller: id.did,
             schema: schema,
         });
@@ -292,16 +292,16 @@ async function updateDoc(id, did, doc) {
     };
 
     const signed = await signJson(id, txn);
-    const ok = keychain.saveUpdateTxn(signed);
+    const ok = gatekeeper.saveUpdateTxn(signed);
     return ok;
 }
 
 async function saveVC(did) {
     try {
         const id = wallet.ids[wallet.current];
-        const doc = JSON.parse(await keychain.resolveDid(id.did));
+        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
         const manifestDid = doc.didDocumentMetadata.manifest;
-        const manifest = JSON.parse(await keychain.resolveDid(manifestDid));
+        const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
 
         const vc = JSON.parse(await decrypt(did));
 
@@ -339,7 +339,7 @@ async function createVP(vcDid, receiverDid) {
             vc: vcDid,
             vp: cipherDid
         };
-        const vpDid = await keychain.generateDid(vp);
+        const vpDid = await gatekeeper.generateDid(vp);
         console.log(vpDid);
     }
     catch (error) {
@@ -349,11 +349,11 @@ async function createVP(vcDid, receiverDid) {
 
 async function verifyVP(did) {
     try {
-        const vpsdoc = JSON.parse(await keychain.resolveDid(did));
+        const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
         const vcdid = vpsdoc.didDocumentMetadata.data.vc;
         const vpdid = vpsdoc.didDocumentMetadata.data.vp;
-        const vcdoc = JSON.parse(await keychain.resolveDid(vcdid));
-        const vpdoc = JSON.parse(await keychain.resolveDid(vpdid));
+        const vcdoc = JSON.parse(await gatekeeper.resolveDid(vcdid));
+        const vpdoc = JSON.parse(await gatekeeper.resolveDid(vpdid));
         const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
         const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
 
@@ -363,7 +363,7 @@ async function verifyVP(did) {
         }
 
         const vp = JSON.parse(await decrypt(vpdid));
-        const isValid = await sdk.verifySig(vp);
+        const isValid = await keymaster.verifySig(vp);
 
         if (!isValid) {
             console.log('cannot verify (signature invalid)');
@@ -384,7 +384,7 @@ async function rotateKeys() {
         const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
         const didkey = hdkey.derive(path);
         const keypair = cipher.generateJwk(didkey.privateKey);
-        const doc = JSON.parse(await keychain.resolveDid(id.did));
+        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
         const vmethod = doc.didDocument.verificationMethod[0];
 
         vmethod.id = `#key-${nextIndex + 1}`;

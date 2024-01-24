@@ -1,6 +1,6 @@
 import canonicalize from 'canonicalize';
 import * as cipher from './cipher.js';
-import * as keychain from './keychain.js';
+import * as gatekeeper from './gatekeeper.js';
 
 async function verifySig(json) {
     if (!json.signature) {
@@ -21,7 +21,7 @@ async function verifySig(json) {
         return false;
     }
 
-    const diddoc = await keychain.resolveDid(signature.signer, signature.created);
+    const diddoc = await gatekeeper.resolveDid(signature.signer, signature.created);
     const doc = JSON.parse(diddoc);
 
     // TBD get the right signature, not just the first one
