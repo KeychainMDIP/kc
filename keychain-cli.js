@@ -1,6 +1,5 @@
 import { program } from 'commander';
 import fs from 'fs';
-import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
@@ -9,182 +8,80 @@ import * as gatekeeper from './gatekeeper.js';
 import * as cipher from './cipher.js';
 import assert from 'assert';
 
-const walletName = 'wallet.json';
-const wallet = loadWallet() || initializeWallet();
-
-function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
-    }
-}
-
-function saveWallet(wallet) {
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
-}
-
-function initializeWallet() {
-
-    if (fs.existsSync(walletName)) {
-        return 'Wallet already initialized';
-    }
-
-    const mnemonic = bip39.generateMnemonic();
-    const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const hdkey = HDKey.fromMasterSeed(seed);
-    const wallet = {
-        seed: {
-            mnemonic: mnemonic,
-            hdkey: hdkey.toJSON(),
-        },
-        counter: 0,
-        ids: {},
-    }
-
-    saveWallet(wallet);
-    return wallet;
-}
+const wallet = keymaster.wallet;
 
 async function createId(name) {
-    if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
-        return `Already have an ID named ${name}`;
+    try {
+        const did = await keymaster.createId(name);
+        console.log(did);
     }
-
-    const account = wallet.counter;
-    const index = 0;
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${account}'/0/${index}`;
-    const didkey = hdkey.derive(path);
-    const keypair = cipher.generateJwk(didkey.privateKey);
-    const did = await gatekeeper.generateDid(keypair.publicJwk);
-    const didobj = {
-        did: did,
-        account: account,
-        index: index,
-    };
-
-    wallet.ids[name] = didobj;
-
-    wallet.counter += 1;
-    wallet.current = name;
-
-    saveWallet(wallet);
-    console.log(did);
+    catch (error) {
+        console.error(error);
+    }
 }
 
 async function removeId(name) {
-    if (wallet.ids.hasOwnProperty(name)) {
-        delete wallet.ids[name];
-        saveWallet(wallet);
+    try {
+        keymaster.removeId(name);
         console.log(`ID ${name} removed`);
     }
-    else {
-        console.log(`No ID named ${name}`);
+    catch (error) {
+        console.error(error);
     }
 }
 
 function listIds() {
-    for (let id of Object.keys(wallet.ids)) {
-        if (id === wallet.current) {
-            console.log(id, ' <<< current');
+    try {
+        const ids = keymaster.listIds();
+
+        for (let id of ids) {
+            if (id === wallet.current) {
+                console.log(id, ' <<< current');
+            }
+            else {
+                console.log(id);
+            }
         }
-        else {
-            console.log(id);
-        }
+    }
+    catch (error) {
+        console.error(error);
     }
 }
 
 function useId(name) {
-    if (wallet.ids.hasOwnProperty(name)) {
-        wallet.current = name;
-        saveWallet(wallet);
+    try {
+        keymaster.useId(name);
         listIds();
     }
-    else {
-        console.log(`No ID named ${name}`);
+    catch (error) {
+        console.error(error);
     }
-}
-
-function currentKeyPair(id) {
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
-    const didkey = hdkey.derive(path);
-    const keypair = cipher.generateJwk(didkey.privateKey);
-
-    return keypair;
-}
-
-async function encrypt(msg, did) {
-    if (!wallet.current) {
-        console.log("No current ID");
-        return;
-    }
-
-    const id = wallet.ids[wallet.current];
-    const keypair = currentKeyPair(id);
-    const diddoc = await gatekeeper.resolveDid(did);
-    const doc = JSON.parse(diddoc);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-    const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
-    const msgHash = cipher.hashMessage(msg);
-    const cipherDid = await gatekeeper.generateDid({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
-    });
-
-    return cipherDid;
 }
 
 async function encryptMessage(msg, did) {
-    console.log(await encrypt(msg, did));
+    try {
+        const cipherDid = await keymaster.encrypt(msg, did);
+        console.log(cipherDid);
+    }
+    catch (error) {
+        console.error(error);
+    }
 }
 
 async function encryptFile(file, did) {
-    if (fs.existsSync(file)) {
+    try {
         const contents = fs.readFileSync(file).toString();
-        const cipherDid = await encrypt(contents, did);
+        const cipherDid = await keymaster.encrypt(contents, did);
         console.log(cipherDid);
     }
-    else {
-        console.log(`${file} does not exit`);
+    catch (error) {
+        console.error(error);
     }
-}
-
-async function decrypt(did) {
-    const dataDocJson = await gatekeeper.resolveDid(did);
-    const dataDoc = JSON.parse(dataDocJson);
-    const crypt = dataDoc.didDocumentMetadata.data;
-    const id = wallet.ids[wallet.current];
-
-    const diddoc = await gatekeeper.resolveDid(crypt.sender, crypt.created);
-    const doc = JSON.parse(diddoc);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-    const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
-
-    let index = id.index;
-    while (index >= 0) {
-        const path = `m/44'/0'/${id.account}'/0/${index}`;
-        const didkey = hdkey.derive(path);
-        const keypair = cipher.generateJwk(didkey.privateKey);
-        try {
-            return cipher.decryptMessage(publicJwk, keypair.privateJwk, ciphertext);
-        }
-        catch (error) {
-            index -= 1;
-        }
-    }
-
-    throw 'nope!';
 }
 
 async function decryptDid(did) {
     try {
-        const plaintext = await decrypt(did);
+        const plaintext = await keymaster.decrypt(did);
         console.log(plaintext);
     }
     catch (error) {
@@ -193,32 +90,24 @@ async function decryptDid(did) {
 }
 
 async function resolveDid(did) {
-    console.log(await gatekeeper.resolveDid(did));
-}
-
-async function signJson(id, json) {
-    const keypair = currentKeyPair(id);
-    const msg = canonicalize(json);
-    const msgHash = cipher.hashMessage(msg);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    json.signature = {
-        signer: id.did,
-        created: new Date().toISOString(),
-        hash: msgHash,
-        value: signature,
-    };
-    return json;
+    try {
+        const doc = await gatekeeper.resolveDid(did)
+        console.log(doc);
+    }
+    catch (error) {
+        console.error(`cannot resolve ${did}`);
+    }
 }
 
 async function signFile(file) {
     try {
         const id = wallet.ids[wallet.current];
         const contents = fs.readFileSync(file).toString();
-        const json = await signJson(id, JSON.parse(contents));
+        const json = await keymaster.signJson(id, JSON.parse(contents));
         console.log(JSON.stringify(json, null, 4));
     }
     catch (error) {
-        console.log(`cannot sign ${file}`);
+        console.error(`cannot sign ${file}`);
     }
 }
 
@@ -430,9 +319,9 @@ program
     .action((name) => { removeId(name) });
 
 program
-    .command('list-id')
+    .command('list-ids')
     .description('List IDs and show current ID')
-    .action(async () => { listIds() });
+    .action(() => { listIds() });
 
 program
     .command('use-id <name>')
