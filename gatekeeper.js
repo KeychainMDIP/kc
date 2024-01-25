@@ -2,6 +2,7 @@ import { createHelia } from 'helia';
 import { json } from '@helia/json';
 import { FsBlockstore } from 'blockstore-fs';
 import { CID } from 'multiformats/cid';
+import { base58btc } from 'multiformats/bases/base58';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
 import * as cipher from './cipher.js';
@@ -26,8 +27,9 @@ async function generateDid(jsonData) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const cid = await j.add(JSON.parse(canonicalize(jsonData)));
+    const did = `did:mdip:${cid.toString(base58btc)}`;
     helia.stop();
-    return `did:mdip:${cid.toV1().toString()}`;
+    return did;
 }
 
 async function generateDoc(did) {
