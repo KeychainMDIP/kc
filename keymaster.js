@@ -148,7 +148,7 @@ async function verifySig(json) {
     return isValid;
 }
 
-async function updateDoc(id, did, doc) {
+async function updateDoc(did, doc) {
     const txn = {
         op: "replace",
         time: new Date().toISOString(),
@@ -235,7 +235,7 @@ async function rotateKeys() {
     vmethod.publicKeyJwk = keypair.publicJwk;
     doc.didDocument.authentication = [vmethod.id];
 
-    const ok = await updateDoc(id, id.did, doc);
+    const ok = await updateDoc(id.did, doc);
 
     if (ok) {
         id.index = nextIndex;
@@ -275,8 +275,7 @@ async function attestVC(file) {
 }
 
 async function revokeVC(did) {
-    const id = wallet.ids[wallet.current];
-    const ok = await updateDoc(id, did, {});
+    const ok = await updateDoc(did, {});
     return ok;
 }
 
@@ -309,38 +308,38 @@ async function acceptVC(did) {
     return true;
 }
 
-async function saveVC(did) {
-    try {
-        const id = wallet.ids[wallet.current];
-        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
-        const manifestDid = doc.didDocumentMetadata.manifest;
-        const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
+// async function saveVC(did) {
+//     try {
+//         const id = wallet.ids[wallet.current];
+//         const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
+//         const manifestDid = doc.didDocumentMetadata.manifest;
+//         const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
 
-        const vc = JSON.parse(await decrypt(did));
+//         const vc = JSON.parse(await decrypt(did));
 
-        if (vc.credentialSubject.id !== id.did) {
-            throw 'VC not valid or not assigned to this ID';
-        }
+//         if (vc.credentialSubject.id !== id.did) {
+//             throw 'VC not valid or not assigned to this ID';
+//         }
 
-        //console.log(JSON.stringify(vc, null, 4));
+//         //console.log(JSON.stringify(vc, null, 4));
 
-        let vcSet = new Set();
+//         let vcSet = new Set();
 
-        if (manifest.didDocumentMetadata.data) {
-            vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
-        }
+//         if (manifest.didDocumentMetadata.data) {
+//             vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
+//         }
 
-        vcSet.add(did);
-        const msg = JSON.stringify(Array.from(vcSet));
-        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-        await updateDoc(id, manifestDid, manifest);
+//         vcSet.add(did);
+//         const msg = JSON.stringify(Array.from(vcSet));
+//         manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
+//         await updateDoc(id, manifestDid, manifest);
 
-        console.log(vcSet);
-    }
-    catch (error) {
-        console.error('cannot save VC');
-    }
-}
+//         console.log(vcSet);
+//     }
+//     catch (error) {
+//         console.error('cannot save VC');
+//     }
+// }
 
 async function createVP(vcDid, receiverDid) {
     const id = wallet.ids[wallet.current];
