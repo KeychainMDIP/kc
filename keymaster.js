@@ -160,6 +160,11 @@ async function updateDoc(id, did, doc) {
     return ok;
 }
 
+async function resolveDid(did) {
+    const doc = JSON.parse(await gatekeeper.resolveDid(did));
+    return doc;
+}
+
 async function createId(name) {
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
@@ -212,6 +217,32 @@ function useId(name) {
     }
     else {
         throw `No ID named ${name}`;
+    }
+}
+
+async function rotateKeys() {
+    const id = wallet.ids[wallet.current];
+    const nextIndex = id.index + 1;
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
+    const didkey = hdkey.derive(path);
+    const keypair = cipher.generateJwk(didkey.privateKey);
+    const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
+    const vmethod = doc.didDocument.verificationMethod[0];
+
+    vmethod.id = `#key-${nextIndex + 1}`;
+    vmethod.publicKeyJwk = keypair.publicJwk;
+    doc.didDocument.authentication = [vmethod.id];
+
+    const ok = await updateDoc(id, id.did, doc);
+
+    if (ok) {
+        id.index = nextIndex;
+        saveWallet(wallet);
+        return doc;
+    }
+    else {
+        throw 'cannot rotate keys';
     }
 }
 
@@ -311,19 +342,59 @@ async function saveVC(did) {
     }
 }
 
+async function createVP(vcDid, receiverDid) {
+    const id = wallet.ids[wallet.current];
+    const plaintext = await decrypt(vcDid);
+    const cipherDid = await encrypt(plaintext, receiverDid);
+    const vp = {
+        controller: id.did,
+        vc: vcDid,
+        vp: cipherDid
+    };
+    const vpDid = await gatekeeper.generateDid(vp);
+    return vpDid;
+}
+
+async function verifyVP(did) {
+    const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
+    const vcdid = vpsdoc.didDocumentMetadata.data.vc;
+    const vpdid = vpsdoc.didDocumentMetadata.data.vp;
+    const vcdoc = JSON.parse(await gatekeeper.resolveDid(vcdid));
+    const vpdoc = JSON.parse(await gatekeeper.resolveDid(vpdid));
+    const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
+    const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
+
+    if (vchash !== vphash) {
+        throw 'cannot verify (VP does not match VC)';
+    }
+
+    const vp = JSON.parse(await decrypt(vpdid));
+    const isValid = await keymaster.verifySig(vp);
+
+    if (!isValid) {
+        throw 'cannot verify (signature invalid)';
+    }
+
+    return vp;
+}
+
 export {
     acceptVC,
     attestVC,
     createId,
     createVC,
+    createVP,
     currentKeyPair,
     encrypt,
     decrypt,
     listIds,
+    resolveDid,
     removeId,
     revokeVC,
+    rotateKeys,
     signJson,
     useId,
     verifySig,
+    verifyVP,
     wallet,
 }

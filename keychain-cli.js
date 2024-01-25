@@ -1,12 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
-import HDKey from 'hdkey';
-import * as keymaster from './keymaster.js';
-import * as gatekeeper from './gatekeeper.js';
-import * as cipher from './cipher.js';
 import assert from 'assert';
-
-const wallet = keymaster.wallet;
+import * as keymaster from './keymaster.js';
 
 async function createId(name) {
     try {
@@ -33,7 +28,7 @@ function listIds() {
         const ids = keymaster.listIds();
 
         for (let id of ids) {
-            if (id === wallet.current) {
+            if (id === keymaster.wallet.current) {
                 console.log(id, ' <<< current');
             }
             else {
@@ -58,8 +53,8 @@ function useId(name) {
 
 async function encryptMessage(msg, did) {
     try {
-        const cipherDid = await keymaster.encrypt(msg, did);
-        console.log(cipherDid);
+        const did = await keymaster.encrypt(msg, did);
+        console.log(did);
     }
     catch (error) {
         console.error(error);
@@ -69,8 +64,8 @@ async function encryptMessage(msg, did) {
 async function encryptFile(file, did) {
     try {
         const contents = fs.readFileSync(file).toString();
-        const cipherDid = await keymaster.encrypt(contents, did);
-        console.log(cipherDid);
+        const did = await keymaster.encrypt(contents, did);
+        console.log(did);
     }
     catch (error) {
         console.error(error);
@@ -89,8 +84,8 @@ async function decryptDid(did) {
 
 async function resolveDid(did) {
     try {
-        const doc = await gatekeeper.resolveDid(did)
-        console.log(doc);
+        const doc = await keymaster.resolveDid(did);
+        console.log(JSON.stringify(doc, null, 4));
     }
     catch (error) {
         console.error(`cannot resolve ${did}`);
@@ -165,45 +160,18 @@ async function acceptVC(did) {
 
 async function createVP(vcDid, receiverDid) {
     try {
-        const id = wallet.ids[wallet.current];
-        const plaintext = await decrypt(vcDid);
-        const cipherDid = await encrypt(plaintext, receiverDid);
-        const vp = {
-            controller: id.did,
-            vc: vcDid,
-            vp: cipherDid
-        };
-        const vpDid = await gatekeeper.generateDid(vp);
-        console.log(vpDid);
+        const did = keymaster.createVP(vcDid, receiverDid);
+        console.log(did);
     }
     catch (error) {
-        console.error('cannot create verifiable presentation');
+        console.error(error);
     }
 }
 
 async function verifyVP(did) {
     try {
-        const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
-        const vcdid = vpsdoc.didDocumentMetadata.data.vc;
-        const vpdid = vpsdoc.didDocumentMetadata.data.vp;
-        const vcdoc = JSON.parse(await gatekeeper.resolveDid(vcdid));
-        const vpdoc = JSON.parse(await gatekeeper.resolveDid(vpdid));
-        const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
-        const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
-
-        if (vchash !== vphash) {
-            console.log('cannot verify (VP does not match VC)');
-            return;
-        }
-
-        const vp = JSON.parse(await decrypt(vpdid));
-        const isValid = await keymaster.verifySig(vp);
-
-        if (!isValid) {
-            console.log('cannot verify (signature invalid)');
-        }
-
-        console.log(vp);
+        const vp = keymaster.verifyVP(did);
+        console.log(JSON.stringify(vp, null, 4));
     }
     catch (error) {
         console.error('cannot verify VP');
@@ -212,33 +180,11 @@ async function verifyVP(did) {
 
 async function rotateKeys() {
     try {
-        const id = wallet.ids[wallet.current];
-        const nextIndex = id.index + 1;
-        const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
-        const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
-        const didkey = hdkey.derive(path);
-        const keypair = cipher.generateJwk(didkey.privateKey);
-        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
-        const vmethod = doc.didDocument.verificationMethod[0];
-
-        vmethod.id = `#key-${nextIndex + 1}`;
-        vmethod.publicKeyJwk = keypair.publicJwk;
-        doc.didDocument.authentication = [vmethod.id];
-
-        const ok = await updateDoc(id, id.did, doc);
-
-        if (ok) {
-            id.index = nextIndex;
-            saveWallet(wallet);
-
-            console.log(JSON.stringify(doc, null, 2));
-        }
-        else {
-            console.error('cannot rotate keys');
-        }
+        const doc = await keymaster.rotateKeys();
+        console.log(JSON.stringify(doc, 4, null));
     }
     catch (error) {
-        console.error('cannot rotate keys');
+        console.error(error);
     }
 }
 
@@ -250,7 +196,7 @@ program
     .command('show')
     .description('Show wallet')
     .action(() => {
-        console.log(JSON.stringify(wallet, null, 4));
+        console.log(JSON.stringify(keymaster.wallet, null, 4));
     });
 
 program
