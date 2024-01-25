@@ -3,7 +3,6 @@ import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
-import assert from 'assert';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
@@ -17,8 +16,8 @@ function loadWallet() {
     }
 }
 
-function saveWallet() {
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+function saveWallet(w = wallet) {
+    fs.writeFileSync(walletName, JSON.stringify(w, null, 4));
 }
 
 function initializeWallet() {
@@ -39,7 +38,7 @@ function initializeWallet() {
         ids: {},
     }
 
-    saveWallet();
+    saveWallet(wallet);
     return wallet;
 }
 
@@ -130,14 +129,10 @@ async function verifySig(json) {
     }
 
     const jsonCopy = JSON.parse(JSON.stringify(json));
-
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
     const msg = canonicalize(jsonCopy);
     const msgHash = cipher.hashMessage(msg);
-
-    // console.log(`msgHash        = ${msgHash}`);
-    // console.log(`signature.hash = ${signature.hash}`);
 
     if (signature.hash && signature.hash !== msgHash) {
         return false;
@@ -164,6 +159,16 @@ async function updateDoc(did, doc) {
     const signed = await signJson(txn);
     const ok = gatekeeper.saveUpdateTxn(signed);
     return ok;
+}
+
+function addVCtoManifest(did) {
+    const id = wallet.ids[wallet.current];
+    const manifest = new Set(id.manifest);
+
+    manifest.add(did);
+    id.manifest = Array.from(manifest);
+    saveWallet();
+    return true;
 }
 
 async function resolveDid(did) {
@@ -276,26 +281,13 @@ async function attestVC(file) {
     const signed = await signJson(vc);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, vc.credentialSubject.id);
+    addVCtoManifest(cipherDid);
     return cipherDid;
 }
 
 async function revokeVC(did) {
     const ok = await updateDoc(did, {});
     return ok;
-}
-
-function loadManifest(id) {
-    if (id.manifest) {
-        return new Set(id.manifest);
-    }
-    else {
-        return new Set();
-    }
-}
-
-function saveManifest(id, manifest) {
-    id.manifest = Array.from(manifest);
-    saveWallet();
 }
 
 async function acceptVC(did) {
@@ -306,45 +298,8 @@ async function acceptVC(did) {
         throw 'VC not valid or not assigned to this ID';
     }
 
-    const manifest = loadManifest(id);
-    manifest.add(did);
-    saveManifest(id, manifest);
-
-    return true;
+    return addVCtoManifest(did);
 }
-
-// async function saveVC(did) {
-//     try {
-//         const id = wallet.ids[wallet.current];
-//         const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
-//         const manifestDid = doc.didDocumentMetadata.manifest;
-//         const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
-
-//         const vc = JSON.parse(await decrypt(did));
-
-//         if (vc.credentialSubject.id !== id.did) {
-//             throw 'VC not valid or not assigned to this ID';
-//         }
-
-//         //console.log(JSON.stringify(vc, null, 4));
-
-//         let vcSet = new Set();
-
-//         if (manifest.didDocumentMetadata.data) {
-//             vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
-//         }
-
-//         vcSet.add(did);
-//         const msg = JSON.stringify(Array.from(vcSet));
-//         manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-//         await updateDoc(id, manifestDid, manifest);
-
-//         console.log(vcSet);
-//     }
-//     catch (error) {
-//         console.error('cannot save VC');
-//     }
-// }
 
 async function createVP(vcDid, receiverDid) {
     const id = wallet.ids[wallet.current];
