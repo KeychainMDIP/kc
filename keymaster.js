@@ -2,6 +2,7 @@ import fs from 'fs';
 import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
+import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
@@ -15,7 +16,7 @@ function loadWallet() {
     }
 }
 
-function saveWallet(wallet) {
+function saveWallet() {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
@@ -37,7 +38,7 @@ function initializeWallet() {
         ids: {},
     }
 
-    saveWallet(wallet);
+    saveWallet();
     return wallet;
 }
 
@@ -146,6 +147,19 @@ async function verifySig(json) {
     return isValid;
 }
 
+async function updateDoc(id, did, doc) {
+    const txn = {
+        op: "replace",
+        time: new Date().toISOString(),
+        did: did,
+        doc: doc,
+    };
+
+    const signed = await signJson(id, txn);
+    const ok = gatekeeper.saveUpdateTxn(signed);
+    return ok;
+}
+
 async function createId(name) {
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
@@ -167,9 +181,9 @@ async function createId(name) {
     wallet.ids[name] = didobj;
     wallet.counter += 1;
     wallet.current = name;
-    saveWallet(wallet);
+    saveWallet();
 
-    return(did);
+    return (did);
 }
 
 function removeId(name) {
@@ -180,7 +194,7 @@ function removeId(name) {
             wallet.current = '';
         }
 
-        saveWallet(wallet);
+        saveWallet();
     }
     else {
         throw `No ID named ${name}`;
@@ -194,20 +208,120 @@ function listIds() {
 function useId(name) {
     if (wallet.ids.hasOwnProperty(name)) {
         wallet.current = name;
-        saveWallet(wallet);
+        saveWallet();
     }
     else {
         throw `No ID named ${name}`;
     }
 }
 
+async function createVC(file, subjectDid) {
+    const id = wallet.ids[wallet.current];
+    const schema = JSON.parse(fs.readFileSync(file).toString());
+    const schemaDid = await gatekeeper.generateDid({
+        controller: id.did,
+        schema: schema,
+    });
+    const vc = JSON.parse(fs.readFileSync('did-vc.template').toString());
+    const atom = JSONSchemaFaker.generate(schema);
+
+    vc.issuer = id.did;
+    vc.credentialSubject.id = subjectDid;
+    vc.validFrom = new Date().toISOString();
+    vc.type.push(schemaDid);
+    vc.credential = atom;
+
+    return vc;
+}
+
+async function attestVC(file) {
+    const id = wallet.ids[wallet.current];
+    const vc = JSON.parse(fs.readFileSync(file).toString());
+    const signed = await signJson(id, vc);
+    const msg = JSON.stringify(signed);
+    const cipherDid = await encrypt(msg, vc.credentialSubject.id);
+    return cipherDid;
+}
+
+async function revokeVC(did) {
+    const id = wallet.ids[wallet.current];
+    const ok = await updateDoc(id, did, {});
+    return ok;
+}
+
+function loadManifest(id) {
+    if (id.manifest) {
+        return new Set(id.manifest);
+    }
+    else {
+        return new Set();
+    }
+}
+
+function saveManifest(id, manifest) {
+    id.manifest = Array.from(manifest);
+    saveWallet();
+}
+
+async function acceptVC(did) {
+    const id = wallet.ids[wallet.current];
+    const vc = JSON.parse(await decrypt(did));
+
+    if (vc.credentialSubject.id !== id.did) {
+        throw 'VC not valid or not assigned to this ID';
+    }
+
+    const manifest = loadManifest(id);
+    manifest.add(did);
+    saveManifest(id, manifest);
+
+    return true;
+}
+
+async function saveVC(did) {
+    try {
+        const id = wallet.ids[wallet.current];
+        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
+        const manifestDid = doc.didDocumentMetadata.manifest;
+        const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
+
+        const vc = JSON.parse(await decrypt(did));
+
+        if (vc.credentialSubject.id !== id.did) {
+            throw 'VC not valid or not assigned to this ID';
+        }
+
+        //console.log(JSON.stringify(vc, null, 4));
+
+        let vcSet = new Set();
+
+        if (manifest.didDocumentMetadata.data) {
+            vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
+        }
+
+        vcSet.add(did);
+        const msg = JSON.stringify(Array.from(vcSet));
+        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
+        await updateDoc(id, manifestDid, manifest);
+
+        console.log(vcSet);
+    }
+    catch (error) {
+        console.error('cannot save VC');
+    }
+}
+
 export {
+    acceptVC,
+    attestVC,
     createId,
+    createVC,
     currentKeyPair,
     encrypt,
     decrypt,
     listIds,
     removeId,
+    revokeVC,
     signJson,
     useId,
     verifySig,

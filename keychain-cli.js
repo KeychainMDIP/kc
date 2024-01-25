@@ -1,8 +1,6 @@
 import { program } from 'commander';
 import fs from 'fs';
 import HDKey from 'hdkey';
-import canonicalize from 'canonicalize';
-import { JSONSchemaFaker } from "json-schema-faker";
 import * as keymaster from './keymaster.js';
 import * as gatekeeper from './gatekeeper.js';
 import * as cipher from './cipher.js';
@@ -124,21 +122,7 @@ async function verifyFile(file) {
 
 async function createVC(file, did) {
     try {
-        const id = wallet.ids[wallet.current];
-        const schema = JSON.parse(fs.readFileSync(file).toString());
-        const schemaDid = await gatekeeper.generateDid({
-            controller: id.did,
-            schema: schema,
-        });
-        const vc = JSON.parse(fs.readFileSync('did-vc.template').toString());
-        const atom = JSONSchemaFaker.generate(schema);
-
-        vc.issuer = id.did;
-        vc.credentialSubject.id = did;
-        vc.validFrom = new Date().toISOString();
-        vc.type.push(schemaDid);
-        vc.credential = atom;
-
+        const vc = await keymaster.createVC(file, did);
         console.log(JSON.stringify(vc, null, 4));
     }
     catch (error) {
@@ -148,12 +132,8 @@ async function createVC(file, did) {
 
 async function attestVC(file) {
     try {
-        const id = wallet.ids[wallet.current];
-        const vc = JSON.parse(fs.readFileSync(file).toString());
-        const signed = await signJson(id, vc);
-        const msg = JSON.stringify(signed);
-        const cipherDid = await encrypt(msg, vc.credentialSubject.id);
-        console.log(cipherDid);
+        const did = await keymaster.attestVC(file);
+        console.log(did);
     }
     catch (error) {
         console.error(`cannot attest ${file}`)
@@ -162,8 +142,7 @@ async function attestVC(file) {
 
 async function revokeVC(did) {
     try {
-        const id = wallet.ids[wallet.current];
-        const ok = await updateDoc(id, did, {});
+        const ok = await keymaster.revokeVC(did);
         assert.ok(ok);
         console.log('OK revoked');
     }
@@ -172,49 +151,15 @@ async function revokeVC(did) {
     }
 }
 
-async function updateDoc(id, did, doc) {
-    const txn = {
-        op: "replace",
-        time: new Date().toISOString(),
-        did: did,
-        doc: doc,
-    };
-
-    const signed = await signJson(id, txn);
-    const ok = gatekeeper.saveUpdateTxn(signed);
-    return ok;
-}
-
-async function saveVC(did) {
+async function acceptVC(did) {
     try {
-        const id = wallet.ids[wallet.current];
-        const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
-        const manifestDid = doc.didDocumentMetadata.manifest;
-        const manifest = JSON.parse(await gatekeeper.resolveDid(manifestDid));
-
-        const vc = JSON.parse(await decrypt(did));
-
-        if (vc.credentialSubject.id !== id.did) {
-            throw 'VC not valid or not assigned to this ID';
-        }
-
-        //console.log(JSON.stringify(vc, null, 4));
-
-        let vcSet = new Set();
-
-        if (manifest.didDocumentMetadata.data) {
-            vcSet = new Set(JSON.parse(await decrypt(manifest.didDocumentMetadata.data)));
-        }
-
-        vcSet.add(did);
-        const msg = JSON.stringify(Array.from(vcSet));
-        manifest.didDocumentMetadata.data = await encrypt(msg, id.did);
-        await updateDoc(id, manifestDid, manifest);
-
-        console.log(vcSet);
+        const ok = await keymaster.acceptVC(did);
+        assert.ok(ok);
+        // listVCs();
+        console.log('OK saved');
     }
     catch (error) {
-        console.error('cannot save VC');
+        console.error(error);
     }
 }
 
@@ -374,9 +319,9 @@ program
     .action((did) => { revokeVC(did) });
 
 program
-    .command('save-vc <file>')
+    .command('accept-vc <did>')
     .description('Save verifiable credential for current ID')
-    .action((did) => { saveVC(did) });
+    .action((did) => { acceptVC(did) });
 
 program
     .command('create-vp <vc-did> <receiver-did>')
