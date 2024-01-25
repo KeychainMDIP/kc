@@ -3,6 +3,7 @@ import * as bip39 from 'bip39';
 import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
+import assert from 'assert';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
@@ -43,6 +44,10 @@ function initializeWallet() {
 }
 
 function currentKeyPair(id) {
+    if (!id) {
+        throw "No current ID selected";
+    }
+
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);

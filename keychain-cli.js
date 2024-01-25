@@ -3,95 +3,6 @@ import fs from 'fs';
 import assert from 'assert';
 import * as keymaster from './keymaster.js';
 
-async function createId(name) {
-    try {
-        const did = await keymaster.createId(name);
-        console.log(did);
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-async function removeId(name) {
-    try {
-        keymaster.removeId(name);
-        console.log(`ID ${name} removed`);
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-function listIds() {
-    try {
-        const ids = keymaster.listIds();
-
-        for (let id of ids) {
-            if (id === keymaster.wallet.current) {
-                console.log(id, ' <<< current');
-            }
-            else {
-                console.log(id);
-            }
-        }
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-function useId(name) {
-    try {
-        keymaster.useId(name);
-        listIds();
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-async function encryptMessage(msg, did) {
-    try {
-        const did = await keymaster.encrypt(msg, did);
-        console.log(did);
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-async function encryptFile(file, did) {
-    try {
-        const contents = fs.readFileSync(file).toString();
-        const did = await keymaster.encrypt(contents, did);
-        console.log(did);
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-async function decryptDid(did) {
-    try {
-        const plaintext = await keymaster.decrypt(did);
-        console.log(plaintext);
-    }
-    catch (error) {
-        console.error(`cannot decrypt ${did}`);
-    }
-}
-
-async function resolveDid(did) {
-    try {
-        const doc = await keymaster.resolveDid(did);
-        console.log(JSON.stringify(doc, null, 4));
-    }
-    catch (error) {
-        console.error(`cannot resolve ${did}`);
-    }
-}
-
 program
     .version('1.0.0')
     .description('Keychain CLI tool');
@@ -106,42 +17,115 @@ program
 program
     .command('create-id <name>')
     .description('Create a new decentralized ID')
-    .action((name) => { createId(name) });
+    .action(async (name) => {
+        try {
+            const did = await keymaster.createId(name);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('remove-id <name>')
     .description('Deletes named ID')
-    .action((name) => { removeId(name) });
+    .action(async (name) => {
+        try {
+            keymaster.removeId(name);
+            console.log(`ID ${name} removed`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('list-ids')
     .description('List IDs and show current ID')
-    .action(() => { listIds() });
+    .action(async () => {
+        try {
+            const ids = keymaster.listIds();
+
+            for (let id of ids) {
+                if (id === keymaster.wallet.current) {
+                    console.log(id, ' <<< current');
+                }
+                else {
+                    console.log(id);
+                }
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('use-id <name>')
     .description('Set the current ID')
-    .action((name) => { useId(name) });
+    .action(async (name) => {
+        try {
+            keymaster.useId(name);
+            console.log('OK');
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('resolve-did <did>')
     .description('Return document associated with DID')
-    .action((did) => { resolveDid(did) });
+    .action(async (did) => {
+        try {
+            const doc = await keymaster.resolveDid(did);
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
 
 program
     .command('encrypt-msg <msg> <did>')
     .description('Encrypt a message for a DID')
-    .action((msg, did) => { encryptMessage(msg, did) });
+    .action(async (msg, did) => {
+        try {
+            const cipherDid = await keymaster.encrypt(msg, did);
+            console.log(cipherDid);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('encrypt-file <file> <did>')
     .description('Encrypt a file for a DID')
-    .action((file, did) => { encryptFile(file, did) });
+    .action(async (file, did) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const cipherDid = await keymaster.encrypt(contents, did);
+            console.log(cipherDid);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
 
 program
     .command('decrypt-did <did>')
     .description('Decrypt an encrypted data DID')
-    .action((did) => { decryptDid(did) });
+    .action(async (did) => {
+        try {
+            const plaintext = await keymaster.decrypt(did);
+            console.log(plaintext);
+        }
+        catch (error) {
+            console.error(`cannot decrypt ${did}`);
+        }
+    });
 
 program
     .command('sign-file <file>')
