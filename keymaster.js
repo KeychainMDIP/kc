@@ -104,7 +104,8 @@ async function decrypt(did) {
     throw 'nope!';
 }
 
-async function signJson(id, json) {
+async function signJson(json) {
+    const id = wallet.ids[wallet.current];
     const keypair = currentKeyPair(id);
     const msg = canonicalize(json);
     const msgHash = cipher.hashMessage(msg);
@@ -155,7 +156,7 @@ async function updateDoc(id, did, doc) {
         doc: doc,
     };
 
-    const signed = await signJson(id, txn);
+    const signed = await signJson(txn);
     const ok = gatekeeper.saveUpdateTxn(signed);
     return ok;
 }
@@ -266,9 +267,8 @@ async function createVC(file, subjectDid) {
 }
 
 async function attestVC(file) {
-    const id = wallet.ids[wallet.current];
     const vc = JSON.parse(fs.readFileSync(file).toString());
-    const signed = await signJson(id, vc);
+    const signed = await signJson(vc);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, vc.credentialSubject.id);
     return cipherDid;
@@ -369,7 +369,7 @@ async function verifyVP(did) {
     }
 
     const vp = JSON.parse(await decrypt(vpdid));
-    const isValid = await keymaster.verifySig(vp);
+    const isValid = await verifySig(vp);
 
     if (!isValid) {
         throw 'cannot verify (signature invalid)';
