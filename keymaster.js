@@ -161,12 +161,24 @@ async function updateDoc(did, doc) {
     return ok;
 }
 
-function addVCtoManifest(did) {
+function addToManifest(did) {
     const id = wallet.ids[wallet.current];
     const manifest = new Set(id.manifest);
 
     manifest.add(did);
     id.manifest = Array.from(manifest);
+
+    saveWallet();
+    return true;
+}
+
+function removeFromManifest(did) {
+    const id = wallet.ids[wallet.current];
+    const manifest = new Set(id.manifest);
+
+    manifest.delete(did);
+    id.manifest = Array.from(manifest);
+
     saveWallet();
     return true;
 }
@@ -257,6 +269,17 @@ async function rotateKeys() {
     }
 }
 
+async function createData(data) {
+    const id = wallet.ids[wallet.current];
+    const did = await gatekeeper.generateDid({
+        controller: id.did,
+        data: data,
+    });
+
+    addToManifest(did);
+    return did;
+}
+
 async function createVC(file, subjectDid) {
     const id = wallet.ids[wallet.current];
     const schema = JSON.parse(fs.readFileSync(file).toString());
@@ -281,7 +304,7 @@ async function attestVC(file) {
     const signed = await signJson(vc);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, vc.credentialSubject.id);
-    addVCtoManifest(cipherDid);
+    addToManifest(cipherDid);
     return cipherDid;
 }
 
@@ -298,7 +321,25 @@ async function acceptVC(did) {
         throw 'VC not valid or not assigned to this ID';
     }
 
-    return addVCtoManifest(did);
+    return addToManifest(did);
+}
+
+async function issueChallenge(challenge, user, expiresIn=24) {
+    const id = wallet.ids[wallet.current];
+    const now = new Date();
+    const expires = new Date();
+    expires.setHours(now.getHours() + expiresIn);
+    const issue = {
+        challenge: challenge,
+        from: id.did,
+        to: user,
+        validFrom: now.toISOString(),
+        validUntil: expires.toISOString(),
+    };
+    const signed = await signJson(issue);
+    const msg = JSON.stringify(signed);
+    const cipherDid = await encrypt(msg, user);
+    return cipherDid;
 }
 
 async function createVP(vcDid, receiverDid) {
@@ -340,12 +381,14 @@ async function verifyVP(did) {
 export {
     acceptVC,
     attestVC,
+    createData,
     createId,
     createVC,
     createVP,
     currentKeyPair,
     encrypt,
     decrypt,
+    issueChallenge,
     listIds,
     resolveDid,
     removeId,

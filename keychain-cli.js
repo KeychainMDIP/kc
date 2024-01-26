@@ -156,6 +156,50 @@ program
     });
 
 program
+    .command('create-schema <file>')
+    .description('Create schema from a file')
+    .action(async (file) => {
+        try {
+            const schema = JSON.parse(fs.readFileSync(file).toString());
+            // TBD validate schema
+            const did = await keymaster.createData(schema);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('create-challenge <file>')
+    .description('Create challenge from a file')
+    .action(async (file) => {
+        try {
+            const challenge = JSON.parse(fs.readFileSync(file).toString());
+            // TBD validate challenge
+            const did = await keymaster.createData(challenge);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('issue-challenge <challenge> <user>')
+    .description('Issue a challenge to a user')
+    .action(async (challenge, user) => {
+        try {
+            const did = await keymaster.issueChallenge(challenge, user);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+
+program
     .command('create-vc <file> <did>')
     .description('Create verifiable credential for a DID')
     .action(async (file, did) => {

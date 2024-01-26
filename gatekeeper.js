@@ -38,69 +38,81 @@ async function generateDoc(did) {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
         const j = json(helia);
-        const data = await j.get(cid);
+        const docSeed = await j.get(cid);
 
-        if (!data) {
+        if (!docSeed) {
             return {}; // not found error
         }
 
-        if (data.kty) {
+        if (docSeed.kty) {
             const template = fs.readFileSync('did-doc.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
             doc.didDocument.verificationMethod[0].controller = did;
-            doc.didDocument.verificationMethod[0].publicKeyJwk = data;
+            doc.didDocument.verificationMethod[0].publicKeyJwk = docSeed;
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.manifest = await generateDid({ holder: did });
 
             return doc;
         }
 
-        if (data.cipher_hash) {
+        if (docSeed.cipher_hash) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
-            doc.didDocument.controller = data.sender;
+            doc.didDocument.controller = docSeed.sender;
             doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = data;
+            doc.didDocumentMetadata.data = docSeed;
 
             return doc;
         }
 
-        if (data.holder) {
+        if (docSeed.holder) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
-            doc.didDocument.controller = data.holder;
+            doc.didDocument.controller = docSeed.holder;
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.data = "";
 
             return doc;
         }
 
-        if (data.schema) {
+        if (docSeed.schema) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
-            doc.didDocument.controller = data.controller;
+            doc.didDocument.controller = docSeed.controller;
             doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = data;
+            doc.didDocumentMetadata.data = docSeed;
 
             return doc;
         }
 
-        if (data.vp) {
+        if (docSeed.vp) {
             const template = fs.readFileSync('did-data.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
-            doc.didDocument.controller = data.controller;
+            doc.didDocument.controller = docSeed.controller;
             doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = data;
+            doc.didDocumentMetadata.data = docSeed;
+
+            return doc;
+        }
+
+        if (docSeed.controller) {
+            const template = fs.readFileSync('did-data.template');
+            const doc = JSON.parse(template);
+
+            doc.didDocument.id = did;
+            doc.didDocument.controller = docSeed.controller;
+            doc.didDocumentMetadata.canonicalId = did;
+            doc.didDocumentMetadata.data = docSeed.data;
 
             return doc;
         }

@@ -5,13 +5,6 @@
     "controller": "",
     "@context": [
       "https://www.w3.org/ns/did/v1"
-    ],
-    "service": [
-      {
-        "id": "#self-id",
-        "type": "verifiable-credentials",
-        "serviceEndpoint": "https://selfid.com"
-      }
     ]
   },
   "didDocumentMetadata": {
