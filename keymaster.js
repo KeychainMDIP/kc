@@ -83,8 +83,12 @@ async function encrypt(msg, did) {
 async function decrypt(did) {
     const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
-    const crypt = dataDoc.didDocumentMetadata.data;
+    const crypt = dataDoc.didDocumentMetadata?.data;
     const id = wallet.ids[wallet.current];
+
+    if (!crypt || !crypt.cipher_hash) {
+        throw "DID is not encrypted";
+    }
 
     const diddoc = await gatekeeper.resolveDid(crypt.sender, crypt.created);
     const doc = JSON.parse(diddoc);
@@ -280,21 +284,18 @@ async function createData(data) {
     return did;
 }
 
-async function createVC(file, subjectDid) {
+async function createVC(schemaDid, subjectDid, validUntil = null) {
     const id = wallet.ids[wallet.current];
-    const schema = JSON.parse(fs.readFileSync(file).toString());
-    const schemaDid = await gatekeeper.generateDid({
-        controller: id.did,
-        schema: schema,
-    });
+    const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
     const vc = JSON.parse(fs.readFileSync('did-vc.template').toString());
-    const atom = JSONSchemaFaker.generate(schema);
+    const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
 
     vc.issuer = id.did;
     vc.credentialSubject.id = subjectDid;
     vc.validFrom = new Date().toISOString();
+    vc.validUntil = validUntil;
     vc.type.push(schemaDid);
-    vc.credential = atom;
+    vc.credential = credential;
 
     return vc;
 }
@@ -324,7 +325,7 @@ async function acceptVC(did) {
     return addToManifest(did);
 }
 
-async function issueChallenge(challenge, user, expiresIn=24) {
+async function issueChallenge(challenge, user, expiresIn = 24) {
     const id = wallet.ids[wallet.current];
     const now = new Date();
     const expires = new Date();
@@ -342,40 +343,148 @@ async function issueChallenge(challenge, user, expiresIn=24) {
     return cipherDid;
 }
 
-async function createVP(vcDid, receiverDid) {
+async function findMatchingCredential(credential) {
     const id = wallet.ids[wallet.current];
-    const plaintext = await decrypt(vcDid);
-    const cipherDid = await encrypt(plaintext, receiverDid);
+
+    console.log(credential);
+
+    for (let did of id.manifest) {
+        console.log('manifest', did);
+        try {
+            const doc = JSON.parse(await decrypt(did));
+
+            // console.log(doc);
+
+            if (!doc.issuer) {
+                // Not a VC
+                console.log('not a VC');
+                continue;
+            }
+
+            if (doc.credentialSubject?.id !== id.did) {
+                // This VC is issued by the ID, not held
+                console.log('VC not held by me');
+                continue;
+            }
+
+            if (credential.attestors) {
+                if (!credential.attestors.includes(doc.issuer)) {
+                    // Attestor not trusted by Verifier
+                    console.log('attestor not trusted');
+                    continue;
+                }
+            }
+
+            if (doc.type) {
+                if (!doc.type.includes(credential.schema)) {
+                    // Wrong type
+                    console.log('wrong VC schema');
+                    continue;
+                }
+            }
+
+            // TBD test for VC expiry too
+
+            console.log('types', doc.type);
+            console.log('issuer', doc.issuer);
+
+            return did;
+        }
+        catch (error) {
+            // Not encrypted, so can't be a VC
+            // console.log(error);
+        }
+    }
+}
+
+async function createVP(did) {
+    const id = wallet.ids[wallet.current];
+    const wrapper = JSON.parse(await decrypt(did));
+
+    //console.log(wrapper);
+
+    if (!wrapper.challenge || wrapper.to !== id.did) {
+        throw "Invalid challenge";
+    }
+
+    const challengeDoc = JSON.parse(await gatekeeper.resolveDid(wrapper.challenge));
+
+    //console.log(JSON.stringify(challengeDoc, null, 4));
+
+    const credentials = challengeDoc.didDocumentMetadata.data.credentials;
+
+    //console.log(JSON.stringify(credentials, null, 4));
+
+    const matches = [];
+
+    for (let credential of credentials) {
+        const vc = await findMatchingCredential(credential);
+        console.log('found', did);
+        if (vc) {
+            matches.push(vc);
+        }
+    }
+
+    if (!matches) {
+        throw "VCs don't match challenge";
+    }
+
+    console.log(wrapper);
+    console.log(matches);
+
+    const pairs = [];
+
+    for (let vcDid of matches) {
+        const plaintext = await decrypt(vcDid);
+        const vpDid = await encrypt(plaintext, wrapper.from);
+        pairs.push({ vc: vcDid, vp: vpDid });
+    }
+
     const vp = {
         controller: id.did,
-        vc: vcDid,
-        vp: cipherDid
+        data: {
+            challenge: did,
+            credentials: pairs,
+        }
     };
-    const vpDid = await gatekeeper.generateDid(vp);
-    return vpDid;
+
+    console.log(vp);
+
+    // Do we want to use createData here and add to our manifest or not?
+    const wrapperDid = await gatekeeper.generateDid(vp);
+    return wrapperDid;
 }
 
 async function verifyVP(did) {
     const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
-    const vcdid = vpsdoc.didDocumentMetadata.data.vc;
-    const vpdid = vpsdoc.didDocumentMetadata.data.vp;
-    const vcdoc = JSON.parse(await gatekeeper.resolveDid(vcdid));
-    const vpdoc = JSON.parse(await gatekeeper.resolveDid(vpdid));
-    const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
-    const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
+    const credentials = vpsdoc.didDocumentMetadata.data.credentials;
+    const vps = [];
 
-    if (vchash !== vphash) {
-        throw 'cannot verify (VP does not match VC)';
+    for (let credential of credentials) {
+        const vcdoc = JSON.parse(await gatekeeper.resolveDid(credential.vc));
+        const vpdoc = JSON.parse(await gatekeeper.resolveDid(credential.vp));
+        const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
+        const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
+
+        if (vchash !== vphash) {
+            throw 'cannot verify (VP does not match VC)';
+        }
+
+        const vp = JSON.parse(await decrypt(credential.vp));
+        const isValid = await verifySig(vp);
+
+        if (!isValid) {
+            throw 'cannot verify (signature invalid)';
+        }
+
+        vps.push(vp);
     }
 
-    const vp = JSON.parse(await decrypt(vpdid));
-    const isValid = await verifySig(vp);
+    const challengeDid = vpsdoc.didDocumentMetadata.data.challenge;
+    const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
+    // TBD ensure VPs match challenge
 
-    if (!isValid) {
-        throw 'cannot verify (signature invalid)';
-    }
-
-    return vp;
+    return vps;
 }
 
 export {

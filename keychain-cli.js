@@ -254,11 +254,11 @@ program
     });
 
 program
-    .command('create-vp <vc-did> <receiver-did>')
-    .description('Decrypt and verify the signature in a Verifiable Presentation')
-    .action(async (vc, receiver) => {
+    .command('create-vp <challenge>')
+    .description('Create a Verifiable Presentation from a challenge')
+    .action(async (challenge) => {
         try {
-            const did = await keymaster.createVP(vc, receiver);
+            const did = await keymaster.createVP(challenge);
             console.log(did);
         }
         catch (error) {
@@ -268,7 +268,7 @@ program
 
 program
     .command('verify-vp <did>')
-    .description('Decrypt and verify the signature in a Verifiable Presentation')
+    .description('Decrypt and validate a Verifiable Presentation')
     .action(async (did) => {
         try {
             const vp = await keymaster.verifyVP(did);
