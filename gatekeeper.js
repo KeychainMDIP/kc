@@ -52,7 +52,7 @@ async function generateDoc(did) {
             doc.didDocument.verificationMethod[0].controller = did;
             doc.didDocument.verificationMethod[0].publicKeyJwk = docSeed;
             doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.manifest = await generateDid({ holder: did });
+            doc.didDocumentMetadata.manifest = await generateDid({ controller: did });
 
             return doc;
         }
