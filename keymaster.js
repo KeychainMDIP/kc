@@ -70,11 +70,14 @@ async function encrypt(msg, did) {
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
     const cipherDid = await gatekeeper.generateDid({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
+        controller: id.did,
+        data: {
+            sender: id.did,
+            created: new Date().toISOString(),
+            cipher_hash: msgHash,
+            cipher_sender: cipher_sender,
+            cipher_receiver: cipher_receiver,
+        }
     });
 
     return cipherDid;
@@ -204,13 +207,13 @@ async function createId(name) {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
     const did = await gatekeeper.generateDid(keypair.publicJwk);
-    const didobj = {
+    const newId = {
         did: did,
         account: account,
         index: index,
     };
 
-    wallet.ids[name] = didobj;
+    wallet.ids[name] = newId;
     wallet.counter += 1;
     wallet.current = name;
     saveWallet();

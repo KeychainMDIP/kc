@@ -45,7 +45,7 @@ async function generateDoc(did) {
         }
 
         if (docSeed.kty) {
-            const template = fs.readFileSync('did-doc.template');
+            const template = fs.readFileSync('did-agent.template');
             const doc = JSON.parse(template);
 
             doc.didDocument.id = did;
@@ -53,54 +53,6 @@ async function generateDoc(did) {
             doc.didDocument.verificationMethod[0].publicKeyJwk = docSeed;
             doc.didDocumentMetadata.canonicalId = did;
             doc.didDocumentMetadata.manifest = await generateDid({ holder: did });
-
-            return doc;
-        }
-
-        if (docSeed.cipher_hash) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = docSeed.sender;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = docSeed;
-
-            return doc;
-        }
-
-        if (docSeed.holder) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = docSeed.holder;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = "";
-
-            return doc;
-        }
-
-        if (docSeed.schema) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = docSeed.controller;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = docSeed;
-
-            return doc;
-        }
-
-        if (docSeed.vp) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = docSeed.controller;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = docSeed;
 
             return doc;
         }
