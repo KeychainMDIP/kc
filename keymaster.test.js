@@ -61,7 +61,7 @@ describe('removeId', () => {
 
         const name = 'Bob';
         await keymaster.createId(name);
-        
+
         keymaster.removeId(name);
 
         const wallet = keymaster.loadWallet();
@@ -106,5 +106,22 @@ describe('useId', () => {
 
         const wallet = keymaster.loadWallet();
         expect(wallet.current).toBe(name1);
+    });
+});
+
+describe('resolveDid', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a new ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+        const doc = await keymaster.resolveDid(did);
+
+        expect(doc.didDocument.id).toBe(did);
     });
 });
