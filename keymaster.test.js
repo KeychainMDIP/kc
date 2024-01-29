@@ -13,9 +13,7 @@ describe('createId', () => {
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
-
-        const content = fs.readFileSync('wallet.json', 'utf8');
-        const wallet = JSON.parse(content);
+        const wallet = keymaster.loadWallet();
 
         expect(wallet.ids[name].did).toBe(did);
         expect(wallet.current).toBe(name);
@@ -44,8 +42,7 @@ describe('createId', () => {
         const name2 = 'Alice';
         const did2 = await keymaster.createId(name2);
 
-        const content = fs.readFileSync('wallet.json', 'utf8');
-        const wallet = JSON.parse(content);
+        const wallet = keymaster.loadWallet();
 
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
@@ -63,12 +60,11 @@ describe('removeId', () => {
         mockFs({});
 
         const name = 'Bob';
-        const did = await keymaster.createId(name);
-
+        await keymaster.createId(name);
+        
         keymaster.removeId(name);
 
-        const content = fs.readFileSync('wallet.json', 'utf8');
-        const wallet = JSON.parse(content);
+        const wallet = keymaster.loadWallet();
 
         expect(wallet.ids).toStrictEqual({});
         expect(wallet.current).toBe('');
@@ -79,7 +75,8 @@ describe('removeId', () => {
 
         const name1 = 'Bob';
         const name2 = 'Alice';
-        const did = await keymaster.createId(name1);
+
+        await keymaster.createId(name1);
 
         try {
             keymaster.removeId(name2);
@@ -88,5 +85,26 @@ describe('removeId', () => {
             expect(error).toBe(`No ID named ${name2}`);
         }
     });
+});
 
+describe('useId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should switch to another ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        await keymaster.createId(name1);
+
+        const name2 = 'Alice';
+        await keymaster.createId(name2);
+
+        keymaster.useId(name1);
+
+        const wallet = keymaster.loadWallet();
+        expect(wallet.current).toBe(name1);
+    });
 });
