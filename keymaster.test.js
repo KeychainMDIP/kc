@@ -127,19 +127,45 @@ describe('resolveDid', () => {
     });
 });
 
+function generateRandomString(length) {
+    let result = '';
+    let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let charactersLength = characters.length;
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
+
 describe('encrypt', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should encrypt a message', async () => {
+    it('should encrypt a short message', async () => {
         mockFs({});
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
 
         const msg = 'Hi Bob!';
+        const encryptDid = await keymaster.encrypt(msg, did);
+        const doc = await keymaster.resolveDid(encryptDid);
+        const data = doc.didDocumentMetadata.data;
+        const msgHash = cipher.hashMessage(msg);
+
+        expect(data.cipher_hash).toBe(msgHash);
+    });
+
+    it('should encrypt a long message', async () => {
+        mockFs({});
+
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+
+        const msg = generateRandomString(1024 * 1024);
         const encryptDid = await keymaster.encrypt(msg, did);
         const doc = await keymaster.resolveDid(encryptDid);
         const data = doc.didDocumentMetadata.data;
@@ -155,7 +181,7 @@ describe('decrypt', () => {
         mockFs.restore();
     });
 
-    it('should decrypt a DID encrypted by same ID', async () => {
+    it('should decrypt a short message encrypted by same ID', async () => {
         mockFs({});
 
         const name = 'Bob';
@@ -168,7 +194,7 @@ describe('decrypt', () => {
         expect(decipher).toBe(msg);
     });
 
-    it('should decrypt a DID encrypted by another ID', async () => {
+    it('should decrypt a short message encrypted by another ID', async () => {
         mockFs({});
 
         const name1 = 'Alice';
@@ -180,6 +206,26 @@ describe('decrypt', () => {
         keymaster.useId(name1);
 
         const msg = 'Hi Bob!';
+        const encryptDid = await keymaster.encrypt(msg, did2);
+
+        keymaster.useId(name2);
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a long message encrypted by another ID', async () => {
+        mockFs({});
+
+        const name1 = 'Alice';
+        const did1 = await keymaster.createId(name1);
+
+        const name2 = 'Bob';
+        const did2 = await keymaster.createId(name2);
+
+        keymaster.useId(name1);
+
+        const msg = generateRandomString(1024 * 1024);
         const encryptDid = await keymaster.encrypt(msg, did2);
 
         keymaster.useId(name2);
