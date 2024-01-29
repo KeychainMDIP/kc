@@ -23,7 +23,7 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function generateDid(jsonData) {
+export async function generateDid(jsonData) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const cid = await j.add(JSON.parse(canonicalize(jsonData)));
@@ -123,9 +123,7 @@ async function verifyUpdate(txn, doc) {
     return false;
 }
 
-async function resolveDid(did, asof = null) {
-    //console.log(`resolveDid(${did},${asof})`);
-
+export async function resolveDid(did, asof = null) {
     const db = loadDb();
     let doc = await generateDoc(did);
 
@@ -138,7 +136,7 @@ async function resolveDid(did, asof = null) {
             const valid = await verifyUpdate(txn, doc);
 
             if (valid) {
-                if (txn.op === 'replace') {
+                if (txn.op === 'update') {
                     doc = txn.doc;
                 }
             }
@@ -151,7 +149,7 @@ async function resolveDid(did, asof = null) {
     return JSON.stringify(doc);
 }
 
-async function saveUpdateTxn(txn) {
+export async function updateDoc(txn) {
     const doc = JSON.parse(await resolveDid(txn.did));
     const updateValid = await verifyUpdate(txn, doc);
 
@@ -171,10 +169,3 @@ async function saveUpdateTxn(txn) {
     writeDb(db);
     return true;
 }
-
-export {
-    generateDid,
-    resolveDid,
-    saveUpdateTxn,
-}
-

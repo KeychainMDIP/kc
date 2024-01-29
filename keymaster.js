@@ -7,7 +7,7 @@ import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
 const walletName = 'wallet.json';
-const wallet = loadWallet() || initializeWallet();
+export const wallet = loadWallet() || initializeWallet();
 
 function loadWallet() {
     if (fs.existsSync(walletName)) {
@@ -55,7 +55,7 @@ function currentKeyPair(id) {
     return keypair;
 }
 
-async function encrypt(msg, did) {
+export async function encrypt(msg, did) {
     if (!wallet.current) {
         console.log("No current ID");
         return;
@@ -83,7 +83,7 @@ async function encrypt(msg, did) {
     return cipherDid;
 }
 
-async function decrypt(did) {
+export async function decrypt(did) {
     const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
     const crypt = dataDoc.didDocumentMetadata?.data;
@@ -157,14 +157,14 @@ async function verifySig(json) {
 
 async function updateDoc(did, doc) {
     const txn = {
-        op: "replace",
+        op: "update",
         time: new Date().toISOString(),
         did: did,
         doc: doc,
     };
 
     const signed = await signJson(txn);
-    const ok = gatekeeper.saveUpdateTxn(signed);
+    const ok = gatekeeper.updateDoc(signed);
     return ok;
 }
 
@@ -190,12 +190,12 @@ function removeFromManifest(did) {
     return true;
 }
 
-async function resolveDid(did) {
+export async function resolveDid(did) {
     const doc = JSON.parse(await gatekeeper.resolveDid(did));
     return doc;
 }
 
-async function createId(name) {
+export async function createId(name) {
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
     }
@@ -221,7 +221,7 @@ async function createId(name) {
     return (did);
 }
 
-function removeId(name) {
+export function removeId(name) {
     if (wallet.ids.hasOwnProperty(name)) {
         delete wallet.ids[name];
 
@@ -236,11 +236,11 @@ function removeId(name) {
     }
 }
 
-function listIds() {
+export function listIds() {
     return Object.keys(wallet.ids);
 }
 
-function useId(name) {
+export function useId(name) {
     if (wallet.ids.hasOwnProperty(name)) {
         wallet.current = name;
         saveWallet();
@@ -250,7 +250,7 @@ function useId(name) {
     }
 }
 
-async function rotateKeys() {
+export async function rotateKeys() {
     const id = wallet.ids[wallet.current];
     const nextIndex = id.index + 1;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
@@ -276,7 +276,7 @@ async function rotateKeys() {
     }
 }
 
-async function createData(data) {
+export async function createData(data) {
     const id = wallet.ids[wallet.current];
     const did = await gatekeeper.generateDid({
         controller: id.did,
@@ -287,7 +287,7 @@ async function createData(data) {
     return did;
 }
 
-async function createVC(schemaDid, subjectDid, validUntil = null) {
+export async function createVC(schemaDid, subjectDid, validUntil = null) {
     const id = wallet.ids[wallet.current];
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
     const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
@@ -310,7 +310,7 @@ async function createVC(schemaDid, subjectDid, validUntil = null) {
     return vc;
 }
 
-async function attestVC(file) {
+export async function attestVC(file) {
     const vc = JSON.parse(fs.readFileSync(file).toString());
     const signed = await signJson(vc);
     const msg = JSON.stringify(signed);
@@ -319,12 +319,12 @@ async function attestVC(file) {
     return cipherDid;
 }
 
-async function revokeVC(did) {
+export async function revokeVC(did) {
     const ok = await updateDoc(did, {});
     return ok;
 }
 
-async function acceptVC(did) {
+export async function acceptVC(did) {
     const id = wallet.ids[wallet.current];
     const vc = JSON.parse(await decrypt(did));
 
@@ -335,7 +335,7 @@ async function acceptVC(did) {
     return addToManifest(did);
 }
 
-async function issueChallenge(challenge, user, expiresIn = 24) {
+export async function issueChallenge(challenge, user, expiresIn = 24) {
     const id = wallet.ids[wallet.current];
     const now = new Date();
     const expires = new Date();
@@ -407,7 +407,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-async function createVP(did) {
+export async function createVP(did) {
     const id = wallet.ids[wallet.current];
     const wrapper = JSON.parse(await decrypt(did));
 
@@ -465,7 +465,7 @@ async function createVP(did) {
     return wrapperDid;
 }
 
-async function verifyVP(did) {
+export async function verifyVP(did) {
     const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
     const credentials = vpsdoc.didDocumentMetadata.data.credentials;
     const vps = [];
@@ -495,27 +495,4 @@ async function verifyVP(did) {
     // TBD ensure VPs match challenge
 
     return vps;
-}
-
-export {
-    acceptVC,
-    attestVC,
-    createData,
-    createId,
-    createVC,
-    createVP,
-    currentKeyPair,
-    encrypt,
-    decrypt,
-    issueChallenge,
-    listIds,
-    resolveDid,
-    removeId,
-    revokeVC,
-    rotateKeys,
-    signJson,
-    useId,
-    verifySig,
-    verifyVP,
-    wallet,
 }
