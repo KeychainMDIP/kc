@@ -11,7 +11,8 @@ program
     .command('show')
     .description('Show wallet')
     .action(() => {
-        console.log(JSON.stringify(keymaster.wallet, null, 4));
+        const wallet = keymaster.loadWallet();
+        console.log(JSON.stringify(wallet, null, 4));
     });
 
 program
@@ -45,10 +46,11 @@ program
     .description('List IDs and show current ID')
     .action(async () => {
         try {
+            const wallet = keymaster.loadWallet();
             const ids = keymaster.listIds();
 
             for (let id of ids) {
-                if (id === keymaster.wallet.current) {
+                if (id === wallet.current) {
                     console.log(id, ' <<< current');
                 }
                 else {

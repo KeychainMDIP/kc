@@ -7,23 +7,16 @@ import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
 const walletName = 'wallet.json';
-export const wallet = loadWallet() || initializeWallet();
 
-function loadWallet() {
+function saveWallet(wallet) {
+    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+}
+
+export function loadWallet() {
+
     if (fs.existsSync(walletName)) {
         const walletJson = fs.readFileSync(walletName);
         return JSON.parse(walletJson);
-    }
-}
-
-function saveWallet(w = wallet) {
-    fs.writeFileSync(walletName, JSON.stringify(w, null, 4));
-}
-
-function initializeWallet() {
-
-    if (fs.existsSync(walletName)) {
-        return 'Wallet already initialized';
     }
 
     const mnemonic = bip39.generateMnemonic();
@@ -56,6 +49,8 @@ function currentKeyPair(id) {
 }
 
 export async function encrypt(msg, did) {
+    const wallet = loadWallet();
+
     if (!wallet.current) {
         console.log("No current ID");
         return;
@@ -84,6 +79,7 @@ export async function encrypt(msg, did) {
 }
 
 export async function decrypt(did) {
+    const wallet = loadWallet();
     const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
     const crypt = dataDoc.didDocumentMetadata?.data;
@@ -116,6 +112,7 @@ export async function decrypt(did) {
 }
 
 async function signJson(json) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const keypair = currentKeyPair(id);
     const msg = canonicalize(json);
@@ -169,24 +166,26 @@ async function updateDoc(did, doc) {
 }
 
 function addToManifest(did) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const manifest = new Set(id.manifest);
 
     manifest.add(did);
     id.manifest = Array.from(manifest);
 
-    saveWallet();
+    saveWallet(wallet);
     return true;
 }
 
 function removeFromManifest(did) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const manifest = new Set(id.manifest);
 
     manifest.delete(did);
     id.manifest = Array.from(manifest);
 
-    saveWallet();
+    saveWallet(wallet);
     return true;
 }
 
@@ -196,6 +195,7 @@ export async function resolveDid(did) {
 }
 
 export async function createId(name) {
+    const wallet = loadWallet();
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
     }
@@ -216,12 +216,13 @@ export async function createId(name) {
     wallet.ids[name] = newId;
     wallet.counter += 1;
     wallet.current = name;
-    saveWallet();
+    saveWallet(wallet);
 
     return (did);
 }
 
 export function removeId(name) {
+    const wallet = loadWallet();
     if (wallet.ids.hasOwnProperty(name)) {
         delete wallet.ids[name];
 
@@ -229,7 +230,7 @@ export function removeId(name) {
             wallet.current = '';
         }
 
-        saveWallet();
+        saveWallet(wallet);
     }
     else {
         throw `No ID named ${name}`;
@@ -237,13 +238,15 @@ export function removeId(name) {
 }
 
 export function listIds() {
+    const wallet = loadWallet();
     return Object.keys(wallet.ids);
 }
 
 export function useId(name) {
+    const wallet = loadWallet();
     if (wallet.ids.hasOwnProperty(name)) {
         wallet.current = name;
-        saveWallet();
+        saveWallet(wallet);
     }
     else {
         throw `No ID named ${name}`;
@@ -251,6 +254,7 @@ export function useId(name) {
 }
 
 export async function rotateKeys() {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const nextIndex = id.index + 1;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
@@ -277,6 +281,7 @@ export async function rotateKeys() {
 }
 
 export async function createData(data) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const did = await gatekeeper.generateDid({
         controller: id.did,
@@ -288,6 +293,7 @@ export async function createData(data) {
 }
 
 export async function createVC(schemaDid, subjectDid, validUntil = null) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
     const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
@@ -325,6 +331,7 @@ export async function revokeVC(did) {
 }
 
 export async function acceptVC(did) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const vc = JSON.parse(await decrypt(did));
 
@@ -336,6 +343,7 @@ export async function acceptVC(did) {
 }
 
 export async function issueChallenge(challenge, user, expiresIn = 24) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const now = new Date();
     const expires = new Date();
@@ -354,6 +362,7 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
 }
 
 async function findMatchingCredential(credential) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
 
     console.log(credential);
@@ -408,6 +417,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createVP(did) {
+    const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const wrapper = JSON.parse(await decrypt(did));
 
