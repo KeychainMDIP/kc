@@ -36,6 +36,8 @@ export function loadWallet() {
 }
 
 function currentKeyPair(id) {
+    const wallet = loadWallet();
+    
     if (!id) {
         throw "No current ID selected";
     }

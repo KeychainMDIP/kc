@@ -1,6 +1,7 @@
 import fs from 'fs';
 import mockFs from 'mock-fs';
 import * as keymaster from './keymaster.js';
+import * as cipher from './cipher.js';
 
 describe('createId', () => {
 
@@ -123,5 +124,67 @@ describe('resolveDid', () => {
         const doc = await keymaster.resolveDid(did);
 
         expect(doc.didDocument.id).toBe(did);
+    });
+});
+
+describe('encrypt', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should encrypt a message', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+
+        const msg = 'Hi Bob!';
+        const encryptDid = await keymaster.encrypt(msg, did);
+        const doc = await keymaster.resolveDid(encryptDid);
+        const data = doc.didDocumentMetadata.data;
+        const msgHash = cipher.hashMessage(msg);
+
+        expect(data.cipher_hash).toBe(msgHash);
+    });
+});
+
+describe('decrypt', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should decrypt a DID encrypted by same ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+
+        const msg = 'Hi Bob!';
+        const encryptDid = await keymaster.encrypt(msg, did);
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a DID encrypted by another ID', async () => {
+        mockFs({});
+
+        const name1 = 'Alice';
+        const did1 = await keymaster.createId(name1);
+
+        const name2 = 'Bob';
+        const did2 = await keymaster.createId(name2);
+
+        keymaster.useId(name1);
+
+        const msg = 'Hi Bob!';
+        const encryptDid = await keymaster.encrypt(msg, did2);
+
+        keymaster.useId(name2);
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
     });
 });
