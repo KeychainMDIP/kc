@@ -44,32 +44,47 @@ async function generateDoc(did) {
             return {}; // not found error
         }
 
-        if (docSeed.kty) {
-            const template = fs.readFileSync('did-agent.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.verificationMethod[0].controller = did;
-            doc.didDocument.verificationMethod[0].publicKeyJwk = docSeed;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.manifest = await generateDid({ controller: did });
+        if (docSeed.kty) { // Agent DID
+            // TBD support different key types?
+            const doc = {
+                "@context": "https://w3id.org/did-resolution/v1",
+                "didDocument": {
+                    "@context": ["https://www.w3.org/ns/did/v1"],
+                    "id": did,
+                    "verificationMethod": [
+                        {
+                            "id": "#key-1",
+                            "controller": did,
+                            "type": "EcdsaSecp256k1VerificationKey2019",
+                            "publicKeyJwk": docSeed,
+                        }
+                    ],
+                    "authentication": [
+                        "#key-1"
+                    ],
+                }
+            };
 
             return doc;
         }
 
-        if (docSeed.controller) {
-            const template = fs.readFileSync('did-data.template');
-            const doc = JSON.parse(template);
-
-            doc.didDocument.id = did;
-            doc.didDocument.controller = docSeed.controller;
-            doc.didDocumentMetadata.canonicalId = did;
-            doc.didDocumentMetadata.data = docSeed.data;
+        if (docSeed.data) { // Data DID
+            const doc = {
+                "@context": "https://w3id.org/did-resolution/v1",
+                "didDocument": {
+                    "@context": ["https://www.w3.org/ns/did/v1"],
+                    "id": did,
+                    "controller": docSeed.controller,
+                },
+                "didDocumentMetadata": {
+                    "data": docSeed.data,
+                }
+            };
 
             return doc;
         }
 
-        return {}; // unknown type error
+        return {}; // TBD unknown type error
     }
     catch (error) {
         console.log(error);

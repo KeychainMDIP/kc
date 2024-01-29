@@ -290,15 +290,22 @@ async function createData(data) {
 async function createVC(schemaDid, subjectDid, validUntil = null) {
     const id = wallet.ids[wallet.current];
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
-    const vc = JSON.parse(fs.readFileSync('did-vc.template').toString());
     const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
 
-    vc.issuer = id.did;
-    vc.credentialSubject.id = subjectDid;
-    vc.validFrom = new Date().toISOString();
-    vc.validUntil = validUntil;
-    vc.type.push(schemaDid);
-    vc.credential = credential;
+    const vc = {
+        "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://www.w3.org/ns/credentials/examples/v2"
+        ],
+        type: ["VerifiableCredential", schemaDid],
+        issuer: id.did,
+        validFrom: new Date().toISOString(),
+        validUntil: validUntil,
+        credentialSubject: {
+            id: subjectDid,
+        },
+        credential: credential,
+    };
 
     return vc;
 }
