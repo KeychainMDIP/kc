@@ -52,3 +52,41 @@ describe('createId', () => {
         expect(wallet.current).toBe(name2);
     });
 });
+
+describe('removeId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove an existing ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+
+        keymaster.removeId(name);
+
+        const content = fs.readFileSync('wallet.json', 'utf8');
+        const wallet = JSON.parse(content);
+
+        expect(wallet.ids).toStrictEqual({});
+        expect(wallet.current).toBe('');
+    });
+
+    it('should fail to remove an non-existent ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        const name2 = 'Alice';
+        const did = await keymaster.createId(name1);
+
+        try {
+            keymaster.removeId(name2);
+            fail('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`No ID named ${name2}`);
+        }
+    });
+
+});
