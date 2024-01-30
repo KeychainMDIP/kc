@@ -48,7 +48,7 @@ function getCurrentId() {
 
 function currentKeyPair() {
     const wallet = loadWallet();
-    const id  = getCurrentId();
+    const id = getCurrentId();
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
@@ -292,6 +292,14 @@ export async function rotateKeys() {
 }
 
 export async function createData(data) {
+    function isNonEmptyObject(obj) {
+        return typeof obj === 'object' && obj !== null && Object.keys(obj).length > 0;
+    }
+
+    if (!isNonEmptyObject(data)) {
+        throw 'Invalid input';
+    }
+
     const id = getCurrentId();
     const did = await gatekeeper.generateDid({
         controller: id.did,

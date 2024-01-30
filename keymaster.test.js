@@ -21,7 +21,7 @@ describe('createId', () => {
         expect(wallet.current).toBe(name);
     });
 
-    it('should fail to create a second ID with the same name', async () => {
+    it('should throw to create a second ID with the same name', async () => {
         mockFs({});
 
         const name = 'Bob';
@@ -29,7 +29,7 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            fail('Expected createId to throw an exception');
+            throw('Expected createId to throw an exception');
         } catch (error) {
             expect(error).toBe(`Already have an ID named ${name}`);
         }
@@ -72,7 +72,7 @@ describe('removeId', () => {
         expect(wallet.current).toBe('');
     });
 
-    it('should fail to remove an non-existent ID', async () => {
+    it('should throw to remove an non-existent ID', async () => {
         mockFs({});
 
         const name1 = 'Bob';
@@ -82,7 +82,7 @@ describe('removeId', () => {
 
         try {
             keymaster.removeId(name2);
-            fail('Expected createId to throw an exception');
+            throw('Expected createId to throw an exception');
         } catch (error) {
             expect(error).toBe(`No ID named ${name2}`);
         }
@@ -153,7 +153,19 @@ describe('createData', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createData(mockAnchor);
-            fail('Expected createData to throw an exception');
+            throw 'Expected createData to throw an exception';
+        } catch (error) {
+            expect(error).toBe('No current ID');
+        }
+    });
+
+    it('should throw an exception for null anchor', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('Bob');
+            await keymaster.createData();
+            throw('Expected createData to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -304,7 +316,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(json);
-            fail('Expected addSignature to throw an exception');
+            throw('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -317,7 +329,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            fail('Expected addSignature to throw an exception');
+            throw('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -330,7 +342,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature("not an object");
-            fail('Expected addSignature to throw an exception');
+            throw('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
