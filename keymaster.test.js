@@ -517,3 +517,52 @@ describe('createSchema', () => {
         expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
     });
 });
+
+describe('createVC', () => {
+
+    const mockSchema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+            "email": {
+                "format": "email",
+                "type": "string"
+            }
+        },
+        "required": [
+            "email"
+        ],
+        "type": "object"
+    };
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a VC from a schema', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+
+        const vc = await keymaster.createVC(schemaDid, userDid);
+
+        expect(vc.issuer).toBe(userDid);
+        expect(vc.credentialSubject.id).toBe(userDid);
+        expect(vc.credential.email).toEqual(expect.any(String));
+    });
+
+    it('should create a VC for a different user', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+
+        keymaster.useId('Alice')
+        const vc = await keymaster.createVC(schemaDid, bob);
+
+        expect(vc.issuer).toBe(alice);
+        expect(vc.credentialSubject.id).toBe(bob);
+        expect(vc.credential.email).toEqual(expect.any(String));
+    });
+});
