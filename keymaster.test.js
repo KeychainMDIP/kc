@@ -134,11 +134,37 @@ describe('createData', () => {
         mockFs.restore();
     });
 
-    it('should create DID from a data anchor', async () => {
+    it('should create DID from an object anchor', async () => {
         mockFs({});
 
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        const doc = await keymaster.resolveDid(dataDid);
+
+        expect(doc.didDocument.id).toBe(dataDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockAnchor);
+    });
+
+    it('should create DID from a string anchor', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockAnchor = "mockAnchor";
+        const dataDid = await keymaster.createData(mockAnchor);
+        const doc = await keymaster.resolveDid(dataDid);
+
+        expect(doc.didDocument.id).toBe(dataDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockAnchor);
+    });
+
+    it('should create DID from a list anchor', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockAnchor = [1,2,3];
         const dataDid = await keymaster.createData(mockAnchor);
         const doc = await keymaster.resolveDid(dataDid);
 
@@ -167,7 +193,43 @@ describe('createData', () => {
             await keymaster.createData();
             throw('Expected createData to throw an exception');
         } catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error).toBe('Invalid input');
+        }
+    });
+
+    it('should throw an exception for an empty string anchor', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('Bob');
+            await keymaster.createData("");
+            throw('Expected createData to throw an exception');
+        } catch (error) {
+            expect(error).toBe('Invalid input');
+        }
+    });
+
+    it('should throw an exception for an empty list anchor', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('Bob');
+            await keymaster.createData([]);
+            throw('Expected createData to throw an exception');
+        } catch (error) {
+            expect(error).toBe('Invalid input');
+        }
+    });
+
+    it('should throw an exception for an empty object anchor', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('Bob');
+            await keymaster.createData({});
+            throw('Expected createData to throw an exception');
+        } catch (error) {
+            expect(error).toBe('Invalid input');
         }
     });
 });

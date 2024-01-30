@@ -292,11 +292,15 @@ export async function rotateKeys() {
 }
 
 export async function createData(data) {
-    function isNonEmptyObject(obj) {
-        return typeof obj === 'object' && obj !== null && Object.keys(obj).length > 0;
+
+    function isEmpty(data) {
+        if (!data) return true;
+        if (Array.isArray(data) && data.length === 0) return true;
+        if (typeof data === 'object' && Object.keys(data).length === 0) return true;
+        return false;
     }
 
-    if (!isNonEmptyObject(data)) {
+    if (isEmpty(data)) {
         throw 'Invalid input';
     }
 
