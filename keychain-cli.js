@@ -135,7 +135,7 @@ program
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const json = await keymaster.signJson(JSON.parse(contents));
+            const json = await keymaster.addSignature(JSON.parse(contents));
             console.log(JSON.stringify(json, null, 4));
         }
         catch (error) {
@@ -149,7 +149,7 @@ program
     .action(async (file) => {
         try {
             const json = JSON.parse(fs.readFileSync(file).toString());
-            const isValid = await keymaster.verifySig(json);
+            const isValid = await keymaster.verifySignature(json);
             console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
         }
         catch (error) {

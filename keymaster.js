@@ -172,7 +172,7 @@ async function updateDoc(did, doc) {
         doc: doc,
     };
 
-    const signed = await signJson(txn);
+    const signed = await addSignature(txn);
     const ok = gatekeeper.updateDoc(signed);
     return ok;
 }
@@ -330,7 +330,7 @@ export async function createVC(schemaDid, subjectDid, validUntil = null) {
 
 export async function attestVC(file) {
     const vc = JSON.parse(fs.readFileSync(file).toString());
-    const signed = await signJson(vc);
+    const signed = await addSignature(vc);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, vc.credentialSubject.id);
     addToManifest(cipherDid);
@@ -367,7 +367,7 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
         validFrom: now.toISOString(),
         validUntil: expires.toISOString(),
     };
-    const signed = await signJson(issue);
+    const signed = await addSignature(issue);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, user);
     return cipherDid;
@@ -503,7 +503,7 @@ export async function verifyVP(did) {
         }
 
         const vp = JSON.parse(await decrypt(credential.vp));
-        const isValid = await verifySig(vp);
+        const isValid = await verifySignature(vp);
 
         if (!isValid) {
             throw 'cannot verify (signature invalid)';

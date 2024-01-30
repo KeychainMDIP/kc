@@ -272,7 +272,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(json);
-            fail('Expected signJson to throw an exception');
+            fail('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe(`No current ID selected`);
         }
@@ -285,7 +285,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            fail('Expected signJson to throw an exception');
+            fail('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -298,7 +298,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature("not an object");
-            fail('Expected signJson to throw an exception');
+            fail('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
