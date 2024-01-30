@@ -163,8 +163,7 @@ program
     .action(async (file) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            // TBD validate schema
-            const did = await keymaster.createData(schema);
+            const did = await keymaster.createSchema(schema);
             console.log(did);
         }
         catch (error) {
@@ -178,8 +177,7 @@ program
     .action(async (file) => {
         try {
             const challenge = JSON.parse(fs.readFileSync(file).toString());
-            // TBD validate challenge
-            const did = await keymaster.createData(challenge);
+            const did = await keymaster.createChallenge(challenge);
             console.log(did);
         }
         catch (error) {

@@ -314,6 +314,11 @@ export async function createData(data) {
     return did;
 }
 
+export async function createSchema(schema) {
+    // TBD validate schema
+    return createData(schema);
+}
+
 export async function createVC(schemaDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
@@ -360,6 +365,12 @@ export async function acceptVC(did) {
     }
 
     return addToManifest(did);
+}
+
+export async function createChallenge(challenge) {
+    // TBD validate challenge as list of requirements
+    // each requirement is a object containing a list of trusted attestor DIDs and a list of acceptable schema DIDs
+    return createData(challenge);
 }
 
 export async function issueChallenge(challenge, user, expiresIn = 24) {

@@ -29,7 +29,7 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            throw('Expected createId to throw an exception');
+            throw ('Expected createId to throw an exception');
         } catch (error) {
             expect(error).toBe(`Already have an ID named ${name}`);
         }
@@ -82,7 +82,7 @@ describe('removeId', () => {
 
         try {
             keymaster.removeId(name2);
-            throw('Expected createId to throw an exception');
+            throw ('Expected createId to throw an exception');
         } catch (error) {
             expect(error).toBe(`No ID named ${name2}`);
         }
@@ -164,7 +164,7 @@ describe('createData', () => {
         mockFs({});
 
         const ownerDid = await keymaster.createId('Bob');
-        const mockAnchor = [1,2,3];
+        const mockAnchor = [1, 2, 3];
         const dataDid = await keymaster.createData(mockAnchor);
         const doc = await keymaster.resolveDid(dataDid);
 
@@ -191,7 +191,7 @@ describe('createData', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createData();
-            throw('Expected createData to throw an exception');
+            throw ('Expected createData to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -203,7 +203,7 @@ describe('createData', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createData("");
-            throw('Expected createData to throw an exception');
+            throw ('Expected createData to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -215,7 +215,7 @@ describe('createData', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createData([]);
-            throw('Expected createData to throw an exception');
+            throw ('Expected createData to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -227,7 +227,7 @@ describe('createData', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createData({});
-            throw('Expected createData to throw an exception');
+            throw ('Expected createData to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -378,7 +378,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(json);
-            throw('Expected addSignature to throw an exception');
+            throw ('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -391,7 +391,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            throw('Expected addSignature to throw an exception');
+            throw ('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -404,7 +404,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature("not an object");
-            throw('Expected addSignature to throw an exception');
+            throw ('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -482,5 +482,38 @@ describe('verifySignature', () => {
         const isValid = await keymaster.verifySignature("not JSON");
 
         expect(isValid).toBe(false);
+    });
+});
+
+describe('createSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a schema DID', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "properties": {
+                "email": {
+                    "format": "email",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "email"
+            ],
+            "type": "object"
+        };
+
+        await keymaster.createId('Bob');
+
+        const did = await keymaster.createSchema(mockSchema);
+        const doc = await keymaster.resolveDid(did);
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
     });
 });
