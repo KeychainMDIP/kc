@@ -35,13 +35,20 @@ export function loadWallet() {
     return wallet;
 }
 
-function currentKeyPair(id) {
+function getCurrentId() {
     const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
 
     if (!id) {
-        throw "No current ID selected";
+        throw "No current ID";
     }
 
+    return id;
+}
+
+function currentKeyPair() {
+    const wallet = loadWallet();
+    const id  = getCurrentId();
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
@@ -51,15 +58,8 @@ function currentKeyPair(id) {
 }
 
 export async function encrypt(msg, did) {
-    const wallet = loadWallet();
-
-    if (!wallet.current) {
-        console.log("No current ID");
-        return;
-    }
-
-    const id = wallet.ids[wallet.current];
-    const keypair = currentKeyPair(id);
+    const id = getCurrentId();
+    const keypair = currentKeyPair();
     const diddoc = await gatekeeper.resolveDid(did);
     const doc = JSON.parse(diddoc);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -82,10 +82,10 @@ export async function encrypt(msg, did) {
 
 export async function decrypt(did) {
     const wallet = loadWallet();
+    const id = getCurrentId();
     const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
     const crypt = dataDoc.didDocumentMetadata?.data;
-    const id = wallet.ids[wallet.current];
 
     if (!crypt || !crypt.cipher_hash) {
         throw "DID is not encrypted";
@@ -110,7 +110,7 @@ export async function decrypt(did) {
         }
     }
 
-    throw 'nope!';
+    throw 'Cannot decrypt';
 }
 
 export async function addSignature(obj) {
@@ -293,8 +293,7 @@ export async function rotateKeys() {
 }
 
 export async function createData(data) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const did = await gatekeeper.generateDid({
         controller: id.did,
         data: data,
