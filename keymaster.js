@@ -114,8 +114,7 @@ export async function decrypt(did) {
 }
 
 export async function addSignature(obj) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const keypair = currentKeyPair(id);
 
     try {
@@ -304,8 +303,7 @@ export async function createData(data) {
 }
 
 export async function createVC(schemaDid, subjectDid, validUntil = null) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
     const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
 
@@ -342,8 +340,7 @@ export async function revokeVC(did) {
 }
 
 export async function acceptVC(did) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const vc = JSON.parse(await decrypt(did));
 
     if (vc.credentialSubject.id !== id.did) {
@@ -354,8 +351,7 @@ export async function acceptVC(did) {
 }
 
 export async function issueChallenge(challenge, user, expiresIn = 24) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const now = new Date();
     const expires = new Date();
     expires.setHours(now.getHours() + expiresIn);
@@ -373,8 +369,7 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
 }
 
 async function findMatchingCredential(credential) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
 
     console.log(credential);
 
@@ -428,8 +423,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createVP(did) {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     const wrapper = JSON.parse(await decrypt(did));
 
     //console.log(wrapper);
