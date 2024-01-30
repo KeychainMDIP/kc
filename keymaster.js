@@ -37,7 +37,7 @@ export function loadWallet() {
 
 function currentKeyPair(id) {
     const wallet = loadWallet();
-    
+
     if (!id) {
         throw "No current ID selected";
     }
@@ -113,28 +113,34 @@ export async function decrypt(did) {
     throw 'nope!';
 }
 
-async function signJson(json) {
+export async function addSignature(obj) {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const keypair = currentKeyPair(id);
-    const msg = canonicalize(json);
-    const msgHash = cipher.hashMessage(msg);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    json.signature = {
-        signer: id.did,
-        created: new Date().toISOString(),
-        hash: msgHash,
-        value: signature,
-    };
-    return json;
+
+    try {
+        const msg = canonicalize(obj);
+        const msgHash = cipher.hashMessage(msg);
+        const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+        obj.signature = {
+            signer: id.did,
+            created: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        };
+        return obj;
+    }
+    catch (error) {
+        throw 'Invalid input';
+    }
 }
 
-async function verifySig(json) {
-    if (!json.signature) {
+export async function verifySignature(obj) {
+    if (!obj?.signature) {
         return false;
     }
 
-    const jsonCopy = JSON.parse(JSON.stringify(json));
+    const jsonCopy = JSON.parse(JSON.stringify(obj));
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
     const msg = canonicalize(jsonCopy);
@@ -149,9 +155,13 @@ async function verifySig(json) {
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
 
-    return isValid;
+    try {
+        return cipher.verifySig(msgHash, signature.value, publicJwk);
+    }
+    catch (error) {
+        return false;
+    }
 }
 
 async function updateDoc(did, doc) {
