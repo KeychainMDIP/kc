@@ -217,7 +217,8 @@ program
     .description('Sign and encrypt VC')
     .action(async (file) => {
         try {
-            const did = await keymaster.attestVC(file);
+            const vc = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.attestVC(vc);
             console.log(did);
         }
         catch (error) {

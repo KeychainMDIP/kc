@@ -342,8 +342,13 @@ export async function createVC(schemaDid, subjectDid, validUntil = null) {
     return vc;
 }
 
-export async function attestVC(file) {
-    const vc = JSON.parse(fs.readFileSync(file).toString());
+export async function attestVC(vc) {
+    const id = getCurrentId();
+    
+    if (vc.issuer !== id.did) {
+        throw 'Invalid VC';
+    }
+
     const signed = await addSignature(vc);
     const msg = JSON.stringify(signed);
     const cipherDid = await encrypt(msg, vc.credentialSubject.id);

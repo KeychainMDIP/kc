@@ -566,3 +566,67 @@ describe('createVC', () => {
         expect(vc.credential.email).toEqual(expect.any(String));
     });
 });
+
+describe('attestVC', () => {
+
+    const mockSchema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+            "email": {
+                "format": "email",
+                "type": "string"
+            }
+        },
+        "required": [
+            "email"
+        ],
+        "type": "object"
+    };
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should attest a VC when user is issuer', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, userDid);
+
+        const did = await keymaster.attestVC(vcdoc);
+
+        const vc = JSON.parse(await keymaster.decrypt(did));
+        expect(vc.issuer).toBe(userDid);
+        expect(vc.credentialSubject.id).toBe(userDid);
+        expect(vc.credential.email).toEqual(expect.any(String));
+
+        const isValid = await keymaster.verifySignature(vc);
+        expect(isValid).toBe(true);
+
+        const wallet = keymaster.loadWallet();
+        expect(wallet.ids['Bob'].manifest.includes(did)).toEqual(true);
+    });
+
+    it('should throw an exception if user is not issuer', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, bob);
+
+        keymaster.useId('Bob');
+
+        try {
+            await keymaster.attestVC(vcdoc);
+            throw ('Expected attestVC to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Invalid VC');
+        }
+    });
+});
