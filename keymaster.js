@@ -315,14 +315,14 @@ export async function createData(data) {
     return did;
 }
 
-export async function createSchema(schema) {
+export async function createCredential(schema) {
     // TBD validate schema
     return createData(schema);
 }
 
-export async function createVC(schemaDid, subjectDid, validUntil = null) {
+export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
-    const schemaDoc = JSON.parse(await gatekeeper.resolveDid(schemaDid));
+    const schemaDoc = JSON.parse(await gatekeeper.resolveDid(credentialDid));
     const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
 
     const vc = {
@@ -330,7 +330,7 @@ export async function createVC(schemaDid, subjectDid, validUntil = null) {
             "https://www.w3.org/ns/credentials/v2",
             "https://www.w3.org/ns/credentials/examples/v2"
         ],
-        type: ["VerifiableCredential", schemaDid],
+        type: ["VerifiableCredential", credentialDid],
         issuer: id.did,
         validFrom: new Date().toISOString(),
         validUntil: validUntil,
@@ -343,7 +343,7 @@ export async function createVC(schemaDid, subjectDid, validUntil = null) {
     return vc;
 }
 
-export async function attestVC(vc) {
+export async function attestCredential(vc) {
     const id = getCurrentId();
 
     if (vc.issuer !== id.did) {
@@ -357,11 +357,11 @@ export async function attestVC(vc) {
     return cipherDid;
 }
 
-export async function revokeVC(did) {
+export async function revokeCredential(did) {
     return updateDoc(did, {});
 }
 
-export async function acceptVC(did) {
+export async function acceptCredential(did) {
     try {
         const id = getCurrentId();
         const vc = JSON.parse(await decrypt(did));

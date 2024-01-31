@@ -158,12 +158,12 @@ program
     });
 
 program
-    .command('create-schema <file>')
-    .description('Create schema from a file')
+    .command('create-credential <file>')
+    .description('Create credential from schema file')
     .action(async (file) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createSchema(schema);
+            const did = await keymaster.createCredential(schema);
             console.log(did);
         }
         catch (error) {
@@ -200,11 +200,11 @@ program
 
 
 program
-    .command('create-vc <file> <did>')
-    .description('Create verifiable credential for a DID')
+    .command('bind-credential <file> <did>')
+    .description('Create bound credential for a user')
     .action(async (file, did) => {
         try {
-            const vc = await keymaster.createVC(file, did);
+            const vc = await keymaster.bindCredential(file, did);
             console.log(JSON.stringify(vc, null, 4));
         }
         catch (error) {
@@ -213,12 +213,12 @@ program
     });
 
 program
-    .command('attest-vc <file>')
-    .description('Sign and encrypt VC')
+    .command('attest-credential <file>')
+    .description('Sign and encrypt a bound credential file')
     .action(async (file) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.attestVC(vc);
+            const did = await keymaster.attestCredential(vc);
             console.log(did);
         }
         catch (error) {
@@ -227,11 +227,11 @@ program
     });
 
 program
-    .command('revoke-vc <did>')
+    .command('revoke-credential <did>')
     .description('Revokes a verifiable credential')
     .action(async (did) => {
         try {
-            const ok = await keymaster.revokeVC(did);
+            const ok = await keymaster.revokeCredential(did);
             assert.ok(ok);
             console.log('OK revoked');
         }
@@ -241,11 +241,11 @@ program
     });
 
 program
-    .command('accept-vc <did>')
+    .command('accept-credential <did>')
     .description('Save verifiable credential for current ID')
     .action(async (did) => {
         try {
-            const ok = await keymaster.acceptVC(did);
+            const ok = await keymaster.acceptCredential(did);
             assert.ok(ok);
             console.log('OK saved');
         }

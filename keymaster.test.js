@@ -485,7 +485,7 @@ describe('verifySignature', () => {
     });
 });
 
-const mockSchema1 = {
+const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
         "email": {
@@ -499,71 +499,53 @@ const mockSchema1 = {
     "type": "object"
 };
 
-const mockSchema2 = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "service": {
-            "type": "string"
-        },
-        "account": {
-            "type": "string",
-            "format": "uri"
-        }
-    },
-    "required": [
-        "service",
-        "account"
-    ]
-};
-
-describe('createSchema', () => {
+describe('createCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should create a schema DID', async () => {
+    it('should create a credential from a schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
 
-        const did = await keymaster.createSchema(mockSchema1);
+        const did = await keymaster.createCredential(mockSchema);
         const doc = await keymaster.resolveDid(did);
 
         expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema1);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
     });
 });
 
-describe('createVC', () => {
+describe('bindCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should create a VC from a schema', async () => {
+    it('should create a bound credential', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const credentialDid = await keymaster.createCredential(mockSchema);
 
-        const vc = await keymaster.createVC(schemaDid, userDid);
+        const vc = await keymaster.bindCredential(credentialDid, userDid);
 
         expect(vc.issuer).toBe(userDid);
         expect(vc.credentialSubject.id).toBe(userDid);
         expect(vc.credential.email).toEqual(expect.any(String));
     });
 
-    it('should create a VC for a different user', async () => {
+    it('should create a bound credential for a different user', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const credentialDid = await keymaster.createCredential(mockSchema);
 
         keymaster.useId('Alice')
-        const vc = await keymaster.createVC(schemaDid, bob);
+        const vc = await keymaster.bindCredential(credentialDid, bob);
 
         expect(vc.issuer).toBe(alice);
         expect(vc.credentialSubject.id).toBe(bob);
@@ -571,20 +553,20 @@ describe('createVC', () => {
     });
 });
 
-describe('attestVC', () => {
+describe('attestCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should attest a VC when user is issuer', async () => {
+    it('should attest a bound credential when user is issuer', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, userDid);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
 
-        const did = await keymaster.attestVC(vcdoc);
+        const did = await keymaster.attestCredential(boundCredential);
 
         const vc = JSON.parse(await keymaster.decrypt(did));
         expect(vc.issuer).toBe(userDid);
@@ -606,14 +588,14 @@ describe('attestVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, bob);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
 
         keymaster.useId('Bob');
 
         try {
-            await keymaster.attestVC(vcdoc);
-            throw ('Expected attestVC to throw an exception');
+            await keymaster.attestCredential(boundCredential);
+            throw ('Expected attestCredential to throw an exception');
         }
         catch (error) {
             expect(error).toBe('Invalid VC');
@@ -621,46 +603,46 @@ describe('attestVC', () => {
     });
 });
 
-describe('revokeVC', () => {
+describe('revokeCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should revoke an valid VC', async () => {
+    it('should revoke an valid verifiable credential', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, userDid);
-        const did = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.attestCredential(boundCredential);
 
-        const ok = await keymaster.revokeVC(did);
+        const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(true);
 
         const revoked = await keymaster.resolveDid(did);
         expect(revoked).toStrictEqual({});
     });
 
-    it('should return false if VC is already revoked', async () => {
+    it('should return false if verifiable credential is already revoked', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, userDid);
-        const did = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.attestCredential(boundCredential);
 
-        const ok1 = await keymaster.revokeVC(did);
+        const ok1 = await keymaster.revokeCredential(did);
         expect(ok1).toBe(true);
 
         const revoked = await keymaster.resolveDid(did);
         expect(revoked).toStrictEqual({});
 
-        const ok2 = await keymaster.revokeVC(did);
+        const ok2 = await keymaster.revokeCredential(did);
         expect(ok2).toBe(false);
     });
 
-    it('should return false if user does not control VC', async () => {
+    it('should return false if user does not control verifiable credential', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -668,24 +650,24 @@ describe('revokeVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, bob);
-        const did = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
 
         keymaster.useId('Bob');
 
-        const ok = await keymaster.revokeVC(did);
+        const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(false);
     });
 });
 
-describe('acceptVC', () => {
+describe('acceptCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should add a valid VC to user wallet', async () => {
+    it('should add a valid verifiable credential to user wallet', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -693,13 +675,13 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, bob);
-        const did = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
 
         keymaster.useId('Bob');
 
-        const ok = await keymaster.acceptVC(did);
+        const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(true);
 
         const wallet = keymaster.loadWallet();
@@ -716,17 +698,17 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, bob);
-        const did = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
 
         keymaster.useId('Carol');
 
-        const ok = await keymaster.acceptVC(did);
+        const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(false);
     });
 
-    it('should return false if the VC is invalid', async () => {
+    it('should return false if the verifiable credential is invalid', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -734,11 +716,11 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const credentialDid = await keymaster.createCredential(mockSchema);
 
         keymaster.useId('Bob');
 
-        const ok = await keymaster.acceptVC(schemaDid);
+        const ok = await keymaster.acceptCredential(credentialDid);
         expect(ok).toBe(false);
     });
 });
@@ -757,11 +739,11 @@ describe('createChallenge', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const credentialDid = await keymaster.createCredential(mockSchema);
         const challenge = {
             credentials: [
                 {
-                    schema: schemaDid,
+                    schema: credentialDid,
                     attestors: [alice, bob]
                 }
             ]
@@ -790,13 +772,13 @@ describe('createVP', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema1);
-        const vcdoc = await keymaster.createVC(schemaDid, bob);
-        const vcDid = await keymaster.attestVC(vcdoc);
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const vcDid = await keymaster.attestCredential(boundCredential);
 
         keymaster.useId('Bob');
 
-        const ok = await keymaster.acceptVC(vcDid);
+        const ok = await keymaster.acceptCredential(vcDid);
         expect(ok).toBe(true);
 
         const wallet = keymaster.loadWallet();
@@ -808,7 +790,7 @@ describe('createVP', () => {
         const challenge = {
             credentials: [
                 {
-                    schema: schemaDid,
+                    schema: credentialDid,
                     attestors: [alice]
                 }
             ]
