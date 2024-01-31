@@ -630,3 +630,75 @@ describe('attestVC', () => {
         }
     });
 });
+
+describe('revokeVC', () => {
+
+    const mockSchema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+            "email": {
+                "format": "email",
+                "type": "string"
+            }
+        },
+        "required": [
+            "email"
+        ],
+        "type": "object"
+    };
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should revoke an valid VC', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, userDid);
+        const did = await keymaster.attestVC(vcdoc);
+
+        const ok = await keymaster.revokeVC(did);
+        expect(ok).toBe(true);
+
+        const revoked = await keymaster.resolveDid(did);
+        expect(revoked).toStrictEqual({});
+    });
+
+    it('should return false if VC is already revoked', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, userDid);
+        const did = await keymaster.attestVC(vcdoc);
+
+        const ok1 = await keymaster.revokeVC(did);
+        expect(ok1).toBe(true);
+        
+        const revoked = await keymaster.resolveDid(did);
+        expect(revoked).toStrictEqual({});
+
+        const ok2 = await keymaster.revokeVC(did);
+        expect(ok2).toBe(false);
+    });
+
+    it('should return false if user does not control VC', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, bob);
+        const did = await keymaster.attestVC(vcdoc);
+
+        keymaster.useId('Bob');
+
+        const ok = await keymaster.revokeVC(did);
+        expect(ok).toBe(false);
+    });
+});

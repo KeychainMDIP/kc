@@ -119,6 +119,10 @@ async function generateDoc(did, asof) {
 
 async function verifyUpdate(txn, doc) {
 
+    if (!doc?.didDocument) {
+        return false;
+    }
+
     if (doc.didDocument.controller) {
         const controllerDoc = await resolveDid(doc.didDocument.controller, txn.time);
         return verifyUpdate(txn, JSON.parse(controllerDoc));

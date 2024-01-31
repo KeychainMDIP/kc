@@ -218,6 +218,7 @@ export async function createId(name) {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
     const did = await gatekeeper.generateDid(keypair.publicJwk);
+
     const newId = {
         did: did,
         account: account,
@@ -229,7 +230,7 @@ export async function createId(name) {
     wallet.current = name;
     saveWallet(wallet);
 
-    return (did);
+    return did;
 }
 
 export function removeId(name) {
@@ -344,7 +345,7 @@ export async function createVC(schemaDid, subjectDid, validUntil = null) {
 
 export async function attestVC(vc) {
     const id = getCurrentId();
-    
+
     if (vc.issuer !== id.did) {
         throw 'Invalid VC';
     }
@@ -357,6 +358,7 @@ export async function attestVC(vc) {
 }
 
 export async function revokeVC(did) {
+    // TBD ensure did is a VC
     const ok = await updateDoc(did, {});
     return ok;
 }
