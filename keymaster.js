@@ -113,6 +113,16 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
+export async function encryptJSON(json, did) {
+    const plaintext = JSON.stringify(json);
+    return encrypt(plaintext, did);
+}
+
+export async function decryptJSON(did) {
+    const plaintext = await decrypt(did);
+    return JSON.parse(plaintext);
+}
+
 export async function addSignature(obj) {
     const id = getCurrentId();
     const keypair = currentKeyPair(id);
@@ -351,8 +361,7 @@ export async function attestCredential(vc) {
     }
 
     const signed = await addSignature(vc);
-    const msg = JSON.stringify(signed);
-    const cipherDid = await encrypt(msg, vc.credentialSubject.id);
+    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id);
     addToManifest(cipherDid);
     return cipherDid;
 }
@@ -364,7 +373,7 @@ export async function revokeCredential(did) {
 export async function acceptCredential(did) {
     try {
         const id = getCurrentId();
-        const vc = JSON.parse(await decrypt(did));
+        const vc = await decryptJSON(did);
 
         if (vc.credentialSubject.id !== id.did) {
             throw 'VC not valid or not assigned to this ID';
@@ -396,8 +405,7 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
         validUntil: expires.toISOString(),
     };
     const signed = await addSignature(issue);
-    const msg = JSON.stringify(signed);
-    const cipherDid = await encrypt(msg, user);
+    const cipherDid = await encryptJSON(signed, user);
     return cipherDid;
 }
 
@@ -409,7 +417,7 @@ async function findMatchingCredential(credential) {
     for (let did of id.manifest) {
         // console.log('manifest', did);
         try {
-            const doc = JSON.parse(await decrypt(did));
+            const doc = await decryptJSON(did);
 
             // console.log(doc);
 
@@ -457,7 +465,7 @@ async function findMatchingCredential(credential) {
 
 export async function createVP(did) {
     const id = getCurrentId();
-    const wrapper = JSON.parse(await decrypt(did));
+    const wrapper = await decryptJSON(did);
 
     //console.log(wrapper);
 
@@ -528,7 +536,7 @@ export async function verifyVP(did) {
             throw 'cannot verify (VP does not match VC)';
         }
 
-        const vp = JSON.parse(await decrypt(credential.vp));
+        const vp = await decryptJSON(credential.vp);
         const isValid = await verifySignature(vp);
 
         if (!isValid) {

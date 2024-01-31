@@ -342,6 +342,49 @@ describe('decrypt', () => {
     });
 });
 
+
+const mockJson = {
+    key: "value",
+    list: [1, 2, 3],
+    obj: { name: "some object" }
+};
+
+describe('encryptJSON', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should encrypt valid JSON', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const bobDoc = await keymaster.resolveDid(bob);
+
+        const did = await keymaster.encryptJSON(mockJson, bob);
+        const doc = await keymaster.resolveDid(did);
+
+        expect(doc.didDocumentMetadata.data.sender).toStrictEqual(bob);
+    });
+});
+
+describe('decryptJSON', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should decrypt valid JSON', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.encryptJSON(mockJson, bob);
+        const decipher = await keymaster.decryptJSON(did);
+
+        expect(decipher).toStrictEqual(mockJson);
+    });
+});
+
 describe('addSignature', () => {
 
     afterEach(() => {
@@ -568,7 +611,7 @@ describe('attestCredential', () => {
 
         const did = await keymaster.attestCredential(boundCredential);
 
-        const vc = JSON.parse(await keymaster.decrypt(did));
+        const vc = await keymaster.decryptJSON(did);
         expect(vc.issuer).toBe(userDid);
         expect(vc.credentialSubject.id).toBe(userDid);
         expect(vc.credential.email).toEqual(expect.any(String));
@@ -754,6 +797,49 @@ describe('createChallenge', () => {
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
         expect(doc.didDocumentMetadata.data).toStrictEqual(challenge);
+    });
+});
+
+describe('issueChallenge', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a challenge bound to a user', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const challenge = {
+            credentials: [
+                {
+                    schema: credentialDid,
+                    attestors: [alice, bob]
+                }
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeForBob = await keymaster.issueChallenge(challengeDid, bob);
+        const boundChallenge = await keymaster.decryptJSON(challengeForBob);
+
+        expect(boundChallenge.challenge).toBe(challengeDid);
+        expect(boundChallenge.from).toBe(alice);
+        expect(boundChallenge.to).toBe(bob);
+
+        const isValid = await keymaster.verifySignature(boundChallenge);
+        expect(isValid).toBe(true);
+
+        const validFrom = new Date(boundChallenge.validFrom);
+        const validUntil = new Date(boundChallenge.validUntil);
+        const now = new Date();
+
+        expect(validFrom < now).toBe(true);
+        expect(validUntil > now).toBe(true);
     });
 });
 
