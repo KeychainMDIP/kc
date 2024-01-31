@@ -485,6 +485,38 @@ describe('verifySignature', () => {
     });
 });
 
+const mockSchema1 = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+        "email": {
+            "format": "email",
+            "type": "string"
+        }
+    },
+    "required": [
+        "email"
+    ],
+    "type": "object"
+};
+
+const mockSchema2 = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "service": {
+            "type": "string"
+        },
+        "account": {
+            "type": "string",
+            "format": "uri"
+        }
+    },
+    "required": [
+        "service",
+        "account"
+    ]
+};
+
 describe('createSchema', () => {
 
     afterEach(() => {
@@ -494,45 +526,17 @@ describe('createSchema', () => {
     it('should create a schema DID', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "properties": {
-                "email": {
-                    "format": "email",
-                    "type": "string"
-                }
-            },
-            "required": [
-                "email"
-            ],
-            "type": "object"
-        };
-
         await keymaster.createId('Bob');
 
-        const did = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.createSchema(mockSchema1);
         const doc = await keymaster.resolveDid(did);
 
         expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema1);
     });
 });
 
 describe('createVC', () => {
-
-    const mockSchema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "properties": {
-            "email": {
-                "format": "email",
-                "type": "string"
-            }
-        },
-        "required": [
-            "email"
-        ],
-        "type": "object"
-    };
 
     afterEach(() => {
         mockFs.restore();
@@ -542,7 +546,7 @@ describe('createVC', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
 
         const vc = await keymaster.createVC(schemaDid, userDid);
 
@@ -556,7 +560,7 @@ describe('createVC', () => {
 
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
 
         keymaster.useId('Alice')
         const vc = await keymaster.createVC(schemaDid, bob);
@@ -569,20 +573,6 @@ describe('createVC', () => {
 
 describe('attestVC', () => {
 
-    const mockSchema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "properties": {
-            "email": {
-                "format": "email",
-                "type": "string"
-            }
-        },
-        "required": [
-            "email"
-        ],
-        "type": "object"
-    };
-
     afterEach(() => {
         mockFs.restore();
     });
@@ -591,7 +581,7 @@ describe('attestVC', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, userDid);
 
         const did = await keymaster.attestVC(vcdoc);
@@ -616,7 +606,7 @@ describe('attestVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, bob);
 
         keymaster.useId('Bob');
@@ -633,20 +623,6 @@ describe('attestVC', () => {
 
 describe('revokeVC', () => {
 
-    const mockSchema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "properties": {
-            "email": {
-                "format": "email",
-                "type": "string"
-            }
-        },
-        "required": [
-            "email"
-        ],
-        "type": "object"
-    };
-
     afterEach(() => {
         mockFs.restore();
     });
@@ -655,7 +631,7 @@ describe('revokeVC', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, userDid);
         const did = await keymaster.attestVC(vcdoc);
 
@@ -670,7 +646,7 @@ describe('revokeVC', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, userDid);
         const did = await keymaster.attestVC(vcdoc);
 
@@ -692,7 +668,7 @@ describe('revokeVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, bob);
         const did = await keymaster.attestVC(vcdoc);
 
@@ -704,20 +680,6 @@ describe('revokeVC', () => {
 });
 
 describe('acceptVC', () => {
-
-    const mockSchema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "properties": {
-            "email": {
-                "format": "email",
-                "type": "string"
-            }
-        },
-        "required": [
-            "email"
-        ],
-        "type": "object"
-    };
 
     afterEach(() => {
         mockFs.restore();
@@ -731,7 +693,7 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, bob);
         const did = await keymaster.attestVC(vcdoc);
 
@@ -754,7 +716,7 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
         const vcdoc = await keymaster.createVC(schemaDid, bob);
         const did = await keymaster.attestVC(vcdoc);
 
@@ -772,11 +734,43 @@ describe('acceptVC', () => {
 
         keymaster.useId('Alice');
 
-        const schemaDid = await keymaster.createSchema(mockSchema);
+        const schemaDid = await keymaster.createSchema(mockSchema1);
 
         keymaster.useId('Bob');
 
         const ok = await keymaster.acceptVC(schemaDid);
         expect(ok).toBe(false);
+    });
+});
+
+describe('createChallenge', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a valid challenge', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const challenge = {
+            credentials: [
+                {
+                    schema: schemaDid,
+                    attestors: [alice, bob]
+                }
+            ]
+        };
+        const did = await keymaster.createChallenge(challenge);
+        const doc = await keymaster.resolveDid(did);
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(challenge);
     });
 });
