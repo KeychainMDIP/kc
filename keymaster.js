@@ -404,10 +404,10 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
 async function findMatchingCredential(credential) {
     const id = getCurrentId();
 
-    console.log(credential);
+    //console.log(credential);
 
     for (let did of id.manifest) {
-        console.log('manifest', did);
+        // console.log('manifest', did);
         try {
             const doc = JSON.parse(await decrypt(did));
 
@@ -415,20 +415,20 @@ async function findMatchingCredential(credential) {
 
             if (!doc.issuer) {
                 // Not a VC
-                console.log('not a VC');
+                //console.log('not a VC');
                 continue;
             }
 
             if (doc.credentialSubject?.id !== id.did) {
                 // This VC is issued by the ID, not held
-                console.log('VC not held by me');
+                //console.log('VC not held by me');
                 continue;
             }
 
             if (credential.attestors) {
                 if (!credential.attestors.includes(doc.issuer)) {
                     // Attestor not trusted by Verifier
-                    console.log('attestor not trusted');
+                    //console.log('attestor not trusted');
                     continue;
                 }
             }
@@ -436,15 +436,15 @@ async function findMatchingCredential(credential) {
             if (doc.type) {
                 if (!doc.type.includes(credential.schema)) {
                     // Wrong type
-                    console.log('wrong VC schema');
+                    //console.log('wrong VC schema');
                     continue;
                 }
             }
 
             // TBD test for VC expiry too
 
-            console.log('types', doc.type);
-            console.log('issuer', doc.issuer);
+            //console.log('types', doc.type);
+            //console.log('issuer', doc.issuer);
 
             return did;
         }
@@ -477,7 +477,7 @@ export async function createVP(did) {
 
     for (let credential of credentials) {
         const vc = await findMatchingCredential(credential);
-        console.log('found', did);
+        //console.log('found', did);
         if (vc) {
             matches.push(vc);
         }
@@ -487,8 +487,8 @@ export async function createVP(did) {
         throw "VCs don't match challenge";
     }
 
-    console.log(wrapper);
-    console.log(matches);
+    //console.log(wrapper);
+    //console.log(matches);
 
     const pairs = [];
 
@@ -506,7 +506,7 @@ export async function createVP(did) {
         }
     };
 
-    console.log(vp);
+    //console.log(vp);
 
     // Do we want to use createData here and add to our manifest or not?
     const wrapperDid = await gatekeeper.generateDid(vp);

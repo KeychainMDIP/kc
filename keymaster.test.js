@@ -774,3 +774,55 @@ describe('createChallenge', () => {
         expect(doc.didDocumentMetadata.data).toStrictEqual(challenge);
     });
 });
+
+describe('createVP', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a valid VP from a challenge', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const victor = await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema1);
+        const vcdoc = await keymaster.createVC(schemaDid, bob);
+        const vcDid = await keymaster.attestVC(vcdoc);
+
+        keymaster.useId('Bob');
+
+        const ok = await keymaster.acceptVC(vcDid);
+        expect(ok).toBe(true);
+
+        const wallet = keymaster.loadWallet();
+        expect(wallet.ids['Alice'].manifest.includes(vcDid));
+        expect(wallet.ids['Bob'].manifest.includes(vcDid));
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: schemaDid,
+                    attestors: [alice]
+                }
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeForBob = await keymaster.issueChallenge(challengeDid, bob);
+
+        keymaster.useId('Bob');
+        const vpDid = await keymaster.createVP(challengeForBob);
+        const vpDoc = await keymaster.resolveDid(vpDid);
+        const data = vpDoc.didDocumentMetadata.data;
+
+        expect(data.challenge).toBe(challengeForBob);
+        expect(data.credentials.length).toBe(1);
+        expect(data.credentials[0].vc).toBe(vcDid);
+    });
+});
