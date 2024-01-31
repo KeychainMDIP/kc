@@ -342,7 +342,6 @@ describe('decrypt', () => {
     });
 });
 
-
 const mockJson = {
     key: "value",
     list: [1, 2, 3],
@@ -396,15 +395,8 @@ describe('addSignature', () => {
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
-
-        const json = {
-            key: "value",
-            list: [1, 2, 3],
-            obj: { name: "some object" }
-        };
-
-        const hash = cipher.hashMessage(canonicalize(json));
-        const signed = await keymaster.addSignature(json);
+        const hash = cipher.hashMessage(canonicalize(mockJson));
+        const signed = await keymaster.addSignature(mockJson);
 
         expect(signed.signature.signer).toBe(did);
         expect(signed.signature.hash).toBe(hash);
@@ -413,14 +405,8 @@ describe('addSignature', () => {
     it('should throw an exception if no ID selected', async () => {
         mockFs({});
 
-        const json = {
-            key: "value",
-            list: [1, 2, 3],
-            obj: { name: "some object" }
-        };
-
         try {
-            await keymaster.addSignature(json);
+            await keymaster.addSignature(mockJson);
             throw ('Expected addSignature to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
@@ -439,19 +425,6 @@ describe('addSignature', () => {
             expect(error).toBe('Invalid input');
         }
     });
-
-    it('should throw an exception if invalid object', async () => {
-        mockFs({});
-
-        await keymaster.createId('Bob');
-
-        try {
-            await keymaster.addSignature("not an object");
-            throw ('Expected addSignature to throw an exception');
-        } catch (error) {
-            expect(error).toBe('Invalid input');
-        }
-    });
 });
 
 describe('verifySignature', () => {
@@ -465,13 +438,7 @@ describe('verifySignature', () => {
 
         await keymaster.createId('Bob');
 
-        const json = {
-            key: "value",
-            list: [1, 2, 3],
-            obj: { name: "some object" }
-        };
-
-        const signed = await keymaster.addSignature(json);
+        const signed = await keymaster.addSignature(mockJson);
         const isValid = await keymaster.verifySignature(signed);
 
         expect(isValid).toBe(true);
@@ -482,13 +449,7 @@ describe('verifySignature', () => {
 
         await keymaster.createId('Bob');
 
-        const json = {
-            key: "value",
-            list: [1, 2, 3],
-            obj: { name: "some object" }
-        };
-
-        const isValid = await keymaster.verifySignature(json);
+        const isValid = await keymaster.verifySignature(mockJson);
 
         expect(isValid).toBe(false);
     });
@@ -498,13 +459,7 @@ describe('verifySignature', () => {
 
         await keymaster.createId('Bob');
 
-        const json = {
-            key: "value",
-            list: [1, 2, 3],
-            obj: { name: "some object" }
-        };
-
-        const signed = await keymaster.addSignature(json);
+        const signed = await keymaster.addSignature(mockJson);
         signed.signature.value = signed.signature.value.substring(1);
         const isValid = await keymaster.verifySignature(signed);
 

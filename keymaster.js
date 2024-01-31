@@ -131,13 +131,16 @@ export async function addSignature(obj) {
         const msg = canonicalize(obj);
         const msgHash = cipher.hashMessage(msg);
         const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-        obj.signature = {
-            signer: id.did,
-            created: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
+
+        return {
+            ...obj,
+            signature: {
+                signer: id.did,
+                created: new Date().toISOString(),
+                hash: msgHash,
+                value: signature,
+            }
         };
-        return obj;
     }
     catch (error) {
         throw 'Invalid input';
