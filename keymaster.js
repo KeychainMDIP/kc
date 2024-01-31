@@ -358,9 +358,7 @@ export async function attestVC(vc) {
 }
 
 export async function revokeVC(did) {
-    // TBD ensure did is a VC
-    const ok = await updateDoc(did, {});
-    return ok;
+    return updateDoc(did, {});
 }
 
 export async function acceptVC(did) {
