@@ -177,22 +177,27 @@ export async function resolveDid(did, asof = null) {
 }
 
 export async function updateDoc(txn) {
-    const doc = JSON.parse(await resolveDid(txn.did));
-    const updateValid = await verifyUpdate(txn, doc);
+    try {
+        const doc = JSON.parse(await resolveDid(txn.did));
+        const updateValid = await verifyUpdate(txn, doc);
 
-    if (!updateValid) {
+        if (!updateValid) {
+            return false;
+        }
+
+        const db = loadDb();
+
+        if (db.hasOwnProperty(txn.did)) {
+            db[txn.did].push(txn);
+        }
+        else {
+            db[txn.did] = [txn];
+        }
+
+        writeDb(db);
+        return true;
+    }
+    catch (error) {
         return false;
     }
-
-    const db = loadDb();
-
-    if (db.hasOwnProperty(txn.did)) {
-        db[txn.did].push(txn);
-    }
-    else {
-        db[txn.did] = [txn];
-    }
-
-    writeDb(db);
-    return true;
 }
