@@ -798,13 +798,13 @@ describe('issueChallenge', () => {
     });
 });
 
-describe('createVP', () => {
+describe('createPresentation', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should create a valid VP from a challenge', async () => {
+    it('should create a valid presentation from a simple challenge', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -840,12 +840,95 @@ describe('createVP', () => {
         const challengeForBob = await keymaster.issueChallenge(challengeDid, bob);
 
         keymaster.useId('Bob');
-        const vpDid = await keymaster.createVP(challengeForBob);
+        const vpDid = await keymaster.createPresentation(challengeForBob);
         const vpDoc = await keymaster.resolveDid(vpDid);
         const data = vpDoc.didDocumentMetadata.data;
 
         expect(data.challenge).toBe(challengeForBob);
         expect(data.credentials.length).toBe(1);
         expect(data.credentials[0].vc).toBe(vcDid);
+    });
+});
+
+describe('verifyPresentation', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a valid presentation from a complex challenge', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const credential1 = await keymaster.createCredential(mockSchema);
+        const credential2 = await keymaster.createCredential(mockSchema);
+
+        const bc1 = await keymaster.bindCredential(credential1, carol);
+        const bc2 = await keymaster.bindCredential(credential2, carol);
+
+        const vc1 = await keymaster.attestCredential(bc1);
+        const vc2 = await keymaster.attestCredential(bc2);
+
+        keymaster.useId('Bob');
+
+        const credential3 = await keymaster.createCredential(mockSchema);
+        const credential4 = await keymaster.createCredential(mockSchema);
+
+        const bc3 = await keymaster.bindCredential(credential3, carol);
+        const bc4 = await keymaster.bindCredential(credential4, carol);
+
+        const vc3 = await keymaster.attestCredential(bc3);
+        const vc4 = await keymaster.attestCredential(bc4);
+
+        keymaster.useId('Carol');
+
+        await keymaster.acceptCredential(vc1);
+        await keymaster.acceptCredential(vc2);
+        await keymaster.acceptCredential(vc3);
+        await keymaster.acceptCredential(vc4);
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                    attestors: [alice]
+                },
+                {
+                    schema: credential2,
+                    attestors: [alice]
+                },
+                {
+                    schema: credential3,
+                    attestors: [bob]
+                },
+                {
+                    schema: credential4,
+                    attestors: [bob]
+                },
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeForCarol = await keymaster.issueChallenge(challengeDid, carol);
+
+        keymaster.useId('Carol');
+        const vpDid = await keymaster.createPresentation(challengeForCarol);
+        const vpDoc = await keymaster.resolveDid(vpDid);
+        const data = vpDoc.didDocumentMetadata.data;
+
+        expect(data.challenge).toBe(challengeForCarol);
+        expect(data.credentials.length).toBe(4);
+
+        keymaster.useId('Victor');
+
+        const vcList = await keymaster.verifyPresentation(vpDid);
+        expect(vcList.length).toBe(4);
     });
 });
