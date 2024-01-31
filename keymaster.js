@@ -364,14 +364,19 @@ export async function revokeVC(did) {
 }
 
 export async function acceptVC(did) {
-    const id = getCurrentId();
-    const vc = JSON.parse(await decrypt(did));
+    try {
+        const id = getCurrentId();
+        const vc = JSON.parse(await decrypt(did));
 
-    if (vc.credentialSubject.id !== id.did) {
-        throw 'VC not valid or not assigned to this ID';
+        if (vc.credentialSubject.id !== id.did) {
+            throw 'VC not valid or not assigned to this ID';
+        }
+
+        return addToManifest(did);
     }
-
-    return addToManifest(did);
+    catch (error) {
+        return false;
+    }
 }
 
 export async function createChallenge(challenge) {

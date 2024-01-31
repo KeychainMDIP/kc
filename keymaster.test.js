@@ -676,7 +676,7 @@ describe('revokeVC', () => {
 
         const ok1 = await keymaster.revokeVC(did);
         expect(ok1).toBe(true);
-        
+
         const revoked = await keymaster.resolveDid(did);
         expect(revoked).toStrictEqual({});
 
@@ -699,6 +699,84 @@ describe('revokeVC', () => {
         keymaster.useId('Bob');
 
         const ok = await keymaster.revokeVC(did);
+        expect(ok).toBe(false);
+    });
+});
+
+describe('acceptVC', () => {
+
+    const mockSchema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+            "email": {
+                "format": "email",
+                "type": "string"
+            }
+        },
+        "required": [
+            "email"
+        ],
+        "type": "object"
+    };
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should add a valid VC to user wallet', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, bob);
+        const did = await keymaster.attestVC(vcdoc);
+
+        keymaster.useId('Bob');
+
+        const ok = await keymaster.acceptVC(did);
+        expect(ok).toBe(true);
+
+        const wallet = keymaster.loadWallet();
+        expect(wallet.ids['Alice'].manifest.includes(did));
+        expect(wallet.ids['Bob'].manifest.includes(did));
+    });
+
+    it('should return false if user is not the credential subject', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const vcdoc = await keymaster.createVC(schemaDid, bob);
+        const did = await keymaster.attestVC(vcdoc);
+
+        keymaster.useId('Carol');
+
+        const ok = await keymaster.acceptVC(did);
+        expect(ok).toBe(false);
+    });
+
+    it('should return false if the VC is invalid', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+
+        const schemaDid = await keymaster.createSchema(mockSchema);
+
+        keymaster.useId('Bob');
+
+        const ok = await keymaster.acceptVC(schemaDid);
         expect(ok).toBe(false);
     });
 });
