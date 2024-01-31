@@ -9,7 +9,7 @@ import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 
-function generateJwk(privateKeyBytes) {
+export function generateJwk(privateKeyBytes) {
     const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
     const compressedPublicKeyHex = secp.etc.bytesToHex(compressedPublicKeyBytes);
     const curvePoints = secp.ProjectivePoint.fromHex(compressedPublicKeyHex);
@@ -36,7 +36,7 @@ function generateJwk(privateKeyBytes) {
     return { publicJwk: publicJwk, privateJwk: privateJwk };
 }
 
-function convertJwkToCompressedBytes(jwk) {
+export function convertJwkToCompressedBytes(jwk) {
     const xBytes = base64url.baseDecode(jwk.x);
     const yBytes = base64url.baseDecode(jwk.y);
 
@@ -47,27 +47,27 @@ function convertJwkToCompressedBytes(jwk) {
     return new Uint8Array([prefix, ...xBytes]);
 }
 
-function hashMessage(msg) {
+export function hashMessage(msg) {
     const hash = sha256(msg);
     const msgHash = Buffer.from(hash).toString('hex');
     return msgHash;
 }
 
-async function signHash(msgHash, privateJwk) {
+export async function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
     const signature = await secp.signAsync(msgHash, privKey);
     const sigHex = signature.toCompactHex();
     return sigHex;
 }
 
-function verifySig(msgHash, sigHex, publicJwk) {
+export function verifySig(msgHash, sigHex, publicJwk) {
     const compressedPublicKeyBytes = convertJwkToCompressedBytes(publicJwk);
     const signature = secp.Signature.fromCompact(sigHex);
     const isValid = secp.verify(signature, msgHash, compressedPublicKeyBytes);
     return isValid;
 }
 
-function encryptMessage(pubKey, privKey, message) {
+export function encryptMessage(pubKey, privKey, message) {
     const priv = base64url.baseDecode(privKey.d);
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
@@ -79,7 +79,7 @@ function encryptMessage(pubKey, privKey, message) {
     return base64url.baseEncode(ciphertext);
 }
 
-function decryptMessage(pubKey, privKey, ciphertext) {
+export function decryptMessage(pubKey, privKey, ciphertext) {
     const priv = base64url.baseDecode(privKey.d);
     const pub = convertJwkToCompressedBytes(pubKey);
     const ss = secp.getSharedSecret(priv, pub);
@@ -89,13 +89,4 @@ function decryptMessage(pubKey, privKey, ciphertext) {
     const data = chacha.decrypt(cipherdata);
 
     return bytesToUtf8(data);
-}
-
-export {
-    generateJwk,
-    hashMessage,
-    signHash,
-    verifySig,
-    encryptMessage,
-    decryptMessage,
 }
