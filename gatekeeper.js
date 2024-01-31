@@ -23,16 +23,23 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-export async function generateDid(jsonData) {
+export async function generateDid(anchor) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
-    const cid = await j.add(JSON.parse(canonicalize(jsonData)));
+    const seed = {
+        mdip: {
+            version: 1,
+            created: new Date().toISOString(),
+        },
+        anchor: anchor,
+    };
+    const cid = await j.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
     helia.stop();
     return did;
 }
 
-async function generateDoc(did) {
+async function generateDoc(did, asof) {
     const helia = await createHelia({ blockstore });
     try {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
@@ -44,7 +51,19 @@ async function generateDoc(did) {
             return {}; // not found error
         }
 
-        if (docSeed.kty) { // Agent DID
+        if (!docSeed.mdip) {
+            return {}; // not an MDIP seed
+        }
+
+        if (docSeed.mdip.version != 1) {
+            return {}; // unknown version
+        }
+
+        if (asof && new Date(docSeed.mdip.created) < new Date(asof)) {
+            return {}; // DID was not yet created
+        }
+
+        if (docSeed.anchor.kty) { // Agent DID
             // TBD support different key types?
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
@@ -56,28 +75,32 @@ async function generateDoc(did) {
                             "id": "#key-1",
                             "controller": did,
                             "type": "EcdsaSecp256k1VerificationKey2019",
-                            "publicKeyJwk": docSeed,
+                            "publicKeyJwk": docSeed.anchor,
                         }
                     ],
                     "authentication": [
                         "#key-1"
                     ],
+                },
+                "didDocumentMetadata": {
+                    "mdip": docSeed.mdip,
                 }
             };
 
             return doc;
         }
 
-        if (docSeed.data) { // Data DID
+        if (docSeed.anchor.data) { // Data DID
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
                     "id": did,
-                    "controller": docSeed.controller,
+                    "controller": docSeed.anchor.controller,
                 },
                 "didDocumentMetadata": {
-                    "data": docSeed.data,
+                    "mdip": docSeed.mdip,
+                    "data": docSeed.anchor.data,
                 }
             };
 
