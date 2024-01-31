@@ -128,6 +128,49 @@ describe('resolveDid', () => {
     });
 });
 
+describe('rotateKeys', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should decrypt messages encrypted with rotating keys', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const secrets = [];
+        const msg = "Hi Bob!";
+
+        keymaster.useId('Alice');
+
+        for(let i = 0; i < 10; i++) {
+            keymaster.useId('Alice');
+
+            const did = await keymaster.encrypt(msg, bob);
+            secrets.push(did);
+
+            await keymaster.rotateKeys();
+
+            keymaster.useId('Bob');
+            await keymaster.rotateKeys();
+        }
+
+        for(let secret of secrets) {
+            keymaster.useId('Alice');
+
+            const decipher1 = await keymaster.decrypt(secret);
+            expect(decipher1).toBe(msg);
+
+            keymaster.useId('Bob');
+
+            const decipher2 = await keymaster.decrypt(secret);
+            expect(decipher2).toBe(msg);
+        }
+    });
+});
+
+
 describe('createData', () => {
 
     afterEach(() => {
