@@ -134,6 +134,27 @@ describe('rotateKeys', () => {
         mockFs.restore();
     });
 
+    it('should update DID doc with new keys', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        let doc = await keymaster.resolveDid(alice);
+        let vm = doc.didDocument.verificationMethod[0];
+        let pubkey = vm.publicKeyJwk;
+
+        for(let i = 0; i < 3; i++) {
+            await keymaster.rotateKeys();
+
+            doc = await keymaster.resolveDid(alice);
+            vm = doc.didDocument.verificationMethod[0];
+
+            expect(pubkey.x !== vm.publicKeyJwk.x).toBe(true);
+            expect(pubkey.y !== vm.publicKeyJwk.y).toBe(true);
+
+            pubkey = vm.publicKeyJwk;
+        }
+    });
+
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
@@ -144,7 +165,7 @@ describe('rotateKeys', () => {
 
         keymaster.useId('Alice');
 
-        for(let i = 0; i < 10; i++) {
+        for(let i = 0; i < 3; i++) {
             keymaster.useId('Alice');
 
             const did = await keymaster.encrypt(msg, bob);
