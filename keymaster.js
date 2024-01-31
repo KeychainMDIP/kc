@@ -507,6 +507,12 @@ export async function verifyPresentation(did) {
     for (let credential of credentials) {
         const vcdoc = JSON.parse(await gatekeeper.resolveDid(credential.vc));
         const vpdoc = JSON.parse(await gatekeeper.resolveDid(credential.vp));
+
+        if (!vcdoc?.didDocumentMetadata) {
+            // VC has been revoked!
+            continue;
+        }
+
         const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
         const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
 

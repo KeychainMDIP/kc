@@ -856,7 +856,7 @@ describe('verifyPresentation', () => {
         mockFs.restore();
     });
 
-    it('should create a valid presentation from a complex challenge', async () => {
+    it('should demonstrate full workflow', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -930,5 +930,35 @@ describe('verifyPresentation', () => {
 
         const vcList = await keymaster.verifyPresentation(vpDid);
         expect(vcList.length).toBe(4);
+
+        // All agents rotate keys
+        keymaster.useId('Alice');
+        await keymaster.rotateKeys();
+
+        keymaster.useId('Bob');
+        await keymaster.rotateKeys();
+
+        keymaster.useId('Carol');
+        await keymaster.rotateKeys();
+
+        keymaster.useId('Victor');
+        await keymaster.rotateKeys();
+
+        const vcList2 = await keymaster.verifyPresentation(vpDid);
+        expect(vcList2.length).toBe(4);
+
+        keymaster.useId('Alice');
+        await keymaster.revokeCredential(vc1);
+
+        keymaster.useId('Victor');
+        const vcList3 = await keymaster.verifyPresentation(vpDid);
+        expect(vcList3.length).toBe(3);
+
+        keymaster.useId('Bob');
+        await keymaster.revokeCredential(vc3);
+
+        keymaster.useId('Victor');
+        const vcList4 = await keymaster.verifyPresentation(vpDid);
+        expect(vcList4.length).toBe(2);
     });
 });
