@@ -454,7 +454,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createPresentation(did) {
+export async function createResponse(did) {
     const id = getCurrentId();
     const boundChallenge = await decryptJSON(did);
 
@@ -495,13 +495,13 @@ export async function createPresentation(did) {
     };
 
     // Do we want to use createData here and add to our manifest or not?
-    const vpDid = await gatekeeper.generateDid(vp);
-    return vpDid;
+    const responseDid = await gatekeeper.generateDid(vp);
+    return responseDid;
 }
 
-export async function verifyPresentation(did) {
-    const vpsdoc = JSON.parse(await gatekeeper.resolveDid(did));
-    const credentials = vpsdoc.didDocumentMetadata.data.credentials;
+export async function verifyResponse(did) {
+    const responseDoc = JSON.parse(await gatekeeper.resolveDid(did));
+    const credentials = responseDoc.didDocumentMetadata.data.credentials;
     const vps = [];
 
     for (let credential of credentials) {
@@ -530,7 +530,7 @@ export async function verifyPresentation(did) {
         vps.push(vp);
     }
 
-    const challengeDid = vpsdoc.didDocumentMetadata.data.challenge;
+    const challengeDid = responseDoc.didDocumentMetadata.data.challenge;
     const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
     // TBD ensure VPs match challenge
 

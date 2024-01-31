@@ -259,7 +259,7 @@ program
     .description('Create a Verifiable Presentation from a challenge')
     .action(async (challenge) => {
         try {
-            const did = await keymaster.createPresentation(challenge);
+            const did = await keymaster.createResponse(challenge);
             console.log(did);
         }
         catch (error) {
@@ -272,7 +272,7 @@ program
     .description('Decrypt and validate a Verifiable Presentation')
     .action(async (did) => {
         try {
-            const vp = await keymaster.verifyPresentation(did);
+            const vp = await keymaster.verifyResponse(did);
             console.log(JSON.stringify(vp, null, 4));
         }
         catch (error) {
