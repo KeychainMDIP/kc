@@ -186,6 +186,20 @@ program
     });
 
 program
+    .command('create-challenge-cc <did>')
+    .description('Create challenge from a credential DID')
+    .action(async (credential) => {
+        try {
+            const challenge = { credentials: [{ schema: credential }] };
+            const did = await keymaster.createChallenge(challenge);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('issue-challenge <challenge> <user>')
     .description('Issue a challenge to a user')
     .action(async (challenge, user) => {
@@ -255,7 +269,7 @@ program
     });
 
 program
-    .command('create-vp <challenge>')
+    .command('create-response <challenge>')
     .description('Create a Verifiable Presentation from a challenge')
     .action(async (challenge) => {
         try {
@@ -268,7 +282,7 @@ program
     });
 
 program
-    .command('verify-vp <did>')
+    .command('verify-response <did>')
     .description('Decrypt and validate a Verifiable Presentation')
     .action(async (did) => {
         try {
