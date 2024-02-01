@@ -24,6 +24,11 @@ function writeDb(db) {
 }
 
 export async function generateDid(anchor) {
+
+    if (!anchor) {
+        throw "Invalid anchor";
+    }
+
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
