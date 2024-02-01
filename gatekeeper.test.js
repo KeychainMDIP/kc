@@ -29,3 +29,23 @@ describe('generateDid', () => {
         }
     });
 });
+
+describe('resolveDid', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a valid DID with a valid Document', async () => {
+        mockFs({});
+
+        const mockAnchor = { controller: "mockController", data: "mockAnchor" };
+        const did = await gatekeeper.generateDid(mockAnchor);
+        const doc = JSON.parse(await gatekeeper.resolveDid(did));
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument.controller).toBe(mockAnchor.controller);
+        expect(doc.didDocumentMetadata.mdip.version).toBe(1);
+        expect(doc.didDocumentMetadata.data).toBe(mockAnchor.data);
+    });
+});
