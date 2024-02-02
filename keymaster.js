@@ -66,15 +66,12 @@ export async function encrypt(msg, did) {
     const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
-    const cipherDid = await gatekeeper.generateDid({
-        controller: id.did,
-        data: {
-            sender: id.did,
-            created: new Date().toISOString(),
-            cipher_hash: msgHash,
-            cipher_sender: cipher_sender,
-            cipher_receiver: cipher_receiver,
-        }
+    const cipherDid = await createData({
+        sender: id.did,
+        created: new Date().toISOString(),
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
     });
 
     return cipherDid;
@@ -230,7 +227,23 @@ export async function createId(name) {
     const path = `m/44'/0'/${account}'/0/${index}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
-    const did = await gatekeeper.generateDid(keypair.publicJwk);
+
+    const txn = {
+        op: "create",
+        registry: "tBTC",
+        publicJwk: keypair.publicJwk,
+    };
+
+    const msg = canonicalize(txn);
+    const msgHash = cipher.hashMessage(msg);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+
+    const signed = {
+        ...txn,
+        signature: signature
+    };
+
+    const did = await gatekeeper.createAgent(signed);
 
     const newId = {
         did: did,
@@ -319,10 +332,16 @@ export async function createData(data) {
     }
 
     const id = getCurrentId();
-    const did = await gatekeeper.generateDid({
+
+    const txn = {
+        op: "create",
+        registry: "tBTC",
         controller: id.did,
         data: data,
-    });
+    };
+
+    const signed = await addSignature(txn);
+    const did = await gatekeeper.createAsset(signed);
 
     addToManifest(did);
     return did;
@@ -486,16 +505,11 @@ export async function createResponse(did) {
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
-    const vp = {
-        controller: id.did,
-        data: {
-            challenge: did,
-            credentials: pairs,
-        }
-    };
+    const responseDid = await createData({
+        challenge: did,
+        credentials: pairs,
+    });
 
-    // Do we want to use createData here and add to our manifest or not?
-    const responseDid = await gatekeeper.generateDid(vp);
     return responseDid;
 }
 

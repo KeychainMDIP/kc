@@ -23,6 +23,91 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
+export async function createAgent(txn) {
+    if (!txn?.signature) {
+        throw "Invalid txn";
+    }
+
+    if (txn.op !== "create") {
+        throw "Invalid txn";
+    }
+
+    const signature = txn.signature;
+    delete txn.signature;
+
+    const msg = canonicalize(txn);
+    const msgHash = cipher.hashMessage(msg);
+    const isValid = cipher.verifySig(msgHash, signature, txn.publicJwk);
+
+    if (!isValid) {
+        throw "Invalid txn";
+    }
+
+    const helia = await createHelia({ blockstore });
+    const j = json(helia);
+    const seed = {
+        mdip: {
+            version: 1,
+            created: new Date().toISOString(),
+            registry: txn.registry,
+            type: "agent",
+        },
+        anchor: txn.publicJwk,
+    };
+    const cid = await j.add(JSON.parse(canonicalize(seed)));
+    const did = `did:mdip:${cid.toString(base58btc)}`;
+
+    helia.stop();
+
+    return did;
+}
+
+export async function createAsset(txn) {
+    if (!txn?.signature) {
+        throw "Invalid txn";
+    }
+
+    if (txn.op !== "create") {
+        throw "Invalid txn";
+    }
+
+    if (txn.controller !== txn.signature.signer) {
+        throw "Invalid txn";
+    }
+
+    const doc = JSON.parse(await resolveDid(txn.controller));
+
+    const signature = txn.signature;
+    delete txn.signature;
+
+    const msg = canonicalize(txn);
+    const msgHash = cipher.hashMessage(msg);
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+    if (!isValid) {
+        throw "Invalid txn";
+    }
+
+    const helia = await createHelia({ blockstore });
+    const j = json(helia);
+    const seed = {
+        mdip: {
+            version: 1,
+            created: new Date().toISOString(),
+            registry: txn.registry,
+            type: "asset",
+        },
+        anchor: txn,
+    };
+    const cid = await j.add(JSON.parse(canonicalize(seed)));
+    const did = `did:mdip:${cid.toString(base58btc)}`;
+
+    helia.stop();
+
+    return did;
+}
+
 export async function generateDid(anchor) {
 
     if (!anchor) {
