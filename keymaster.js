@@ -215,6 +215,11 @@ export async function resolveDid(did) {
     return doc;
 }
 
+async function resolveAsset(did) {
+    const doc = await resolveDid(did);
+    return doc?.didDocumentMetadata?.txn?.mdip?.data;
+}
+
 export async function createId(name, registry = 'peerbit') {
     const wallet = loadWallet();
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
@@ -520,38 +525,29 @@ export async function createResponse(did) {
 }
 
 export async function verifyResponse(did) {
-    const responseDoc = JSON.parse(await gatekeeper.resolveDid(did));
-    const credentials = responseDoc.didDocumentMetadata.txn.mdip.data.credentials;
+    const { credentials } = await resolveAsset(did);
     const vps = [];
 
     for (let credential of credentials) {
-        const vcdoc = JSON.parse(await gatekeeper.resolveDid(credential.vc));
-        const vpdoc = JSON.parse(await gatekeeper.resolveDid(credential.vp));
-
-        if (!vcdoc?.didDocumentMetadata) {
-            // VC has been revoked!
-            continue;
-        }
-
-        const vchash = vcdoc.didDocumentMetadata.txn.mdip.data.cipher_hash;
-        const vphash = vpdoc.didDocumentMetadata.txn.mdip.data.cipher_hash;
+        const { cipher_hash: vchash } = await resolveAsset(credential.vc);
+        const { cipher_hash: vphash } = await resolveAsset(credential.vp);
 
         if (vchash !== vphash) {
-            throw 'cannot verify (VP does not match VC)';
+            continue;
         }
 
         const vp = await decryptJSON(credential.vp);
         const isValid = await verifySignature(vp);
 
         if (!isValid) {
-            throw 'cannot verify (signature invalid)';
+            continue;
         }
 
         vps.push(vp);
     }
 
-    const challengeDid = responseDoc.didDocumentMetadata.txn.mdip.data.challenge;
-    const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
+    //const challengeDid = responseDoc.didDocumentMetadata.txn.mdip.data.challenge;
+    //const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
     // TBD ensure VPs match challenge
 
     return vps;
