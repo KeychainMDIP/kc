@@ -80,9 +80,7 @@ export async function encrypt(msg, did) {
 export async function decrypt(did) {
     const wallet = loadWallet();
     const id = getCurrentId();
-    const dataDocJson = await gatekeeper.resolveDid(did);
-    const dataDoc = JSON.parse(dataDocJson);
-    const crypt = dataDoc.didDocumentMetadata?.txn.mdip.data;
+    const crypt = await resolveAsset(did);
 
     if (!crypt || !crypt.cipher_hash) {
         throw "DID is not encrypted";
@@ -215,7 +213,7 @@ export async function resolveDid(did) {
     return doc;
 }
 
-async function resolveAsset(did) {
+export async function resolveAsset(did) {
     const doc = await resolveDid(did);
     return doc?.didDocumentMetadata?.txn?.mdip?.data;
 }
@@ -365,8 +363,8 @@ export async function createCredential(schema) {
 
 export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
-    const schemaDoc = JSON.parse(await gatekeeper.resolveDid(credentialDid));
-    const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.txn.mdip.data);
+    const schema = await resolveAsset(credentialDid);
+    const credential = JSONSchemaFaker.generate(schema);
 
     const vc = {
         "@context": [
@@ -492,8 +490,7 @@ export async function createResponse(did) {
         throw "Invalid challenge";
     }
 
-    const challengeDoc = JSON.parse(await gatekeeper.resolveDid(boundChallenge.challenge));
-    const credentials = challengeDoc.didDocumentMetadata.txn.mdip.data.credentials;
+    const { credentials } = await resolveAsset(boundChallenge.challenge);
     const matches = [];
 
     for (let credential of credentials) {
@@ -546,8 +543,6 @@ export async function verifyResponse(did) {
         vps.push(vp);
     }
 
-    //const challengeDid = responseDoc.didDocumentMetadata.txn.mdip.data.challenge;
-    //const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
     // TBD ensure VPs match challenge
 
     return vps;

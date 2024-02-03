@@ -425,9 +425,9 @@ describe('encryptJSON', () => {
         const bobDoc = await keymaster.resolveDid(bob);
 
         const did = await keymaster.encryptJSON(mockJson, bob);
-        const doc = await keymaster.resolveDid(did);
+        const data = await keymaster.resolveAsset(did);
 
-        expect(doc.didDocumentMetadata.txn.mdip.data.sender).toStrictEqual(bob);
+        expect(data.sender).toStrictEqual(bob);
     });
 });
 
