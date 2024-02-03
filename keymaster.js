@@ -82,7 +82,7 @@ export async function decrypt(did) {
     const id = getCurrentId();
     const dataDocJson = await gatekeeper.resolveDid(did);
     const dataDoc = JSON.parse(dataDocJson);
-    const crypt = dataDoc.didDocumentMetadata?.data;
+    const crypt = dataDoc.didDocumentMetadata?.txn.mdip.data;
 
     if (!crypt || !crypt.cipher_hash) {
         throw "DID is not encrypted";
@@ -215,7 +215,7 @@ export async function resolveDid(did) {
     return doc;
 }
 
-export async function createId(name) {
+export async function createId(name, registry = 'peerbit') {
     const wallet = loadWallet();
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
@@ -228,22 +228,24 @@ export async function createId(name) {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
 
-    const txn = {
+    const anchor = {
         op: "create",
-        registry: "tBTC",
+        version: 1,
+        type: "agent",
+        registry: registry,
         publicJwk: keypair.publicJwk,
     };
 
-    const msg = canonicalize(txn);
+    const msg = canonicalize(anchor);
     const msgHash = cipher.hashMessage(msg);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
     const signed = {
-        ...txn,
+        mdip: anchor,
         signature: signature
     };
 
-    const did = await gatekeeper.createAgent(signed);
+    const did = await gatekeeper.createDid(signed);
 
     const newId = {
         did: did,
@@ -318,7 +320,7 @@ export async function rotateKeys() {
     }
 }
 
-export async function createData(data) {
+export async function createData(data, registry = 'peerbit') {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -334,14 +336,18 @@ export async function createData(data) {
     const id = getCurrentId();
 
     const txn = {
-        op: "create",
-        registry: "tBTC",
-        controller: id.did,
-        data: data,
+        mdip: {
+            op: "create",
+            version: 1,
+            type: "asset",
+            registry: registry,
+            controller: id.did,
+            data: data,
+        }
     };
 
     const signed = await addSignature(txn);
-    const did = await gatekeeper.createAsset(signed);
+    const did = await gatekeeper.createDid(signed);
 
     addToManifest(did);
     return did;
@@ -355,7 +361,7 @@ export async function createCredential(schema) {
 export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
     const schemaDoc = JSON.parse(await gatekeeper.resolveDid(credentialDid));
-    const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.data);
+    const credential = JSONSchemaFaker.generate(schemaDoc.didDocumentMetadata.txn.mdip.data);
 
     const vc = {
         "@context": [
@@ -482,7 +488,7 @@ export async function createResponse(did) {
     }
 
     const challengeDoc = JSON.parse(await gatekeeper.resolveDid(boundChallenge.challenge));
-    const credentials = challengeDoc.didDocumentMetadata.data.credentials;
+    const credentials = challengeDoc.didDocumentMetadata.txn.mdip.data.credentials;
     const matches = [];
 
     for (let credential of credentials) {
@@ -515,7 +521,7 @@ export async function createResponse(did) {
 
 export async function verifyResponse(did) {
     const responseDoc = JSON.parse(await gatekeeper.resolveDid(did));
-    const credentials = responseDoc.didDocumentMetadata.data.credentials;
+    const credentials = responseDoc.didDocumentMetadata.txn.mdip.data.credentials;
     const vps = [];
 
     for (let credential of credentials) {
@@ -527,8 +533,8 @@ export async function verifyResponse(did) {
             continue;
         }
 
-        const vchash = vcdoc.didDocumentMetadata.data.cipher_hash;
-        const vphash = vpdoc.didDocumentMetadata.data.cipher_hash;
+        const vchash = vcdoc.didDocumentMetadata.txn.mdip.data.cipher_hash;
+        const vphash = vpdoc.didDocumentMetadata.txn.mdip.data.cipher_hash;
 
         if (vchash !== vphash) {
             throw 'cannot verify (VP does not match VC)';
@@ -544,7 +550,7 @@ export async function verifyResponse(did) {
         vps.push(vp);
     }
 
-    const challengeDid = responseDoc.didDocumentMetadata.data.challenge;
+    const challengeDid = responseDoc.didDocumentMetadata.txn.mdip.data.challenge;
     const challengeDoc = JSON.parse(await gatekeeper.resolveDid(challengeDid));
     // TBD ensure VPs match challenge
 

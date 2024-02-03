@@ -23,21 +23,10 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-export async function createAgent(txn) {
-    if (!txn?.signature) {
-        throw "Invalid txn";
-    }
-
-    if (txn.op !== "create") {
-        throw "Invalid txn";
-    }
-
-    const signature = txn.signature;
-    delete txn.signature;
-
-    const msg = canonicalize(txn);
+async function createAgent(txn) {
+    const msg = canonicalize(txn.mdip);
     const msgHash = cipher.hashMessage(msg);
-    const isValid = cipher.verifySig(msgHash, signature, txn.publicJwk);
+    const isValid = cipher.verifySig(msgHash, txn.signature, txn.mdip.publicJwk);
 
     if (!isValid) {
         throw "Invalid txn";
@@ -46,13 +35,8 @@ export async function createAgent(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
-        mdip: {
-            version: 1,
-            created: new Date().toISOString(),
-            registry: txn.registry,
-            type: "agent",
-        },
-        anchor: txn.publicJwk,
+        txn: txn,
+        created: new Date().toISOString(),
     };
     const cid = await j.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
@@ -62,28 +46,17 @@ export async function createAgent(txn) {
     return did;
 }
 
-export async function createAsset(txn) {
-    if (!txn?.signature) {
+async function createAsset(txn) {
+    if (txn.mdip.controller !== txn.signature.signer) {
         throw "Invalid txn";
     }
 
-    if (txn.op !== "create") {
-        throw "Invalid txn";
-    }
+    const doc = JSON.parse(await resolveDid(txn.mdip.controller));
 
-    if (txn.controller !== txn.signature.signer) {
-        throw "Invalid txn";
-    }
-
-    const doc = JSON.parse(await resolveDid(txn.controller));
-
-    const signature = txn.signature;
-    delete txn.signature;
-
-    const msg = canonicalize(txn);
+    const msg = canonicalize({ mdip: txn.mdip });
     const msgHash = cipher.hashMessage(msg);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+    const isValid = cipher.verifySig(msgHash, txn.signature.value, publicJwk);
 
     if (!isValid) {
         throw "Invalid txn";
@@ -92,13 +65,8 @@ export async function createAsset(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
-        mdip: {
-            version: 1,
-            created: new Date().toISOString(),
-            registry: txn.registry,
-            type: "asset",
-        },
-        anchor: txn,
+        txn: txn,
+        created: new Date().toISOString(),
     };
     const cid = await j.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
@@ -108,26 +76,48 @@ export async function createAsset(txn) {
     return did;
 }
 
-export async function generateDid(anchor) {
-
-    if (!anchor) {
-        throw "Invalid anchor";
+export async function createDid(txn) {
+    if (!txn?.mdip?.type) {
+        throw "Invalid txn";
     }
 
-    const helia = await createHelia({ blockstore });
-    const j = json(helia);
-    const seed = {
-        mdip: {
-            version: 1,
-            created: new Date().toISOString(),
-        },
-        anchor: anchor,
-    };
-    const cid = await j.add(JSON.parse(canonicalize(seed)));
-    const did = `did:mdip:${cid.toString(base58btc)}`;
-    helia.stop();
-    return did;
+    if (txn.mdip.op !== "create") {
+        throw "Invalid txn";
+    }
+
+    if (txn.mdip.type === 'agent') {
+        return createAgent(txn);
+    }
+
+    if (txn.mdip.type === 'asset') {
+        return createAsset(txn);
+    }
+
+    throw "Unknown type";
 }
+
+// export async function generateDid(anchor) {
+
+//     if (!anchor) {
+//         throw "Invalid anchor";
+//     }
+
+//     const helia = await createHelia({ blockstore });
+//     const j = json(helia);
+//     const seed = {
+//         mdip: {
+//             version: 1,
+//             created: new Date().toISOString(),
+//         },
+//         anchor: anchor,
+//     };
+//     const cid = await j.add(JSON.parse(canonicalize(seed)));
+//     const did = `did:mdip:${cid.toString(base58btc)}`;
+
+//     helia.stop();
+
+//     return did;
+// }
 
 async function generateDoc(did, asof) {
     const helia = await createHelia({ blockstore });
@@ -135,25 +125,34 @@ async function generateDoc(did, asof) {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
         const j = json(helia);
-        const docSeed = await j.get(cid);
+        const docMetadata = await j.get(cid);
 
-        if (!docSeed) {
-            return {}; // not found error
+        if (!docMetadata?.txn?.mdip) {
+            return {};
         }
 
-        if (!docSeed.mdip) {
-            return {}; // not an MDIP seed
-        }
-
-        if (docSeed.mdip.version != 1) {
-            return {}; // unknown version
-        }
-
-        if (asof && new Date(docSeed.mdip.created) < new Date(asof)) {
+        if (asof && new Date(docMetadata.created) < new Date(asof)) {
             return {}; // DID was not yet created
         }
 
-        if (docSeed.anchor.kty) { // Agent DID
+        const mdip = docMetadata.txn.mdip;
+        const validVersions = [1];
+        const validTypes = ['agent', 'asset'];
+        const validRegistries = ['peerbit', 'BTC', 'tBTC'];
+
+        if (!validVersions.includes(mdip.version)) {
+            return {};
+        }
+
+        if (!validTypes.includes(mdip.type)) {
+            return {};
+        }
+
+        if (!validRegistries.includes(mdip.registry)) {
+            return {};
+        }
+
+        if (mdip.type === 'agent') {
             // TBD support different key types?
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
@@ -165,33 +164,28 @@ async function generateDoc(did, asof) {
                             "id": "#key-1",
                             "controller": did,
                             "type": "EcdsaSecp256k1VerificationKey2019",
-                            "publicKeyJwk": docSeed.anchor,
+                            "publicKeyJwk": mdip.publicJwk,
                         }
                     ],
                     "authentication": [
                         "#key-1"
                     ],
                 },
-                "didDocumentMetadata": {
-                    "mdip": docSeed.mdip,
-                }
+                "didDocumentMetadata": docMetadata,
             };
 
             return doc;
         }
 
-        if (docSeed.anchor.data) { // Data DID
+        if (mdip.type === 'asset') {
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
                     "id": did,
-                    "controller": docSeed.anchor.controller,
+                    "controller": mdip.controller,
                 },
-                "didDocumentMetadata": {
-                    "mdip": docSeed.mdip,
-                    "data": docSeed.anchor.data,
-                }
+                "didDocumentMetadata": docMetadata,
             };
 
             return doc;
