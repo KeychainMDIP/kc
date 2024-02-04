@@ -60,8 +60,7 @@ function currentKeyPair() {
 export async function encrypt(msg, did) {
     const id = getCurrentId();
     const keypair = currentKeyPair();
-    const diddoc = await gatekeeper.resolveDid(did);
-    const doc = JSON.parse(diddoc);
+    const doc = await resolveDid(did);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
@@ -86,8 +85,7 @@ export async function decrypt(did) {
         throw "DID is not encrypted";
     }
 
-    const diddoc = await gatekeeper.resolveDid(crypt.sender, crypt.created);
-    const doc = JSON.parse(diddoc);
+    const doc = await resolveDid(crypt.sender, crypt.created);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -157,8 +155,7 @@ export async function verifySignature(obj) {
         return false;
     }
 
-    const diddoc = await gatekeeper.resolveDid(signature.signer, signature.created);
-    const doc = JSON.parse(diddoc);
+    const doc = await resolveDid(signature.signer, signature.created);
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -208,8 +205,8 @@ function removeFromManifest(did) {
     return true;
 }
 
-export async function resolveDid(did) {
-    const doc = JSON.parse(await gatekeeper.resolveDid(did));
+export async function resolveDid(did, asof) {
+    const doc = JSON.parse(await gatekeeper.resolveDid(did, asof));
     return doc;
 }
 
@@ -304,7 +301,7 @@ export async function rotateKeys() {
     const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
-    const doc = JSON.parse(await gatekeeper.resolveDid(id.did));
+    const doc = await resolveDid(id.did);
     const vmethod = doc.didDocument.verificationMethod[0];
 
     vmethod.id = `#key-${nextIndex + 1}`;
