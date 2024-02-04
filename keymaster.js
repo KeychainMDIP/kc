@@ -212,7 +212,7 @@ export async function resolveDid(did, asof) {
 
 export async function resolveAsset(did) {
     const doc = await resolveDid(did);
-    return doc?.didDocumentMetadata?.txn?.mdip?.data;
+    return doc?.didDocumentMetadata?.anchor?.mdip?.data;
 }
 
 export async function createId(name, registry = 'peerbit') {
@@ -523,10 +523,15 @@ export async function verifyResponse(did) {
     const vps = [];
 
     for (let credential of credentials) {
-        const { cipher_hash: vchash } = await resolveAsset(credential.vc);
-        const { cipher_hash: vphash } = await resolveAsset(credential.vp);
+        const vcData = await resolveAsset(credential.vc);
+        const vpData = await resolveAsset(credential.vp);
 
-        if (vchash !== vphash) {
+        if (!vcData) {
+            // revoked
+            continue;
+        }
+
+        if (vcData.cipher_hash !== vpData.cipher_hash) {
             continue;
         }
 

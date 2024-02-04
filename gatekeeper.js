@@ -35,7 +35,7 @@ async function createAgent(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
-        txn: txn,
+        anchor: txn,
         created: new Date().toISOString(),
     };
     const cid = await j.add(JSON.parse(canonicalize(seed)));
@@ -65,7 +65,7 @@ async function createAsset(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
-        txn: txn,
+        anchor: txn,
         created: new Date().toISOString(),
     };
     const cid = await j.add(JSON.parse(canonicalize(seed)));
@@ -127,7 +127,7 @@ async function generateDoc(did, asof) {
         const j = json(helia);
         const docMetadata = await j.get(cid);
 
-        if (!docMetadata?.txn?.mdip) {
+        if (!docMetadata?.anchor?.mdip) {
             return {};
         }
 
@@ -135,7 +135,7 @@ async function generateDoc(did, asof) {
             return {}; // DID was not yet created
         }
 
-        const mdip = docMetadata.txn.mdip;
+        const mdip = docMetadata.anchor.mdip;
         const validVersions = [1];
         const validTypes = ['agent', 'asset'];
         const validRegistries = ['peerbit', 'BTC', 'tBTC'];

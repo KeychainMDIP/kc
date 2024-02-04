@@ -208,7 +208,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.txn.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
     });
 
     it('should create DID from a string anchor', async () => {
@@ -221,7 +221,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.txn.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
     });
 
     it('should create DID from a list anchor', async () => {
@@ -234,7 +234,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.txn.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
     });
 
     it('should throw an exception if no ID selected', async () => {
@@ -323,7 +323,7 @@ describe('encrypt', () => {
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encrypt(msg, did);
         const doc = await keymaster.resolveDid(encryptDid);
-        const data = doc.didDocumentMetadata.txn.mdip.data;
+        const data = doc.didDocumentMetadata.anchor.mdip.data;
         const msgHash = cipher.hashMessage(msg);
 
         expect(data.cipher_hash).toBe(msgHash);
@@ -339,7 +339,7 @@ describe('encrypt', () => {
         const msg = generateRandomString(1024);
         const encryptDid = await keymaster.encrypt(msg, did);
         const doc = await keymaster.resolveDid(encryptDid);
-        const data = doc.didDocumentMetadata.txn.mdip.data;
+        const data = doc.didDocumentMetadata.anchor.mdip.data;
         const msgHash = cipher.hashMessage(msg);
 
         expect(data.cipher_hash).toBe(msgHash);
@@ -576,7 +576,7 @@ describe('createCredential', () => {
         const doc = await keymaster.resolveDid(did);
 
         expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentMetadata.txn.mdip.data).toStrictEqual(mockSchema);
+        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockSchema);
     });
 });
 
@@ -815,7 +815,7 @@ describe('createChallenge', () => {
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentMetadata.txn.mdip.data).toStrictEqual(challenge);
+        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(challenge);
     });
 });
 
@@ -906,7 +906,7 @@ describe('createResponse', () => {
         keymaster.useId('Bob');
         const vpDid = await keymaster.createResponse(challengeForBob);
         const vpDoc = await keymaster.resolveDid(vpDid);
-        const data = vpDoc.didDocumentMetadata.txn.mdip.data;
+        const data = vpDoc.didDocumentMetadata.anchor.mdip.data;
 
         expect(data.challenge).toBe(challengeForBob);
         expect(data.credentials.length).toBe(1);
@@ -984,8 +984,7 @@ describe('verifyResponse', () => {
 
         keymaster.useId('Carol');
         const vpDid = await keymaster.createResponse(challengeForCarol);
-        const vpDoc = await keymaster.resolveDid(vpDid);
-        const data = vpDoc.didDocumentMetadata.txn.mdip.data;
+        const data = await keymaster.resolveAsset(vpDid);
 
         expect(data.challenge).toBe(challengeForCarol);
         expect(data.credentials.length).toBe(4);
@@ -995,7 +994,7 @@ describe('verifyResponse', () => {
         const vcList = await keymaster.verifyResponse(vpDid);
         expect(vcList.length).toBe(4);
 
-        // // All agents rotate keys
+        //// All agents rotate keys
         // keymaster.useId('Alice');
         // await keymaster.rotateKeys();
 
