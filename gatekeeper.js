@@ -23,7 +23,7 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function generateDid(txn) {
+export async function generateDid(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
@@ -33,12 +33,12 @@ async function generateDid(txn) {
     const cid = await j.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
 
-    await helia.stop();
+    helia.stop();
 
     return did;
 }
 
-async function createAgent(txn) {
+export async function createAgent(txn) {
     if (!txn.signature) {
         throw "Invalid txn";
     }
@@ -58,7 +58,7 @@ async function createAgent(txn) {
     return generateDid(txn);
 }
 
-async function createAsset(txn) {
+export async function createAsset(txn) {
     if (txn.mdip.controller !== txn.signature.signer) {
         throw "Invalid txn";
     }
@@ -66,6 +66,7 @@ async function createAsset(txn) {
     const doc = JSON.parse(await resolveDid(txn.mdip.controller));
     const msg = canonicalize({ mdip: txn.mdip });
     const msgHash = cipher.hashMessage(msg);
+    // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const isValid = cipher.verifySig(msgHash, txn.signature.value, publicJwk);
 
@@ -171,7 +172,7 @@ async function generateDoc(did, asof) {
         return {}; // TBD unknown type error
     }
     catch (error) {
-        console.log(error);
+        console.error(error);
     }
     finally {
         helia.stop();
@@ -224,8 +225,24 @@ export async function resolveDid(did, asof = null) {
             const valid = await verifyUpdate(txn, doc);
 
             if (valid) {
-                if (txn.op === 'update') {
+                if (txn.op === 'create') {
+                    // Proof-of-existence in the DID's registry
+                    continue;
+                }
+                else if (txn.op === 'update') {
                     doc = txn.doc;
+                    //doc.didDocumentMetadata.anchor = txn;
+                    doc.didDocumentMetadata.deactivated = false;
+                    doc.didDocumentMetadata.updated = txn.signature.created;
+                }
+                else if (txn.op === 'delete') {
+                    doc.didDocument = {};
+                    doc.didDocumentMetadata.anchor = txn;
+                    doc.didDocumentMetadata.deactivated = true;
+                    doc.didDocumentMetadata.updated = txn.signature.created;
+                }
+                else {
+                    console.error(`unknown op ${txn.op}`);
                 }
             }
             else {
@@ -237,7 +254,7 @@ export async function resolveDid(did, asof = null) {
     return JSON.stringify(doc);
 }
 
-export async function updateDoc(txn) {
+export async function updateDid(txn) {
     try {
         const doc = JSON.parse(await resolveDid(txn.did));
         const updateValid = await verifyUpdate(txn, doc);
@@ -261,4 +278,8 @@ export async function updateDoc(txn) {
     catch (error) {
         return false;
     }
+}
+
+export async function deleteDid(txn) {
+    return updateDid(txn);
 }

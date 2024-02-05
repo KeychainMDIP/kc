@@ -177,7 +177,18 @@ async function updateDoc(did, doc) {
     };
 
     const signed = await addSignature(txn);
-    const ok = gatekeeper.updateDoc(signed);
+    const ok = gatekeeper.updateDid(signed);
+    return ok;
+}
+
+async function revokeDoc(did) {
+    const txn = {
+        op: "delete",
+        did: did,
+    };
+
+    const signed = await addSignature(txn);
+    const ok = gatekeeper.deleteDid(signed);
     return ok;
 }
 
@@ -395,7 +406,7 @@ export async function attestCredential(vc) {
 }
 
 export async function revokeCredential(did) {
-    return updateDoc(did, {});
+    return revokeDoc(did);
 }
 
 export async function acceptCredential(did) {

@@ -683,7 +683,8 @@ describe('revokeCredential', () => {
         expect(ok).toBe(true);
 
         const revoked = await keymaster.resolveDid(did);
-        expect(revoked).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocumentMetadata.deactivated).toBe(true);
     });
 
     it('should return false if verifiable credential is already revoked', async () => {
@@ -698,7 +699,8 @@ describe('revokeCredential', () => {
         expect(ok1).toBe(true);
 
         const revoked = await keymaster.resolveDid(did);
-        expect(revoked).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocumentMetadata.deactivated).toBe(true);
 
         const ok2 = await keymaster.revokeCredential(did);
         expect(ok2).toBe(false);
