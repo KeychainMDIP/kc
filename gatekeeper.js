@@ -227,42 +227,51 @@ async function verifyUpdate(txn, doc) {
     return false;
 }
 
-export async function resolveDid(did, asof = null) {
+export function fetchUpdates(registry, did) {
     const db = loadDb();
-    let doc = await generateDoc(did);
 
     if (db.hasOwnProperty(did)) {
-        for (const txn of db[did]) {
-            if (asof && new Date(txn.time) > new Date(asof)) {
-                break;
+        return db[did];
+    }
+    else {
+        return [];
+    }
+}
+
+export async function resolveDid(did, asOfDate = null) {
+    let doc = await generateDoc(did);
+    const updates = fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
+
+    for (const txn of updates) {
+        if (asOfDate && new Date(txn.time) > new Date(asOfDate)) {
+            break;
+        }
+
+        const valid = await verifyUpdate(txn, doc);
+
+        if (valid) {
+            if (txn.op === 'create') {
+                // Proof-of-existence in the DID's registry
+                continue;
             }
-
-            const valid = await verifyUpdate(txn, doc);
-
-            if (valid) {
-                if (txn.op === 'create') {
-                    // Proof-of-existence in the DID's registry
-                    continue;
-                }
-                else if (txn.op === 'update') {
-                    doc = txn.doc;
-                    //doc.didDocumentMetadata.anchor = txn;
-                    doc.didDocumentMetadata.deactivated = false;
-                    doc.didDocumentMetadata.updated = txn.signature.created;
-                }
-                else if (txn.op === 'delete') {
-                    doc.didDocument = {};
-                    doc.didDocumentMetadata.anchor = txn;
-                    doc.didDocumentMetadata.deactivated = true;
-                    doc.didDocumentMetadata.updated = txn.signature.created;
-                }
-                else {
-                    console.error(`unknown op ${txn.op}`);
-                }
+            else if (txn.op === 'update') {
+                doc = txn.doc;
+                // TBD this should be the registry confirmed data, not txn created
+                doc.didDocumentMetadata.updated = txn.signature.created;
+            }
+            else if (txn.op === 'delete') {
+                doc.didDocument = {};
+                doc.didDocumentMetadata.deactivated = true;
+                doc.didDocumentMetadata.data = null; // in case of asset
+                // TBD this should be the registry confirmed data, not txn created
+                doc.didDocumentMetadata.updated = txn.signature.created;
             }
             else {
-                console.error(`txn not valid: ${JSON.stringify(txn)}`);
+                console.error(`unknown op ${txn.op}`);
             }
+        }
+        else {
+            console.error(`txn not valid: ${JSON.stringify(txn)}`);
         }
     }
 
