@@ -223,7 +223,14 @@ export async function resolveDid(did, asof) {
 
 export async function resolveAsset(did) {
     const doc = await resolveDid(did);
-    return doc?.didDocumentMetadata?.anchor?.mdip?.data;
+
+    if (doc?.didDocumentMetadata) {
+        if (!doc.didDocumentMetadata.deactivated) {
+            return doc.didDocumentMetadata.data;
+        }
+    }
+
+    return null;
 }
 
 export async function createId(name, registry = 'peerbit') {

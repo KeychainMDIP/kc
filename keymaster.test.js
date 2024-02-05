@@ -208,7 +208,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockAnchor);
     });
 
     it('should create DID from a string anchor', async () => {
@@ -221,7 +221,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockAnchor);
     });
 
     it('should create DID from a list anchor', async () => {
@@ -234,7 +234,7 @@ describe('createData', () => {
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockAnchor);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockAnchor);
     });
 
     it('should throw an exception if no ID selected', async () => {
@@ -323,7 +323,7 @@ describe('encrypt', () => {
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encrypt(msg, did);
         const doc = await keymaster.resolveDid(encryptDid);
-        const data = doc.didDocumentMetadata.anchor.mdip.data;
+        const data = doc.didDocumentMetadata.data;
         const msgHash = cipher.hashMessage(msg);
 
         expect(data.cipher_hash).toBe(msgHash);
@@ -339,7 +339,7 @@ describe('encrypt', () => {
         const msg = generateRandomString(1024);
         const encryptDid = await keymaster.encrypt(msg, did);
         const doc = await keymaster.resolveDid(encryptDid);
-        const data = doc.didDocumentMetadata.anchor.mdip.data;
+        const data = doc.didDocumentMetadata.data;
         const msgHash = cipher.hashMessage(msg);
 
         expect(data.cipher_hash).toBe(msgHash);
@@ -576,7 +576,7 @@ describe('createCredential', () => {
         const doc = await keymaster.resolveDid(did);
 
         expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(mockSchema);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
     });
 });
 
@@ -817,7 +817,7 @@ describe('createChallenge', () => {
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentMetadata.anchor.mdip.data).toStrictEqual(challenge);
+        expect(doc.didDocumentMetadata.data).toStrictEqual(challenge);
     });
 });
 
@@ -908,7 +908,7 @@ describe('createResponse', () => {
         keymaster.useId('Bob');
         const vpDid = await keymaster.createResponse(challengeForBob);
         const vpDoc = await keymaster.resolveDid(vpDid);
-        const data = vpDoc.didDocumentMetadata.anchor.mdip.data;
+        const data = vpDoc.didDocumentMetadata.data;
 
         expect(data.challenge).toBe(challengeForBob);
         expect(data.credentials.length).toBe(1);
@@ -996,34 +996,34 @@ describe('verifyResponse', () => {
         const vcList = await keymaster.verifyResponse(vpDid);
         expect(vcList.length).toBe(4);
 
-        //// All agents rotate keys
-        // keymaster.useId('Alice');
-        // await keymaster.rotateKeys();
+        // All agents rotate keys
+        keymaster.useId('Alice');
+        await keymaster.rotateKeys();
 
-        // keymaster.useId('Bob');
-        // await keymaster.rotateKeys();
+        keymaster.useId('Bob');
+        await keymaster.rotateKeys();
 
-        // keymaster.useId('Carol');
-        // await keymaster.rotateKeys();
+        keymaster.useId('Carol');
+        await keymaster.rotateKeys();
 
-        // keymaster.useId('Victor');
-        // await keymaster.rotateKeys();
+        keymaster.useId('Victor');
+        await keymaster.rotateKeys();
 
-        // const vcList2 = await keymaster.verifyResponse(vpDid);
-        // expect(vcList2.length).toBe(4);
+        const vcList2 = await keymaster.verifyResponse(vpDid);
+        expect(vcList2.length).toBe(4);
 
-        // keymaster.useId('Alice');
-        // await keymaster.revokeCredential(vc1);
+        keymaster.useId('Alice');
+        await keymaster.revokeCredential(vc1);
 
-        // keymaster.useId('Victor');
-        // const vcList3 = await keymaster.verifyResponse(vpDid);
-        // expect(vcList3.length).toBe(3);
+        keymaster.useId('Victor');
+        const vcList3 = await keymaster.verifyResponse(vpDid);
+        expect(vcList3.length).toBe(3);
 
-        // keymaster.useId('Bob');
-        // await keymaster.revokeCredential(vc3);
+        keymaster.useId('Bob');
+        await keymaster.revokeCredential(vc3);
 
-        // keymaster.useId('Victor');
-        // const vcList4 = await keymaster.verifyResponse(vpDid);
-        // expect(vcList4.length).toBe(2);
+        keymaster.useId('Victor');
+        const vcList4 = await keymaster.verifyResponse(vpDid);
+        expect(vcList4.length).toBe(2);
     });
 });

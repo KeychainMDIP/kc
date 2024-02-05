@@ -149,7 +149,14 @@ async function generateDoc(did, asof) {
                         "#key-1"
                     ],
                 },
-                "didDocumentMetadata": docMetadata,
+                "didDocumentMetadata": {
+                    "created": docMetadata.created,
+                    "mdip": {
+                        "type": mdip.type,
+                        "version": mdip.version,
+                        "registry": mdip.registry,
+                    }
+                },
             };
 
             return doc;
@@ -163,7 +170,15 @@ async function generateDoc(did, asof) {
                     "id": did,
                     "controller": mdip.controller,
                 },
-                "didDocumentMetadata": docMetadata,
+                "didDocumentMetadata": {
+                    "created": docMetadata.created,
+                    "mdip": {
+                        "type": mdip.type,
+                        "version": mdip.version,
+                        "registry": mdip.registry,
+                    },
+                    "data": mdip.data,
+                },
             };
 
             return doc;
