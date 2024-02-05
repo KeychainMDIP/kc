@@ -38,7 +38,7 @@ export async function generateDid(txn) {
     return did;
 }
 
-export async function createAgent(txn) {
+async function createAgent(txn) {
     if (!txn.signature) {
         throw "Invalid txn";
     }
@@ -58,7 +58,7 @@ export async function createAgent(txn) {
     return generateDid(txn);
 }
 
-export async function createAsset(txn) {
+async function createAsset(txn) {
     if (txn.mdip.controller !== txn.signature.signer) {
         throw "Invalid txn";
     }

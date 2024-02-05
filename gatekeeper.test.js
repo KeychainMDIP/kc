@@ -52,25 +52,22 @@ async function createAgentTxn(keypair) {
     return signed;
 }
 
-describe('createAgent', () => {
+describe('createDid', () => {
 
     it('should create DID from agent txn', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
 
-        const did = await gatekeeper.createAgent(agentTxn);
+        const did = await gatekeeper.createDid(agentTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
-});
-
-describe('createAsset', () => {
 
     it('should create DID from asset txn', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createAgent(agentTxn);
+        const agent = await gatekeeper.createDid(agentTxn);
 
         const dataAnchor = {
             mdip: {
@@ -96,7 +93,7 @@ describe('createAsset', () => {
             }
         };
 
-        const did = await gatekeeper.createAsset(assetTxn);
+        const did = await gatekeeper.createDid(assetTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
