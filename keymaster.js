@@ -171,7 +171,6 @@ export async function verifySignature(obj) {
 async function updateDoc(did, doc) {
     const txn = {
         op: "update",
-        time: new Date().toISOString(),
         did: did,
         doc: doc,
     };

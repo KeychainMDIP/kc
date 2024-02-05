@@ -242,8 +242,8 @@ export async function resolveDid(did, asOfDate = null) {
     let doc = await generateDoc(did);
     const updates = fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
 
-    for (const txn of updates) {
-        if (asOfDate && new Date(txn.time) > new Date(asOfDate)) {
+    for (const {time, txn} of updates) {
+        if (asOfDate && new Date(time) > new Date(asOfDate)) {
             break;
         }
 
@@ -256,15 +256,13 @@ export async function resolveDid(did, asOfDate = null) {
             }
             else if (txn.op === 'update') {
                 doc = txn.doc;
-                // TBD this should be the registry confirmed data, not txn created
-                doc.didDocumentMetadata.updated = txn.signature.created;
+                doc.didDocumentMetadata.updated = time;
             }
             else if (txn.op === 'delete') {
                 doc.didDocument = {};
                 doc.didDocumentMetadata.deactivated = true;
                 doc.didDocumentMetadata.data = null; // in case of asset
-                // TBD this should be the registry confirmed data, not txn created
-                doc.didDocumentMetadata.updated = txn.signature.created;
+                doc.didDocumentMetadata.updated = time;
             }
             else {
                 console.error(`unknown op ${txn.op}`);
@@ -288,12 +286,16 @@ export async function updateDid(txn) {
         }
 
         const db = loadDb();
+        const update = {
+            time: new Date().toISOString(),
+            txn: txn,
+        };
 
         if (db.hasOwnProperty(txn.did)) {
-            db[txn.did].push(txn);
+            db[txn.did].push(update);
         }
         else {
-            db[txn.did] = [txn];
+            db[txn.did] = [update];
         }
 
         writeDb(db);
