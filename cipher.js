@@ -36,6 +36,11 @@ export function generateJwk(privateKeyBytes) {
     return { publicJwk: publicJwk, privateJwk: privateJwk };
 }
 
+export function generateRandomJwk() {
+    const privKey = secp.utils.randomPrivateKey();
+    return generateJwk(privKey);
+}
+
 export function convertJwkToCompressedBytes(jwk) {
     const xBytes = base64url.baseDecode(jwk.x);
     const yBytes = base64url.baseDecode(jwk.y);
