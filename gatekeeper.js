@@ -23,15 +23,7 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function createAgent(txn) {
-    const msg = canonicalize(txn.mdip);
-    const msgHash = cipher.hashMessage(msg);
-    const isValid = cipher.verifySig(msgHash, txn.signature, txn.mdip.publicJwk);
-
-    if (!isValid) {
-        throw "Invalid txn";
-    }
-
+async function generateDid(txn) {
     const helia = await createHelia({ blockstore });
     const j = json(helia);
     const seed = {
@@ -41,9 +33,29 @@ async function createAgent(txn) {
     const cid = await j.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
 
-    helia.stop();
+    await helia.stop();
 
     return did;
+}
+
+async function createAgent(txn) {
+    if (!txn.signature) {
+        throw "Invalid txn";
+    }
+
+    if (!txn.mdip.publicJwk) {
+        throw "Invalid txn";
+    }
+
+    const msg = canonicalize(txn.mdip);
+    const msgHash = cipher.hashMessage(msg);
+    const isValid = cipher.verifySig(msgHash, txn.signature, txn.mdip.publicJwk);
+
+    if (!isValid) {
+        throw "Invalid txn";
+    }
+
+    return generateDid(txn);
 }
 
 async function createAsset(txn) {
@@ -52,7 +64,6 @@ async function createAsset(txn) {
     }
 
     const doc = JSON.parse(await resolveDid(txn.mdip.controller));
-
     const msg = canonicalize({ mdip: txn.mdip });
     const msgHash = cipher.hashMessage(msg);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -62,18 +73,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const helia = await createHelia({ blockstore });
-    const j = json(helia);
-    const seed = {
-        anchor: txn,
-        created: new Date().toISOString(),
-    };
-    const cid = await j.add(JSON.parse(canonicalize(seed)));
-    const did = `did:mdip:${cid.toString(base58btc)}`;
-
-    helia.stop();
-
-    return did;
+    return generateDid(txn);
 }
 
 export async function createDid(txn) {
@@ -95,29 +95,6 @@ export async function createDid(txn) {
 
     throw "Unknown type";
 }
-
-// export async function generateDid(anchor) {
-
-//     if (!anchor) {
-//         throw "Invalid anchor";
-//     }
-
-//     const helia = await createHelia({ blockstore });
-//     const j = json(helia);
-//     const seed = {
-//         mdip: {
-//             version: 1,
-//             created: new Date().toISOString(),
-//         },
-//         anchor: anchor,
-//     };
-//     const cid = await j.add(JSON.parse(canonicalize(seed)));
-//     const did = `did:mdip:${cid.toString(base58btc)}`;
-
-//     helia.stop();
-
-//     return did;
-// }
 
 async function generateDoc(did, asof) {
     const helia = await createHelia({ blockstore });
