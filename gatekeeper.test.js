@@ -1,9 +1,14 @@
-import fs from 'fs';
-import mockFs from 'mock-fs';
-import * as secp from '@noble/secp256k1';
 import canonicalize from 'canonicalize';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
+
+beforeEach(async () => {
+    await gatekeeper.start();
+});
+
+afterEach(async () => {
+    await gatekeeper.stop();
+});
 
 describe('generateDid', () => {
 
