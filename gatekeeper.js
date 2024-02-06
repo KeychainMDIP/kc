@@ -43,13 +43,16 @@ async function createAgent(txn) {
         throw "Invalid txn";
     }
 
-    if (!txn.mdip.publicJwk) {
+    if (!txn.publicJwk) {
         throw "Invalid txn";
     }
 
-    const msg = canonicalize(txn.mdip);
+    const txnCopy = JSON.parse(JSON.stringify(txn));
+    delete txnCopy.signature;
+
+    const msg = canonicalize(txnCopy);
     const msgHash = cipher.hashMessage(msg);
-    const isValid = cipher.verifySig(msgHash, txn.signature, txn.mdip.publicJwk);
+    const isValid = cipher.verifySig(msgHash, txn.signature, txn.publicJwk);
 
     if (!isValid) {
         throw "Invalid txn";
@@ -59,12 +62,14 @@ async function createAgent(txn) {
 }
 
 async function createAsset(txn) {
-    if (txn.mdip.controller !== txn.signature.signer) {
+    if (txn.controller !== txn.signature.signer) {
         throw "Invalid txn";
     }
 
-    const doc = JSON.parse(await resolveDid(txn.mdip.controller));
-    const msg = canonicalize({ mdip: txn.mdip });
+    const doc = JSON.parse(await resolveDid(txn.controller));
+    const txnCopy = JSON.parse(JSON.stringify(txn));
+    delete txnCopy.signature;
+    const msg = canonicalize(txnCopy);
     const msgHash = cipher.hashMessage(msg);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -78,11 +83,11 @@ async function createAsset(txn) {
 }
 
 export async function createDid(txn) {
-    if (!txn?.mdip?.type) {
+    if (txn?.op !== "create") {
         throw "Invalid txn";
     }
 
-    if (txn.mdip.op !== "create") {
+    if (!txn.mdip?.type) {
         throw "Invalid txn";
     }
 
@@ -103,34 +108,34 @@ async function generateDoc(did, asof) {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
         const j = json(helia);
-        const docMetadata = await j.get(cid);
+        const docSeed = await j.get(cid);
 
-        if (!docMetadata?.anchor?.mdip) {
+        if (!docSeed?.anchor?.mdip) {
             return {};
         }
 
-        if (asof && new Date(docMetadata.created) < new Date(asof)) {
+        if (asof && new Date(docSeed.created) < new Date(asof)) {
             return {}; // DID was not yet created
         }
 
-        const mdip = docMetadata.anchor.mdip;
+        const anchor = docSeed.anchor;
         const validVersions = [1];
         const validTypes = ['agent', 'asset'];
         const validRegistries = ['peerbit', 'BTC', 'tBTC'];
 
-        if (!validVersions.includes(mdip.version)) {
+        if (!validVersions.includes(anchor.mdip.version)) {
             return {};
         }
 
-        if (!validTypes.includes(mdip.type)) {
+        if (!validTypes.includes(anchor.mdip.type)) {
             return {};
         }
 
-        if (!validRegistries.includes(mdip.registry)) {
+        if (!validRegistries.includes(anchor.mdip.registry)) {
             return {};
         }
 
-        if (mdip.type === 'agent') {
+        if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
@@ -142,7 +147,7 @@ async function generateDoc(did, asof) {
                             "id": "#key-1",
                             "controller": did,
                             "type": "EcdsaSecp256k1VerificationKey2019",
-                            "publicKeyJwk": mdip.publicJwk,
+                            "publicKeyJwk": anchor.publicJwk,
                         }
                     ],
                     "authentication": [
@@ -150,34 +155,26 @@ async function generateDoc(did, asof) {
                     ],
                 },
                 "didDocumentMetadata": {
-                    "created": docMetadata.created,
-                    "mdip": {
-                        "type": mdip.type,
-                        "version": mdip.version,
-                        "registry": mdip.registry,
-                    }
+                    "created": docSeed.created,
+                    "mdip": anchor.mdip,
                 },
             };
 
             return doc;
         }
 
-        if (mdip.type === 'asset') {
+        if (anchor.mdip.type === 'asset') {
             const doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
                     "id": did,
-                    "controller": mdip.controller,
+                    "controller": anchor.controller,
                 },
                 "didDocumentMetadata": {
-                    "created": docMetadata.created,
-                    "mdip": {
-                        "type": mdip.type,
-                        "version": mdip.version,
-                        "registry": mdip.registry,
-                    },
-                    "data": mdip.data,
+                    "created": docSeed.created,
+                    "mdip": anchor.mdip,
+                    "data": anchor.data,
                 },
             };
 

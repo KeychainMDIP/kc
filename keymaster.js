@@ -245,24 +245,22 @@ export async function createId(name, registry = 'peerbit') {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
 
-    const anchor = {
+    const txn = {
         op: "create",
-        version: 1,
-        type: "agent",
-        registry: registry,
+        mdip: {
+            version: 1,
+            type: "agent",
+            registry: registry,
+        },
         publicJwk: keypair.publicJwk,
     };
 
-    const msg = canonicalize(anchor);
+    const msg = canonicalize(txn);
     const msgHash = cipher.hashMessage(msg);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
-    const signed = {
-        mdip: anchor,
-        signature: signature
-    };
+    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
-    const did = await gatekeeper.createDid(signed);
+    const did = await gatekeeper.createDid(txn);
 
     const newId = {
         did: did,
@@ -353,14 +351,14 @@ export async function createData(data, registry = 'peerbit') {
     const id = getCurrentId();
 
     const txn = {
+        op: "create",
         mdip: {
-            op: "create",
             version: 1,
             type: "asset",
             registry: registry,
-            controller: id.did,
-            data: data,
-        }
+        },
+        controller: id.did,
+        data: data,
     };
 
     const signed = await addSignature(txn);

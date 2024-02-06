@@ -32,24 +32,20 @@ describe('generateDid', () => {
 });
 
 async function createAgentTxn(keypair) {
-    const anchor = {
+    const txn = {
         op: "create",
-        version: 1,
-        type: "agent",
-        registry: "peerbit",
+        mdip: {
+            version: 1,
+            type: "agent",
+            registry: "peerbit",
+        },
         publicJwk: keypair.publicJwk,
     };
 
-    const msg = canonicalize(anchor);
+    const msg = canonicalize(txn);
     const msgHash = cipher.hashMessage(msg);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-
-    const signed = {
-        mdip: anchor,
-        signature: signature
-    };
-
-    return signed;
+    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    return txn;
 }
 
 describe('createDid', () => {
@@ -70,14 +66,14 @@ describe('createDid', () => {
         const agent = await gatekeeper.createDid(agentTxn);
 
         const dataAnchor = {
+            op: "create",
             mdip: {
-                op: "create",
                 version: 1,
                 type: "asset",
                 registry: "BTC",
-                controller: agent,
-                data: "mockData",
-            }
+            },
+            controller: agent,
+            data: "mockData",
         };
 
         const msg = canonicalize(dataAnchor);
