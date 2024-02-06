@@ -22,9 +22,11 @@
     "blockstore-fs": "^1.1.9",
     "canonicalize": "^2.0.0",
     "commander": "^11.1.0",
+    "express": "^4.18.2",
     "hdkey": "^2.1.0",
     "helia": "^3.0.0",
     "json-schema-faker": "^0.5.5",
+    "morgan": "^1.10.0",
     "multiformats": "^13.0.0"
   },
   "devDependencies": {

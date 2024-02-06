@@ -1,6 +1,9 @@
 import { program } from 'commander';
 import fs from 'fs';
 import assert from 'assert';
+import { createHelia } from 'helia';
+import { FsBlockstore } from 'blockstore-fs';
+import * as gatekeeper from './gatekeeper.js';
 import * as keymaster from './keymaster.js';
 
 program
@@ -307,4 +310,10 @@ program
         }
     });
 
-program.parse(process.argv);
+async function run() {
+    await gatekeeper.start();
+    program.parse(process.argv);
+    await gatekeeper.stop();
+}
+
+run();

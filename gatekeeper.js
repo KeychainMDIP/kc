@@ -1,13 +1,12 @@
-import { createHelia } from 'helia';
 import { json } from '@helia/json';
-import { FsBlockstore } from 'blockstore-fs';
 import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
+import { createHelia } from 'helia';
+import { FsBlockstore } from 'blockstore-fs';
 import * as cipher from './cipher.js';
 
-const blockstore = new FsBlockstore('./ipfs');
 const dbName = 'mdip.json';
 
 function loadDb() {
@@ -23,17 +22,28 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
+let helia = null;
+let ipfs = null;
+
+export async function start() {
+    if (!ipfs) {
+        const blockstore = new FsBlockstore('./ipfs');
+        helia = await createHelia({ blockstore });
+        ipfs = json(helia);
+    }
+}
+
+export async function stop() {
+    helia.stop();
+}
+
 export async function generateDid(txn) {
-    const helia = await createHelia({ blockstore });
-    const j = json(helia);
     const seed = {
         anchor: txn,
         created: new Date().toISOString(),
     };
-    const cid = await j.add(JSON.parse(canonicalize(seed)));
+    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
-
-    helia.stop();
 
     return did;
 }
@@ -103,12 +113,10 @@ export async function createDid(txn) {
 }
 
 async function generateDoc(did, asof) {
-    const helia = await createHelia({ blockstore });
     try {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
-        const j = json(helia);
-        const docSeed = await j.get(cid);
+        const docSeed = await ipfs.get(cid);
 
         if (!docSeed?.anchor?.mdip) {
             return {};
@@ -186,9 +194,6 @@ async function generateDoc(did, asof) {
     catch (error) {
         console.error(error);
     }
-    finally {
-        helia.stop();
-    }
 }
 
 async function verifyUpdate(txn, doc) {
@@ -237,9 +242,14 @@ export function fetchUpdates(registry, did) {
 
 export async function resolveDid(did, asOfDate = null) {
     let doc = await generateDoc(did);
+
+    if (!doc) {
+        throw "Invalid DID";
+    }
+
     const updates = fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
 
-    for (const {time, txn} of updates) {
+    for (const { time, txn } of updates) {
         if (asOfDate && new Date(time) > new Date(asOfDate)) {
             break;
         }
