@@ -168,7 +168,7 @@ export async function verifySignature(obj) {
     }
 }
 
-async function updateDoc(did, doc) {
+async function updateDid(did, doc) {
     const txn = {
         op: "update",
         did: did,
@@ -176,19 +176,17 @@ async function updateDoc(did, doc) {
     };
 
     const signed = await addSignature(txn);
-    const ok = gatekeeper.updateDid(signed);
-    return ok;
+    return gatekeeper.updateDid(signed);
 }
 
-async function revokeDoc(did) {
+async function revokeDid(did) {
     const txn = {
         op: "delete",
         did: did,
     };
 
     const signed = await addSignature(txn);
-    const ok = gatekeeper.deleteDid(signed);
-    return ok;
+    return gatekeeper.deleteDid(signed);
 }
 
 function addToManifest(did) {
@@ -323,7 +321,7 @@ export async function rotateKeys() {
     vmethod.publicKeyJwk = keypair.publicJwk;
     doc.didDocument.authentication = [vmethod.id];
 
-    const ok = await updateDoc(id.did, doc);
+    const ok = await updateDid(id.did, doc);
 
     if (ok) {
         id.index = nextIndex;
@@ -410,7 +408,7 @@ export async function attestCredential(vc) {
 }
 
 export async function revokeCredential(did) {
-    return revokeDoc(did);
+    return revokeDid(did);
 }
 
 export async function acceptCredential(did) {
