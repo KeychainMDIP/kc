@@ -8,6 +8,14 @@ import * as gatekeeper from './gatekeeper.js';
 
 const walletName = 'wallet.json';
 
+export async function start() {
+    await gatekeeper.start();
+}
+
+export async function stop() {
+    await gatekeeper.stop();
+}
+
 function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }

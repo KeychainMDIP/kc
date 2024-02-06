@@ -14,6 +14,8 @@ const mockSchema = {
     "type": "object"
 };
 
+keymaster.start();
+
 const alice = await keymaster.createId('Alice');
 const bob = await keymaster.createId('Bob');
 const carol = await keymaster.createId('Carol');
@@ -136,3 +138,5 @@ console.log(`Bob revoked vc3`);
 keymaster.useId('Victor');
 const vcList4 = await keymaster.verifyResponse(vpDid);
 console.log(`Victor verified response ${vcList4.length}`);
+
+keymaster.stop();
