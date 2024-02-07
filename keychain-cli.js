@@ -16,11 +16,11 @@ program
     });
 
 program
-    .command('create-id <name>')
+    .command('create-id <name> <registry>')
     .description('Create a new decentralized ID')
-    .action(async (name) => {
+    .action(async (name, registry) => {
         try {
-            const did = await keymaster.createId(name);
+            const did = await keymaster.createId(name, registry);
             console.log(did);
         }
         catch (error) {
@@ -227,12 +227,12 @@ program
     });
 
 program
-    .command('attest-credential <file>')
+    .command('attest-credential <file> <registry>')
     .description('Sign and encrypt a bound credential file')
     .action(async (file) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.attestCredential(vc);
+            const did = await keymaster.attestCredential(vc, registry);
             console.log(did);
         }
         catch (error) {

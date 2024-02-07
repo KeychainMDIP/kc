@@ -65,7 +65,7 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did) {
+export async function encrypt(msg, did, registry='peerbit') {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDid(did);
@@ -79,7 +79,7 @@ export async function encrypt(msg, did) {
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
         cipher_receiver: cipher_receiver,
-    });
+    }, registry);
 
     return cipherDid;
 }
@@ -114,9 +114,9 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did) {
+export async function encryptJSON(json, did, registry='peerbit') {
     const plaintext = JSON.stringify(json);
-    return encrypt(plaintext, did);
+    return encrypt(plaintext, did, registry);
 }
 
 export async function decryptJSON(did) {

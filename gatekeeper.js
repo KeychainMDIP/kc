@@ -92,13 +92,29 @@ async function createAsset(txn) {
     return generateDid(txn);
 }
 
+const validVersions = [1];
+const validTypes = ['agent', 'asset'];
+const validRegistries = ['peerbit', 'BTC', 'tBTC'];
+
 export async function createDid(txn) {
     if (txn?.op !== "create") {
         throw "Invalid txn";
     }
 
-    if (!txn.mdip?.type) {
+    if (!txn.mdip) {
         throw "Invalid txn";
+    }
+
+    if (!validVersions.includes(txn.mdip.version)) {
+        throw `Valid versions include: ${validVersions}`;
+    }
+
+    if (!validTypes.includes(txn.mdip.type)) {
+        throw `Valid types include: ${validTypes}`;
+    }
+
+    if (!validRegistries.includes(txn.mdip.registry)) {
+        throw `Valid registries include: ${validRegistries}`;
     }
 
     if (txn.mdip.type === 'agent') {
@@ -127,9 +143,6 @@ async function generateDoc(did, asof) {
         }
 
         const anchor = docSeed.anchor;
-        const validVersions = [1];
-        const validTypes = ['agent', 'asset'];
-        const validRegistries = ['peerbit', 'BTC', 'tBTC'];
 
         if (!validVersions.includes(anchor.mdip.version)) {
             return {};
