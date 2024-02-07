@@ -402,7 +402,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc) {
+export async function attestCredential(vc, registry='peerbit') {
     const id = getCurrentId();
 
     if (vc.issuer !== id.did) {
@@ -410,7 +410,7 @@ export async function attestCredential(vc) {
     }
 
     const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id);
+    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
     addToManifest(cipherDid);
     return cipherDid;
 }
