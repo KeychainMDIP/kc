@@ -309,6 +309,7 @@ export async function updateDid(txn) {
         return true;
     }
     catch (error) {
+        console.error(error);
         return false;
     }
 }
