@@ -1,3 +1,5 @@
+import fs from 'fs';
+import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
@@ -12,8 +14,19 @@ afterEach(async () => {
 
 describe('generateDid', () => {
 
+    afterEach(() => {
+        mockFs.restore();
+    });
+
     it('should create DID from txn', async () => {
-        const mockTxn = "mockTxn";
+        mockFs({});
+
+        const mockTxn = {
+            op: "create",
+            mdip: {
+                registry: "mockRegstry"
+            }
+        };
         const did = await gatekeeper.generateDid(mockTxn);
 
         expect(did.length).toBe(60);
@@ -21,7 +34,14 @@ describe('generateDid', () => {
     });
 
     it('should create different DIDs from same txn', async () => {
-        const mockTxn = "mockTxn";
+        mockFs({});
+
+        const mockTxn = {
+            op: "create",
+            mdip: {
+                registry: "mockRegstry"
+            }
+        };
         const did1 = await gatekeeper.generateDid(mockTxn);
         const did2 = await gatekeeper.generateDid(mockTxn);
 
@@ -54,8 +74,13 @@ async function createAgentTxn(keypair) {
 }
 
 describe('createDid', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
 
     it('should create DID from agent txn', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
 
@@ -66,6 +91,8 @@ describe('createDid', () => {
     });
 
     it('should create DID from asset txn', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
         const agent = await gatekeeper.createDid(agentTxn);

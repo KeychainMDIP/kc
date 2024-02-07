@@ -37,6 +37,28 @@ export async function stop() {
     helia.stop();
 }
 
+function submitTxn(did, registry, txn) {
+    const db = loadDb();
+    const update = {
+        time: new Date().toISOString(),
+        did: did,
+        txn: txn,
+    };
+
+    if (!db.hasOwnProperty(registry)) {
+        db[registry] = {};
+    }
+
+    if (db[registry].hasOwnProperty(did)) {
+        db[registry][did].push(update);
+    }
+    else {
+        db[registry][did] = [update];
+    }
+
+    writeDb(db);
+}
+
 export async function generateDid(txn) {
     const seed = {
         anchor: txn,
@@ -44,6 +66,8 @@ export async function generateDid(txn) {
     };
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
+
+    submitTxn(did, txn.mdip.registry, txn);
 
     return did;
 }
@@ -245,12 +269,13 @@ async function verifyUpdate(txn, doc) {
 export function fetchUpdates(registry, did) {
     const db = loadDb();
 
-    if (db.hasOwnProperty(did)) {
-        return db[did];
+    if (db.hasOwnProperty(registry)) {
+        if (db[registry].hasOwnProperty(did)) {
+            return db[registry][did];
+        }
     }
-    else {
-        return [];
-    }
+
+    return [];
 }
 
 export async function resolveDid(did, asOfDate = null) {
@@ -267,16 +292,20 @@ export async function resolveDid(did, asOfDate = null) {
             break;
         }
 
+        if (txn.op === 'create') {
+            // Proof-of-existence in the DID's registry
+            continue;
+        }
+
         const valid = await verifyUpdate(txn, doc);
 
         if (valid) {
-            if (txn.op === 'create') {
-                // Proof-of-existence in the DID's registry
-                continue;
-            }
-            else if (txn.op === 'update') {
+            if (txn.op === 'update') {
+                // Maintain mdip metadata across versions
+                const mdip = doc.didDocumentMetadata.mdip;
                 doc = txn.doc;
                 doc.didDocumentMetadata.updated = time;
+                doc.didDocumentMetadata.mdip = mdip;
             }
             else if (txn.op === 'delete') {
                 doc.didDocument = {};
@@ -305,20 +334,9 @@ export async function updateDid(txn) {
             return false;
         }
 
-        const db = loadDb();
-        const update = {
-            time: new Date().toISOString(),
-            txn: txn,
-        };
+        const registry = doc.didDocumentMetadata.mdip.registry;
 
-        if (db.hasOwnProperty(txn.did)) {
-            db[txn.did].push(update);
-        }
-        else {
-            db[txn.did] = [update];
-        }
-
-        writeDb(db);
+        submitTxn(txn.did, registry, txn);
         return true;
     }
     catch (error) {
