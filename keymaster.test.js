@@ -648,7 +648,7 @@ describe('attestCredential', () => {
         expect(isValid).toBe(true);
 
         const wallet = keymaster.loadWallet();
-        expect(wallet.ids['Bob'].manifest.includes(did)).toEqual(true);
+        expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
     });
 
     it('should throw an exception if user is not issuer', async () => {
@@ -758,8 +758,8 @@ describe('acceptCredential', () => {
         expect(ok).toBe(true);
 
         const wallet = keymaster.loadWallet();
-        expect(wallet.ids['Alice'].manifest.includes(did));
-        expect(wallet.ids['Bob'].manifest.includes(did));
+        expect(wallet.ids['Alice'].owned.includes(did));
+        expect(wallet.ids['Bob'].held.includes(did));
     });
 
     it('should return false if user is not the credential subject', async () => {
@@ -898,8 +898,8 @@ describe('createResponse', () => {
         expect(ok).toBe(true);
 
         const wallet = keymaster.loadWallet();
-        expect(wallet.ids['Alice'].manifest.includes(vcDid));
-        expect(wallet.ids['Bob'].manifest.includes(vcDid));
+        expect(wallet.ids['Alice'].owned.includes(vcDid));
+        expect(wallet.ids['Bob'].held.includes(vcDid));
 
         keymaster.useId('Victor');
 

@@ -197,25 +197,25 @@ async function revokeDid(did) {
     return gatekeeper.deleteDid(signed);
 }
 
-function addToManifest(did) {
+function addToOwned(did) {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
-    const manifest = new Set(id.manifest);
+    const owned = new Set(id.owned);
 
-    manifest.add(did);
-    id.manifest = Array.from(manifest);
+    owned.add(did);
+    id.owned = Array.from(owned);
 
     saveWallet(wallet);
     return true;
 }
 
-function removeFromManifest(did) {
+function addToHeld(did) {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
-    const manifest = new Set(id.manifest);
+    const held = new Set(id.held);
 
-    manifest.delete(did);
-    id.manifest = Array.from(manifest);
+    held.add(did);
+    id.held = Array.from(held);
 
     saveWallet(wallet);
     return true;
@@ -370,7 +370,7 @@ export async function createData(data, registry = 'peerbit') {
     const signed = await addSignature(txn);
     const did = await gatekeeper.createDid(signed);
 
-    addToManifest(did);
+    addToOwned(did);
     return did;
 }
 
@@ -411,7 +411,7 @@ export async function attestCredential(vc, registry='peerbit') {
 
     const signed = await addSignature(vc);
     const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
-    addToManifest(cipherDid);
+    addToOwned(cipherDid);
     return cipherDid;
 }
 
@@ -428,7 +428,7 @@ export async function acceptCredential(did) {
             throw 'VC not valid or not assigned to this ID';
         }
 
-        return addToManifest(did);
+        return addToHeld(did);
     }
     catch (error) {
         return false;
@@ -461,7 +461,7 @@ export async function issueChallenge(challenge, user, expiresIn = 24) {
 async function findMatchingCredential(credential) {
     const id = getCurrentId();
 
-    for (let did of id.manifest) {
+    for (let did of id.held) {
         try {
             const doc = await decryptJSON(did);
 
