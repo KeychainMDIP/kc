@@ -8,10 +8,33 @@ program
     .description('Keychain CLI tool');
 
 program
-    .command('show')
+    .command('new-wallet <recovery-phrase>')
+    .description('Create new wallet from a recovery phrase')
+    .action((recoveryPhrase) => {
+        const wallet = keymaster.newWallet(recoveryPhrase);
+        console.log(JSON.stringify(wallet, null, 4));
+    });
+program
+    .command('show-wallet')
     .description('Show wallet')
     .action(() => {
         const wallet = keymaster.loadWallet();
+        console.log(JSON.stringify(wallet, null, 4));
+    });
+
+program
+    .command('backup-wallet')
+    .description('Backup wallet to encrypted DID')
+    .action(async () => {
+        const did = await keymaster.backupWallet();
+        console.log(did);
+    });
+
+program
+    .command('recover-wallet <did>')
+    .description('Recover wallet from encrypted DID')
+    .action(async (did) => {
+        const wallet = await keymaster.recoverWallet(did);
         console.log(JSON.stringify(wallet, null, 4));
     });
 

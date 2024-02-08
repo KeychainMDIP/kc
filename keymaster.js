@@ -20,14 +20,7 @@ function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
-export function loadWallet() {
-
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
-    }
-
-    const mnemonic = bip39.generateMnemonic();
+export function newWallet(mnemonic) {
     const seed = bip39.mnemonicToSeedSync(mnemonic);
     const hdkey = HDKey.fromMasterSeed(seed);
     const wallet = {
@@ -43,6 +36,36 @@ export function loadWallet() {
     return wallet;
 }
 
+export function loadWallet() {
+
+    if (fs.existsSync(walletName)) {
+        const walletJson = fs.readFileSync(walletName);
+        return JSON.parse(walletJson);
+    }
+
+    const mnemonic = bip39.generateMnemonic();
+    return newWallet(mnemonic);
+}
+
+export async function backupWallet(registry = 'BTC') {
+    const wallet = loadWallet();
+    const keypair = hdKeyPair();
+    const msg = JSON.stringify(wallet);
+    const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+    const did = await createData({ backup: backup }, registry);
+
+    return did;
+}
+
+export async function recoverWallet(did) {
+    const keypair = hdKeyPair();
+    const data = await resolveAsset(did);
+    const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
+    const wallet = JSON.parse(backup);
+
+    return wallet;
+}
+
 function getCurrentId() {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
@@ -52,6 +75,14 @@ function getCurrentId() {
     }
 
     return id;
+}
+
+function hdKeyPair() {
+    const wallet = loadWallet();
+    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const keypair = cipher.generateJwk(hdkey.privateKey);
+
+    return keypair;
 }
 
 function currentKeyPair() {
@@ -65,7 +96,7 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did, registry='peerbit') {
+export async function encrypt(msg, did, registry = 'peerbit') {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDid(did);
@@ -114,7 +145,7 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did, registry='peerbit') {
+export async function encryptJSON(json, did, registry = 'peerbit') {
     const plaintext = JSON.stringify(json);
     return encrypt(plaintext, did, registry);
 }
@@ -402,7 +433,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc, registry='peerbit') {
+export async function attestCredential(vc, registry = 'peerbit') {
     const id = getCurrentId();
 
     if (vc.issuer !== id.did) {
