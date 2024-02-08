@@ -29,10 +29,32 @@ app.get('/did/:did', async (req, res) => {
 
 app.post('/did', async (req, res) => {
     try {
-        const { txn } = req.body;
+        const txn = req.body;
         const did = await gatekeeper.createDid(txn);
         res.json({ did: did });
     } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+app.post('/did/:did', async (req, res) => {
+    try {
+        const txn = req.body;
+        const doc = await gatekeeper.updateDid(txn);
+        res.json(JSON.parse(doc));
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+app.delete('/did/:did', async (req, res) => {
+    try {
+        const txn = req.body;
+        const doc = await gatekeeper.deleteDid(txn);
+        res.json(JSON.parse(doc));
+    } catch (error) {
+        console.error(error);
         res.status(500).send(error.toString());
     }
 });
