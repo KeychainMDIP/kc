@@ -95,16 +95,16 @@ const challengeDid = await keymaster.createChallenge(mockChallenge);
 console.log(`Victor created challenge ${challengeDid}`);
 
 const challengeForCarol = await keymaster.issueChallenge(challengeDid, carol);
-console.log(`Victor issued challenge ${challengeForCarol}`);
+console.log(`Victor issued challenge to Carol ${challengeForCarol}`);
 
 keymaster.useId('Carol');
 const vpDid = await keymaster.createResponse(challengeForCarol);
-console.log(`Carol created response ${vpDid}`);
+console.log(`Carol created response for Victor ${vpDid}`);
 
 keymaster.useId('Victor');
 
 const vcList = await keymaster.verifyResponse(vpDid);
-console.log(`Victor verified response ${vcList.length}`);
+console.log(`Victor verified response ${vcList.length} valid credentials`);
 
 keymaster.useId('Alice');
 await keymaster.rotateKeys();
@@ -121,7 +121,7 @@ await keymaster.rotateKeys();
 console.log(`All agents rotated their keys`);
 
 const vcList2 = await keymaster.verifyResponse(vpDid);
-console.log(`Victor verified response ${vcList2.length}`);
+console.log(`Victor verified response ${vcList2.length} valid credentials`);
 
 keymaster.useId('Alice');
 await keymaster.revokeCredential(vc1);
@@ -129,7 +129,7 @@ console.log(`Alice revoked vc1`);
 
 keymaster.useId('Victor');
 const vcList3 = await keymaster.verifyResponse(vpDid);
-console.log(`Victor verified response ${vcList3.length}`);
+console.log(`Victor verified response ${vcList3.length} valid credentials`);
 
 keymaster.useId('Bob');
 await keymaster.revokeCredential(vc3);
@@ -137,6 +137,7 @@ console.log(`Bob revoked vc3`);
 
 keymaster.useId('Victor');
 const vcList4 = await keymaster.verifyResponse(vpDid);
-console.log(`Victor verified response ${vcList4.length}`);
+console.log(`Victor verified response ${vcList4.length} valid credentials`);
 
-await keymaster.stop();
+keymaster.stop();
+process.exit();
