@@ -73,6 +73,34 @@ async function createAgentTxn(keypair) {
     return txn;
 }
 
+async function createAssetTxn(agent, keypair) {
+    const dataAnchor = {
+        op: "create",
+        mdip: {
+            version: 1,
+            type: "asset",
+            registry: "BTC",
+        },
+        controller: agent,
+        data: "mockData",
+    };
+
+    const msg = canonicalize(dataAnchor);
+    const msgHash = cipher.hashMessage(msg);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const assetTxn = {
+        ...dataAnchor,
+        signature: {
+            signer: agent,
+            created: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+
+    return assetTxn;
+}
+
 describe('createDid', () => {
     afterEach(() => {
         mockFs.restore();
@@ -90,40 +118,43 @@ describe('createDid', () => {
         expect(did.startsWith('did:mdip:'));
     });
 
+    it('should create different DIDs from same agent txn', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+
+        const did1 = await gatekeeper.createDid(agentTxn);
+        const did2 = await gatekeeper.createDid(agentTxn);
+
+        expect(did1 !== did2).toBe(true);
+    });
+
     it('should create DID from asset txn', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
         const agent = await gatekeeper.createDid(agentTxn);
-
-        const dataAnchor = {
-            op: "create",
-            mdip: {
-                version: 1,
-                type: "asset",
-                registry: "BTC",
-            },
-            controller: agent,
-            data: "mockData",
-        };
-
-        const msg = canonicalize(dataAnchor);
-        const msgHash = cipher.hashMessage(msg);
-        const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-        const assetTxn = {
-            ...dataAnchor,
-            signature: {
-                signer: agent,
-                created: new Date().toISOString(),
-                hash: msgHash,
-                value: signature,
-            }
-        };
+        const assetTxn = await createAssetTxn(agent, keypair);
 
         const did = await gatekeeper.createDid(assetTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
+    });
+
+    it('should create different DIDs from same asset txn', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const agent = await gatekeeper.createDid(agentTxn);
+        const assetTxn = await createAssetTxn(agent, keypair);
+
+        const did1 = await gatekeeper.createDid(assetTxn);
+        const did2 = await gatekeeper.createDid(assetTxn);
+
+        expect(did1 !== did2).toBe(true);
     });
 });
