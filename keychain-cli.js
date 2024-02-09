@@ -52,6 +52,45 @@ program
     });
 
 program
+    .command('resolve-id')
+    .description('Resolves the current ID')
+    .action(async () => {
+        try {
+            const doc = await keymaster.resolveId();
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('backup-id')
+    .description('Backup the current ID to its registry')
+    .action(async () => {
+        try {
+            const ok = await keymaster.backupId();
+            console.log(ok ? 'OK' : 'backup failed');
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('recover-id <did>')
+    .description('Recovers the ID from the DID')
+    .action(async (did) => {
+        try {
+            const ok = await keymaster.recoverId(did);
+            console.log(ok);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('remove-id <name>')
     .description('Deletes named ID')
     .action(async (name) => {
@@ -252,7 +291,7 @@ program
 program
     .command('attest-credential <file> <registry>')
     .description('Sign and encrypt a bound credential file')
-    .action(async (file) => {
+    .action(async (file, registry) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.attestCredential(vc, registry);

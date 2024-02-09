@@ -329,6 +329,50 @@ export function removeId(name) {
     }
 }
 
+export async function resolveId() {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    return resolveDid(id.did);
+}
+
+export async function backupId() {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    const keypair = hdKeyPair();
+    const data = {
+        name: wallet.current,
+        id: id,
+    };
+    const msg = JSON.stringify(data);
+    const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+    const doc = await resolveDid(id.did);
+    const registry = doc.didDocumentMetadata.mdip.registry;
+    const vaultDid = await createData({ backup: backup }, registry);
+
+    doc.didDocumentMetadata.vault = vaultDid;
+    const ok = await updateDid(id.did, doc);
+
+    return ok;
+}
+
+export async function recoverId(did) {
+    const wallet = loadWallet();
+    const keypair = hdKeyPair();
+    const doc = await resolveDid(did);
+    const vault = await resolveAsset(doc.didDocumentMetadata.vault);
+    const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
+    const data = JSON.parse(backup);
+
+    // TBD handle the case where name already exists in wallet
+    wallet.ids[data.name] = data.id;
+    wallet.current = data.name;
+    wallet.counter += 1;
+
+    saveWallet(wallet);
+
+    return `Recovered ${data.name}!`;
+}
+
 export function listIds() {
     const wallet = loadWallet();
     return Object.keys(wallet.ids);
