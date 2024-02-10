@@ -120,6 +120,74 @@ describe('useId', () => {
     });
 });
 
+describe('resolveId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a new ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+        const doc = await keymaster.resolveId();
+
+        expect(doc.didDocument.id).toBe(did);
+    });
+});
+
+describe('backupId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should backup a new ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+
+        await keymaster.backupId();
+
+        const doc = await keymaster.resolveId();
+        const vault = await keymaster.resolveDid(doc.didDocumentMetadata.vault);
+
+        expect(vault.didDocumentMetadata.data.backup.length > 0).toBe(true);
+    });
+});
+
+describe('recoverId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should recover a backedup ID', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name);
+        let wallet = keymaster.loadWallet();
+        const bob = wallet.ids['Bob'];
+
+        await keymaster.backupId();
+
+        // reset wallet
+        wallet = keymaster.loadWallet();
+        keymaster.newWallet(wallet.seed.mnemonic);
+        wallet = keymaster.loadWallet();
+        expect(wallet.ids).toStrictEqual({});
+
+        const ok = await keymaster.recoverId(did);
+        wallet = keymaster.loadWallet();
+        expect(wallet.ids['Bob']).toStrictEqual(bob);
+        expect(wallet.current === 'Bob');
+        expect(wallet.counter === 1);
+    });
+});
+
 describe('resolveDid', () => {
 
     afterEach(() => {
