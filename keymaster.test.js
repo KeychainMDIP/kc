@@ -13,6 +13,82 @@ afterEach(async () => {
     await gatekeeper.stop();
 });
 
+describe('loadWallet', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a wallet on first load', async () => {
+        mockFs({});
+
+        const wallet = keymaster.loadWallet();
+
+        expect(wallet.seed.mnemonic.length > 0).toBe(true);
+        expect(wallet.seed.hdkey.xpub.length > 0).toBe(true);
+        expect(wallet.seed.hdkey.xpriv.length > 0).toBe(true);
+        expect(wallet.counter).toBe(0);
+        expect(wallet.ids).toStrictEqual({});
+    });
+
+    it('should return the same wallet on second load', async () => {
+        mockFs({});
+
+        const wallet1 = keymaster.loadWallet();
+        const wallet2 = keymaster.loadWallet();
+
+        expect(wallet2).toStrictEqual(wallet1);
+    });
+});
+
+describe('decryptMnemonic', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return 12 words', async () => {
+        mockFs({});
+
+        const wallet = keymaster.loadWallet();
+        const mnemonic = keymaster.decryptMnemonic();
+
+        expect(mnemonic !== wallet.seed.mnemonic).toBe(true);
+
+        // Split the mnemonic into words
+        const words = mnemonic.split(' ');
+        expect(words.length).toBe(12);
+    });
+});
+
+describe('newWallet', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a wallet from a mnemonic', async () => {
+        mockFs({});
+
+        const mnemonic1 = cipher.generateMnemonic();
+        keymaster.newWallet(mnemonic1);
+        const mnemonic2 = keymaster.decryptMnemonic();
+
+        expect(mnemonic1 === mnemonic2).toBe(true);
+    });
+
+    it('should throw an exception on invalid mnemonic', async () => {
+        mockFs({});
+
+        try {
+            keymaster.newWallet();
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid mnemonic`);
+        }
+    });
+});
+
 describe('createId', () => {
 
     afterEach(() => {

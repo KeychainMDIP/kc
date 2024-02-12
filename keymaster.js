@@ -1,6 +1,4 @@
 import fs from 'fs';
-import * as bip39 from 'bip39';
-import HDKey from 'hdkey';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
@@ -21,22 +19,26 @@ function saveWallet(wallet) {
 }
 
 export function newWallet(mnemonic) {
-    const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const hdkey = HDKey.fromMasterSeed(seed);
-    const keypair = cipher.generateJwk(hdkey.privateKey);
-    const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
+    try {
+        const hdkey = cipher.generateHDKey(mnemonic);
+        const keypair = cipher.generateJwk(hdkey.privateKey);
+        const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
 
-    const wallet = {
-        seed: {
-            mnemonic: backup,
-            hdkey: hdkey.toJSON(),
-        },
-        counter: 0,
-        ids: {},
+        const wallet = {
+            seed: {
+                mnemonic: backup,
+                hdkey: hdkey.toJSON(),
+            },
+            counter: 0,
+            ids: {},
+        }
+
+        saveWallet(wallet);
+        return wallet;
     }
-
-    saveWallet(wallet);
-    return wallet;
+    catch (error) {
+        throw "Invalid mnemonic";
+    }
 }
 
 export function decryptMnemonic() {
@@ -54,7 +56,7 @@ export function loadWallet() {
         return JSON.parse(walletJson);
     }
 
-    const mnemonic = bip39.generateMnemonic();
+    const mnemonic = cipher.generateMnemonic();
     return newWallet(mnemonic);
 }
 
@@ -91,7 +93,7 @@ function getCurrentId() {
 
 function hdKeyPair() {
     const wallet = loadWallet();
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const keypair = cipher.generateJwk(hdkey.privateKey);
 
     return keypair;
@@ -100,7 +102,7 @@ function hdKeyPair() {
 function currentKeyPair() {
     const wallet = loadWallet();
     const id = getCurrentId();
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
@@ -138,7 +140,7 @@ export async function decrypt(did) {
 
     const doc = await resolveDid(crypt.sender, crypt.created);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
 
     let index = id.index;
@@ -289,7 +291,7 @@ export async function createId(name, registry = 'peerbit') {
 
     const account = wallet.counter;
     const index = 0;
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${account}'/0/${index}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
@@ -405,7 +407,7 @@ export async function rotateKeys() {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
     const nextIndex = id.index + 1;
-    const hdkey = HDKey.fromJSON(wallet.seed.hdkey);
+    const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);

@@ -2,12 +2,28 @@
 import { webcrypto } from 'node:crypto';
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
+import * as bip39 from 'bip39';
 import * as secp from '@noble/secp256k1';
+import HDKey from 'hdkey';
 import { sha256 } from '@noble/hashes/sha256';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
+
+export function generateMnemonic() {
+    return bip39.generateMnemonic();
+}
+
+export function generateHDKey(mnemonic) {
+    const seed = bip39.mnemonicToSeedSync(mnemonic);
+    const hdkey = HDKey.fromMasterSeed(seed);
+    return hdkey;
+}
+
+export function generateHDKeyJSON(json) {
+    return HDKey.fromJSON(json);
+}
 
 export function generateJwk(privateKeyBytes) {
     const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
