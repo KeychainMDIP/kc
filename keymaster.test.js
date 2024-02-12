@@ -89,6 +89,56 @@ describe('newWallet', () => {
     });
 });
 
+describe('backupWallet', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a valid DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.backupWallet();
+        const doc = await keymaster.resolveDid(did);
+
+        expect(did === doc.didDocument.id).toBe(true);
+    });
+
+    it('should throw an exception if no current id', async () => {
+        mockFs({});
+
+        try {
+            const did = await keymaster.backupWallet();
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`No current ID`);
+        }
+    });
+});
+
+describe('restoreWallet', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should recover wallet from backup DID', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const wallet = keymaster.loadWallet();
+        const mnemonic = keymaster.decryptMnemonic();
+        const did = await keymaster.backupWallet();
+
+        // Recover wallet from mnemonic and recovery DID
+        keymaster.newWallet(mnemonic);
+        const recovered = await keymaster.recoverWallet(did);
+
+        expect(wallet).toStrictEqual(recovered);
+    });
+});
+
 describe('createId', () => {
 
     afterEach(() => {
