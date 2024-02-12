@@ -117,7 +117,7 @@ describe('backupWallet', () => {
     });
 });
 
-describe('restoreWallet', () => {
+describe('recoverWallet', () => {
 
     afterEach(() => {
         mockFs.restore();

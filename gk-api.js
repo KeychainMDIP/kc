@@ -17,6 +17,14 @@ app.get('/version', async (req, res) => {
     }
 });
 
+app.get('/peerId', async (req, res) => {
+    try {
+        res.json(gatekeeper.getPeerId());
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.get('/did/:did', async (req, res) => {
     try {
         const doc = await gatekeeper.resolveDid(req.params.did);

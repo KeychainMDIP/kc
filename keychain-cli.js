@@ -8,6 +8,20 @@ program
     .description('Keychain CLI tool');
 
 program
+    .command('show-peerid')
+    .description('Show IPFS peerid')
+    .action(() => {
+        const peerId = keymaster.getPeerId();
+
+        if (peerId) {
+            console.log(peerId);
+        }
+        else {
+            console.log('Not connected');
+        }
+    });
+
+program
     .command('new-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {

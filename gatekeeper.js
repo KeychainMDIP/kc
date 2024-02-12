@@ -33,6 +33,13 @@ export async function start() {
     }
 }
 
+export function getPeerId() {
+    if (helia) {
+        const peerId = helia.libp2p.peerId;
+        return peerId.toString();
+    }
+}
+
 export async function stop() {
     helia.stop();
 }

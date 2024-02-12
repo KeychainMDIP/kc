@@ -10,6 +10,10 @@ export async function start() {
     await gatekeeper.start();
 }
 
+export function getPeerId() {
+    return gatekeeper.getPeerId();
+}
+
 export async function stop() {
     await gatekeeper.stop();
 }
