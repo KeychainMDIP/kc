@@ -39,8 +39,9 @@ app.post('/did', async (req, res) => {
     try {
         const txn = req.body;
         const did = await gatekeeper.createDid(txn);
-        res.json({ did: did });
+        res.json(did);
     } catch (error) {
+        console.error(error);
         res.status(500).send(error.toString());
     }
 });

@@ -107,7 +107,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = JSON.parse(await resolveDid(txn.controller));
+    const doc = await resolveDid(txn.controller);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msg = canonicalize(txnCopy);
@@ -248,7 +248,7 @@ async function verifyUpdate(txn, doc) {
 
     if (doc.didDocument.controller) {
         const controllerDoc = await resolveDid(doc.didDocument.controller, txn.time);
-        return verifyUpdate(txn, JSON.parse(controllerDoc));
+        return verifyUpdate(txn, controllerDoc);
     }
 
     if (doc.didDocument.verificationMethod) {
@@ -329,12 +329,12 @@ export async function resolveDid(did, asOfDate = null) {
         }
     }
 
-    return JSON.stringify(doc);
+    return doc;
 }
 
 export async function updateDid(txn) {
     try {
-        const doc = JSON.parse(await resolveDid(txn.did));
+        const doc = await resolveDid(txn.did);
         const updateValid = await verifyUpdate(txn, doc);
 
         if (!updateValid) {

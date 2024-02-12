@@ -272,7 +272,7 @@ function addToHeld(did) {
 }
 
 export async function resolveDid(did, asof) {
-    const doc = JSON.parse(await gatekeeper.resolveDid(did, asof));
+    const doc = await gatekeeper.resolveDid(did, asof);
     return doc;
 }
 
