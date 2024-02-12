@@ -164,19 +164,20 @@ describe('recoverId', () => {
         mockFs.restore();
     });
 
-    it('should recover a backedup ID', async () => {
+    it('should recover an id from backup', async () => {
         mockFs({});
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
         let wallet = keymaster.loadWallet();
         const bob = wallet.ids['Bob'];
+        const mnemonic = keymaster.decryptMnemonic();
 
         await keymaster.backupId();
 
         // reset wallet
         wallet = keymaster.loadWallet();
-        keymaster.newWallet(wallet.seed.mnemonic);
+        keymaster.newWallet(mnemonic);
         wallet = keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 

@@ -23,9 +23,12 @@ function saveWallet(wallet) {
 export function newWallet(mnemonic) {
     const seed = bip39.mnemonicToSeedSync(mnemonic);
     const hdkey = HDKey.fromMasterSeed(seed);
+    const keypair = cipher.generateJwk(hdkey.privateKey);
+    const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
+
     const wallet = {
         seed: {
-            mnemonic: mnemonic,
+            mnemonic: backup,
             hdkey: hdkey.toJSON(),
         },
         counter: 0,
@@ -34,6 +37,14 @@ export function newWallet(mnemonic) {
 
     saveWallet(wallet);
     return wallet;
+}
+
+export function decryptMnemonic() {
+    const wallet = loadWallet();
+    const keypair = hdKeyPair();
+    const mnenomic = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
+
+    return mnenomic;
 }
 
 export function loadWallet() {
@@ -67,6 +78,7 @@ export async function recoverWallet(did) {
 }
 
 function getCurrentId() {
+
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
 

@@ -14,12 +14,21 @@ program
         const wallet = keymaster.newWallet(recoveryPhrase);
         console.log(JSON.stringify(wallet, null, 4));
     });
+
 program
     .command('show-wallet')
     .description('Show wallet')
     .action(() => {
         const wallet = keymaster.loadWallet();
         console.log(JSON.stringify(wallet, null, 4));
+    });
+
+program
+    .command('show-mnemonic')
+    .description('Show recovery phrase for wallet')
+    .action(() => {
+        const mnenomic = keymaster.decryptMnemonic();
+        console.log(mnenomic);
     });
 
 program
