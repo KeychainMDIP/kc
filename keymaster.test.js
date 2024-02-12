@@ -6,11 +6,11 @@ import * as gatekeeper from './gatekeeper.js';
 import * as cipher from './cipher.js';
 
 beforeEach(async () => {
-    await gatekeeper.start();
+    await keymaster.start(gatekeeper);
 });
 
 afterEach(async () => {
-    await gatekeeper.stop();
+    await keymaster.stop();
 });
 
 describe('loadWallet', () => {

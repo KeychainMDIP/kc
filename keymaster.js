@@ -2,11 +2,12 @@ import fs from 'fs';
 import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
-import * as gatekeeper from './gatekeeper.js';
 
+let gatekeeper = null;
 const walletName = 'wallet.json';
 
-export async function start() {
+export async function start(gk) {
+    gatekeeper = gk;
     await gatekeeper.start();
 }
 

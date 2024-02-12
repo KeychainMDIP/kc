@@ -1,6 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
 import assert from 'assert';
+import * as gatekeeper from './gatekeeper.js';
 import * as keymaster from './keymaster.js';
 
 program
@@ -10,8 +11,8 @@ program
 program
     .command('show-peerid')
     .description('Show IPFS peerid')
-    .action(() => {
-        const peerId = keymaster.getPeerId();
+    .action(async () => {
+        const peerId = await keymaster.getPeerId();
 
         if (peerId) {
             console.log(peerId);
@@ -393,7 +394,7 @@ program
     });
 
 async function run() {
-    await keymaster.start();
+    await keymaster.start(gatekeeper);
     program.parse(process.argv);
     await keymaster.stop();
 }
