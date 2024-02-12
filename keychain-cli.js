@@ -1,7 +1,8 @@
 import { program } from 'commander';
 import fs from 'fs';
 import assert from 'assert';
-import * as gatekeeper from './gatekeeper.js';
+//import * as gatekeeper from './gatekeeper.js';
+import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
 
 program
@@ -332,8 +333,7 @@ program
     .action(async (did) => {
         try {
             const ok = await keymaster.revokeCredential(did);
-            assert.ok(ok);
-            console.log('OK revoked');
+            console.log(ok ? 'OK revoked' : 'Not revoked');
         }
         catch (error) {
             console.error(error);

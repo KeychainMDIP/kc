@@ -27,8 +27,8 @@ app.get('/peerId', async (req, res) => {
 
 app.get('/did/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDid(req.params.did);
-        res.json(JSON.parse(doc));
+        const doc = await gatekeeper.resolveDid(req.params.did, req.query.asof);
+        res.json(doc);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -50,7 +50,7 @@ app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const doc = await gatekeeper.updateDid(txn);
-        res.json(JSON.parse(doc));
+        res.json(doc);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -60,8 +60,8 @@ app.post('/did/:did', async (req, res) => {
 app.delete('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
-        const doc = await gatekeeper.deleteDid(txn);
-        res.json(JSON.parse(doc));
+        const ok = await gatekeeper.deleteDid(txn);
+        res.json(ok);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());

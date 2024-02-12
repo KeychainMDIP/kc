@@ -48,7 +48,7 @@ export async function updateDid(txn) {
 
 export async function deleteDid(txn) {
     try {
-        const getDid = await axios.delete(`http://localhost:3000/did/${txn.did}`, txn);
+        const getDid = await axios.delete(`http://localhost:3000/did/${txn.did}`, { data: txn });
         return getDid.data;
     }
     catch (error) {
