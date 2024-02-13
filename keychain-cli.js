@@ -451,6 +451,32 @@ program
         }
     });
 
+program
+    .command('get-multiaddr')
+    .description('IPFS multiaddr connection string')
+    .action(async (name) => {
+        try {
+            const multiaddr = await keymaster.getMultiaddr();
+            console.log(multiaddr);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('dial-multiaddr <connect>')
+    .description('Connect to IPFS peer')
+    .action(async (multiaddr) => {
+        try {
+            const response = await keymaster.dialMultiaddr(multiaddr);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

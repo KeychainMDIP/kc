@@ -17,10 +17,32 @@ app.get('/version', async (req, res) => {
     }
 });
 
-app.get('/peerId', async (req, res) => {
+app.get('/ipfs/peerid', async (req, res) => {
     try {
         res.json(gatekeeper.getPeerId());
     } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+app.get('/ipfs/multiaddr', async (req, res) => {
+    try {
+        res.json(gatekeeper.getMultiaddr());
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+app.post('/ipfs/dial', async (req, res) => {
+    try {
+        const { multiaddr } = req.body;
+        console.log(`dialing ${multiaddr}...`);
+        const response = await gatekeeper.dialMultiaddr(multiaddr);
+        res.json(response);
+    } catch (error) {
+        console.error(error);
         res.status(500).send(error.toString());
     }
 });

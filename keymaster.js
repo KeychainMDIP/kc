@@ -15,6 +15,14 @@ export function getPeerId() {
     return gatekeeper.getPeerId();
 }
 
+export function getMultiaddr() {
+    return gatekeeper.getMultiaddr();
+}
+
+export async function dialMultiaddr(multiaddr) {
+    return await gatekeeper.dialMultiaddr(multiaddr);
+}
+
 export async function stop() {
     await gatekeeper.stop();
 }
