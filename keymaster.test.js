@@ -411,6 +411,108 @@ describe('rotateKeys', () => {
     });
 });
 
+describe('addName', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a new name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const ok = keymaster.addName('Jack', bob);
+        const wallet = keymaster.loadWallet();
+
+        expect(wallet.names['Jack'] === bob).toBe(true);
+    });
+
+    it('should not add the same name twice', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            keymaster.addName('Jack', alice);
+            keymaster.addName('Jack', bob);
+            throw 'Expected createData to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Name already in use');
+        }
+    });
+
+});
+
+describe('removeName', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove a valid name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        keymaster.addName('Jack', bob);
+        keymaster.removeName('Jack');
+
+        const wallet = keymaster.loadWallet();
+
+        expect(wallet.names['Jack'] === bob).toBe(false);
+    });
+
+    it('should return true if name is missing', async () => {
+        mockFs({});
+
+        const ok = keymaster.removeName('Jack');
+
+        expect(ok).toBe(true);
+    });
+});
+
+describe('resolveName', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a valid id name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const doc1 = await keymaster.resolveId();
+        const doc2 = await keymaster.resolveName('Bob');
+
+        expect(doc1).toStrictEqual(doc2);
+    });
+
+    it('should resolve a valid asset name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        keymaster.addName('mock', dataDid);
+
+        const doc1 = await keymaster.resolveDID(dataDid);
+        const doc2 = await keymaster.resolveName('mock');
+
+        expect(doc1).toStrictEqual(doc2);
+    });
+
+    it('should return undefined for invalid name', async () => {
+        mockFs({});
+
+        const doc = await keymaster.resolveName('mock');
+
+        expect(!doc).toBe(true);
+    });
+});
 
 describe('createData', () => {
 

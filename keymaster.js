@@ -450,7 +450,7 @@ export function addName(name, did) {
     }
 
     if (wallet.names.hasOwnProperty(name)) {
-        throw `Name already in use: ${name}`;
+        throw `Name already in use`;
     }
 
     wallet.names[name] = did;
