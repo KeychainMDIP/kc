@@ -67,6 +67,16 @@ describe('newWallet', () => {
         mockFs.restore();
     });
 
+    it('should overwrite an existing wallet', async () => {
+        mockFs({});
+
+        const wallet1 = keymaster.loadWallet();
+        keymaster.newWallet();
+        const wallet2 = keymaster.loadWallet();
+
+        expect(wallet1.seed.mnemonic !== wallet2.seed.mnemonic).toBe(true);
+    });
+
     it('should create a wallet from a mnemonic', async () => {
         mockFs({});
 
@@ -75,17 +85,6 @@ describe('newWallet', () => {
         const mnemonic2 = keymaster.decryptMnemonic();
 
         expect(mnemonic1 === mnemonic2).toBe(true);
-    });
-
-    it('should throw an exception on invalid mnemonic', async () => {
-        mockFs({});
-
-        try {
-            keymaster.newWallet();
-            throw ('Expected to throw an exception');
-        } catch (error) {
-            expect(error).toBe(`Invalid mnemonic`);
-        }
     });
 });
 

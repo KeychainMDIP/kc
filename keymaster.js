@@ -25,6 +25,9 @@ function saveWallet(wallet) {
 
 export function newWallet(mnemonic) {
     try {
+        if (!mnemonic) {
+            mnemonic = cipher.generateMnemonic();
+        }
         const hdkey = cipher.generateHDKey(mnemonic);
         const keypair = cipher.generateJwk(hdkey.privateKey);
         const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
@@ -61,8 +64,7 @@ export function loadWallet() {
         return JSON.parse(walletJson);
     }
 
-    const mnemonic = cipher.generateMnemonic();
-    return newWallet(mnemonic);
+    return newWallet();
 }
 
 export async function backupWallet(registry = 'BTC') {
