@@ -118,7 +118,7 @@ function currentKeyPair() {
 export async function encrypt(msg, did, registry = 'peerbit') {
     const id = getCurrentId();
     const keypair = currentKeyPair();
-    const doc = await resolveDid(did);
+    const doc = await resolveDID(did);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
@@ -143,7 +143,7 @@ export async function decrypt(did) {
         throw "DID is not encrypted";
     }
 
-    const doc = await resolveDid(crypt.sender, crypt.created);
+    const doc = await resolveDID(crypt.sender, crypt.created);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -213,7 +213,7 @@ export async function verifySignature(obj) {
         return false;
     }
 
-    const doc = await resolveDid(signature.signer, signature.created);
+    const doc = await resolveDID(signature.signer, signature.created);
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -226,7 +226,7 @@ export async function verifySignature(obj) {
     }
 }
 
-async function updateDid(did, doc) {
+async function updateDID(did, doc) {
     const txn = {
         op: "update",
         did: did,
@@ -234,7 +234,7 @@ async function updateDid(did, doc) {
     };
 
     const signed = await addSignature(txn);
-    return gatekeeper.updateDid(signed);
+    return gatekeeper.updateDID(signed);
 }
 
 async function revokeDid(did) {
@@ -244,7 +244,7 @@ async function revokeDid(did) {
     };
 
     const signed = await addSignature(txn);
-    return gatekeeper.deleteDid(signed);
+    return gatekeeper.deleteDID(signed);
 }
 
 function addToOwned(did) {
@@ -271,13 +271,13 @@ function addToHeld(did) {
     return true;
 }
 
-export async function resolveDid(did, asof) {
-    const doc = await gatekeeper.resolveDid(did, asof);
+export async function resolveDID(did, asof) {
+    const doc = await gatekeeper.resolveDID(did, asof);
     return doc;
 }
 
 export async function resolveAsset(did) {
-    const doc = await resolveDid(did);
+    const doc = await resolveDID(did);
 
     if (doc?.didDocumentMetadata) {
         if (!doc.didDocumentMetadata.deactivated) {
@@ -316,7 +316,7 @@ export async function createId(name, registry = 'peerbit') {
 
     txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
-    const did = await gatekeeper.createDid(txn);
+    const did = await gatekeeper.createDID(txn);
 
     const newId = {
         did: did,
@@ -351,7 +351,7 @@ export function removeId(name) {
 export async function resolveId() {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
-    return resolveDid(id.did);
+    return resolveDID(id.did);
 }
 
 export async function backupId() {
@@ -364,12 +364,12 @@ export async function backupId() {
     };
     const msg = JSON.stringify(data);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-    const doc = await resolveDid(id.did);
+    const doc = await resolveDID(id.did);
     const registry = doc.didDocumentMetadata.mdip.registry;
     const vaultDid = await createData({ backup: backup }, registry);
 
     doc.didDocumentMetadata.vault = vaultDid;
-    const ok = await updateDid(id.did, doc);
+    const ok = await updateDID(id.did, doc);
 
     return ok;
 }
@@ -377,7 +377,7 @@ export async function backupId() {
 export async function recoverId(did) {
     const wallet = loadWallet();
     const keypair = hdKeyPair();
-    const doc = await resolveDid(did);
+    const doc = await resolveDID(did);
     const vault = await resolveAsset(doc.didDocumentMetadata.vault);
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
     const data = JSON.parse(backup);
@@ -416,14 +416,14 @@ export async function rotateKeys() {
     const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
-    const doc = await resolveDid(id.did);
+    const doc = await resolveDID(id.did);
     const vmethod = doc.didDocument.verificationMethod[0];
 
     vmethod.id = `#key-${nextIndex + 1}`;
     vmethod.publicKeyJwk = keypair.publicJwk;
     doc.didDocument.authentication = [vmethod.id];
 
-    const ok = await updateDid(id.did, doc);
+    const ok = await updateDID(id.did, doc);
 
     if (ok) {
         id.index = nextIndex;
@@ -462,7 +462,7 @@ export async function createData(data, registry = 'peerbit') {
     };
 
     const signed = await addSignature(txn);
-    const did = await gatekeeper.createDid(signed);
+    const did = await gatekeeper.createDID(signed);
 
     addToOwned(did);
     return did;

@@ -25,21 +25,21 @@ app.get('/peerId', async (req, res) => {
     }
 });
 
-app.get('/did/:did', async (req, res) => {
+app.post('/did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDid(req.params.did, req.query.asof);
-        res.json(doc);
+        const txn = req.body;
+        const did = await gatekeeper.createDID(txn);
+        res.json(did);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
     }
 });
 
-app.post('/did', async (req, res) => {
+app.get('/did/:did', async (req, res) => {
     try {
-        const txn = req.body;
-        const did = await gatekeeper.createDid(txn);
-        res.json(did);
+        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
+        res.json(doc);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -49,7 +49,7 @@ app.post('/did', async (req, res) => {
 app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
-        const doc = await gatekeeper.updateDid(txn);
+        const doc = await gatekeeper.updateDID(txn);
         res.json(doc);
     } catch (error) {
         console.error(error);
@@ -60,7 +60,7 @@ app.post('/did/:did', async (req, res) => {
 app.delete('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
-        const ok = await gatekeeper.deleteDid(txn);
+        const ok = await gatekeeper.deleteDID(txn);
         res.json(ok);
     } catch (error) {
         console.error(error);

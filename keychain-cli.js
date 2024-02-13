@@ -168,7 +168,7 @@ program
     .description('Return document associated with DID')
     .action(async (did) => {
         try {
-            const doc = await keymaster.resolveDid(did);
+            const doc = await keymaster.resolveDID(did);
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {

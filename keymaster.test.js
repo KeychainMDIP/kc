@@ -100,7 +100,7 @@ describe('backupWallet', () => {
 
         await keymaster.createId('Bob');
         const did = await keymaster.backupWallet();
-        const doc = await keymaster.resolveDid(did);
+        const doc = await keymaster.resolveDID(did);
 
         expect(did === doc.didDocument.id).toBe(true);
     });
@@ -278,7 +278,7 @@ describe('backupId', () => {
         await keymaster.backupId();
 
         const doc = await keymaster.resolveId();
-        const vault = await keymaster.resolveDid(doc.didDocumentMetadata.vault);
+        const vault = await keymaster.resolveDID(doc.didDocumentMetadata.vault);
 
         expect(vault.didDocumentMetadata.data.backup.length > 0).toBe(true);
     });
@@ -315,7 +315,7 @@ describe('recoverId', () => {
     });
 });
 
-describe('resolveDid', () => {
+describe('resolveDID', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -326,7 +326,7 @@ describe('resolveDid', () => {
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
-        const doc = await keymaster.resolveDid(did);
+        const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
     });
@@ -342,14 +342,14 @@ describe('rotateKeys', () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
-        let doc = await keymaster.resolveDid(alice);
+        let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
 
         for (let i = 0; i < 3; i++) {
             await keymaster.rotateKeys();
 
-            doc = await keymaster.resolveDid(alice);
+            doc = await keymaster.resolveDID(alice);
             vm = doc.didDocument.verificationMethod[0];
 
             expect(pubkey.x !== vm.publicKeyJwk.x).toBe(true);
@@ -408,7 +408,7 @@ describe('createData', () => {
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createData(mockAnchor);
-        const doc = await keymaster.resolveDid(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
@@ -421,7 +421,7 @@ describe('createData', () => {
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = "mockAnchor";
         const dataDid = await keymaster.createData(mockAnchor);
-        const doc = await keymaster.resolveDid(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
@@ -434,7 +434,7 @@ describe('createData', () => {
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = [1, 2, 3];
         const dataDid = await keymaster.createData(mockAnchor);
-        const doc = await keymaster.resolveDid(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
@@ -526,7 +526,7 @@ describe('encrypt', () => {
 
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encrypt(msg, did);
-        const doc = await keymaster.resolveDid(encryptDid);
+        const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentMetadata.data;
         const msgHash = cipher.hashMessage(msg);
 
@@ -542,7 +542,7 @@ describe('encrypt', () => {
 
         const msg = generateRandomString(1024);
         const encryptDid = await keymaster.encrypt(msg, did);
-        const doc = await keymaster.resolveDid(encryptDid);
+        const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentMetadata.data;
         const msgHash = cipher.hashMessage(msg);
 
@@ -626,7 +626,7 @@ describe('encryptJSON', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const bobDoc = await keymaster.resolveDid(bob);
+        const bobDoc = await keymaster.resolveDID(bob);
 
         const did = await keymaster.encryptJSON(mockJson, bob);
         const data = await keymaster.resolveAsset(did);
@@ -777,7 +777,7 @@ describe('createCredential', () => {
         await keymaster.createId('Bob');
 
         const did = await keymaster.createCredential(mockSchema);
-        const doc = await keymaster.resolveDid(did);
+        const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocumentMetadata.data).toStrictEqual(mockSchema);
@@ -886,7 +886,7 @@ describe('revokeCredential', () => {
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(true);
 
-        const revoked = await keymaster.resolveDid(did);
+        const revoked = await keymaster.resolveDID(did);
         expect(revoked.didDocument).toStrictEqual({});
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
     });
@@ -902,7 +902,7 @@ describe('revokeCredential', () => {
         const ok1 = await keymaster.revokeCredential(did);
         expect(ok1).toBe(true);
 
-        const revoked = await keymaster.resolveDid(did);
+        const revoked = await keymaster.resolveDID(did);
         expect(revoked.didDocument).toStrictEqual({});
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
 
@@ -1017,7 +1017,7 @@ describe('createChallenge', () => {
             ]
         };
         const did = await keymaster.createChallenge(challenge);
-        const doc = await keymaster.resolveDid(did);
+        const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
@@ -1111,7 +1111,7 @@ describe('createResponse', () => {
 
         keymaster.useId('Bob');
         const vpDid = await keymaster.createResponse(challengeForBob);
-        const vpDoc = await keymaster.resolveDid(vpDid);
+        const vpDoc = await keymaster.resolveDID(vpDid);
         const data = vpDoc.didDocumentMetadata.data;
 
         expect(data.challenge).toBe(challengeForBob);

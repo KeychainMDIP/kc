@@ -107,7 +107,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = await resolveDid(txn.controller);
+    const doc = await resolveDID(txn.controller);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msg = canonicalize(txnCopy);
@@ -127,7 +127,7 @@ const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['peerbit', 'BTC', 'tBTC'];
 
-export async function createDid(txn) {
+export async function createDID(txn) {
     if (txn?.op !== "create") {
         throw "Invalid txn";
     }
@@ -247,7 +247,7 @@ async function verifyUpdate(txn, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDid(doc.didDocument.controller, txn.time);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.time);
         return verifyUpdate(txn, controllerDoc);
     }
 
@@ -285,7 +285,7 @@ export function fetchUpdates(registry, did) {
     return [];
 }
 
-export async function resolveDid(did, asOfDate = null) {
+export async function resolveDID(did, asOfDate = null) {
     let doc = await generateDoc(did);
 
     if (!doc) {
@@ -332,9 +332,9 @@ export async function resolveDid(did, asOfDate = null) {
     return doc;
 }
 
-export async function updateDid(txn) {
+export async function updateDID(txn) {
     try {
-        const doc = await resolveDid(txn.did);
+        const doc = await resolveDID(txn.did);
         const updateValid = await verifyUpdate(txn, doc);
 
         if (!updateValid) {
@@ -352,6 +352,6 @@ export async function updateDid(txn) {
     }
 }
 
-export async function deleteDid(txn) {
-    return updateDid(txn);
+export async function deleteDID(txn) {
+    return updateDID(txn);
 }

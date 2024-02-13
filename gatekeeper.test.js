@@ -112,7 +112,7 @@ describe('createDid', () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
 
-        const did = await gatekeeper.createDid(agentTxn);
+        const did = await gatekeeper.createDID(agentTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
@@ -124,8 +124,8 @@ describe('createDid', () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
 
-        const did1 = await gatekeeper.createDid(agentTxn);
-        const did2 = await gatekeeper.createDid(agentTxn);
+        const did1 = await gatekeeper.createDID(agentTxn);
+        const did2 = await gatekeeper.createDID(agentTxn);
 
         expect(did1 !== did2).toBe(true);
     });
@@ -135,10 +135,10 @@ describe('createDid', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createDid(agentTxn);
+        const agent = await gatekeeper.createDID(agentTxn);
         const assetTxn = await createAssetTxn(agent, keypair);
 
-        const did = await gatekeeper.createDid(assetTxn);
+        const did = await gatekeeper.createDID(assetTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
@@ -149,11 +149,11 @@ describe('createDid', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createDid(agentTxn);
+        const agent = await gatekeeper.createDID(agentTxn);
         const assetTxn = await createAssetTxn(agent, keypair);
 
-        const did1 = await gatekeeper.createDid(assetTxn);
-        const did2 = await gatekeeper.createDid(assetTxn);
+        const did1 = await gatekeeper.createDID(assetTxn);
+        const did2 = await gatekeeper.createDID(assetTxn);
 
         expect(did1 !== did2).toBe(true);
     });
