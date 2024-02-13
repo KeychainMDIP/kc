@@ -442,6 +442,65 @@ export async function rotateKeys() {
     }
 }
 
+export function addName(name, did) {
+    const wallet = loadWallet();
+
+    if (!wallet.names) {
+        wallet.names = {};
+    }
+
+    if (wallet.names.hasOwnProperty(name)) {
+        throw `Name already in use: ${name}`;
+    }
+
+    wallet.names[name] = did;
+    saveWallet(wallet);
+
+    return true;
+}
+
+export function removeName(name) {
+    const wallet = loadWallet();
+
+    if (wallet.names) {
+        if (wallet.names.hasOwnProperty(name)) {
+            delete wallet.names[name];
+            saveWallet(wallet);
+        }
+    }
+
+    return true;
+}
+
+export function lookupDID(name) {
+
+    if (name.startsWith('did:mdip:')) {
+        return name;
+    }
+
+    const wallet = loadWallet();
+
+    if (wallet.names) {
+        if (wallet.names.hasOwnProperty(name)) {
+            return wallet.names[name];
+        }
+    }
+
+    if (wallet.ids) {
+        if (wallet.ids.hasOwnProperty(name)) {
+            return wallet.ids[name].did;
+        }
+    }
+}
+
+export function resolveName(name) {
+    const did = lookupDID(name);
+
+    if (did) {
+        return resolveDID(did);
+    }
+}
+
 export async function createData(data, registry = 'peerbit') {
 
     function isEmpty(data) {
@@ -482,7 +541,7 @@ export async function createCredential(schema) {
 
 export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
-    const schema = await resolveAsset(credentialDid);
+    const schema = await resolveAsset(lookupDID(credentialDid));
     const credential = JSONSchemaFaker.generate(schema);
 
     const vc = {
@@ -495,7 +554,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
         validFrom: new Date().toISOString(),
         validUntil: validUntil,
         credentialSubject: {
-            id: subjectDid,
+            id: lookupDID(subjectDid),
         },
         credential: credential,
     };
@@ -517,19 +576,21 @@ export async function attestCredential(vc, registry = 'peerbit') {
 }
 
 export async function revokeCredential(did) {
-    return revokeDid(did);
+    const credential = lookupDID(did);
+    return revokeDid(credential);
 }
 
 export async function acceptCredential(did) {
     try {
+        const credential = lookupDID(did);
         const id = getCurrentId();
-        const vc = await decryptJSON(did);
+        const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
             throw 'VC not valid or not assigned to this ID';
         }
 
-        return addToHeld(did);
+        return addToHeld(credential);
     }
     catch (error) {
         return false;
@@ -542,25 +603,31 @@ export async function createChallenge(challenge) {
     return createData(challenge);
 }
 
-export async function issueChallenge(challenge, user, expiresIn = 24) {
+export async function issueChallenge(challenge, holder, expiresIn = 24) {
     const id = getCurrentId();
     const now = new Date();
     const expires = new Date();
     expires.setHours(now.getHours() + expiresIn);
+    const challengeDID = lookupDID(challenge);
+    const holderDID = lookupDID(holder);
     const issue = {
-        challenge: challenge,
+        challenge: challengeDID,
         from: id.did,
-        to: user,
+        to: holderDID,
         validFrom: now.toISOString(),
         validUntil: expires.toISOString(),
     };
     const signed = await addSignature(issue);
-    const cipherDid = await encryptJSON(signed, user);
+    const cipherDid = await encryptJSON(signed, holderDID);
     return cipherDid;
 }
 
 async function findMatchingCredential(credential) {
     const id = getCurrentId();
+
+    if (!id.held) {
+        return;
+    }
 
     for (let did of id.held) {
         try {
@@ -603,7 +670,8 @@ async function findMatchingCredential(credential) {
 
 export async function createResponse(did) {
     const id = getCurrentId();
-    const boundChallenge = await decryptJSON(did);
+    const challenge = lookupDID(did);
+    const boundChallenge = await decryptJSON(challenge);
 
     if (!boundChallenge.challenge || boundChallenge.to !== id.did) {
         throw "Invalid challenge";
@@ -641,7 +709,8 @@ export async function createResponse(did) {
 }
 
 export async function verifyResponse(did) {
-    const { credentials } = await resolveAsset(did);
+    const response = lookupDID(did);
+    const { credentials } = await resolveAsset(response);
     const vps = [];
 
     for (let credential of credentials) {

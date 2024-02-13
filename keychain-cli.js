@@ -393,6 +393,64 @@ program
         }
     });
 
+program
+    .command('add-name <name> <did>')
+    .description('Adds a name for a DID')
+    .action(async (name, did) => {
+        try {
+            keymaster.addName(name, did);
+            console.log('OK');
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('remove-name <name>')
+    .description('Removes a name for a DID')
+    .action(async (name) => {
+        try {
+            keymaster.removeName(name);
+            console.log('OK');
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('list-names')
+    .description('Lists names of DIDs')
+    .action(async (name) => {
+        try {
+            const wallet = keymaster.loadWallet();
+
+            if (wallet.names) {
+                console.log(JSON.stringify(wallet.names, null, 4));
+            }
+            else {
+                console.log("No names defined");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('resolve-name <name>')
+    .description('Resolves a DID by name')
+    .action(async (name) => {
+        try {
+            const doc = await keymaster.resolveName(name);
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);
