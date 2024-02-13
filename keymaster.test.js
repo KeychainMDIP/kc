@@ -301,16 +301,33 @@ describe('recoverId', () => {
         await keymaster.backupId();
 
         // reset wallet
-        wallet = keymaster.loadWallet();
         keymaster.newWallet(mnemonic);
         wallet = keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 
         const ok = await keymaster.recoverId(did);
         wallet = keymaster.loadWallet();
-        expect(wallet.ids['Bob']).toStrictEqual(bob);
-        expect(wallet.current === 'Bob');
+        expect(wallet.ids[name]).toStrictEqual(bob);
+        expect(wallet.current === name);
         expect(wallet.counter === 1);
+    });
+
+    it('should not recover an id to a different wallet', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        await keymaster.backupId();
+
+        // reset to a different wallet
+        keymaster.newWallet();
+
+        try {
+            const ok = await keymaster.recoverId(did);
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe('Cannot recover ID');
+        }
     });
 });
 

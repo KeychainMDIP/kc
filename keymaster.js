@@ -377,21 +377,26 @@ export async function backupId() {
 }
 
 export async function recoverId(did) {
-    const wallet = loadWallet();
-    const keypair = hdKeyPair();
-    const doc = await resolveDID(did);
-    const vault = await resolveAsset(doc.didDocumentMetadata.vault);
-    const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
-    const data = JSON.parse(backup);
+    try {
+        const wallet = loadWallet();
+        const keypair = hdKeyPair();
+        const doc = await resolveDID(did);
+        const vault = await resolveAsset(doc.didDocumentMetadata.vault);
+        const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
+        const data = JSON.parse(backup);
 
-    // TBD handle the case where name already exists in wallet
-    wallet.ids[data.name] = data.id;
-    wallet.current = data.name;
-    wallet.counter += 1;
+        // TBD handle the case where name already exists in wallet
+        wallet.ids[data.name] = data.id;
+        wallet.current = data.name;
+        wallet.counter += 1;
 
-    saveWallet(wallet);
+        saveWallet(wallet);
 
-    return `Recovered ${data.name}!`;
+        return `Recovered ${data.name}!`;
+    }
+    catch {
+        throw "Cannot recover ID";
+    }
 }
 
 export function listIds() {
