@@ -748,3 +748,11 @@ export async function verifyResponse(did) {
 
     return vps;
 }
+
+export async function exportDID(did) {
+    return gatekeeper.exportDID(lookupDID(did));
+}
+
+export async function importDID(txns) {
+    return gatekeeper.importDID(txns);
+}

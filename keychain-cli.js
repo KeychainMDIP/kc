@@ -477,6 +477,35 @@ program
         }
     });
 
+program
+    .command('export-did <did>')
+    .description('Export DID to file')
+    .action(async (did) => {
+        try {
+            const txns = await keymaster.exportDID(did);
+            console.log(JSON.stringify(txns, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+
+program
+    .command('import-did <file>')
+    .description('Import DID from file')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const txns = JSON.parse(contents);
+            const did = await keymaster.importDID(txns);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

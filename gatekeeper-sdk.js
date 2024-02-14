@@ -84,3 +84,23 @@ export async function deleteDID(txn) {
         throw connectionError;
     }
 }
+
+export async function exportDID(did) {
+    try {
+        const response = await axios.get(`http://localhost:3000/export/${did}`);
+        return response.data;
+    }
+    catch (error) {
+        throw connectionError;
+    }
+}
+
+export async function importDID(txns) {
+    try {
+        const response = await axios.post(`http://localhost:3000/import/`, txns);
+        return response.data;
+    }
+    catch (error) {
+        throw connectionError;
+    }
+}

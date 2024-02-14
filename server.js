@@ -90,6 +90,27 @@ app.delete('/did/:did', async (req, res) => {
     }
 });
 
+app.get('/export/:did', async (req, res) => {
+    try {
+        const txns = await gatekeeper.exportDID(req.params.did);
+        res.json(txns);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+app.post('/import', async (req, res) => {
+    try {
+        const txns = req.body;
+        const did = await gatekeeper.importDID(txns);
+        res.json(did);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 const port = 3000;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);

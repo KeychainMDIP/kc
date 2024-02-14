@@ -248,12 +248,12 @@ async function generateDoc(did, asof) {
 
             return doc;
         }
-
-        return {}; // TBD unknown type error
     }
     catch (error) {
         console.error(error);
     }
+
+    return {}; // TBD unknown type error
 }
 
 async function verifyUpdate(txn, doc) {
@@ -370,4 +370,30 @@ export async function updateDID(txn) {
 
 export async function deleteDID(txn) {
     return updateDID(txn);
+}
+
+export async function exportDID(did) {
+    const doc = await generateDoc(did);
+
+    if (!doc) {
+        throw "Invalid DID";
+    }
+
+    return fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
+}
+
+export async function importDID(txns) {
+    const db = loadDb();
+    const create = txns[0];
+    const did = create.did;
+    const registry = create.txn.mdip.registry;
+
+    if (!db.hasOwnProperty(registry)) {
+        db[registry] = {};
+    }
+
+    db[registry][did] = txns;
+    writeDb(db);
+
+    return did;
 }
