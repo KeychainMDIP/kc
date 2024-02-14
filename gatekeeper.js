@@ -7,6 +7,7 @@ import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import { FsBlockstore } from 'blockstore-fs';
 import * as cipher from './cipher.js';
+import * as network from './ipfs.js';
 
 const dbName = 'mdip.json';
 
@@ -44,7 +45,7 @@ export function getPeerId() {
 export function getMultiaddr() {
     if (helia) {
         const multiaddrs = helia.libp2p.getMultiaddrs();
-        return multiaddrs[0].toString();
+        return multiaddrs;
     }
 }
 

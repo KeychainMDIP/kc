@@ -457,7 +457,7 @@ program
     .action(async (name) => {
         try {
             const multiaddr = await keymaster.getMultiaddr();
-            console.log(multiaddr);
+            console.log(JSON.stringify(multiaddr, null, 4));
         }
         catch (error) {
             console.error(error);
