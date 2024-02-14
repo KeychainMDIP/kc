@@ -60,10 +60,15 @@ export async function stop() {
     helia.stop();
 }
 
-function submitTxn(did, registry, txn) {
+function submitTxn(did, registry, txn, time) {
     const db = loadDb();
+
+    if (!time) {
+        time = new Date().toISOString();
+    }
+
     const update = {
-        time: new Date().toISOString(),
+        time: time,
         did: did,
         txn: txn,
     };
@@ -82,15 +87,22 @@ function submitTxn(did, registry, txn) {
     writeDb(db);
 }
 
+export async function anchorSeed(seed) {
+    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
+    const did = `did:mdip:${cid.toString(base58btc)}`;
+
+    return did;
+}
+
 export async function generateDid(txn) {
     const seed = {
         anchor: txn,
         created: new Date().toISOString(),
     };
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `did:mdip:${cid.toString(base58btc)}`;
 
-    submitTxn(did, txn.mdip.registry, txn);
+    const did = await anchorSeed(seed);
+
+    submitTxn(did, txn.mdip.registry, txn, seed.created);
 
     return did;
 }
@@ -386,6 +398,19 @@ export async function importDID(txns) {
     const db = loadDb();
     const create = txns[0];
     const did = create.did;
+    const seed = {
+        anchor: create.txn,
+        created: create.time,
+    };
+
+    const check = await anchorSeed(seed);
+
+    console.log(`${did} should be ${check}`);
+
+    if (did !== check) {
+        throw "Invalid import";
+    }
+
     const registry = create.txn.mdip.registry;
 
     if (!db.hasOwnProperty(registry)) {
