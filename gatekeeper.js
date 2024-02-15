@@ -11,6 +11,10 @@ import * as network from './ipfs.js';
 
 const dbName = 'mdip.json';
 
+const validVersions = [1];
+const validTypes = ['agent', 'asset'];
+const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local'];
+
 function loadDb() {
     if (fs.existsSync(dbName)) {
         return JSON.parse(fs.readFileSync(dbName));
@@ -150,10 +154,6 @@ async function createAsset(txn) {
 
     return generateDid(txn);
 }
-
-const validVersions = [1];
-const validTypes = ['agent', 'asset'];
-const validRegistries = ['peerbit', 'BTC', 'tBTC'];
 
 export async function createDID(txn) {
     if (txn?.op !== "create") {
