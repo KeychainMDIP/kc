@@ -2,6 +2,9 @@ import express from 'express';
 import morgan from 'morgan';
 import * as gatekeeper from './gatekeeper.js';
 
+import { EventEmitter } from 'events';
+EventEmitter.defaultMaxListeners = 100;
+
 gatekeeper.start();
 
 const app = express();
@@ -112,6 +115,7 @@ app.post('/import', async (req, res) => {
 });
 
 const port = 3000;
+
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
