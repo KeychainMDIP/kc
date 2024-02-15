@@ -1,6 +1,5 @@
 import fs from 'fs';
 import mockFs from 'mock-fs';
-import canonicalize from 'canonicalize';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
 
@@ -67,8 +66,7 @@ async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
         publicJwk: keypair.publicJwk,
     };
 
-    const msg = canonicalize(txn);
-    const msgHash = cipher.hashMessage(msg);
+    const msgHash = cipher.hashJSON(txn);
     txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
     return txn;
 }
@@ -85,8 +83,7 @@ async function createAssetTxn(agent, keypair) {
         data: "mockData",
     };
 
-    const msg = canonicalize(dataAnchor);
-    const msgHash = cipher.hashMessage(msg);
+    const msgHash = cipher.hashJSON(dataAnchor);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
     const assetTxn = {
         ...dataAnchor,

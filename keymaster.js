@@ -1,5 +1,4 @@
 import fs from 'fs';
-import canonicalize from 'canonicalize';
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
 
@@ -189,8 +188,7 @@ export async function addSignature(obj) {
     const keypair = currentKeyPair(id);
 
     try {
-        const msg = canonicalize(obj);
-        const msgHash = cipher.hashMessage(msg);
+        const msgHash = cipher.hashJSON(obj);
         const signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
         return {
@@ -216,8 +214,7 @@ export async function verifySignature(obj) {
     const jsonCopy = JSON.parse(JSON.stringify(obj));
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
-    const msg = canonicalize(jsonCopy);
-    const msgHash = cipher.hashMessage(msg);
+    const msgHash = cipher.hashJSON(jsonCopy);
 
     if (signature.hash && signature.hash !== msgHash) {
         return false;
@@ -237,20 +234,30 @@ export async function verifySignature(obj) {
 }
 
 async function updateDID(did, doc) {
+    const current = await resolveDID(did);
+    const prev = cipher.hashJSON(current.didDocument);
+    const hash = cipher.hashJSON(doc.didDocument);
+
     const txn = {
         op: "update",
         did: did,
         doc: doc,
+        hash: hash,
+        prev: prev,
     };
 
     const signed = await addSignature(txn);
     return gatekeeper.updateDID(signed);
 }
 
-async function revokeDid(did) {
+async function revokeDID(did) {
+    const current = await resolveDID(did);
+    const prev = cipher.hashJSON(current.didDocument);
+
     const txn = {
         op: "delete",
         did: did,
+        prev: prev,
     };
 
     const signed = await addSignature(txn);
@@ -326,11 +333,8 @@ export async function createId(name, registry = 'peerbit') {
         publicJwk: keypair.publicJwk,
     };
 
-    const msg = canonicalize(txn);
-    const msgHash = cipher.hashMessage(msg);
-
+    const msgHash = cipher.hashJSON(txn);
     txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
-
     const did = await gatekeeper.createDID(txn);
 
     const newId = {
@@ -582,7 +586,7 @@ export async function attestCredential(vc, registry = 'peerbit') {
 
 export async function revokeCredential(did) {
     const credential = lookupDID(did);
-    return revokeDid(credential);
+    return revokeDID(credential);
 }
 
 export async function acceptCredential(did) {

@@ -123,8 +123,7 @@ async function createAgent(txn) {
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
 
-    const msg = canonicalize(txnCopy);
-    const msgHash = cipher.hashMessage(msg);
+    const msgHash = cipher.hashJSON(txnCopy);
     const isValid = cipher.verifySig(msgHash, txn.signature, txn.publicJwk);
 
     if (!isValid) {
@@ -142,8 +141,7 @@ async function createAsset(txn) {
     const doc = await resolveDID(txn.controller);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
-    const msg = canonicalize(txnCopy);
-    const msgHash = cipher.hashMessage(msg);
+    const msgHash = cipher.hashJSON(txnCopy);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const isValid = cipher.verifySig(msgHash, txn.signature.value, publicJwk);
@@ -284,8 +282,7 @@ async function verifyUpdate(txn, doc) {
 
         const signature = jsonCopy.signature;
         delete jsonCopy.signature;
-        const msg = canonicalize(jsonCopy);
-        const msgHash = cipher.hashMessage(msg);
+        const msgHash = cipher.hashJSON(jsonCopy);
 
         if (signature.hash && signature.hash !== msgHash) {
             return false;

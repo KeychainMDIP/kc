@@ -10,6 +10,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
+import canonicalize from 'canonicalize';
 
 export function generateMnemonic() {
     return bip39.generateMnemonic();
@@ -72,6 +73,10 @@ export function hashMessage(msg) {
     const hash = sha256(msg);
     const msgHash = Buffer.from(hash).toString('hex');
     return msgHash;
+}
+
+export function hashJSON(json) {
+    return hashMessage(canonicalize(json));
 }
 
 export async function signHash(msgHash, privateJwk) {
