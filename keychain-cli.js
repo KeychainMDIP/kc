@@ -366,8 +366,52 @@ program
     .action(async (did) => {
         try {
             const ok = await keymaster.acceptCredential(did);
-            assert.ok(ok);
-            console.log('OK saved');
+
+            if (ok) {
+                console.log('OK saved');
+            }
+            else {
+                console.log('Not saved');
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('publish-credential <did>')
+    .description('Publish the existence of a credential to the current user manifest')
+    .action(async (did) => {
+        try {
+            const vc = await keymaster.publishCredential(did, false);
+            console.log(JSON.stringify(vc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('reveal-credential <did>')
+    .description('Reveal a credential to the current user manifest')
+    .action(async (did) => {
+        try {
+            const vc = await keymaster.publishCredential(did, true);
+            console.log(JSON.stringify(vc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('unpublish-credential <did>')
+    .description('Remove a credential from the current user manifest')
+    .action(async (did) => {
+        try {
+            await keymaster.unpublishCredential(did);
+            console.log('OK');
         }
         catch (error) {
             console.error(error);
@@ -497,7 +541,6 @@ program
             console.error(error);
         }
     });
-
 
 program
     .command('import-did <file>')

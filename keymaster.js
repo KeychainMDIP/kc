@@ -550,7 +550,8 @@ export async function createCredential(schema) {
 
 export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
     const id = getCurrentId();
-    const schema = await resolveAsset(lookupDID(credentialDid));
+    const type = lookupDID(credentialDid);
+    const schema = await resolveAsset(type);
     const credential = JSONSchemaFaker.generate(schema);
 
     const vc = {
@@ -558,7 +559,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
             "https://www.w3.org/ns/credentials/v2",
             "https://www.w3.org/ns/credentials/examples/v2"
         ],
-        type: ["VerifiableCredential", credentialDid],
+        type: ["VerifiableCredential", type],
         issuer: id.did,
         validFrom: new Date().toISOString(),
         validUntil: validUntil,
@@ -591,8 +592,8 @@ export async function revokeCredential(did) {
 
 export async function acceptCredential(did) {
     try {
-        const credential = lookupDID(did);
         const id = getCurrentId();
+        const credential = lookupDID(did);
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
@@ -603,6 +604,56 @@ export async function acceptCredential(did) {
     }
     catch (error) {
         return false;
+    }
+}
+
+export async function publishCredential(did, reveal=false) {
+    try {
+        const id = getCurrentId();
+        const credential = lookupDID(did);
+        const vc = await decryptJSON(credential);
+
+        if (vc.credentialSubject.id !== id.did) {
+            throw 'VC not valid or not assigned to this ID';
+        }
+
+        const doc = await resolveDID(id.did);
+
+        if (!doc.didDocumentMetadata.manifest) {
+            doc.didDocumentMetadata.manifest = {};
+        }
+
+        if (!reveal) {
+            // Remove the credential values
+            vc.credential = null;
+        }
+        doc.didDocumentMetadata.manifest[credential] = vc;
+
+        await updateDID(id.did, doc);
+
+        return vc;
+    }
+    catch (error) {
+        return error;
+    }
+}
+
+export async function unpublishCredential(did) {
+    try {
+        const id = getCurrentId();
+        const doc = await resolveDID(id.did);
+        const credential = lookupDID(did);
+        const manifest = doc.didDocumentMetadata.manifest;
+
+        if (manifest && manifest.hasOwnProperty(credential)) {
+            delete manifest[credential];
+            await updateDID(id.did, doc);
+        }
+
+        return true;
+    }
+    catch (error) {
+        return error;
     }
 }
 

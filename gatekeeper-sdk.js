@@ -45,7 +45,7 @@ export async function createDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
 
@@ -61,7 +61,7 @@ export async function resolveDID(did, asof = null) {
         }
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
 
@@ -71,7 +71,7 @@ export async function updateDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
 
@@ -81,7 +81,7 @@ export async function deleteDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
 
@@ -91,7 +91,7 @@ export async function exportDID(did) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
 
@@ -101,6 +101,6 @@ export async function importDID(txns) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throw error.response.data;
     }
 }
