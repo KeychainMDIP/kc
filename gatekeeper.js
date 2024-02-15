@@ -98,7 +98,7 @@ export async function anchorSeed(seed) {
     return did;
 }
 
-export async function generateDid(txn) {
+export async function generateDID(txn) {
     const seed = {
         anchor: txn,
         created: new Date().toISOString(),
@@ -131,7 +131,7 @@ async function createAgent(txn) {
         throw "Invalid txn";
     }
 
-    return generateDid(txn);
+    return generateDID(txn);
 }
 
 async function createAsset(txn) {
@@ -152,7 +152,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    return generateDid(txn);
+    return generateDID(txn);
 }
 
 export async function createDID(txn) {
@@ -403,6 +403,7 @@ export async function importDID(txns) {
         created: create.time,
     };
 
+    // TBD verify creeat txn
     const check = await anchorSeed(seed);
 
     console.log(`${did} should be ${check}`);

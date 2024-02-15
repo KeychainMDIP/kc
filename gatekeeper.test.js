@@ -27,7 +27,7 @@ describe('generateDid', () => {
                 registry: "mockRegstry"
             }
         };
-        const did = await gatekeeper.generateDid(mockTxn);
+        const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
@@ -42,8 +42,8 @@ describe('generateDid', () => {
                 registry: "mockRegstry"
             }
         };
-        const did1 = await gatekeeper.generateDid(mockTxn);
-        const did2 = await gatekeeper.generateDid(mockTxn);
+        const did1 = await gatekeeper.generateDID(mockTxn);
+        const did2 = await gatekeeper.generateDID(mockTxn);
 
         expect(did1.length).toBe(60);
         expect(did1.startsWith('did:mdip:'));
@@ -56,13 +56,13 @@ describe('generateDid', () => {
 
 });
 
-async function createAgentTxn(keypair) {
+async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
     const txn = {
         op: "create",
         mdip: {
-            version: 1,
+            version: version,
             type: "agent",
-            registry: "peerbit",
+            registry: registry,
         },
         publicJwk: keypair.publicJwk,
     };
@@ -101,7 +101,7 @@ async function createAssetTxn(agent, keypair) {
     return assetTxn;
 }
 
-describe('createDid', () => {
+describe('createDID', () => {
     afterEach(() => {
         mockFs.restore();
     });
@@ -111,6 +111,55 @@ describe('createDid', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
+
+        const did = await gatekeeper.createDID(agentTxn);
+
+        expect(did.length).toBe(60);
+        expect(did.startsWith('did:mdip:'));
+    });
+
+    it('should create DID for peerbit registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 1, 'peerbit');
+
+        const did = await gatekeeper.createDID(agentTxn);
+
+        expect(did.length).toBe(60);
+        expect(did.startsWith('did:mdip:'));
+    });
+
+
+    it('should create DID for BTC registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 1, 'BTC');
+
+        const did = await gatekeeper.createDID(agentTxn);
+
+        expect(did.length).toBe(60);
+        expect(did.startsWith('did:mdip:'));
+    });
+
+    it('should create DID for tBTC registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 1, 'tBTC');
+
+        const did = await gatekeeper.createDID(agentTxn);
+
+        expect(did.length).toBe(60);
+        expect(did.startsWith('did:mdip:'));
+    });
+
+    it('should create DID for local registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 1, 'local');
 
         const did = await gatekeeper.createDID(agentTxn);
 
@@ -128,6 +177,34 @@ describe('createDid', () => {
         const did2 = await gatekeeper.createDID(agentTxn);
 
         expect(did1 !== did2).toBe(true);
+    });
+
+    it('should throw exception on invalid version', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 2);
+
+        try {
+            const did = await gatekeeper.createDID(agentTxn);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error.startsWith('Valid versions include')).toBe(true);
+        }
+    });
+
+    it('should throw exception on invalid registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair, 1, 'mockRegistry');
+
+        try {
+            const did = await gatekeeper.createDID(agentTxn);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error.startsWith('Valid registries include')).toBe(true);
+        }
     });
 
     it('should create DID from asset txn', async () => {
