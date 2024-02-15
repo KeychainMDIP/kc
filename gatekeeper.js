@@ -262,7 +262,7 @@ async function generateDoc(did, asof) {
         }
     }
     catch (error) {
-        console.error(error);
+        // console.error(error);
     }
 
     return {}; // TBD unknown type error

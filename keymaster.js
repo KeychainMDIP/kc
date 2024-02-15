@@ -282,8 +282,13 @@ function addToHeld(did) {
 }
 
 export async function resolveDID(did, asof) {
-    const doc = await gatekeeper.resolveDID(did, asof);
-    return doc;
+    try {
+        const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
+        return doc;
+    }
+    catch {
+        return null;
+    }
 }
 
 export async function resolveAsset(did) {
@@ -498,14 +503,6 @@ export function lookupDID(name) {
         if (wallet.ids.hasOwnProperty(name)) {
             return wallet.ids[name].did;
         }
-    }
-}
-
-export function resolveName(name) {
-    const did = lookupDID(name);
-
-    if (did) {
-        return resolveDID(did);
     }
 }
 

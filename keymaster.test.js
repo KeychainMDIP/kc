@@ -473,7 +473,7 @@ describe('removeName', () => {
     });
 });
 
-describe('resolveName', () => {
+describe('resolveDID', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -484,7 +484,7 @@ describe('resolveName', () => {
 
         const bob = await keymaster.createId('Bob');
         const doc1 = await keymaster.resolveId();
-        const doc2 = await keymaster.resolveName('Bob');
+        const doc2 = await keymaster.resolveDID('Bob');
 
         expect(doc1).toStrictEqual(doc2);
     });
@@ -500,7 +500,7 @@ describe('resolveName', () => {
         keymaster.addName('mock', dataDid);
 
         const doc1 = await keymaster.resolveDID(dataDid);
-        const doc2 = await keymaster.resolveName('mock');
+        const doc2 = await keymaster.resolveDID('mock');
 
         expect(doc1).toStrictEqual(doc2);
     });
@@ -508,7 +508,7 @@ describe('resolveName', () => {
     it('should return undefined for invalid name', async () => {
         mockFs({});
 
-        const doc = await keymaster.resolveName('mock');
+        const doc = await keymaster.resolveDID('mock');
 
         expect(!doc).toBe(true);
     });

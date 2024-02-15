@@ -439,19 +439,6 @@ program
     });
 
 program
-    .command('resolve-name <name>')
-    .description('Resolves a DID by name')
-    .action(async (name) => {
-        try {
-            const doc = await keymaster.resolveName(name);
-            console.log(JSON.stringify(doc, null, 4));
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
     .command('get-multiaddr')
     .description('IPFS multiaddr connection string')
     .action(async (name) => {
