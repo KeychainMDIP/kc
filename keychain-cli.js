@@ -10,20 +10,6 @@ program
     .description('Keychain CLI tool');
 
 program
-    .command('show-peerid')
-    .description('Show IPFS peerid')
-    .action(async () => {
-        const peerId = await keymaster.getPeerId();
-
-        if (peerId) {
-            console.log(peerId);
-        }
-        else {
-            console.log('Not connected');
-        }
-    });
-
-program
     .command('new-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {
@@ -164,6 +150,19 @@ program
     });
 
 program
+    .command('rotate-keys')
+    .description('Rotates keys for current user')
+    .action(async () => {
+        try {
+            const doc = await keymaster.rotateKeys();
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('resolve-did <did>')
     .description('Return document associated with DID')
     .action(async (did) => {
@@ -245,12 +244,17 @@ program
     });
 
 program
-    .command('create-credential <file>')
+    .command('create-credential <file> [name]')
     .description('Create credential from schema file')
-    .action(async (file) => {
+    .action(async (file, name) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.createCredential(schema);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
             console.log(did);
         }
         catch (error) {
@@ -259,12 +263,17 @@ program
     });
 
 program
-    .command('create-challenge <file>')
+    .command('create-challenge <file> [name]')
     .description('Create challenge from a file')
-    .action(async (file) => {
+    .action(async (file, name) => {
         try {
             const challenge = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.createChallenge(challenge);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
             console.log(did);
         }
         catch (error) {
@@ -273,12 +282,18 @@ program
     });
 
 program
-    .command('create-challenge-cc <did>')
+    .command('create-challenge-cc <did> [name]')
     .description('Create challenge from a credential DID')
-    .action(async (credential) => {
+    .action(async (credentialDID, name) => {
         try {
+            const credential = keymaster.lookupDID(credentialDID);
             const challenge = { credentials: [{ schema: credential }] };
             const did = await keymaster.createChallenge(challenge);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
             console.log(did);
         }
         catch (error) {
@@ -314,12 +329,17 @@ program
     });
 
 program
-    .command('attest-credential <file> <registry>')
+    .command('attest-credential <file> <registry> [name]')
     .description('Sign and encrypt a bound credential file')
-    .action(async (file, registry) => {
+    .action(async (file, registry, name) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.attestCredential(vc, registry);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
             console.log(did);
         }
         catch (error) {
@@ -381,19 +401,6 @@ program
     });
 
 program
-    .command('rotate-keys')
-    .description('Rotates keys for current user')
-    .action(async () => {
-        try {
-            const doc = await keymaster.rotateKeys();
-            console.log(JSON.stringify(doc, null, 4));
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
     .command('add-name <name> <did>')
     .description('Adds a name for a DID')
     .action(async (name, did) => {
@@ -435,6 +442,20 @@ program
         }
         catch (error) {
             console.error(error);
+        }
+    });
+
+program
+    .command('show-peerid')
+    .description('Show IPFS peerid')
+    .action(async () => {
+        const peerId = await keymaster.getPeerId();
+
+        if (peerId) {
+            console.log(peerId);
+        }
+        else {
+            console.log('Not connected');
         }
     });
 
