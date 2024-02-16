@@ -310,17 +310,23 @@ export function fetchUpdates(registry, did) {
     return [];
 }
 
-export async function resolveDID(did, asOfDate = null) {
+export async function resolveDID(did, asOfTime = null) {
     let doc = await generateDoc(did);
 
     if (!doc) {
         throw "Invalid DID";
     }
 
-    const updates = fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
+    let mdip = doc.didDocumentMetadata.mdip;
+
+    if (asOfTime && new Date(mdip.created) > new Date(asOfTime)) {
+        // TBD What to return if DID was created after specified time?
+    }
+
+    const updates = fetchUpdates(mdip.registry, did);
 
     for (const { time, txn } of updates) {
-        if (asOfDate && new Date(time) > new Date(asOfDate)) {
+        if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
 
@@ -341,7 +347,7 @@ export async function resolveDID(did, asOfDate = null) {
         if (valid) {
             if (txn.op === 'update') {
                 // Maintain mdip metadata across versions
-                const mdip = doc.didDocumentMetadata.mdip;
+                mdip = doc.didDocumentMetadata.mdip;
 
                 // TBD if registry change in txn.doc.didDocumentMetadata.mdip,
                 // fetch updates from new registry and search for same txn
