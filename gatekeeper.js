@@ -344,29 +344,28 @@ export async function resolveDID(did, asOfTime = null) {
 
         const valid = await verifyUpdate(txn, doc);
 
-        if (valid) {
-            if (txn.op === 'update') {
-                // Maintain mdip metadata across versions
-                mdip = doc.didDocumentMetadata.mdip;
+        if (!valid) {
+            continue;
+        }
 
-                // TBD if registry change in txn.doc.didDocumentMetadata.mdip,
-                // fetch updates from new registry and search for same txn
-                doc = txn.doc;
-                doc.didDocumentMetadata.updated = time;
-                doc.didDocumentMetadata.mdip = mdip;
-            }
-            else if (txn.op === 'delete') {
-                doc.didDocument = {};
-                doc.didDocumentMetadata.deactivated = true;
-                doc.didDocumentMetadata.data = null; // in case of asset
-                doc.didDocumentMetadata.updated = time;
-            }
-            else {
-                console.error(`unknown op ${txn.op}`);
-            }
+        if (txn.op === 'update') {
+            // Maintain mdip metadata across versions
+            mdip = doc.didDocumentMetadata.mdip;
+
+            // TBD if registry change in txn.doc.didDocumentMetadata.mdip,
+            // fetch updates from new registry and search for same txn
+            doc = txn.doc;
+            doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.mdip = mdip;
+        }
+        else if (txn.op === 'delete') {
+            doc.didDocument = {};
+            doc.didDocumentMetadata.deactivated = true;
+            doc.didDocumentMetadata.data = null; // in case of asset
+            doc.didDocumentMetadata.updated = time;
         }
         else {
-            console.error(`txn not valid: ${JSON.stringify(txn)}`);
+            console.error(`unknown op ${txn.op}`);
         }
     }
 
