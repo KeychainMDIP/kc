@@ -204,11 +204,25 @@ program
 
 program
     .command('decrypt-did <did>')
-    .description('Decrypt an encrypted data DID')
+    .description('Decrypt an encrypted message DID')
     .action(async (did) => {
         try {
             const plaintext = await keymaster.decrypt(did);
             console.log(plaintext);
+        }
+        catch (error) {
+            console.error(`cannot decrypt ${did}`);
+        }
+    });
+
+program
+    .command('decrypt-json <did>')
+    .description('Decrypt an encrypted JSON DID')
+    .action(async (did) => {
+        try {
+            const plaintext = await keymaster.decrypt(did);
+            const json = JSON.parse(plaintext);
+            console.log(JSON.stringify(json, null, 4));
         }
         catch (error) {
             console.error(`cannot decrypt ${did}`);
