@@ -342,6 +342,9 @@ export async function resolveDID(did, asOfDate = null) {
             if (txn.op === 'update') {
                 // Maintain mdip metadata across versions
                 const mdip = doc.didDocumentMetadata.mdip;
+
+                // TBD if registry change in txn.doc.didDocumentMetadata.mdip,
+                // fetch updates from new registry and search for same txn
                 doc = txn.doc;
                 doc.didDocumentMetadata.updated = time;
                 doc.didDocumentMetadata.mdip = mdip;
