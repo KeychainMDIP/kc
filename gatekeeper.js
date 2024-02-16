@@ -329,6 +329,13 @@ export async function resolveDID(did, asOfDate = null) {
             continue;
         }
 
+        const hash = cipher.hashJSON(doc);
+
+        if (hash !== txn.prev) {
+            // hash mismatch
+            continue;
+        }
+
         const valid = await verifyUpdate(txn, doc);
 
         if (valid) {

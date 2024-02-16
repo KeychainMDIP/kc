@@ -235,14 +235,12 @@ export async function verifySignature(obj) {
 
 async function updateDID(did, doc) {
     const current = await resolveDID(did);
-    const prev = cipher.hashJSON(current.didDocument);
-    const hash = cipher.hashJSON(doc.didDocument);
+    const prev = cipher.hashJSON(current);
 
     const txn = {
         op: "update",
         did: did,
         doc: doc,
-        hash: hash,
         prev: prev,
     };
 
@@ -252,7 +250,7 @@ async function updateDID(did, doc) {
 
 async function revokeDID(did) {
     const current = await resolveDID(did);
-    const prev = cipher.hashJSON(current.didDocument);
+    const prev = cipher.hashJSON(current);
 
     const txn = {
         op: "delete",
