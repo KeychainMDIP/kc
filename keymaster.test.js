@@ -1349,3 +1349,70 @@ describe('verifyResponse', () => {
         expect(vcList4.length).toBe(2);
     });
 });
+
+describe('publishCredential', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should reveal a valid credential', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
+
+        const ok = await keymaster.publishCredential(did, true);
+
+        const doc = await keymaster.resolveDID(bob);
+        const vc = await keymaster.decryptJSON(did);
+        const manifest = doc.didDocumentMetadata.manifest;
+
+        expect(manifest[did]).toStrictEqual(vc);
+    });
+
+    it('should publish a valid credential without revealing', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
+
+        const ok = await keymaster.publishCredential(did, false);
+
+        const doc = await keymaster.resolveDID(bob);
+        const vc = await keymaster.decryptJSON(did);
+        const manifest = doc.didDocumentMetadata.manifest;
+
+        vc.credential = null;
+
+        expect(manifest[did]).toStrictEqual(vc);
+    });
+});
+
+describe('unpublishCredential', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should unpublish a published credential', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
+        const ok = await keymaster.publishCredential(did, true);
+
+        await keymaster.unpublishCredential(did);
+
+        const doc = await keymaster.resolveDID(bob);
+        const manifest = doc.didDocumentMetadata.manifest;
+
+        expect(manifest).toStrictEqual({});
+    });
+});
