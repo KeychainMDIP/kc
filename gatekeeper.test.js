@@ -264,3 +264,42 @@ describe('exportDID', () => {
         }
     });
 });
+
+describe('importDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should import a valid DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(did);
+    });
+
+    it('should throw an exception on mismatched DID in export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did1 = await gatekeeper.createDID(agentTxn);
+        const did2 = await gatekeeper.createDID(agentTxn);
+        const txns = await gatekeeper.exportDID(did1);
+
+        txns[0].did = did2;
+
+        try {
+            const imported = await gatekeeper.importDID(txns);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+});

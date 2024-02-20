@@ -419,7 +419,7 @@ export async function importDID(txns) {
     // TBD verify creeat txn
     const check = await anchorSeed(seed);
 
-    console.log(`${did} should be ${check}`);
+    //console.log(`${did} should be ${check}`);
 
     if (did !== check) {
         throw "Invalid import";
