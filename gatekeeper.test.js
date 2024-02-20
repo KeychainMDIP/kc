@@ -232,3 +232,35 @@ describe('createDID', () => {
         expect(did1 !== did2).toBe(true);
     });
 });
+
+describe('exportDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should export a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+
+        const txns = await gatekeeper.exportDID(did);
+
+        expect(txns.length).toBe(1);
+        expect(txns[0].did).toStrictEqual(did);
+        expect(txns[0].txn).toStrictEqual(agentTxn);
+    });
+
+    it('should throw an exception on an invalid DID', async () => {
+        mockFs({});
+
+        try {
+            const txns = await gatekeeper.exportDID('mockDID');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+});

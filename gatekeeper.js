@@ -398,12 +398,13 @@ export async function deleteDID(txn) {
 
 export async function exportDID(did) {
     const doc = await generateDoc(did);
+    const registry = doc?.didDocumentMetadata?.mdip?.registry;
 
-    if (!doc) {
+    if (!registry) {
         throw "Invalid DID";
     }
 
-    return fetchUpdates(doc.didDocumentMetadata.mdip.registry, did);
+    return fetchUpdates(registry, did);
 }
 
 export async function importDID(txns) {
