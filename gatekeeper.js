@@ -99,9 +99,20 @@ export async function anchorSeed(seed) {
 }
 
 export async function generateDID(txn) {
+    const now = new Date();
+    let created = now.toISOString();
+
+    // If a created date is supplied in the txn and it is in the past, use it
+    if (txn.created)  {
+        const txnCreated = new Date(txn.created);
+        if (txnCreated < now) {
+            created = txn.created;
+        }
+    }
+
     const seed = {
         anchor: txn,
-        created: new Date().toISOString(),
+        created: created,
     };
 
     const did = await anchorSeed(seed);
@@ -185,7 +196,7 @@ export async function createDID(txn) {
     throw "Unknown type";
 }
 
-async function generateDoc(did, asof) {
+async function generateDoc(did, asofTime) {
     try {
         const suffix = did.split(':').pop(); // everything after "did:mdip:"
         const cid = CID.parse(suffix);
@@ -195,7 +206,7 @@ async function generateDoc(did, asof) {
             return {};
         }
 
-        if (asof && new Date(docSeed.created) < new Date(asof)) {
+        if (asofTime && new Date(docSeed.created) < new Date(asofTime)) {
             return {}; // DID was not yet created
         }
 

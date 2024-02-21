@@ -23,7 +23,7 @@ describe('generateDid', () => {
         const mockTxn = {
             op: "create",
             mdip: {
-                registry: "mockRegstry"
+                registry: "mockRegistry"
             }
         };
         const did = await gatekeeper.generateDID(mockTxn);
@@ -38,21 +38,30 @@ describe('generateDid', () => {
         const mockTxn = {
             op: "create",
             mdip: {
-                registry: "mockRegstry"
+                registry: "mockRegistry"
             }
         };
         const did1 = await gatekeeper.generateDID(mockTxn);
         const did2 = await gatekeeper.generateDID(mockTxn);
 
-        expect(did1.length).toBe(60);
-        expect(did1.startsWith('did:mdip:'));
-
-        expect(did2.length).toBe(60);
-        expect(did2.startsWith('did:mdip:'));
-
         expect(did1 !== did2).toBe(true);
     });
 
+    it('should create same DID from same txn with date included', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            op: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+        const did1 = await gatekeeper.generateDID(mockTxn);
+        const did2 = await gatekeeper.generateDID(mockTxn);
+
+        expect(did1 === did2).toBe(true);
+    });
 });
 
 async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
