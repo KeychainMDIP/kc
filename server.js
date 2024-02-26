@@ -1,11 +1,15 @@
 import express from 'express';
 import morgan from 'morgan';
 import * as gatekeeper from './gatekeeper.js';
+import * as hyperswarm from './hyperswarm.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
 gatekeeper.start();
+
+const protocol = '/MDIP/v22.02.26';
+hyperswarm.start(protocol);
 
 const app = express();
 
