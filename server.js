@@ -100,4 +100,12 @@ app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
 
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    //console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    console.error('Unhandled rejection caught');
+});
 
