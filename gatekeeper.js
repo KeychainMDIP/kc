@@ -7,7 +7,9 @@ import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import { FsBlockstore } from 'blockstore-fs';
 import * as cipher from './cipher.js';
-import * as network from './ipfs.js';
+import Hyperswarm from 'hyperswarm';
+import goodbye from 'graceful-goodbye';
+import b4a from 'b4a';
 
 const dbName = 'mdip.json';
 
@@ -31,12 +33,26 @@ function writeDb(db) {
 let helia = null;
 let ipfs = null;
 
+const swarm = new Hyperswarm();
+goodbye(() => swarm.destroy())
+
 export async function start() {
     if (!ipfs) {
         const blockstore = new FsBlockstore('./ipfs');
         helia = await createHelia({ blockstore });
         ipfs = json(helia);
     }
+
+    // Join a common topic
+    const protocol = '/MDIP/v22.02.26';
+    const hash = cipher.hashMessage(protocol);
+    const topic = b4a.from(hash, 'hex');
+    const discovery = swarm.join(topic, { client: true, server: true });
+
+    // The flushed promise will resolve when the topic has been fully announced to the DHT
+    discovery.flushed().then(() => {
+        //console.log(`joined network ${protocol} (${hash})`);
+    });
 }
 
 export function getPeerId() {
@@ -103,7 +119,7 @@ export async function generateDID(txn) {
     let created = now.toISOString();
 
     // If a created date is supplied in the txn and it is in the past, use it
-    if (txn.created)  {
+    if (txn.created) {
         const txnCreated = new Date(txn.created);
         if (txnCreated < now) {
             created = txn.created;
