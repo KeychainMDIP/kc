@@ -11,18 +11,6 @@ export async function start(gk) {
     await gatekeeper.start();
 }
 
-export function getPeerId() {
-    return gatekeeper.getPeerId();
-}
-
-export function getMultiaddr() {
-    return gatekeeper.getMultiaddr();
-}
-
-export async function dialMultiaddr(multiaddr) {
-    return await gatekeeper.dialMultiaddr(multiaddr);
-}
-
 export async function stop() {
     await gatekeeper.stop();
 }
@@ -606,7 +594,7 @@ export async function acceptCredential(did) {
     }
 }
 
-export async function publishCredential(did, reveal=false) {
+export async function publishCredential(did, reveal = false) {
     try {
         const id = getCurrentId();
         const credential = lookupDID(did);

@@ -53,9 +53,6 @@ Commands:
   add-name <name> <did>                       Adds a name for a DID
   remove-name <name>                          Removes a name for a DID
   list-names                                  Lists names of DIDs
-  show-peerid                                 Show IPFS peerid
-  get-multiaddr                               IPFS multiaddr connection string
-  dial-multiaddr <connect>                    Connect to IPFS peer
   export-did <did>                            Export DID to file
   import-did <file>                           Import DID from file
   help [command]                              display help for command

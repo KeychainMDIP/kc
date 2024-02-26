@@ -1,6 +1,5 @@
 import { json } from '@helia/json';
 import { CID } from 'multiformats/cid';
-import { multiaddr } from '@multiformats/multiaddr';
 import { base58btc } from 'multiformats/bases/base58';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
@@ -35,27 +34,6 @@ export async function start() {
         const blockstore = new FsBlockstore('./ipfs');
         helia = await createHelia({ blockstore });
         ipfs = json(helia);
-    }
-}
-
-export function getPeerId() {
-    if (helia) {
-        const peerId = helia.libp2p.peerId;
-        return peerId.toString();
-    }
-}
-
-export function getMultiaddr() {
-    if (helia) {
-        const multiaddrs = helia.libp2p.getMultiaddrs();
-        return multiaddrs;
-    }
-}
-
-export async function dialMultiaddr(connect) {
-    if (helia) {
-        const addr = multiaddr(connect);
-        return await helia.libp2p.dial(addr);
     }
 }
 
