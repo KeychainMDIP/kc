@@ -3,6 +3,8 @@ import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import * as cipher from './cipher.js';
 
+let gatekeeper = null;
+
 const swarm = new Hyperswarm();
 goodbye(() => swarm.destroy())
 
@@ -19,7 +21,9 @@ swarm.on('connection', conn => {
     conn.on('data', data => receiveTxn(name, data));
 });
 
-export async function start(protocol) {
+export async function start(protocol, gk) {
+    gatekeeper = gk;
+
     // Join a common topic
     const hash = cipher.hashMessage(protocol);
     const topic = b4a.from(hash, 'hex');
@@ -61,12 +65,27 @@ async function receiveTxn(name, json) {
         const seen = messagesSeen[hash];
 
         if (!seen) {
+            await handleTxn(msg.txn);
             msg.relays.push(name);
             await republishTxn(msg);
         }
     }
     catch (error) {
         console.log('receiveTxn error:', error);
+    }
+}
+
+async function handleTxn(txn) {
+    if (!gatekeeper) {
+        return;
+    }
+
+    try {
+        const did = await gatekeeper.importDID(txn);
+        console.log(`${did} imported`);
+    }
+    catch (error) {
+        console.error(error);
     }
 }
 

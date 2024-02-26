@@ -9,7 +9,7 @@ EventEmitter.defaultMaxListeners = 100;
 gatekeeper.start();
 
 const protocol = '/MDIP/v22.02.26';
-hyperswarm.start(protocol);
+hyperswarm.start(protocol, gatekeeper);
 
 const app = express();
 
@@ -58,7 +58,8 @@ app.post('/did', async (req, res) => {
     try {
         const txn = req.body;
         const did = await gatekeeper.createDID(txn);
-        await hyperswarm.publishTxn(txn);
+        const txns = await gatekeeper.exportDID(did);
+        await hyperswarm.publishTxn(txns);
         res.json(did);
     } catch (error) {
         console.error(error);
@@ -80,7 +81,6 @@ app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const doc = await gatekeeper.updateDID(txn);
-        await hyperswarm.publishTxn(txn);
         res.json(doc);
     } catch (error) {
         console.error(error);
@@ -92,7 +92,6 @@ app.delete('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const ok = await gatekeeper.deleteDID(txn);
-        await hyperswarm.publishTxn(txn);
         res.json(ok);
     } catch (error) {
         console.error(error);
