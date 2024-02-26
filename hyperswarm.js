@@ -68,14 +68,15 @@ async function receiveMsg(name, json) {
         if (!seen) {
             msg.relays.push(name);
             await republishMsg(msg);
-            await importTxns(msg.txns);
+
+            const did = await gatekeeper.importDID(msg.txns);
+            console.log(`${did} imported`);
         }
     }
     catch (error) {
         console.log('receiveTxn error:', error);
     }
 }
-
 
 async function republishMsg(msg) {
     try {
@@ -98,20 +99,6 @@ async function relayMsg(msg) {
         if (!msg.relays.includes(name)) {
             conn.write(json);
         }
-    }
-}
-
-async function importTxns(txns) {
-    if (!gatekeeper) {
-        return;
-    }
-
-    try {
-        const did = await gatekeeper.importDID(txns);
-        console.log(`${did} imported`);
-    }
-    catch (error) {
-        console.error(error);
     }
 }
 
