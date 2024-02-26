@@ -3,6 +3,14 @@ import axios from 'axios';
 const URL = 'http://localhost:3000';
 const connectionError = `Can't connect to gatekeeper. Is server running on ${URL}?`;
 
+function throwError(error) {
+    if (error.response) {
+        throw error.response.data;
+    }
+
+    throw error.message;
+}
+
 export async function start() {
 }
 
@@ -25,7 +33,7 @@ export async function getMultiaddr() {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throwError(error);
     }
 }
 
@@ -35,7 +43,7 @@ export async function dialMultiaddr(multiaddr) {
         return response.data;
     }
     catch (error) {
-        throw connectionError;
+        throwError(error);
     }
 }
 
@@ -45,7 +53,7 @@ export async function createDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
 
@@ -61,7 +69,7 @@ export async function resolveDID(did, asof = null) {
         }
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
 
@@ -71,7 +79,7 @@ export async function updateDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
 
@@ -81,7 +89,7 @@ export async function deleteDID(txn) {
         return response.data;
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
 
@@ -91,7 +99,7 @@ export async function exportDID(did) {
         return response.data;
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
 
@@ -101,6 +109,6 @@ export async function importDID(txns) {
         return response.data;
     }
     catch (error) {
-        throw error.response.data;
+        throwError(error);
     }
 }
