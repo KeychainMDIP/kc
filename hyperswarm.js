@@ -43,7 +43,6 @@ export async function publishTxn(txn) {
         logTxn(txn, 'local');
 
         const msg = {
-            hash: hash,
             txn: txn,
             relays: [],
         };
@@ -58,7 +57,8 @@ export async function publishTxn(txn) {
 async function receiveTxn(name, json) {
     try {
         const msg = JSON.parse(json);
-        const seen = messagesSeen[msg.cid];
+        const hash = cipher.hashJSON(msg.txn);
+        const seen = messagesSeen[hash];
 
         if (!seen) {
             msg.relays.push(name);
@@ -72,7 +72,8 @@ async function receiveTxn(name, json) {
 
 async function republishTxn(msg) {
     try {
-        messagesSeen[msg.hash] = true;
+        const hash = cipher.hashJSON(msg.txn);
+        messagesSeen[hash] = true;
         logTxn(msg.txn, msg.relays[0]);
         await relayTxn(msg);
     }

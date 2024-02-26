@@ -12,7 +12,7 @@ const dbName = 'mdip.json';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local'];
+const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local', 'hyperswarm'];
 
 function loadDb() {
     if (fs.existsSync(dbName)) {
