@@ -6,7 +6,7 @@ import * as cipher from './cipher.js';
 const swarm = new Hyperswarm();
 goodbye(() => swarm.destroy())
 
-const mockIPFS = {};
+const messagesSeen = {};
 const nodes = {};
 
 // Keep track of all connections
@@ -16,7 +16,7 @@ swarm.on('connection', conn => {
     console.log('* got a connection from:', name, '*');
     conns.push(conn);
     conn.once('close', () => conns.splice(conns.indexOf(conn), 1));
-    conn.on('data', data => receiveMessage(name, data));
+    conn.on('data', data => receiveTxn(name, data));
 });
 
 export async function start(protocol) {
@@ -35,17 +35,69 @@ export async function stop() {
     swarm.destroy();
 }
 
-async function receiveMessage(name, json) {
+export async function publishTxn(txn) {
+    try {
+        const hash = cipher.hashJSON(txn);
+
+        messagesSeen[hash] = true;
+        logTxn(txn, 'local');
+
+        const msg = {
+            hash: hash,
+            txn: txn,
+            relays: [],
+        };
+
+        await relayTxn(msg);
+    }
+    catch (error) {
+        console.log(error);
+    }
+}
+
+async function receiveTxn(name, json) {
     try {
         const msg = JSON.parse(json);
-        const data = mockIPFS[msg.cid];
+        const seen = messagesSeen[msg.cid];
 
-        if (!data) {
+        if (!seen) {
             msg.relays.push(name);
-            console.log('receiveMessage', json);
+            await republishTxn(msg);
         }
     }
     catch (error) {
-        console.log('receiveMessage error:', error);
+        console.log('receiveTxn error:', error);
     }
+}
+
+async function republishTxn(msg) {
+    try {
+        messagesSeen[msg.hash] = true;
+        logTxn(msg.txn, msg.relays[0]);
+        await relayTxn(msg);
+    }
+    catch (error) {
+        console.log(error);
+    }
+}
+
+async function relayTxn(msg) {
+    const json = JSON.stringify(msg);
+
+    for (const conn of conns) {
+        const name = b4a.toString(conn.remotePublicKey, 'hex');
+
+        if (!msg.relays.includes(name)) {
+            conn.write(json);
+        }
+    }
+}
+
+function logTxn(txn, name) {
+    nodes[name] = (nodes[name] || 0) + 1;
+    const detected = Object.keys(nodes).length;
+
+    console.log(`from: ${name}`);
+    console.log(JSON.stringify(txn, null, 4));
+    console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
 }
