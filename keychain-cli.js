@@ -5,6 +5,8 @@ import assert from 'assert';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
 
+const DefaultRegistry = 'hyperswarm';
+
 program
     .version('1.0.0')
     .description('Keychain CLI tool');
@@ -50,11 +52,11 @@ program
     });
 
 program
-    .command('create-id <name> <registry>')
+    .command('create-id <name> [registry]')
     .description('Create a new decentralized ID')
     .action(async (name, registry) => {
         try {
-            const did = await keymaster.createId(name, registry);
+            const did = await keymaster.createId(name, registry || DefaultRegistry);
             console.log(did);
         }
         catch (error) {
@@ -343,12 +345,12 @@ program
     });
 
 program
-    .command('attest-credential <file> <registry> [name]')
+    .command('attest-credential <file> [registry] [name]')
     .description('Sign and encrypt a bound credential file')
     .action(async (file, registry, name) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.attestCredential(vc, registry);
+            const did = await keymaster.attestCredential(vc, registry || DefaultRegistry);
 
             if (name) {
                 keymaster.addName(name, did);

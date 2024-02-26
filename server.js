@@ -80,8 +80,18 @@ app.get('/did/:did', async (req, res) => {
 app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
-        const doc = await gatekeeper.updateDID(txn);
-        res.json(doc);
+        const ok = await gatekeeper.updateDID(txn);
+
+        if (ok) {
+            const doc = await gatekeeper.resolveDID(txn.did);
+
+            if (doc?.didDocumentMetadata?.mdip?.registry === 'hyperswarm') {
+                const txns = await gatekeeper.exportDID(doc.didDocument.id);
+                await hyperswarm.publishTxn(txns);
+            }
+        }
+
+        res.json(ok);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
