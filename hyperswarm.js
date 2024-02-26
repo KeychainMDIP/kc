@@ -18,7 +18,7 @@ swarm.on('connection', conn => {
     console.log('* got a connection from:', name, '*');
     conns.push(conn);
     conn.once('close', () => conns.splice(conns.indexOf(conn), 1));
-    conn.on('data', data => receiveTxn(name, data));
+    conn.on('data', data => receiveMsg(name, data));
 });
 
 export async function start(protocol, gk) {
@@ -39,35 +39,36 @@ export async function stop() {
     swarm.destroy();
 }
 
-export async function publishTxn(txn) {
+export async function publishMsg(did) {
     try {
-        const hash = cipher.hashJSON(txn);
+        const txns = await gatekeeper.exportDID(did);
+        const hash = cipher.hashJSON(txns);
 
         messagesSeen[hash] = true;
-        logTxn(txn, 'local');
+        logTxns(txns, 'local');
 
         const msg = {
-            txn: txn,
+            txns: txns,
             relays: [],
         };
 
-        await relayTxn(msg);
+        await relayMsg(msg);
     }
     catch (error) {
         console.log(error);
     }
 }
 
-async function receiveTxn(name, json) {
+async function receiveMsg(name, json) {
     try {
         const msg = JSON.parse(json);
-        const hash = cipher.hashJSON(msg.txn);
+        const hash = cipher.hashJSON(msg.txns);
         const seen = messagesSeen[hash];
 
         if (!seen) {
-            await handleTxn(msg.txn);
             msg.relays.push(name);
-            await republishTxn(msg);
+            await republishMsg(msg);
+            await importTxns(msg.txns);
         }
     }
     catch (error) {
@@ -75,33 +76,20 @@ async function receiveTxn(name, json) {
     }
 }
 
-async function handleTxn(txn) {
-    if (!gatekeeper) {
-        return;
-    }
 
+async function republishMsg(msg) {
     try {
-        const did = await gatekeeper.importDID(txn);
-        console.log(`${did} imported`);
-    }
-    catch (error) {
-        console.error(error);
-    }
-}
-
-async function republishTxn(msg) {
-    try {
-        const hash = cipher.hashJSON(msg.txn);
+        const hash = cipher.hashJSON(msg.txns);
         messagesSeen[hash] = true;
-        logTxn(msg.txn, msg.relays[0]);
-        await relayTxn(msg);
+        logTxns(msg.txns, msg.relays[0]);
+        await relayMsg(msg);
     }
     catch (error) {
         console.log(error);
     }
 }
 
-async function relayTxn(msg) {
+async function relayMsg(msg) {
     const json = JSON.stringify(msg);
 
     for (const conn of conns) {
@@ -113,11 +101,25 @@ async function relayTxn(msg) {
     }
 }
 
-function logTxn(txn, name) {
+async function importTxns(txns) {
+    if (!gatekeeper) {
+        return;
+    }
+
+    try {
+        const did = await gatekeeper.importDID(txns);
+        console.log(`${did} imported`);
+    }
+    catch (error) {
+        console.error(error);
+    }
+}
+
+function logTxns(txns, name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
     console.log(`from: ${name}`);
-    console.log(JSON.stringify(txn, null, 4));
+    console.log(JSON.stringify(txns, null, 4));
     console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
 }
