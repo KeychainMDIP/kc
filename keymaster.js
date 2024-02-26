@@ -4,6 +4,7 @@ import * as cipher from './cipher.js';
 
 let gatekeeper = null;
 const walletName = 'wallet.json';
+const defaultRegistry = 'hyperswarm';
 
 export async function start(gk) {
     gatekeeper = gk;
@@ -124,7 +125,7 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did, registry = 'peerbit') {
+export async function encrypt(msg, did, registry = defaultRegistry) {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDID(did);
@@ -173,7 +174,7 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did, registry = 'peerbit') {
+export async function encryptJSON(json, did, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
     return encrypt(plaintext, did, registry);
 }
@@ -308,7 +309,7 @@ export async function resolveAsset(did) {
     return null;
 }
 
-export async function createId(name, registry = 'peerbit') {
+export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
@@ -508,7 +509,7 @@ export function lookupDID(name) {
     }
 }
 
-export async function createData(data, registry = 'peerbit') {
+export async function createData(data, registry = defaultRegistry) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -570,7 +571,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc, registry = 'peerbit') {
+export async function attestCredential(vc, registry = defaultRegistry) {
     const id = getCurrentId();
 
     if (vc.issuer !== id.did) {

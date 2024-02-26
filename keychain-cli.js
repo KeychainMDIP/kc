@@ -5,8 +5,6 @@ import assert from 'assert';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
 
-const DefaultRegistry = 'hyperswarm';
-
 program
     .version('1.0.0')
     .description('Keychain CLI tool');
@@ -56,7 +54,7 @@ program
     .description('Create a new decentralized ID')
     .action(async (name, registry) => {
         try {
-            const did = await keymaster.createId(name, registry || DefaultRegistry);
+            const did = await keymaster.createId(name, registry);
             console.log(did);
         }
         catch (error) {
@@ -350,7 +348,7 @@ program
     .action(async (file, registry, name) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.attestCredential(vc, registry || DefaultRegistry);
+            const did = await keymaster.attestCredential(vc, registry);
 
             if (name) {
                 keymaster.addName(name, did);
