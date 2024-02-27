@@ -98,10 +98,10 @@ async function relayMsg(msg) {
 
         if (!msg.relays.includes(name)) {
             conn.write(json);
-            console.log(`relaying to: ${name}`);
+            console.log(`* relaying to: ${name} *`);
         }
         else {
-            console.log(`skipping relay to: ${name}`);
+            console.log(`* skipping relay to: ${name} *`);
         }
     }
 }
