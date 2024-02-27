@@ -30,10 +30,9 @@ async function shareDb() {
         const hash = cipher.hashJSON(db);
 
         messagesSeen[hash] = true;
-        logMsg('local', hash);
 
         const msg = {
-            cid: hash.toString(),
+            hash: hash.toString(),
             data: db,
             relays: [],
         };
@@ -48,6 +47,8 @@ async function shareDb() {
 async function relayDb(msg) {
     const json = JSON.stringify(msg);
 
+    console.log(`* relaying db: ${msg.hash} *`);
+
     for (const conn of conns) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
 
@@ -61,6 +62,23 @@ async function relayDb(msg) {
     }
 }
 
+function mergeDb(newdb) {
+    const db = gatekeeper.loadDb();
+
+    if (!db.anchors) {
+        db.anchors = {};
+    }
+
+    for (const did of Object.keys(newdb.anchors)) {
+        if (!db[did]) {
+            db.anchors[did] = newdb.anchors[did];
+            console.log(`* imported anchor ${did} *`);
+        }
+    }
+
+    gatekeeper.writeDb(db);
+}
+
 async function receiveMsg(name, json) {
     try {
         const msg = JSON.parse(json);
@@ -71,10 +89,12 @@ async function receiveMsg(name, json) {
             messagesSeen[hash] = true;
             msg.relays.push(name);
             logMsg(msg.relays[0], hash);
-            await relayDb(msg);
+            relayDb(msg);
+            console.log(`* merging db ${hash} *`);
+            mergeDb(msg.data);
         }
         else {
-            console.log(`* already seen ${hash} *`);
+            console.log(`* received already seen ${hash} *`);
         }
     }
     catch (error) {
