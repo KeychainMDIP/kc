@@ -70,9 +70,12 @@ function mergeDb(newdb) {
     }
 
     for (const did of Object.keys(newdb.anchors)) {
-        if (!db[did]) {
+        if (!db.anchors[did]) {
             db.anchors[did] = newdb.anchors[did];
-            console.log(`* imported anchor ${did} *`);
+            console.log(`* imported new anchor: ${did} *`);
+        }
+        else {
+            console.log(`* already have anchor: ${did} *`);
         }
     }
 
