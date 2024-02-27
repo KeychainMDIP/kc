@@ -57,26 +57,17 @@ async function relayDb(msg) {
     }
 }
 
-async function reshareDb(msg) {
-    try {
-        mockIPFS[msg.cid] = msg.data;
-        logMsg(msg.relays[0], msg.data);
-        await relayDb(msg);
-    }
-    catch (error) {
-        console.log(error);
-    }
-}
-
 async function receiveMsg(name, json) {
     try {
         const msg = JSON.parse(json);
         const hash = cipher.hashJSON(msg.data);
-        const seen = mockIPFS[hash];
+        const seen = messagesSeen[hash];
 
         if (!seen) {
+            messagesSeen[hash] = true;
             msg.relays.push(name);
-            await reshareDb(msg);
+            logMsg(msg.relays[0], msg.data);
+            await relayDb(msg);
         }
     }
     catch (error) {
