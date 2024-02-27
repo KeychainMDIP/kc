@@ -13,7 +13,7 @@ const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local', 'hyperswarm'];
 
-function loadDb() {
+export function loadDb() {
     if (fs.existsSync(dbName)) {
         return JSON.parse(fs.readFileSync(dbName));
     }
@@ -22,7 +22,7 @@ function loadDb() {
     }
 }
 
-function writeDb(db) {
+export function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
