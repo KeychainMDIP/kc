@@ -276,13 +276,8 @@ function addToHeld(did) {
 }
 
 export async function resolveDID(did, asof) {
-    try {
-        const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
-        return doc;
-    }
-    catch {
-        return null;
-    }
+    const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
+    return doc;
 }
 
 export async function resolveAsset(did) {

@@ -505,12 +505,15 @@ describe('resolveDID', () => {
         expect(doc1).toStrictEqual(doc2);
     });
 
-    it('should return undefined for invalid name', async () => {
+    it('should throw an exception for invalid name', async () => {
         mockFs({});
 
-        const doc = await keymaster.resolveDID('mock');
-
-        expect(!doc).toBe(true);
+        try {
+            const doc = await keymaster.resolveDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
     });
 });
 

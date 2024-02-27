@@ -318,12 +318,11 @@ export function fetchUpdates(registry, did) {
 
 export async function resolveDID(did, asOfTime = null) {
     let doc = await generateDoc(did);
+    let mdip = doc?.didDocumentMetadata?.mdip;
 
-    if (!doc) {
+    if (!mdip) {
         throw "Invalid DID";
     }
-
-    let mdip = doc.didDocumentMetadata.mdip;
 
     if (asOfTime && new Date(mdip.created) > new Date(asOfTime)) {
         // TBD What to return if DID was created after specified time?
