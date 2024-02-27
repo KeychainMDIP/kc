@@ -71,7 +71,16 @@ function submitTxn(did, registry, txn, time) {
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
+    const db = loadDb();
 
+    if (!db.anchors) {
+        db.anchors = {};
+    }
+
+    const anchor = await ipfs.get(cid);
+    db.anchors[did] = anchor;
+
+    writeDb(db);
     return did;
 }
 
@@ -173,11 +182,20 @@ export async function createDID(txn) {
     throw "Unknown type";
 }
 
+async function getDocSeed(did) {
+    // const suffix = did.split(':').pop(); // everything after "did:mdip:"
+    // const cid = CID.parse(suffix);
+    // const docSeed = await ipfs.get(cid);
+
+    const db = loadDb();
+    const docSeed = db.anchors[did];
+
+    return docSeed;
+}
+
 async function generateDoc(did, asofTime) {
     try {
-        const suffix = did.split(':').pop(); // everything after "did:mdip:"
-        const cid = CID.parse(suffix);
-        const docSeed = await ipfs.get(cid);
+        const docSeed = await getDocSeed(did);
 
         if (!docSeed?.anchor?.mdip) {
             return {};
@@ -396,7 +414,6 @@ export async function exportDID(did) {
 }
 
 export async function importDID(txns) {
-    const db = loadDb();
     const create = txns[0];
     const did = create.did;
     const seed = {
@@ -413,6 +430,8 @@ export async function importDID(txns) {
         throw "Invalid import";
     }
 
+    // !! Have to loadDb here so we don't overwrite anchorSeed's write
+    const db = loadDb();
     const registry = create.txn.mdip.registry;
 
     if (!db.hasOwnProperty(registry)) {

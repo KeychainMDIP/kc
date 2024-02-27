@@ -293,6 +293,22 @@ describe('importDID', () => {
         expect(imported).toBe(did);
     });
 
+    it('should resolve an imported DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+
+        const imported = await gatekeeper.importDID(txns);
+        const doc = await gatekeeper.resolveDID(did);
+
+        expect(doc.didDocument.id).toBe(did);
+    });
+
     it('should throw an exception on mismatched DID in export', async () => {
         mockFs({});
 
