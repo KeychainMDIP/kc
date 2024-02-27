@@ -39,7 +39,7 @@ export async function stop() {
     swarm.destroy();
 }
 
-export async function publishMsg(did) {
+export async function publishExport(did) {
     try {
         const txns = await gatekeeper.exportDID(did);
         const hash = cipher.hashJSON(txns);
@@ -48,7 +48,8 @@ export async function publishMsg(did) {
         logTxns(txns, 'local');
 
         const msg = {
-            txns: txns,
+            op: 'export',
+            data: txns,
             relays: [],
         };
 
@@ -62,27 +63,27 @@ export async function publishMsg(did) {
 async function receiveMsg(name, json) {
     try {
         const msg = JSON.parse(json);
-        const hash = cipher.hashJSON(msg.txns);
+        const hash = cipher.hashJSON(msg.data);
         const seen = messagesSeen[hash];
 
         if (!seen) {
             msg.relays.push(name);
             await republishMsg(msg);
 
-            const did = await gatekeeper.importDID(msg.txns);
+            const did = await gatekeeper.importDID(msg.data);
             console.log(`${did} imported`);
         }
     }
     catch (error) {
-        console.log('receiveTxn error:', error);
+        console.log('receiveMsg error:', error);
     }
 }
 
 async function republishMsg(msg) {
     try {
-        const hash = cipher.hashJSON(msg.txns);
+        const hash = cipher.hashJSON(msg.data);
         messagesSeen[hash] = true;
-        logTxns(msg.txns, msg.relays[0]);
+        logTxns(msg.data, msg.relays[0]);
         await relayMsg(msg);
     }
     catch (error) {

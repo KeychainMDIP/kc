@@ -28,7 +28,7 @@ app.post('/did', async (req, res) => {
     try {
         const txn = req.body;
         const did = await gatekeeper.createDID(txn);
-        await hyperswarm.publishMsg(did);
+        await hyperswarm.publishExport(did);
         res.json(did);
     } catch (error) {
         console.error(error);
@@ -52,7 +52,7 @@ app.post('/did/:did', async (req, res) => {
         const ok = await gatekeeper.updateDID(txn);
 
         if (ok) {
-            await hyperswarm.publishMsg(txn.did);
+            await hyperswarm.publishExport(txn.did);
         }
 
         res.json(ok);
