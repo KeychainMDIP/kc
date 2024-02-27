@@ -1,15 +1,11 @@
 import express from 'express';
 import morgan from 'morgan';
 import * as gatekeeper from './gatekeeper.js';
-import * as hyperswarm from './hyperswarm.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
 gatekeeper.start();
-
-const protocol = '/MDIP/v22.02.26';
-//hyperswarm.start(protocol, gatekeeper);
 
 const app = express();
 
@@ -28,7 +24,6 @@ app.post('/did', async (req, res) => {
     try {
         const txn = req.body;
         const did = await gatekeeper.createDID(txn);
-        //await hyperswarm.publishExport(did);
         res.json(did);
     } catch (error) {
         console.error(error);
@@ -50,11 +45,6 @@ app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const ok = await gatekeeper.updateDID(txn);
-
-        if (ok) {
-            //await hyperswarm.publishExport(txn.did);
-        }
-
         res.json(ok);
     } catch (error) {
         console.error(error);
