@@ -27,13 +27,13 @@ swarm.on('connection', conn => {
 async function shareDb() {
     try {
         const db = gatekeeper.loadDb();
-        const cid = cipher.hashJSON(db);
+        const hash = cipher.hashJSON(db);
 
-        messagesSeen[cid] = true;
-        logMsg('local', db);
+        messagesSeen[hash] = true;
+        logMsg('local', hash);
 
         const msg = {
-            cid: cid.toString(),
+            cid: hash.toString(),
             data: db,
             relays: [],
         };
@@ -53,6 +53,10 @@ async function relayDb(msg) {
 
         if (!msg.relays.includes(name)) {
             conn.write(json);
+            console.log(`* relaying to: ${name} *`);
+        }
+        else {
+            console.log(`* skipping relay to: ${name} *`);
         }
     }
 }
@@ -66,8 +70,11 @@ async function receiveMsg(name, json) {
         if (!seen) {
             messagesSeen[hash] = true;
             msg.relays.push(name);
-            logMsg(msg.relays[0], msg.data);
+            logMsg(msg.relays[0], hash);
             await relayDb(msg);
+        }
+        else {
+            console.log(`* already seen ${hash} *`);
         }
     }
     catch (error) {
@@ -75,12 +82,12 @@ async function receiveMsg(name, json) {
     }
 }
 
-function logMsg(name, msg) {
+function logMsg(name, hash) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
     console.log(`from: ${name}`);
-    console.log(JSON.stringify(msg, null, 4));
+    console.log(`received: ${hash}`);
     console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
 }
 
