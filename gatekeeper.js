@@ -425,6 +425,7 @@ export async function importDID(txns) {
         db[registry] = {};
     }
 
+    // !! Check to make sure we're not overwriting existing updates with older ones
     db[registry][did] = txns;
     writeDb(db);
 

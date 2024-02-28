@@ -74,6 +74,16 @@ function mergeDb(db) {
             console.error(`* error importing anchor: ${did} *`);
         }
     }
+
+    for (const did of Object.keys(db.hyperswarm)) {
+        const check = gatekeeper.importDID(db.hyperswarm[did]);
+        if (check === did) {
+            console.log(`* imported updates for: ${did} *`);
+        }
+        else {
+            console.error(`* error importing updates for: ${did} *`);
+        }
+    }
 }
 
 async function receiveMsg(name, json) {
