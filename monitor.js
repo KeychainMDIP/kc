@@ -2,7 +2,8 @@ import Hyperswarm from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
-import * as gatekeeper from './gatekeeper.js';
+import fs from 'fs';
+import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 
 import { EventEmitter } from 'events';
@@ -26,9 +27,20 @@ swarm.on('connection', conn => {
     conn.on('data', data => receiveMsg(name, data));
 });
 
+function loadDb() {
+    const dbName = 'mdip.json';
+
+    if (fs.existsSync(dbName)) {
+        return JSON.parse(fs.readFileSync(dbName));
+    }
+    else {
+        return {}
+    }
+}
+
 async function shareDb() {
     try {
-        const db = gatekeeper.loadDb();
+        const db = loadDb();
         const hash = cipher.hashJSON(db);
 
         messagesSeen[hash] = true;
@@ -129,7 +141,7 @@ setInterval(async () => {
     catch (error) {
         console.error(`Error: ${error}`);
     }
-}, 60000);
+}, 10000);
 
 // Join a common topic
 const hash = sha256(protocol);
