@@ -224,15 +224,11 @@ describe('exportDID', () => {
         expect(txns[0].txn).toStrictEqual(agentTxn);
     });
 
-    it('should throw an exception on an invalid DID', async () => {
+    it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
-        try {
-            const txns = await gatekeeper.exportDID('mockDID');
-            throw 'Expected to throw an exception';
-        } catch (error) {
-            expect(error).toBe('Invalid DID');
-        }
+        const txns = await gatekeeper.exportDID('mockDID');
+        expect(txns).toStrictEqual([]);
     });
 });
 

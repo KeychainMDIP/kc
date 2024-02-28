@@ -394,7 +394,7 @@ export async function exportDID(did) {
     const registry = doc?.didDocumentMetadata?.mdip?.registry;
 
     if (!registry) {
-        throw "Invalid DID";
+        return [];
     }
 
     return fetchUpdates(registry, did);
@@ -403,25 +403,32 @@ export async function exportDID(did) {
 export async function importDID(txns) {
     const create = txns[0];
     const did = create.did;
-    const check = await createDID(create.txn);
+    let backup = await exportDID(did);
 
-    //console.log(`${did} should be ${check}`);
+    if (backup.length === 0) {
+        const check = await createDID(create.txn);
 
-    if (did !== check) {
-        throw "Invalid import";
+        if (did !== check) {
+            throw "Invalid import";
+        }
+
+        backup = await exportDID(did);
     }
 
-    // !! Have to loadDb here so we don't overwrite createDID's write
-    const db = loadDb();
-    const registry = create.txn.mdip.registry;
+    for (let i = 0; i < txns.length; i++) {
+        if (i < backup.length) {
+            if (txns[i].txn.signature !== backup[i].txn.signature) {
+                throw "Invalid import";
+            }
+        }
+        else {
+            const ok = await updateDID(txns[i]);
 
-    if (!db.hasOwnProperty(registry)) {
-        db[registry] = {};
+            if (!ok) {
+                throw "Invalid import";
+            }
+        }
     }
-
-    // !! Check to make sure we're not overwriting existing updates with older ones
-    db[registry][did] = txns;
-    writeDb(db);
 
     return did;
 }
