@@ -86,9 +86,11 @@ export async function anchorSeed(seed) {
 
 export async function generateDID(txn) {
     const did = await anchorSeed(txn);
+    const txns = await exportDID(did);
 
-    const now = new Date().toISOString();
-    submitTxn(did, txn.mdip.registry, txn, now);
+    if (txns.length === 0) {
+        submitTxn(did, txn.mdip.registry, txn);
+    }
 
     return did;
 }
