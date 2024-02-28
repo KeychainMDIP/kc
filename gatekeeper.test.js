@@ -22,6 +22,7 @@ describe('generateDid', () => {
 
         const mockTxn = {
             op: "create",
+            created: new Date().toISOString(),
             mdip: {
                 registry: "mockRegistry"
             }
@@ -30,21 +31,6 @@ describe('generateDid', () => {
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create different DIDs from same txn', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            op: "create",
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did1 = await gatekeeper.generateDID(mockTxn);
-        const did2 = await gatekeeper.generateDID(mockTxn);
-
-        expect(did1 !== did2).toBe(true);
     });
 
     it('should create same DID from same txn with date included', async () => {
@@ -67,6 +53,7 @@ describe('generateDid', () => {
 async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: version,
             type: "agent",
@@ -83,6 +70,7 @@ async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
 async function createAssetTxn(agent, keypair) {
     const dataAnchor = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
@@ -173,18 +161,6 @@ describe('createDID', () => {
         expect(did.startsWith('did:mdip:'));
     });
 
-    it('should create different DIDs from same agent txn', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-
-        const did1 = await gatekeeper.createDID(agentTxn);
-        const did2 = await gatekeeper.createDID(agentTxn);
-
-        expect(did1 !== did2).toBe(true);
-    });
-
     it('should throw exception on invalid version', async () => {
         mockFs({});
 
@@ -225,20 +201,6 @@ describe('createDID', () => {
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create different DIDs from same asset txn', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createDID(agentTxn);
-        const assetTxn = await createAssetTxn(agent, keypair);
-
-        const did1 = await gatekeeper.createDID(assetTxn);
-        const did2 = await gatekeeper.createDID(assetTxn);
-
-        expect(did1 !== did2).toBe(true);
     });
 });
 
@@ -313,9 +275,10 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did1 = await gatekeeper.createDID(agentTxn);
-        const did2 = await gatekeeper.createDID(agentTxn);
+        const agentTxn1 = await createAgentTxn(keypair);
+        const did1 = await gatekeeper.createDID(agentTxn1);
+        const agentTxn2 = await createAgentTxn(keypair);
+        const did2 = await gatekeeper.createDID(agentTxn2);
         const txns = await gatekeeper.exportDID(did1);
 
         txns[0].did = did2;

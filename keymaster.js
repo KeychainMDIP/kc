@@ -307,6 +307,7 @@ export async function createId(name, registry = defaultRegistry) {
 
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "agent",
@@ -509,6 +510,7 @@ export async function createData(data, registry = defaultRegistry) {
 
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",

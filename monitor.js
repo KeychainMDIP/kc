@@ -8,6 +8,8 @@ import * as cipher from './cipher.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
+const protocol = '/MDIP/v22.02.28';
+
 const swarm = new Hyperswarm();
 goodbye(() => swarm.destroy())
 
@@ -47,7 +49,7 @@ async function shareDb() {
 async function relayDb(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`* relaying db: ${msg.hash} *`);
+    console.log(`* publishing db: ${msg.hash} *`);
 
     for (const conn of conns) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -62,24 +64,16 @@ async function relayDb(msg) {
     }
 }
 
-function mergeDb(newdb) {
-    const db = gatekeeper.loadDb();
-
-    if (!db.anchors) {
-        db.anchors = {};
-    }
-
-    for (const did of Object.keys(newdb.anchors)) {
-        if (!db.anchors[did]) {
-            db.anchors[did] = newdb.anchors[did];
-            console.log(`* imported new anchor: ${did} *`);
+function mergeDb(db) {
+    for (const did of Object.keys(db.anchors)) {
+        const check = gatekeeper.anchorSeed(db.anchors[did]);
+        if (check === did) {
+            console.log(`* imported anchor: ${did} *`);
         }
         else {
-            console.log(`* already have anchor: ${did} *`);
+            console.error(`* error importing anchor: ${did} *`);
         }
     }
-
-    gatekeeper.writeDb(db);
 }
 
 async function receiveMsg(name, json) {
@@ -124,7 +118,6 @@ setInterval(async () => {
 }, 10000);
 
 // Join a common topic
-const protocol = '/MDIP/v22.02.27';
 const hash = sha256(protocol);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');

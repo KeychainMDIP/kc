@@ -85,25 +85,10 @@ export async function anchorSeed(seed) {
 }
 
 export async function generateDID(txn) {
-    const now = new Date();
-    let created = now.toISOString();
+    const did = await anchorSeed(txn);
 
-    // If a created date is supplied in the txn and it is in the past, use it
-    if (txn.created) {
-        const txnCreated = new Date(txn.created);
-        if (txnCreated < now) {
-            created = txn.created;
-        }
-    }
-
-    const seed = {
-        anchor: txn,
-        created: created,
-    };
-
-    const did = await anchorSeed(seed);
-
-    submitTxn(did, txn.mdip.registry, txn, seed.created);
+    const now = new Date().toISOString();
+    submitTxn(did, txn.mdip.registry, txn, now);
 
     return did;
 }
@@ -155,6 +140,11 @@ export async function createDID(txn) {
         throw "Invalid txn";
     }
 
+    if (!txn.created) {
+        // TBD ensure valid timestamp format
+        throw "Invalid txn";
+    }
+
     if (!txn.mdip) {
         throw "Invalid txn";
     }
@@ -182,7 +172,7 @@ export async function createDID(txn) {
     throw "Unknown type";
 }
 
-async function getDocSeed(did) {
+async function getAnchor(did) {
     // const suffix = did.split(':').pop(); // everything after "did:mdip:"
     // const cid = CID.parse(suffix);
     // const docSeed = await ipfs.get(cid);
@@ -195,17 +185,15 @@ async function getDocSeed(did) {
 
 async function generateDoc(did, asofTime) {
     try {
-        const docSeed = await getDocSeed(did);
+        const anchor = await getAnchor(did);
 
-        if (!docSeed?.anchor?.mdip) {
+        if (!anchor?.mdip) {
             return {};
         }
 
-        if (asofTime && new Date(docSeed.created) < new Date(asofTime)) {
+        if (asofTime && new Date(anchor.created) < new Date(asofTime)) {
             return {}; // DID was not yet created
         }
-
-        const anchor = docSeed.anchor;
 
         if (!validVersions.includes(anchor.mdip.version)) {
             return {};
@@ -239,7 +227,7 @@ async function generateDoc(did, asofTime) {
                     ],
                 },
                 "didDocumentMetadata": {
-                    "created": docSeed.created,
+                    "created": anchor.created,
                     "mdip": anchor.mdip,
                 },
             };
@@ -256,7 +244,7 @@ async function generateDoc(did, asofTime) {
                     "controller": anchor.controller,
                 },
                 "didDocumentMetadata": {
-                    "created": docSeed.created,
+                    "created": anchor.created,
                     "mdip": anchor.mdip,
                     "data": anchor.data,
                 },
@@ -415,13 +403,13 @@ export async function exportDID(did) {
 export async function importDID(txns) {
     const create = txns[0];
     const did = create.did;
-    const seed = {
-        anchor: create.txn,
-        created: create.time,
-    };
+    // const seed = {
+    //     anchor: create.txn,
+    //     created: create.time,
+    // };
 
-    // TBD verify creeat txn
-    const check = await anchorSeed(seed);
+    // TBD verify the "create" txn
+    const check = await anchorSeed(create.txn);
 
     //console.log(`${did} should be ${check}`);
 
