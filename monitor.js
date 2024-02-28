@@ -65,23 +65,27 @@ async function relayDb(msg) {
 }
 
 function mergeDb(db) {
-    for (const did of Object.keys(db.anchors)) {
-        const check = gatekeeper.anchorSeed(db.anchors[did]);
-        if (check === did) {
-            console.log(`* imported anchor: ${did} *`);
-        }
-        else {
-            console.error(`* error importing anchor: ${did} *`);
+    if (db.anchors) {
+        for (const did of Object.keys(db.anchors)) {
+            try {
+                const check = gatekeeper.createDID(db.anchors[did]);
+                console.log(`* imported anchor ${did} *`);
+            }
+            catch (error) {
+                console.error(`error importing anchor: ${did}: ${error}`);
+            }
         }
     }
 
-    for (const did of Object.keys(db.hyperswarm)) {
-        const check = gatekeeper.importDID(db.hyperswarm[did]);
-        if (check === did) {
-            console.log(`* imported updates for: ${did} *`);
-        }
-        else {
-            console.error(`* error importing updates for: ${did} *`);
+    if (db.hyperswarm) {
+        for (const did of Object.keys(db.hyperswarm)) {
+            try {
+                const check = gatekeeper.importDID(db.hyperswarm[did]);
+                console.log(`* imported DID ${did} *`);
+            }
+            catch (error) {
+                console.error(`error importing DID: ${did}: ${error}`);
+            }
         }
     }
 }
@@ -125,7 +129,7 @@ setInterval(async () => {
     catch (error) {
         console.error(`Error: ${error}`);
     }
-}, 10000);
+}, 60000);
 
 // Join a common topic
 const hash = sha256(protocol);

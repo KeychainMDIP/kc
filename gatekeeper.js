@@ -403,13 +403,7 @@ export async function exportDID(did) {
 export async function importDID(txns) {
     const create = txns[0];
     const did = create.did;
-    // const seed = {
-    //     anchor: create.txn,
-    //     created: create.time,
-    // };
-
-    // TBD verify the "create" txn
-    const check = await anchorSeed(create.txn);
+    const check = await createDID(create.txn);
 
     //console.log(`${did} should be ${check}`);
 
@@ -417,7 +411,7 @@ export async function importDID(txns) {
         throw "Invalid import";
     }
 
-    // !! Have to loadDb here so we don't overwrite anchorSeed's write
+    // !! Have to loadDb here so we don't overwrite createDID's write
     const db = loadDb();
     const registry = create.txn.mdip.registry;
 
