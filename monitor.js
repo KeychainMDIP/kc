@@ -76,12 +76,13 @@ async function relayDb(msg) {
     }
 }
 
-function mergeDb(db) {
+async function mergeDb(db) {
     if (db.anchors) {
         for (const did of Object.keys(db.anchors)) {
             try {
-                const check = gatekeeper.createDID(db.anchors[did]);
+                const check = await gatekeeper.createDID(db.anchors[did]);
                 console.log(`* imported anchor ${did} *`);
+                console.log(JSON.stringify(db.anchors[did], null, 4));
             }
             catch (error) {
                 console.error(`error importing anchor: ${did}: ${error}`);
@@ -92,8 +93,9 @@ function mergeDb(db) {
     if (db.hyperswarm) {
         for (const did of Object.keys(db.hyperswarm)) {
             try {
-                const check = gatekeeper.importDID(db.hyperswarm[did]);
+                const check = await gatekeeper.importDID(db.hyperswarm[did]);
                 console.log(`* imported DID ${did} *`);
+                console.log(JSON.stringify(db.hyperswarm[did], null, 4));
             }
             catch (error) {
                 console.error(`error importing DID: ${did}: ${error}`);
@@ -114,7 +116,7 @@ async function receiveMsg(name, json) {
             logMsg(msg.relays[0], hash);
             relayDb(msg);
             console.log(`* merging db ${hash} *`);
-            mergeDb(msg.data);
+            await mergeDb(msg.data);
         }
         else {
             console.log(`* received already seen ${hash} *`);
@@ -155,12 +157,13 @@ discovery.flushed().then(() => {
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Unhandled exception caught');
+    //console.error('Unhandled exception caught');
+    console.error('Unhandled exception caught', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    //console.error('Unhandled rejection at:', promise, 'reason:', reason);
-    console.error('Unhandled rejection caught');
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    //console.error('Unhandled rejection caught');
 });
 
 process.stdin.on('data', d => {
