@@ -122,7 +122,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = await resolveDID(txn.controller, txn.created);
+    const doc = await resolveDID(txn.controller, txn.signature.signed);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msgHash = cipher.hashJSON(txnCopy);
@@ -269,7 +269,7 @@ async function verifyUpdate(txn, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.time);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.signature.signed);
         return verifyUpdate(txn, controllerDoc);
     }
 
