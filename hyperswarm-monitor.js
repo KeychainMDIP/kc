@@ -80,9 +80,11 @@ async function mergeDb(db) {
     if (db.anchors) {
         for (const did of Object.keys(db.anchors)) {
             try {
-                const check = await gatekeeper.createDID(db.anchors[did]);
-                console.log(`* imported anchor ${did} *`);
-                console.log(JSON.stringify(db.anchors[did], null, 4));
+                const imported = await gatekeeper.importDID([db.anchors[did]]);
+                if (imported === 1) {
+                    console.log(JSON.stringify(db.anchors[did], null, 4));
+                    console.log(`* imported anchor ${did} *`);
+                }
             }
             catch (error) {
                 console.error(`error importing anchor: ${did}: ${error}`);
@@ -93,9 +95,11 @@ async function mergeDb(db) {
     if (db.hyperswarm) {
         for (const did of Object.keys(db.hyperswarm)) {
             try {
-                const check = await gatekeeper.importDID(db.hyperswarm[did]);
-                console.log(`* imported DID ${did} *`);
-                console.log(JSON.stringify(db.hyperswarm[did], null, 4));
+                const imported = await gatekeeper.importDID(db.hyperswarm[did]);
+                if (imported > 0) {
+                    console.log(JSON.stringify(db.hyperswarm[did], null, 4));
+                    console.log(`* imported DID ${did} *`);
+                }
             }
             catch (error) {
                 console.error(`error importing DID: ${did}: ${error}`);

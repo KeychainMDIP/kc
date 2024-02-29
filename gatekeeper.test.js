@@ -344,6 +344,7 @@ describe('importDID', () => {
 
         const N = 20;
         for (let i = 0; i < N; i++) {
+            doc.didDocumentMetadata.data = `mock-${i}`;
             const updateTxn = await createUpdateTxn(keypair, did, doc);
             const ok = await gatekeeper.updateDID(updateTxn);
         }
@@ -389,6 +390,50 @@ describe('importDID', () => {
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on undefined', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID();
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on non-array parameter', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on an empty array', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID([]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on an array on non-transactions', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID([1, 2, 3]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid txn');
         }
     });
 });
