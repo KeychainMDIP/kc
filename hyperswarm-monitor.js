@@ -95,7 +95,11 @@ async function mergeDb(db) {
     if (db.hyperswarm) {
         // Import DIDs by creation time order to avoid dependency errors
         let dids = Object.keys(db.hyperswarm);
-        dids.sort((a, b) => db.hyperswarm[a].time - db.hyperswarm[b].time);
+        dids.sort((a, b) => db.hyperswarm[a][0].time - db.hyperswarm[b][0].time);
+
+        for (const did of dids) {
+            console.log(`${did} ${db.hyperswarm[did][0].time}`);
+        }
 
         for (const did of dids) {
             try {
