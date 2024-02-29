@@ -77,27 +77,31 @@ async function relayDb(msg) {
 }
 
 async function mergeDb(db) {
-    if (db.anchors) {
-        for (const did of Object.keys(db.anchors)) {
-            try {
-                const imported = await gatekeeper.createDID(db.anchors[did]);
-                if (imported === 1) {
-                    console.log(JSON.stringify(db.anchors[did], null, 4));
-                    console.log(`* imported anchor ${did} *`);
-                }
-            }
-            catch (error) {
-                console.error(`error importing anchor: ${did}: ${error}`);
-            }
-        }
-    }
+    // if (db.anchors) {
+    //     for (const did of Object.keys(db.anchors)) {
+    //         try {
+    //             const imported = await gatekeeper.createDID(db.anchors[did]);
+    //             if (imported === 1) {
+    //                 console.log(JSON.stringify(db.anchors[did], null, 4));
+    //                 console.log(`* imported anchor ${did} *`);
+    //             }
+    //         }
+    //         catch (error) {
+    //             console.error(`error importing anchor: ${did}: ${error}`);
+    //         }
+    //     }
+    // }
 
     if (db.hyperswarm) {
-        for (const did of Object.keys(db.hyperswarm)) {
+        // Import DIDs by creation time order to avoid dependency errors
+        let dids = Object.keys(db.hyperswarm);
+        dids.sort((a, b) => db.hyperswarm[a].time - db.hyperswarm[b].time);
+
+        for (const did of dids) {
             try {
                 const imported = await gatekeeper.importDID(db.hyperswarm[did]);
                 if (imported > 0) {
-                    console.log(JSON.stringify(db.hyperswarm[did], null, 4));
+                    //console.log(JSON.stringify(db.hyperswarm[did], null, 4));
                     console.log(`* imported DID ${did} *`);
                 }
             }
