@@ -122,7 +122,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = await resolveDID(txn.controller);
+    const doc = await resolveDID(txn.controller, txn.created);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msgHash = cipher.hashJSON(txnCopy);
