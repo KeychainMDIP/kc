@@ -50,7 +50,7 @@ describe('generateDid', () => {
     });
 });
 
-async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
+async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
     const txn = {
         op: "create",
         created: new Date().toISOString(),
@@ -65,6 +65,33 @@ async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
     const msgHash = cipher.hashJSON(txn);
     txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
     return txn;
+}
+
+async function createUpdateTxn(keypair, did, doc) {
+    const current = await gatekeeper.resolveDID(did);
+    const prev = cipher.hashJSON(current);
+
+    const txn = {
+        op: "update",
+        did: did,
+        doc: doc,
+        prev: prev,
+    };
+
+    const msgHash = cipher.hashJSON(txn);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+
+    const signed = {
+        ...txn,
+        signature: {
+            signer: did,
+            created: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+
+    return signed;
 }
 
 async function createAssetTxn(agent, keypair) {
@@ -248,7 +275,62 @@ describe('importDID', () => {
 
         const imported = await gatekeeper.importDID(txns);
 
-        expect(imported).toBe(did);
+        expect(imported).toBe(0);
+    });
+
+    it('should report 0 txns reported when DID exists', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(0);
+    });
+
+    it('should report 2 txns imported when DID deleted first', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(2);
+    });
+
+    it('should report N+1 txns imported for N updates', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+
+        const N = 20;
+        for (let i = 0; i < N; i++) {
+            const updateTxn = await createUpdateTxn(keypair, did, doc);
+            const ok = await gatekeeper.updateDID(updateTxn);
+        }
+
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(N+1);
     });
 
     it('should resolve an imported DID', async () => {

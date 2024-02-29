@@ -405,26 +405,35 @@ export async function exportDID(did) {
 export async function importDID(txns) {
     const create = txns[0];
     const did = create.did;
-    let backup = await exportDID(did);
+    let current = await exportDID(did);
+    const before = current.length;
 
-    if (backup.length === 0) {
+    if (current.length === 0) {
         const check = await createDID(create.txn);
 
         if (did !== check) {
             throw "Invalid import";
         }
 
-        backup = await exportDID(did);
+        current = await exportDID(did);
     }
 
     for (let i = 0; i < txns.length; i++) {
-        if (i < backup.length) {
-            if (txns[i].txn.signature !== backup[i].txn.signature) {
+        if (i === 0) {
+            // Verify create txn
+            if (txns[i].txn.signature !== current[i].txn.signature) {
+                throw "Invalid import";
+            }
+        }
+        else if (i < current.length) {
+            // Verify previous update txns
+            if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
                 throw "Invalid import";
             }
         }
         else {
-            const ok = await updateDID(txns[i]);
+            // Add new updates
+            const ok = await updateDID(txns[i].txn);
 
             if (!ok) {
                 throw "Invalid import";
@@ -432,5 +441,8 @@ export async function importDID(txns) {
         }
     }
 
-    return did;
+    current = await exportDID(did);
+    const diff = current.length - before;
+
+    return diff;
 }
