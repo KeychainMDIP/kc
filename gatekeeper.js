@@ -108,7 +108,7 @@ async function createAgent(txn) {
     delete txnCopy.signature;
 
     const msgHash = cipher.hashJSON(txnCopy);
-    const isValid = cipher.verifySig(msgHash, txn.signature, txn.publicJwk);
+    const isValid = cipher.verifySig(msgHash, txn.signature.value, txn.publicJwk);
 
     if (!isValid) {
         throw "Invalid txn";
@@ -419,13 +419,7 @@ export async function importDID(txns) {
     }
 
     for (let i = 0; i < txns.length; i++) {
-        if (i === 0) {
-            // Verify create txn
-            if (txns[i].txn.signature !== current[i].txn.signature) {
-                throw "Invalid import";
-            }
-        }
-        else if (i < current.length) {
+        if (i < current.length) {
             // Verify previous update txns
             if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
                 throw "Invalid import";

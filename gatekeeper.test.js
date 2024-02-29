@@ -63,8 +63,16 @@ async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
     };
 
     const msgHash = cipher.hashJSON(txn);
-    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    return txn;
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+
+    return {
+        ...txn,
+        signature: {
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature
+        }
+    };
 }
 
 async function createUpdateTxn(keypair, did, doc) {
@@ -113,7 +121,7 @@ async function createAssetTxn(agent, keypair) {
         ...dataAnchor,
         signature: {
             signer: agent,
-            created: new Date().toISOString(),
+            signed: new Date().toISOString(),
             hash: msgHash,
             value: signature,
         }
@@ -265,13 +273,28 @@ describe('importDID', () => {
         mockFs.restore();
     });
 
-    it('should import a valid DID export', async () => {
+    it('should import a valid agent DID export', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
         const did = await gatekeeper.createDID(agentTxn);
         const txns = await gatekeeper.exportDID(did);
+
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(0);
+    });
+
+    it('should import a valid asset DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const agentDID = await gatekeeper.createDID(agentTxn);
+        const assetTxn = await createAssetTxn(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetTxn);
+        const txns = await gatekeeper.exportDID(assetDID);
 
         const imported = await gatekeeper.importDID(txns);
 

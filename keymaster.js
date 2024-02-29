@@ -184,7 +184,7 @@ export async function addSignature(obj) {
             ...obj,
             signature: {
                 signer: id.did,
-                created: new Date().toISOString(),
+                signed: new Date().toISOString(),
                 hash: msgHash,
                 value: signature,
             }
@@ -209,7 +209,7 @@ export async function verifySignature(obj) {
         return false;
     }
 
-    const doc = await resolveDID(signature.signer, signature.created);
+    const doc = await resolveDID(signature.signer, signature.signed);
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -317,8 +317,16 @@ export async function createId(name, registry = defaultRegistry) {
     };
 
     const msgHash = cipher.hashJSON(txn);
-    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    const did = await gatekeeper.createDID(txn);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signed = {
+        ...txn,
+        signature: {
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature
+        }
+    }
+    const did = await gatekeeper.createDID(signed);
 
     const newId = {
         did: did,
