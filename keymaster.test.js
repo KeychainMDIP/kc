@@ -409,6 +409,25 @@ describe('rotateKeys', () => {
             expect(decipher2).toBe(msg);
         }
     });
+
+    it('should import DID with multiple key rotations', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const rotations = 10;
+
+        for (let i = 0; i < rotations; i++) {
+            await keymaster.rotateKeys();
+        }
+
+        const txns = await keymaster.exportDID(alice);
+
+        fs.rmSync('mdip.json');
+
+        const imported = await keymaster.importDID(txns);
+
+        expect(imported).toBe(rotations + 1);
+    });
 });
 
 describe('addName', () => {

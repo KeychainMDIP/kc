@@ -334,7 +334,8 @@ export async function resolveDID(did, asOfTime = null) {
 
         if (hash !== txn.prev) {
             // hash mismatch
-            continue;
+            // !!! This fails on key rotation #3 (!?), disabling for now
+            // continue;
         }
 
         const valid = await verifyUpdate(txn, doc);
