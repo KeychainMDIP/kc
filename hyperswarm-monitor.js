@@ -80,7 +80,7 @@ async function mergeDb(db) {
     if (db.anchors) {
         for (const did of Object.keys(db.anchors)) {
             try {
-                const imported = await gatekeeper.importDID([db.anchors[did]]);
+                const imported = await gatekeeper.createDID(db.anchors[did]);
                 if (imported === 1) {
                     console.log(JSON.stringify(db.anchors[did], null, 4));
                     console.log(`* imported anchor ${did} *`);
