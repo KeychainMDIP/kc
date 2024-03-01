@@ -1,6 +1,16 @@
 version: "3"
 services:
-  keychain:
+
+  gatekeeper:
     build:
       context: .
-    image: macterra/keychain
+      dockerfile: Dockerfile.gatekeeper
+    image: macterra/gatekeeper
+
+  hyperswarm:
+    build:
+      context: .
+      dockerfile: Dockerfile.hyperswarm
+    image: macterra/hyperswarm-monitor
+    environment:
+      - GATEKEEPER_URL=http://gatekeeper:3000

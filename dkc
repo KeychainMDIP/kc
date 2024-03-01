@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-docker compose exec -it keychain node keychain-cli.js "$@"
+docker compose exec -it gatekeeper node keychain-cli.js "$@"

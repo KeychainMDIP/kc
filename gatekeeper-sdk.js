@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const URL = 'http://localhost:3000';
+const URL = process.env.GATEKEEPER_URL || 'http://localhost:3000';
 const connectionError = `Can't connect to gatekeeper. Is server running on ${URL}?`;
 
 function throwError(error) {
@@ -55,7 +55,7 @@ export async function updateDID(txn) {
 
 export async function deleteDID(txn) {
     try {
-        const response = await axios.delete(`http://localhost:3000/did/${txn.did}`, { data: txn });
+        const response = await axios.delete(`${URL}/did/${txn.did}`, { data: txn });
         return response.data;
     }
     catch (error) {
@@ -65,7 +65,7 @@ export async function deleteDID(txn) {
 
 export async function exportDID(did) {
     try {
-        const response = await axios.get(`http://localhost:3000/export/${did}`);
+        const response = await axios.get(`${URL}/export/${did}`);
         return response.data;
     }
     catch (error) {
@@ -75,7 +75,7 @@ export async function exportDID(did) {
 
 export async function importDID(txns) {
     try {
-        const response = await axios.post(`http://localhost:3000/import/`, txns);
+        const response = await axios.post(`${URL}/import/`, txns);
         return response.data;
     }
     catch (error) {

@@ -165,6 +165,7 @@ const discovery = swarm.join(topic, { client: true, server: true });
 
 // The flushed promise will resolve when the topic has been fully announced to the DHT
 discovery.flushed().then(() => {
+    console.log(`connecting to gatekeeper at ${process.env.GATEKEEPER_URL}`);
     console.log('joined topic:', b4a.toString(topic, 'hex'));
 });
 
