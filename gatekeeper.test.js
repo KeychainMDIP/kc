@@ -328,7 +328,7 @@ describe('importDID', () => {
         const ok = await gatekeeper.updateDID(updateTxn);
         const txns = await gatekeeper.exportDID(did);
 
-        fs.rmSync('mdip.json');
+        fs.rmSync(gatekeeper.dbName);
         const imported = await gatekeeper.importDID(txns);
 
         expect(imported).toBe(2);
@@ -351,7 +351,7 @@ describe('importDID', () => {
 
         const txns = await gatekeeper.exportDID(did);
 
-        fs.rmSync('mdip.json');
+        fs.rmSync(gatekeeper.dbName);
         const imported = await gatekeeper.importDID(txns);
 
         expect(imported).toBe(N+1);
@@ -365,7 +365,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentTxn);
         const txns = await gatekeeper.exportDID(did);
 
-        fs.rmSync('mdip.json');
+        fs.rmSync(gatekeeper.dbName);
 
         const imported = await gatekeeper.importDID(txns);
         const doc = await gatekeeper.resolveDID(did);

@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile.gatekeeper
     image: macterra/gatekeeper
+    volumes:
+      - ./data:/app/data
 
   hyperswarm:
     build:
@@ -14,3 +16,5 @@ services:
     image: macterra/hyperswarm-monitor
     environment:
       - GATEKEEPER_URL=http://gatekeeper:3000
+    volumes:
+      - ./data:/app/data

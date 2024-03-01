@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const URL = process.env.GATEKEEPER_URL || 'http://localhost:3000';
+export const URL = process.env.GATEKEEPER_URL || 'http://localhost:3000';
 const connectionError = `Can't connect to gatekeeper. Is server running on ${URL}?`;
 
 function throwError(error) {

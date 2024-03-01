@@ -3,7 +3,8 @@ import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
 
 let gatekeeper = null;
-const walletName = 'wallet.json';
+const dataFolder = 'data';
+const walletName = `${dataFolder}/wallet.json`;
 const defaultRegistry = 'hyperswarm';
 
 export async function start(gk) {
@@ -16,6 +17,10 @@ export async function stop() {
 }
 
 function saveWallet(wallet) {
+    if (!fs.existsSync(dataFolder)) {
+        fs.mkdirSync(dataFolder, { recursive: true });
+    }
+
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 

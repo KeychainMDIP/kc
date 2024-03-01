@@ -422,7 +422,7 @@ describe('rotateKeys', () => {
 
         const txns = await keymaster.exportDID(alice);
 
-        fs.rmSync('mdip.json');
+        fs.rmSync(gatekeeper.dbName);
 
         const imported = await keymaster.importDID(txns);
 
@@ -1080,7 +1080,7 @@ describe('revokeCredential', () => {
         const userTxns = await keymaster.exportDID(userDid);
         const txns = await keymaster.exportDID(did);
 
-        fs.rmSync('mdip.json');
+        fs.rmSync(gatekeeper.dbName);
 
         await keymaster.importDID(userTxns);
         const imported = await keymaster.importDID(txns);

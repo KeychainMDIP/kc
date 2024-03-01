@@ -28,7 +28,7 @@ swarm.on('connection', conn => {
 });
 
 function loadDb() {
-    const dbName = 'mdip.json';
+    const dbName = 'data/mdip.json';
 
     if (fs.existsSync(dbName)) {
         return JSON.parse(fs.readFileSync(dbName));
@@ -165,7 +165,7 @@ const discovery = swarm.join(topic, { client: true, server: true });
 
 // The flushed promise will resolve when the topic has been fully announced to the DHT
 discovery.flushed().then(() => {
-    console.log(`connecting to gatekeeper at ${process.env.GATEKEEPER_URL}`);
+    console.log(`connecting to gatekeeper at ${gatekeeper.URL}`);
     console.log('joined topic:', b4a.toString(topic, 'hex'));
 });
 

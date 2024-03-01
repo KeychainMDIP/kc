@@ -7,7 +7,8 @@ import { createHelia } from 'helia';
 import { FsBlockstore } from 'blockstore-fs';
 import * as cipher from './cipher.js';
 
-const dbName = 'mdip.json';
+const dataFolder = 'data';
+export const dbName = `${dataFolder}/mdip.json`;
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
@@ -23,6 +24,10 @@ export function loadDb() {
 }
 
 export function writeDb(db) {
+    if (!fs.existsSync(dataFolder)) {
+        fs.mkdirSync(dataFolder, { recursive: true });
+    }
+
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
@@ -31,7 +36,7 @@ let ipfs = null;
 
 export async function start() {
     if (!ipfs) {
-        const blockstore = new FsBlockstore('./ipfs');
+        const blockstore = new FsBlockstore(`${dataFolder}/ipfs`);
         helia = await createHelia({ blockstore });
         ipfs = json(helia);
     }
