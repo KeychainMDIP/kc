@@ -9,7 +9,7 @@ import * as cipher from './cipher.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.02.30';
+const protocol = '/MDIP/v22.03.01';
 
 const swarm = new Hyperswarm();
 goodbye(() => swarm.destroy())
