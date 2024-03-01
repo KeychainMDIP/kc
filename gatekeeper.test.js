@@ -22,6 +22,7 @@ describe('generateDid', () => {
 
         const mockTxn = {
             op: "create",
+            created: new Date().toISOString(),
             mdip: {
                 registry: "mockRegistry"
             }
@@ -30,21 +31,6 @@ describe('generateDid', () => {
 
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create different DIDs from same txn', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            op: "create",
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did1 = await gatekeeper.generateDID(mockTxn);
-        const did2 = await gatekeeper.generateDID(mockTxn);
-
-        expect(did1 !== did2).toBe(true);
     });
 
     it('should create same DID from same txn with date included', async () => {
@@ -64,9 +50,10 @@ describe('generateDid', () => {
     });
 });
 
-async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
+async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: version,
             type: "agent",
@@ -76,13 +63,49 @@ async function createAgentTxn(keypair, version = 1, registry = 'peerbit') {
     };
 
     const msgHash = cipher.hashJSON(txn);
-    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    return txn;
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+
+    return {
+        ...txn,
+        signature: {
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature
+        }
+    };
+}
+
+async function createUpdateTxn(keypair, did, doc) {
+    const current = await gatekeeper.resolveDID(did);
+    const prev = cipher.hashJSON(current);
+
+    const txn = {
+        op: "update",
+        did: did,
+        doc: doc,
+        prev: prev,
+    };
+
+    const msgHash = cipher.hashJSON(txn);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+
+    const signed = {
+        ...txn,
+        signature: {
+            signer: did,
+            created: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+
+    return signed;
 }
 
 async function createAssetTxn(agent, keypair) {
     const dataAnchor = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
@@ -98,7 +121,7 @@ async function createAssetTxn(agent, keypair) {
         ...dataAnchor,
         signature: {
             signer: agent,
-            created: new Date().toISOString(),
+            signed: new Date().toISOString(),
             hash: msgHash,
             value: signature,
         }
@@ -173,18 +196,6 @@ describe('createDID', () => {
         expect(did.startsWith('did:mdip:'));
     });
 
-    it('should create different DIDs from same agent txn', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-
-        const did1 = await gatekeeper.createDID(agentTxn);
-        const did2 = await gatekeeper.createDID(agentTxn);
-
-        expect(did1 !== did2).toBe(true);
-    });
-
     it('should throw exception on invalid version', async () => {
         mockFs({});
 
@@ -226,20 +237,6 @@ describe('createDID', () => {
         expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
-
-    it('should create different DIDs from same asset txn', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createDID(agentTxn);
-        const assetTxn = await createAssetTxn(agent, keypair);
-
-        const did1 = await gatekeeper.createDID(assetTxn);
-        const did2 = await gatekeeper.createDID(assetTxn);
-
-        expect(did1 !== did2).toBe(true);
-    });
 });
 
 describe('exportDID', () => {
@@ -262,15 +259,11 @@ describe('exportDID', () => {
         expect(txns[0].txn).toStrictEqual(agentTxn);
     });
 
-    it('should throw an exception on an invalid DID', async () => {
+    it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
-        try {
-            const txns = await gatekeeper.exportDID('mockDID');
-            throw 'Expected to throw an exception';
-        } catch (error) {
-            expect(error).toBe('Invalid DID');
-        }
+        const txns = await gatekeeper.exportDID('mockDID');
+        expect(txns).toStrictEqual([]);
     });
 });
 
@@ -280,7 +273,7 @@ describe('importDID', () => {
         mockFs.restore();
     });
 
-    it('should import a valid DID export', async () => {
+    it('should import a valid agent DID export', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -290,16 +283,104 @@ describe('importDID', () => {
 
         const imported = await gatekeeper.importDID(txns);
 
-        expect(imported).toBe(did);
+        expect(imported).toBe(0);
+    });
+
+    it('should import a valid asset DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const agentDID = await gatekeeper.createDID(agentTxn);
+        const assetTxn = await createAssetTxn(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetTxn);
+        const txns = await gatekeeper.exportDID(assetDID);
+
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(0);
+    });
+
+    it('should report 0 txns reported when DID exists', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(0);
+    });
+
+    it('should report 2 txns imported when DID deleted first', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(2);
+    });
+
+    it('should report N+1 txns imported for N updates', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const doc = await gatekeeper.resolveDID(did);
+
+        const N = 20;
+        for (let i = 0; i < N; i++) {
+            doc.didDocumentMetadata.data = `mock-${i}`;
+            const updateTxn = await createUpdateTxn(keypair, did, doc);
+            const ok = await gatekeeper.updateDID(updateTxn);
+        }
+
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+        const imported = await gatekeeper.importDID(txns);
+
+        expect(imported).toBe(N+1);
+    });
+
+    it('should resolve an imported DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentTxn = await createAgentTxn(keypair);
+        const did = await gatekeeper.createDID(agentTxn);
+        const txns = await gatekeeper.exportDID(did);
+
+        fs.rmSync('mdip.json');
+
+        const imported = await gatekeeper.importDID(txns);
+        const doc = await gatekeeper.resolveDID(did);
+
+        expect(doc.didDocument.id).toBe(did);
     });
 
     it('should throw an exception on mismatched DID in export', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did1 = await gatekeeper.createDID(agentTxn);
-        const did2 = await gatekeeper.createDID(agentTxn);
+        const agentTxn1 = await createAgentTxn(keypair);
+        const did1 = await gatekeeper.createDID(agentTxn1);
+        const agentTxn2 = await createAgentTxn(keypair);
+        const did2 = await gatekeeper.createDID(agentTxn2);
         const txns = await gatekeeper.exportDID(did1);
 
         txns[0].did = did2;
@@ -309,6 +390,50 @@ describe('importDID', () => {
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on undefined', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID();
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on non-array parameter', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on an empty array', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID([]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid import');
+        }
+    });
+
+    it('should throw an exception on an array on non-transactions', async () => {
+        mockFs({});
+
+        try {
+            const imported = await gatekeeper.importDID([1, 2, 3]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid txn');
         }
     });
 });

@@ -20,36 +20,6 @@ app.get('/version', async (req, res) => {
     }
 });
 
-app.get('/ipfs/peerid', async (req, res) => {
-    try {
-        res.json(gatekeeper.getPeerId());
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
-app.get('/ipfs/multiaddr', async (req, res) => {
-    try {
-        res.json(gatekeeper.getMultiaddr());
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
-app.post('/ipfs/dial', async (req, res) => {
-    try {
-        const { multiaddr } = req.body;
-        console.log(`dialing ${multiaddr}...`);
-        const response = await gatekeeper.dialMultiaddr(multiaddr);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
 app.post('/did', async (req, res) => {
     try {
         const txn = req.body;
@@ -74,8 +44,8 @@ app.get('/did/:did', async (req, res) => {
 app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
-        const doc = await gatekeeper.updateDID(txn);
-        res.json(doc);
+        const ok = await gatekeeper.updateDID(txn);
+        res.json(ok);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -120,4 +90,12 @@ app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
 
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    //console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    console.error('Unhandled rejection caught');
+});
 

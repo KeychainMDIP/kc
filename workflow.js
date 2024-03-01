@@ -20,10 +20,10 @@ async function runWorkflow() {
 
     await keymaster.start(gatekeeper);
 
-    const alice = await keymaster.createId('Alice', 'BTC');
-    const bob = await keymaster.createId('Bob', 'tBTC');
-    const carol = await keymaster.createId('Carol', 'peerbit');
-    const victor = await keymaster.createId('Victor', 'peerbit');
+    const alice = await keymaster.createId('Alice');
+    const bob = await keymaster.createId('Bob');
+    const carol = await keymaster.createId('Carol');
+    const victor = await keymaster.createId('Victor');
 
     console.log(`Created Alice  ${alice}`);
     console.log(`Created Bob    ${bob}`);
@@ -41,8 +41,8 @@ async function runWorkflow() {
     const bc1 = await keymaster.bindCredential(credential1, carol);
     const bc2 = await keymaster.bindCredential(credential2, carol);
 
-    const vc1 = await keymaster.attestCredential(bc1, 'BTC');
-    const vc2 = await keymaster.attestCredential(bc2, 'BTC');
+    const vc1 = await keymaster.attestCredential(bc1);
+    const vc2 = await keymaster.attestCredential(bc2);
 
     console.log(`Alice attested vc1 for Carol ${vc1}`);
     console.log(`Alice attested vc2 for Carol ${vc2}`);
@@ -58,8 +58,8 @@ async function runWorkflow() {
     const bc3 = await keymaster.bindCredential(credential3, carol);
     const bc4 = await keymaster.bindCredential(credential4, carol);
 
-    const vc3 = await keymaster.attestCredential(bc3, 'tBTC');
-    const vc4 = await keymaster.attestCredential(bc4, 'tBTC');
+    const vc3 = await keymaster.attestCredential(bc3);
+    const vc4 = await keymaster.attestCredential(bc4);
 
     console.log(`Bob attested vc3 for Carol ${vc3}`);
     console.log(`Bob attested vc4 for Carol ${vc4}`);

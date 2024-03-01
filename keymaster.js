@@ -4,22 +4,11 @@ import * as cipher from './cipher.js';
 
 let gatekeeper = null;
 const walletName = 'wallet.json';
+const defaultRegistry = 'hyperswarm';
 
 export async function start(gk) {
     gatekeeper = gk;
     await gatekeeper.start();
-}
-
-export function getPeerId() {
-    return gatekeeper.getPeerId();
-}
-
-export function getMultiaddr() {
-    return gatekeeper.getMultiaddr();
-}
-
-export async function dialMultiaddr(multiaddr) {
-    return await gatekeeper.dialMultiaddr(multiaddr);
 }
 
 export async function stop() {
@@ -124,7 +113,7 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did, registry = 'peerbit') {
+export async function encrypt(msg, did, registry = defaultRegistry) {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDID(did);
@@ -173,7 +162,7 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did, registry = 'peerbit') {
+export async function encryptJSON(json, did, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
     return encrypt(plaintext, did, registry);
 }
@@ -195,7 +184,7 @@ export async function addSignature(obj) {
             ...obj,
             signature: {
                 signer: id.did,
-                created: new Date().toISOString(),
+                signed: new Date().toISOString(),
                 hash: msgHash,
                 value: signature,
             }
@@ -220,7 +209,7 @@ export async function verifySignature(obj) {
         return false;
     }
 
-    const doc = await resolveDID(signature.signer, signature.created);
+    const doc = await resolveDID(signature.signer, signature.signed);
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -287,13 +276,8 @@ function addToHeld(did) {
 }
 
 export async function resolveDID(did, asof) {
-    try {
-        const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
-        return doc;
-    }
-    catch {
-        return null;
-    }
+    const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
+    return doc;
 }
 
 export async function resolveAsset(did) {
@@ -308,7 +292,7 @@ export async function resolveAsset(did) {
     return null;
 }
 
-export async function createId(name, registry = 'peerbit') {
+export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
         throw `Already have an ID named ${name}`;
@@ -323,6 +307,7 @@ export async function createId(name, registry = 'peerbit') {
 
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "agent",
@@ -332,8 +317,16 @@ export async function createId(name, registry = 'peerbit') {
     };
 
     const msgHash = cipher.hashJSON(txn);
-    txn.signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    const did = await gatekeeper.createDID(txn);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signed = {
+        ...txn,
+        signature: {
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature
+        }
+    }
+    const did = await gatekeeper.createDID(signed);
 
     const newId = {
         did: did,
@@ -508,7 +501,7 @@ export function lookupDID(name) {
     }
 }
 
-export async function createData(data, registry = 'peerbit') {
+export async function createData(data, registry = defaultRegistry) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -525,6 +518,7 @@ export async function createData(data, registry = 'peerbit') {
 
     const txn = {
         op: "create",
+        created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
@@ -570,7 +564,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc, registry = 'peerbit') {
+export async function attestCredential(vc, registry = defaultRegistry) {
     const id = getCurrentId();
 
     if (vc.issuer !== id.did) {
@@ -605,7 +599,7 @@ export async function acceptCredential(did) {
     }
 }
 
-export async function publishCredential(did, reveal=false) {
+export async function publishCredential(did, reveal = false) {
     try {
         const id = getCurrentId();
         const credential = lookupDID(did);

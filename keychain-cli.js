@@ -50,7 +50,7 @@ program
     });
 
 program
-    .command('create-id <name> <registry>')
+    .command('create-id <name> [registry]')
     .description('Create a new decentralized ID')
     .action(async (name, registry) => {
         try {
@@ -343,7 +343,7 @@ program
     });
 
 program
-    .command('attest-credential <file> <registry> [name]')
+    .command('attest-credential <file> [registry] [name]')
     .description('Sign and encrypt a bound credential file')
     .action(async (file, registry, name) => {
         try {
@@ -497,46 +497,6 @@ program
             else {
                 console.log("No names defined");
             }
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('show-peerid')
-    .description('Show IPFS peerid')
-    .action(async () => {
-        const peerId = await keymaster.getPeerId();
-
-        if (peerId) {
-            console.log(peerId);
-        }
-        else {
-            console.log('Not connected');
-        }
-    });
-
-program
-    .command('get-multiaddr')
-    .description('IPFS multiaddr connection string')
-    .action(async (name) => {
-        try {
-            const multiaddr = await keymaster.getMultiaddr();
-            console.log(JSON.stringify(multiaddr, null, 4));
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('dial-multiaddr <connect>')
-    .description('Connect to IPFS peer')
-    .action(async (multiaddr) => {
-        try {
-            const response = await keymaster.dialMultiaddr(multiaddr);
-            console.log(response);
         }
         catch (error) {
             console.error(error);

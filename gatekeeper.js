@@ -1,21 +1,19 @@
 import { json } from '@helia/json';
 import { CID } from 'multiformats/cid';
-import { multiaddr } from '@multiformats/multiaddr';
 import { base58btc } from 'multiformats/bases/base58';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import { FsBlockstore } from 'blockstore-fs';
 import * as cipher from './cipher.js';
-import * as network from './ipfs.js';
 
 const dbName = 'mdip.json';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local'];
+const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local', 'hyperswarm'];
 
-function loadDb() {
+export function loadDb() {
     if (fs.existsSync(dbName)) {
         return JSON.parse(fs.readFileSync(dbName));
     }
@@ -24,7 +22,7 @@ function loadDb() {
     }
 }
 
-function writeDb(db) {
+export function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
@@ -39,40 +37,16 @@ export async function start() {
     }
 }
 
-export function getPeerId() {
-    if (helia) {
-        const peerId = helia.libp2p.peerId;
-        return peerId.toString();
-    }
-}
-
-export function getMultiaddr() {
-    if (helia) {
-        const multiaddrs = helia.libp2p.getMultiaddrs();
-        return multiaddrs;
-    }
-}
-
-export async function dialMultiaddr(connect) {
-    if (helia) {
-        const addr = multiaddr(connect);
-        return await helia.libp2p.dial(addr);
-    }
-}
-
 export async function stop() {
     helia.stop();
 }
 
-function submitTxn(did, registry, txn, time) {
+function submitTxn(did, registry, txn, time, ordinal=0) {
     const db = loadDb();
-
-    if (!time) {
-        time = new Date().toISOString();
-    }
 
     const update = {
         time: time,
+        ordinal: ordinal,
         did: did,
         txn: txn,
     };
@@ -94,30 +68,26 @@ function submitTxn(did, registry, txn, time) {
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `did:mdip:${cid.toString(base58btc)}`;
+    const db = loadDb();
 
+    if (!db.anchors) {
+        db.anchors = {};
+    }
+
+    const anchor = await ipfs.get(cid);
+    db.anchors[did] = anchor;
+
+    writeDb(db);
     return did;
 }
 
 export async function generateDID(txn) {
-    const now = new Date();
-    let created = now.toISOString();
+    const did = await anchorSeed(txn);
+    const txns = await exportDID(did);
 
-    // If a created date is supplied in the txn and it is in the past, use it
-    if (txn.created)  {
-        const txnCreated = new Date(txn.created);
-        if (txnCreated < now) {
-            created = txn.created;
-        }
+    if (txns.length === 0) {
+        submitTxn(did, txn.mdip.registry, txn, txn.created);
     }
-
-    const seed = {
-        anchor: txn,
-        created: created,
-    };
-
-    const did = await anchorSeed(seed);
-
-    submitTxn(did, txn.mdip.registry, txn, seed.created);
 
     return did;
 }
@@ -135,7 +105,7 @@ async function createAgent(txn) {
     delete txnCopy.signature;
 
     const msgHash = cipher.hashJSON(txnCopy);
-    const isValid = cipher.verifySig(msgHash, txn.signature, txn.publicJwk);
+    const isValid = cipher.verifySig(msgHash, txn.signature.value, txn.publicJwk);
 
     if (!isValid) {
         throw "Invalid txn";
@@ -149,7 +119,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = await resolveDID(txn.controller);
+    const doc = await resolveDID(txn.signature.signer, txn.signature.signed);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msgHash = cipher.hashJSON(txnCopy);
@@ -166,6 +136,11 @@ async function createAsset(txn) {
 
 export async function createDID(txn) {
     if (txn?.op !== "create") {
+        throw "Invalid txn";
+    }
+
+    if (!txn.created) {
+        // TBD ensure valid timestamp format
         throw "Invalid txn";
     }
 
@@ -196,21 +171,28 @@ export async function createDID(txn) {
     throw "Unknown type";
 }
 
+async function getAnchor(did) {
+    // const suffix = did.split(':').pop(); // everything after "did:mdip:"
+    // const cid = CID.parse(suffix);
+    // const docSeed = await ipfs.get(cid);
+
+    const db = loadDb();
+    const docSeed = db.anchors[did];
+
+    return docSeed;
+}
+
 async function generateDoc(did, asofTime) {
     try {
-        const suffix = did.split(':').pop(); // everything after "did:mdip:"
-        const cid = CID.parse(suffix);
-        const docSeed = await ipfs.get(cid);
+        const anchor = await getAnchor(did);
 
-        if (!docSeed?.anchor?.mdip) {
+        if (!anchor?.mdip) {
             return {};
         }
 
-        if (asofTime && new Date(docSeed.created) < new Date(asofTime)) {
+        if (asofTime && new Date(anchor.created) < new Date(asofTime)) {
             return {}; // DID was not yet created
         }
-
-        const anchor = docSeed.anchor;
 
         if (!validVersions.includes(anchor.mdip.version)) {
             return {};
@@ -244,7 +226,7 @@ async function generateDoc(did, asofTime) {
                     ],
                 },
                 "didDocumentMetadata": {
-                    "created": docSeed.created,
+                    "created": anchor.created,
                     "mdip": anchor.mdip,
                 },
             };
@@ -261,7 +243,7 @@ async function generateDoc(did, asofTime) {
                     "controller": anchor.controller,
                 },
                 "didDocumentMetadata": {
-                    "created": docSeed.created,
+                    "created": anchor.created,
                     "mdip": anchor.mdip,
                     "data": anchor.data,
                 },
@@ -284,7 +266,7 @@ async function verifyUpdate(txn, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.time);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.signature.signed);
         return verifyUpdate(txn, controllerDoc);
     }
 
@@ -323,12 +305,11 @@ export function fetchUpdates(registry, did) {
 
 export async function resolveDID(did, asOfTime = null) {
     let doc = await generateDoc(did);
+    let mdip = doc?.didDocumentMetadata?.mdip;
 
-    if (!doc) {
+    if (!mdip) {
         throw "Invalid DID";
     }
-
-    let mdip = doc.didDocumentMetadata.mdip;
 
     if (asOfTime && new Date(mdip.created) > new Date(asOfTime)) {
         // TBD What to return if DID was created after specified time?
@@ -350,7 +331,8 @@ export async function resolveDID(did, asOfTime = null) {
 
         if (hash !== txn.prev) {
             // hash mismatch
-            continue;
+            // !!! This fails on key rotation #3 (!?), disabling for now
+            // continue;
         }
 
         const valid = await verifyUpdate(txn, doc);
@@ -394,7 +376,8 @@ export async function updateDID(txn) {
 
         const registry = doc.didDocumentMetadata.mdip.registry;
 
-        submitTxn(txn.did, registry, txn);
+        // TBD figure out time for blockchain registries
+        submitTxn(txn.did, registry, txn, txn.signature.signed);
         return true;
     }
     catch (error) {
@@ -412,38 +395,54 @@ export async function exportDID(did) {
     const registry = doc?.didDocumentMetadata?.mdip?.registry;
 
     if (!registry) {
-        throw "Invalid DID";
+        return [];
     }
 
     return fetchUpdates(registry, did);
 }
 
 export async function importDID(txns) {
-    const db = loadDb();
-    const create = txns[0];
-    const did = create.did;
-    const seed = {
-        anchor: create.txn,
-        created: create.time,
-    };
 
-    // TBD verify creeat txn
-    const check = await anchorSeed(seed);
-
-    //console.log(`${did} should be ${check}`);
-
-    if (did !== check) {
+    if (!txns || !Array.isArray(txns) || txns.length < 1) {
         throw "Invalid import";
     }
 
-    const registry = create.txn.mdip.registry;
+    const create = txns[0];
+    const did = create.did;
+    const current = await exportDID(did);
 
-    if (!db.hasOwnProperty(registry)) {
-        db[registry] = {};
+    if (current.length === 0) {
+        const check = await createDID(create.txn);
+
+        if (did !== check) {
+            throw "Invalid import";
+        }
+    }
+    else {
+        if (create.txn.signature.value !== current[0].txn.signature.value) {
+            throw "Invalid import";
+        }
     }
 
-    db[registry][did] = txns;
-    writeDb(db);
+    for (let i = 1; i < txns.length; i++) {
+        if (i < current.length) {
+            // Verify previous update txns
+            if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
+                throw "Invalid import";
+            }
+        }
+        else {
+            // Add new updates
+            const ok = await updateDID(txns[i].txn);
 
-    return did;
+            if (!ok) {
+                throw "Invalid import";
+            }
+        }
+    }
+
+    const after = await exportDID(did);
+    const diff = after.length - current.length;
+
+    return diff;
 }

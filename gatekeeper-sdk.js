@@ -17,36 +17,6 @@ export async function start() {
 export async function stop() {
 }
 
-export async function getPeerId() {
-    try {
-        const response = await axios.get(`${URL}/ipfs/peerid`);
-        return response.data;
-    }
-    catch (error) {
-        throw connectionError;
-    }
-}
-
-export async function getMultiaddr() {
-    try {
-        const response = await axios.get(`${URL}/ipfs/multiaddr`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function dialMultiaddr(multiaddr) {
-    try {
-        const response = await axios.post(`${URL}/ipfs/dial`, { multiaddr: multiaddr });
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
 export async function createDID(txn) {
     try {
         const response = await axios.post(`${URL}/did/`, txn);

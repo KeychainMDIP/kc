@@ -409,6 +409,25 @@ describe('rotateKeys', () => {
             expect(decipher2).toBe(msg);
         }
     });
+
+    it('should import DID with multiple key rotations', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const rotations = 10;
+
+        for (let i = 0; i < rotations; i++) {
+            await keymaster.rotateKeys();
+        }
+
+        const txns = await keymaster.exportDID(alice);
+
+        fs.rmSync('mdip.json');
+
+        const imported = await keymaster.importDID(txns);
+
+        expect(imported).toBe(rotations + 1);
+    });
 });
 
 describe('addName', () => {
@@ -505,12 +524,15 @@ describe('resolveDID', () => {
         expect(doc1).toStrictEqual(doc2);
     });
 
-    it('should return undefined for invalid name', async () => {
+    it('should throw an exception for invalid name', async () => {
         mockFs({});
 
-        const doc = await keymaster.resolveDID('mock');
-
-        expect(!doc).toBe(true);
+        try {
+            const doc = await keymaster.resolveDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
     });
 });
 
@@ -1044,6 +1066,26 @@ describe('revokeCredential', () => {
 
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(false);
+    });
+
+    it('should import a revoked credential', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.attestCredential(boundCredential);
+        const ok = await keymaster.revokeCredential(did);
+
+        const userTxns = await keymaster.exportDID(userDid);
+        const txns = await keymaster.exportDID(did);
+
+        fs.rmSync('mdip.json');
+
+        await keymaster.importDID(userTxns);
+        const imported = await keymaster.importDID(txns);
+
+        expect(imported).toBe(2);
     });
 });
 
