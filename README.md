@@ -6,6 +6,25 @@ requires: node v18
 $ git clone https://github.com/KeychainMDIP/keychain-cli
 $ cd keychain-cli
 $ npm install
+```
+
+Start the services in separate terminals:
+```
+node server.js
+node hyperswarm-monitor.js
+```
+
+OR
+
+Start the services in docker (-d to run it in the background):
+```
+docker compose up [-d]
+```
+
+Use the CLI `./kc`(or `./dkc` to connect to docker services)
+
+
+```
 $ ./kc
 
 Usage: keychain-cli [options] [command]
