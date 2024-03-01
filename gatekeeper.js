@@ -41,15 +41,12 @@ export async function stop() {
     helia.stop();
 }
 
-function submitTxn(did, registry, txn, time) {
+function submitTxn(did, registry, txn, time, ordinal=0) {
     const db = loadDb();
-
-    if (!time) {
-        time = new Date().toISOString();
-    }
 
     const update = {
         time: time,
+        ordinal: ordinal,
         did: did,
         txn: txn,
     };
@@ -89,7 +86,7 @@ export async function generateDID(txn) {
     const txns = await exportDID(did);
 
     if (txns.length === 0) {
-        submitTxn(did, txn.mdip.registry, txn);
+        submitTxn(did, txn.mdip.registry, txn, txn.created);
     }
 
     return did;
@@ -122,7 +119,7 @@ async function createAsset(txn) {
         throw "Invalid txn";
     }
 
-    const doc = await resolveDID(txn.controller, txn.signature.signed);
+    const doc = await resolveDID(txn.signature.signer, txn.signature.signed);
     const txnCopy = JSON.parse(JSON.stringify(txn));
     delete txnCopy.signature;
     const msgHash = cipher.hashJSON(txnCopy);
@@ -379,7 +376,8 @@ export async function updateDID(txn) {
 
         const registry = doc.didDocumentMetadata.mdip.registry;
 
-        submitTxn(txn.did, registry, txn);
+        // TBD figure out time for blockchain registries
+        submitTxn(txn.did, registry, txn, txn.signature.signed);
         return true;
     }
     catch (error) {
