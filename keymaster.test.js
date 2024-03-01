@@ -1067,6 +1067,26 @@ describe('revokeCredential', () => {
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(false);
     });
+
+    it('should import a revoked credential', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.attestCredential(boundCredential);
+        const ok = await keymaster.revokeCredential(did);
+
+        const userTxns = await keymaster.exportDID(userDid);
+        const txns = await keymaster.exportDID(did);
+
+        fs.rmSync('mdip.json');
+
+        await keymaster.importDID(userTxns);
+        const imported = await keymaster.importDID(txns);
+
+        expect(imported).toBe(2);
+    });
 });
 
 describe('acceptCredential', () => {
