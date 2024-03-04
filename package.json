@@ -30,7 +30,8 @@
     "hyperswarm": "^4.7.14",
     "json-schema-faker": "^0.5.5",
     "morgan": "^1.10.0",
-    "multiformats": "^13.0.0"
+    "multiformats": "^13.0.0",
+    "perf_hooks": "^0.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
