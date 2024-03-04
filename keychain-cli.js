@@ -10,7 +10,15 @@ program
     .description('Keychain CLI tool');
 
 program
-    .command('new-wallet <recovery-phrase>')
+    .command('create-wallet')
+    .description('Create new wallet (or show existing wallet)')
+    .action(() => {
+        const wallet = keymaster.loadWallet();
+        console.log(JSON.stringify(wallet, null, 4));
+    });
+
+program
+    .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {
         const wallet = keymaster.newWallet(recoveryPhrase);
