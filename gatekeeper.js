@@ -71,52 +71,26 @@ function submitTxn(did, registry, txn, time, ordinal = 0) {
     writeDb(db);
 }
 
-export async function anchorSeedold(seed) {
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `did:mdip:${cid.toString(base58btc)}`;
-    const db = loadDb();
-
-    if (!db.anchors) {
-        db.anchors = {};
-    }
-
-    const anchor = await ipfs.get(cid);
-    db.anchors[did] = anchor;
-
-    writeDb(db);
-    return did;
-}
-
 export async function anchorSeed(seed) {
-    let t0, t1;
+    // let t0, t1;
 
-    t0 = performance.now();
+    // t0 = performance.now();
+    // const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
+    // t1 = performance.now();
+    // console.log("Adding seed to IPFS took " + (t1 - t0) + " milliseconds.");
+
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    t1 = performance.now();
-    console.log("Adding seed to IPFS took " + (t1 - t0) + " milliseconds.");
-
     const did = `did:mdip:${cid.toString(base58btc)}`;
-
-    t0 = performance.now();
     const db = loadDb();
-    t1 = performance.now();
-    console.log("Loading DB took " + (t1 - t0) + " milliseconds.");
 
     if (!db.anchors) {
         db.anchors = {};
     }
 
-    t0 = performance.now();
     const anchor = await ipfs.get(cid);
     db.anchors[did] = anchor;
-    t1 = performance.now();
-    console.log("Getting anchor from IPFS and updating DB took " + (t1 - t0) + " milliseconds.");
 
-    t0 = performance.now();
     writeDb(db);
-    t1 = performance.now();
-    console.log("Writing DB took " + (t1 - t0) + " milliseconds.");
-
     return did;
 }
 
@@ -440,72 +414,16 @@ export async function exportDID(did) {
     return fetchUpdates(registry, did);
 }
 
-export async function importDIDold(txns) {
-
-    if (!txns || !Array.isArray(txns) || txns.length < 1) {
-        throw "Invalid import";
-    }
-
-    const create = txns[0];
-    const did = create.did;
-    const current = await exportDID(did);
-
-    if (current.length === 0) {
-        const check = await createDID(create.txn);
-
-        if (did !== check) {
-            throw "Invalid import";
-        }
-    }
-    else {
-        if (create.txn.signature.value !== current[0].txn.signature.value) {
-            throw "Invalid import";
-        }
-    }
-
-    for (let i = 1; i < txns.length; i++) {
-        if (i < current.length) {
-            // Verify previous update txns
-            if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
-                throw "Invalid import";
-            }
-        }
-        else {
-            // Add new updates
-            const ok = await updateDID(txns[i].txn);
-
-            if (!ok) {
-                throw "Invalid import";
-            }
-        }
-    }
-
-    const after = await exportDID(did);
-    const diff = after.length - current.length;
-
-    return diff;
-}
-
-
 export async function importDID(txns) {
-    let t0, t1;
 
-    t0 = performance.now();
     if (!txns || !Array.isArray(txns) || txns.length < 1) {
         throw "Invalid import";
     }
-    t1 = performance.now();
-    console.log("Checking transaction validity took " + (t1 - t0) + " milliseconds.");
 
     const create = txns[0];
     const did = create.did;
-
-    t0 = performance.now();
     const current = await exportDID(did);
-    t1 = performance.now();
-    console.log("Exporting DID took " + (t1 - t0) + " milliseconds.");
 
-    t0 = performance.now();
     if (current.length === 0) {
         const check = await createDID(create.txn);
 
@@ -518,11 +436,8 @@ export async function importDID(txns) {
             throw "Invalid import";
         }
     }
-    t1 = performance.now();
-    console.log("Creating or checking DID took " + (t1 - t0) + " milliseconds.");
 
     for (let i = 1; i < txns.length; i++) {
-        t0 = performance.now();
         if (i < current.length) {
             // Verify previous update txns
             if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
@@ -537,15 +452,9 @@ export async function importDID(txns) {
                 throw "Invalid import";
             }
         }
-        t1 = performance.now();
-        console.log("Verifying or updating DID took " + (t1 - t0) + " milliseconds.");
     }
 
-    t0 = performance.now();
     const after = await exportDID(did);
-    t1 = performance.now();
-    console.log("Exporting DID after updates took " + (t1 - t0) + " milliseconds.");
-
     const diff = after.length - current.length;
 
     return diff;
