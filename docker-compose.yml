@@ -18,3 +18,5 @@ services:
       - GATEKEEPER_URL=http://gatekeeper:3000
     volumes:
       - ./data:/app/data
+    depends_on:
+      - gatekeeper
