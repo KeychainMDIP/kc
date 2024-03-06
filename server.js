@@ -84,6 +84,17 @@ app.post('/import', async (req, res) => {
     }
 });
 
+app.post('/merge', async (req, res) => {
+    try {
+        const batch = req.body;
+        const did = await gatekeeper.mergeBatch(batch);
+        res.json(did);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 const port = 3000;
 
 app.listen(port, () => {

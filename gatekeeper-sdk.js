@@ -80,3 +80,13 @@ export async function importDID(txns) {
         throwError(error);
     }
 }
+
+export async function mergeBatch(batch) {
+    try {
+        const response = await axios.post(`${config.gatekeeperURL}/merge/`, batch);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}

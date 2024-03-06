@@ -460,3 +460,17 @@ export async function importDID(txns) {
 
     return diff;
 }
+
+export async function mergeBatch(batch) {
+    let merged = 0;
+
+    for (const txns of batch) {
+        const diff = await importDID(txns);
+
+        if (diff > 0) {
+            merged += 1;
+        }
+    }
+
+    return merged;
+}
