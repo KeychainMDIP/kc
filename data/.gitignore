@@ -1,4 +1,2 @@
-wallet.json
-mdip.json
+*.json
 ipfs/
-

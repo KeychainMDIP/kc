@@ -20,6 +20,7 @@ goodbye(() => swarm.destroy())
 
 const nodes = {};
 const messagesSeen = {};
+let merging = false;
 
 // Keep track of all connections
 const conns = [];
@@ -47,6 +48,10 @@ function loadDb() {
 }
 
 async function shareDb() {
+    if (merging) {
+        return;
+    }
+
     try {
         const db = loadDb();
         const hash = cipher.hashJSON(db);
@@ -85,6 +90,7 @@ async function relayDb(msg) {
 }
 
 async function mergeDb(db) {
+    merging = true;
     if (db.hyperswarm) {
         // Import DIDs by creation time order to avoid dependency errors
         let dids = Object.keys(db.hyperswarm);
@@ -106,6 +112,7 @@ async function mergeDb(db) {
             }
         }
     }
+    merging = false;
 }
 
 let queue = asyncLib.queue(async function (task, callback) {
