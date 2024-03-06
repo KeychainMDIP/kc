@@ -96,20 +96,40 @@ async function mergeDb(db) {
         let dids = Object.keys(db.hyperswarm);
         dids.sort((a, b) => db.hyperswarm[a][0].time - db.hyperswarm[b][0].time);
 
+        let batch = [];
         for (const did of dids) {
-            console.log(`${did} ${db.hyperswarm[did][0].time}`);
+            console.log(`Adding to batch: ${did} ${db.hyperswarm[did][0].time}`);
+            batch.push(db.hyperswarm[did]);
+
+            if (batch.length >= 25) {
+                try {
+                    const imported = await gatekeeper.mergeBatch(batch);
+                    if (imported > 0) {
+                        console.log(`* imported ${imported} DIDs *`);
+                    }
+                    else {
+                        console.log(`* DID synchronization confirmed *`);
+                    }
+                }
+                catch (error) {
+                    console.error(`error importing DID: ${did}: ${error}`);
+                }
+
+                batch = [];
+            }
         }
 
-        for (const did of dids) {
-            try {
-                const imported = await gatekeeper.importDID(db.hyperswarm[did]);
-                if (imported > 0) {
-                    console.log(`* imported DID ${did} *`);
-                }
+        try {
+            const imported = await gatekeeper.mergeBatch(batch);
+            if (imported > 0) {
+                console.log(`* imported ${imported} DIDs *`);
             }
-            catch (error) {
-                console.error(`error importing DID: ${did}: ${error}`);
+            else {
+                console.log(`* DID synchronization confirmed *`);
             }
+        }
+        catch (error) {
+            console.error(`error importing DID: ${did}: ${error}`);
         }
     }
     merging = false;
