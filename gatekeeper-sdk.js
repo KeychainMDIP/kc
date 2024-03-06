@@ -1,7 +1,5 @@
 import axios from 'axios';
-
-export const URL = process.env.GATEKEEPER_URL || 'http://localhost:3000';
-const connectionError = `Can't connect to gatekeeper. Is server running on ${URL}?`;
+import config from './config.js';
 
 function throwError(error) {
     if (error.response) {
@@ -19,7 +17,7 @@ export async function stop() {
 
 export async function createDID(txn) {
     try {
-        const response = await axios.post(`${URL}/did/`, txn);
+        const response = await axios.post(`${config.gatekeeperURL}/did/`, txn);
         return response.data;
     }
     catch (error) {
@@ -30,11 +28,11 @@ export async function createDID(txn) {
 export async function resolveDID(did, asof = null) {
     try {
         if (asof) {
-            const response = await axios.get(`${URL}/did/${did}?asof=${asof}`);
+            const response = await axios.get(`${config.gatekeeperURL}/did/${did}?asof=${asof}`);
             return response.data;
         }
         else {
-            const response = await axios.get(`${URL}/did/${did}`);
+            const response = await axios.get(`${config.gatekeeperURL}/did/${did}`);
             return response.data;
         }
     }
@@ -45,7 +43,7 @@ export async function resolveDID(did, asof = null) {
 
 export async function updateDID(txn) {
     try {
-        const response = await axios.post(`${URL}/did/${txn.did}`, txn);
+        const response = await axios.post(`${config.gatekeeperURL}/did/${txn.did}`, txn);
         return response.data;
     }
     catch (error) {
@@ -55,7 +53,7 @@ export async function updateDID(txn) {
 
 export async function deleteDID(txn) {
     try {
-        const response = await axios.delete(`${URL}/did/${txn.did}`, { data: txn });
+        const response = await axios.delete(`${config.gatekeeperURL}/did/${txn.did}`, { data: txn });
         return response.data;
     }
     catch (error) {
@@ -65,7 +63,7 @@ export async function deleteDID(txn) {
 
 export async function exportDID(did) {
     try {
-        const response = await axios.get(`${URL}/export/${did}`);
+        const response = await axios.get(`${config.gatekeeperURL}/export/${did}`);
         return response.data;
     }
     catch (error) {
@@ -75,7 +73,7 @@ export async function exportDID(did) {
 
 export async function importDID(txns) {
     try {
-        const response = await axios.post(`${URL}/import/`, txns);
+        const response = await axios.post(`${config.gatekeeperURL}/import/`, txns);
         return response.data;
     }
     catch (error) {
