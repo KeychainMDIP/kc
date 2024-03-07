@@ -7,6 +7,7 @@ import asyncLib from 'async';
 
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
+import config from './config.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
@@ -193,7 +194,7 @@ const discovery = swarm.join(topic, { client: true, server: true });
 
 // The flushed promise will resolve when the topic has been fully announced to the DHT
 discovery.flushed().then(() => {
-    console.log(`connecting to gatekeeper at ${gatekeeper.URL}`);
+    console.log(`connecting to gatekeeper at ${config.gatekeeperURL}`);
     console.log(`hyperswarm peer id: ${peerName}`);
     console.log('joined topic:', b4a.toString(topic, 'hex'));
 });

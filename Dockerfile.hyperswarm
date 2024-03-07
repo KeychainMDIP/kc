@@ -14,4 +14,4 @@ RUN npm ci
 COPY *.js ./
 
 # Run...
-CMD ["node", "hyperswarm-monitor.js"]
+CMD ["node", "hyperswarm-mediator.js"]

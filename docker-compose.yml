@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.hyperswarm
-    image: macterra/hyperswarm-monitor
+    image: macterra/hyperswarm-mediator
     environment:
       - GATEKEEPER_URL=http://gatekeeper:3000
     volumes:

@@ -66,6 +66,6 @@ jobs:
           file: Dockerfile.hyperswarm
           push: true
           tags: |
-            ${{ env.REGISTRY }}/keychainmdip/hyperswarm-monitor:${{ steps.calver.outputs.version }}
-            ${{ env.REGISTRY }}/keychainmdip/hyperswarm-monitor:release
+            ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ steps.calver.outputs.version }}
+            ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           labels: ${{ steps.meta.outputs.labels }}

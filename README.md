@@ -11,7 +11,7 @@ $ npm install
 Start the services in separate terminals:
 ```
 node server.js
-node hyperswarm-monitor.js
+node hyperswarm-mediator.js
 ```
 
 OR
