@@ -101,7 +101,7 @@ async function mergeDb(db) {
             console.log(`Adding to batch: ${did} ${db.hyperswarm[did][0].time}`);
             batch.push(db.hyperswarm[did]);
 
-            if (batch.length >= 25) {
+            if (batch.length >= 100) {
                 try {
                     const imported = await gatekeeper.mergeBatch(batch);
                     if (imported > 0) {

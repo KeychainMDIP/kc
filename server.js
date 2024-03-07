@@ -10,7 +10,7 @@ gatekeeper.start();
 const app = express();
 
 app.use(morgan('dev'));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
 
 app.get('/version', async (req, res) => {
     try {
