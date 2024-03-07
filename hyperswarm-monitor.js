@@ -174,7 +174,11 @@ function logMsg(name, hash) {
 
 setInterval(async () => {
     try {
-        shareDb();
+        const version = gatekeeper.getVersion();
+
+        if (version) {
+            shareDb();
+        }
     }
     catch (error) {
         console.error(`Error: ${error}`);

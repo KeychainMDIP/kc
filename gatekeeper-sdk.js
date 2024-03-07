@@ -15,6 +15,16 @@ export async function start() {
 export async function stop() {
 }
 
+export async function getVersion() {
+    try {
+        const response = await axios.get(`${config.gatekeeperURL}/version/`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function createDID(txn) {
     try {
         const response = await axios.post(`${config.gatekeeperURL}/did/`, txn);
