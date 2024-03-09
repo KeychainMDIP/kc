@@ -41,6 +41,30 @@ app.get('/did/:did', async (req, res) => {
     }
 });
 
+app.get('/explore/:did', async (req, res) => {
+    try {
+	const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
+	var hthead = '<html><body>';
+	hthead = hthead + '<h1>MDIP Network Explorer</h1>';
+	hthead = hthead + '<table style="width:800px;border=2px"><th><tr><h3>' + req.params.did + '</h3></td></tr>';
+	var htdoc = JSON.stringify(doc,null,5);
+	htdoc = htdoc.replace(/"didDocument"/g, '"<b>didDocument</b>"');
+	htdoc = htdoc.replace(/"didDocumentMetadata"/g, '"<b>didDocumentMetadata</b>"');
+	htdoc = htdoc.replace(/"manifest"/g, '"<b>manifest</b>"');
+	htdoc = htdoc.replace(/"issuer"/g, '"<b>issuer</b>"');
+	htdoc = htdoc.replace(/"signer"/g, '"<b>signer</b>"');
+	htdoc = htdoc.replace(/"id"/g, '"<b>id</b>"');
+	htdoc = htdoc.replace(/"credential"/g, '"<b>credential</b>"');
+	htdoc = htdoc.replace(/"vault"/g, '"<b>vault</b>"');
+	htdoc = htdoc.replace(/"(did:mdip:.*)"/g, '"<a href="/explore/$1">$1</a>"');
+	htdoc = hthead + '<tr><td><pre>' + htdoc + '</pre></td></tr></table></body></html>';
+	res.send(htdoc);
+    } catch (error ) {
+	console.error(error);
+	res.status(500).send(error.toString());
+    }
+});
+
 app.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
