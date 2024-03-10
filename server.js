@@ -46,7 +46,7 @@ app.get('/explore/:did', async (req, res) => {
 	const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
 	var hthead = '<html><body>';
 	hthead = hthead + '<h1>MDIP Network Explorer</h1>';
-	hthead = hthead + '<table style="width:800px;border=2px"><th><tr><h3>' + req.params.did + '</h3></td></tr>';
+	hthead = hthead + '<table><tr><td><h3>' + req.params.did + '</h3></td>';
 	var htdoc = JSON.stringify(doc,null,5);
 	htdoc = htdoc.replace(/"didDocument"/g, '"<b>didDocument</b>"');
 	htdoc = htdoc.replace(/"didDocumentMetadata"/g, '"<b>didDocumentMetadata</b>"');
@@ -57,7 +57,9 @@ app.get('/explore/:did', async (req, res) => {
 	htdoc = htdoc.replace(/"credential"/g, '"<b>credential</b>"');
 	htdoc = htdoc.replace(/"vault"/g, '"<b>vault</b>"');
 	htdoc = htdoc.replace(/"(did:mdip:.*)"/g, '"<a href="/explore/$1">$1</a>"');
-	htdoc = hthead + '<tr><td><pre>' + htdoc + '</pre></td></tr></table></body></html>';
+	htdoc = hthead + '<tr><td><hr><pre>' + htdoc + '</pre><hr></td></tr>';
+	var now = new Date();
+	htdoc = htdoc + '</table>' + now + '</body></html>';
 	res.send(htdoc);
     } catch (error ) {
 	console.error(error);
