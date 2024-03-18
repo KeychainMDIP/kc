@@ -59,7 +59,6 @@ export function decryptMnemonic() {
 }
 
 export function loadWallet() {
-
     if (fs.existsSync(walletName)) {
         const walletJson = fs.readFileSync(walletName);
         return JSON.parse(walletJson);
@@ -88,7 +87,6 @@ export async function recoverWallet(did) {
 }
 
 function getCurrentId() {
-
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];
 
@@ -364,14 +362,13 @@ export function removeId(name) {
 }
 
 export async function resolveId() {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
+    const id = getCurrentId();
     return resolveDID(id.did);
 }
 
 export async function backupId() {
+    const id = getCurrentId();
     const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
     const keypair = hdKeyPair();
     const data = {
         name: wallet.current,
