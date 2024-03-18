@@ -32,6 +32,27 @@ export function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
+export async function verifyDb() {
+    const db = loadDb();
+    const dids = Object.keys(db.anchors);
+    let n = 0;
+    let invalid = 0;
+
+    for (const did of dids) {
+        n += 1;
+        try {
+            const doc = await resolveDID(did, null, true);
+            console.log(`${n} ${did} OK`);
+        }
+        catch (error) {
+            console.log(`${n} ${did} ${error}`);
+            invalid += 1;
+        }
+    }
+
+    return invalid;
+}
+
 let helia = null;
 let ipfs = null;
 
@@ -317,7 +338,7 @@ export function fetchUpdates(registry, did) {
     return [];
 }
 
-export async function resolveDID(did, asOfTime = null) {
+export async function resolveDID(did, asOfTime = null, verify = false) {
     let doc = await generateDoc(did);
     let mdip = doc?.didDocumentMetadata?.mdip;
 
@@ -345,6 +366,9 @@ export async function resolveDID(did, asOfTime = null) {
 
         if (hash !== txn.prev) {
             // hash mismatch
+            // if (verify) {
+            //     throw "Invalid hash";
+            // }
             // !!! This fails on key rotation #3 (!?), disabling for now
             // continue;
         }
@@ -352,6 +376,10 @@ export async function resolveDID(did, asOfTime = null) {
         const valid = await verifyUpdate(txn, doc);
 
         if (!valid) {
+            if (verify) {
+                throw "Invalid update";
+            }
+
             continue;
         }
 
@@ -372,6 +400,10 @@ export async function resolveDID(did, asOfTime = null) {
             doc.didDocumentMetadata.updated = time;
         }
         else {
+            if (verify) {
+                throw "Invalid operation";
+            }
+
             console.error(`unknown op ${txn.op}`);
         }
     }
@@ -462,15 +494,29 @@ export async function importDID(txns) {
 }
 
 export async function mergeBatch(batch) {
-    let merged = 0;
+    let verified = 0;
+    let updated = 0;
+    let failed = 0;
 
     for (const txns of batch) {
-        const diff = await importDID(txns);
+        try {
+            const diff = await importDID(txns);
 
-        if (diff > 0) {
-            merged += 1;
+            if (diff > 0) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        catch {
+            failed += 1;
         }
     }
 
-    return merged;
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
 }
