@@ -462,15 +462,29 @@ export async function importDID(txns) {
 }
 
 export async function mergeBatch(batch) {
-    let merged = 0;
+    let verified = 0;
+    let updated = 0;
+    let failed = 0;
 
     for (const txns of batch) {
-        const diff = await importDID(txns);
+        try {
+            const diff = await importDID(txns);
 
-        if (diff > 0) {
-            merged += 1;
+            if (diff > 0) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        catch {
+            failed += 1;
         }
     }
 
-    return merged;
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
 }
