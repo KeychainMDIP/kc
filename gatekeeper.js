@@ -34,6 +34,11 @@ export function writeDb(db) {
 
 export async function verifyDb() {
     const db = loadDb();
+
+    if (!db.anchors) {
+        return 0;
+    }
+
     const dids = Object.keys(db.anchors);
     let n = 0;
     let invalid = 0;
