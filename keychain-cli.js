@@ -285,11 +285,12 @@ program
     });
 
 program
-    .command('create-challenge <file> [name]')
-    .description('Create challenge from a file')
+    .command('create-challenge [file] [name]')
+    .description('Create challenge (optionally from a file)')
     .action(async (file, name) => {
         try {
-            const challenge = JSON.parse(fs.readFileSync(file).toString());
+            const defaultChallenge = { credentials: [] };
+            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : defaultChallenge;
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
@@ -322,20 +323,6 @@ program
             console.error(error);
         }
     });
-
-program
-    .command('issue-challenge <challenge> <user>')
-    .description('Issue a challenge to a user')
-    .action(async (challenge, user) => {
-        try {
-            const did = await keymaster.issueChallenge(challenge, user);
-            console.log(did);
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
 
 program
     .command('bind-credential <file> <did>')

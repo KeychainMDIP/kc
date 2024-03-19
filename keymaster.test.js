@@ -1185,49 +1185,6 @@ describe('createChallenge', () => {
     });
 });
 
-describe('issueChallenge', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should create a challenge bound to a user', async () => {
-        mockFs({});
-
-        const alice = await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
-
-        keymaster.useId('Alice');
-
-        const credentialDid = await keymaster.createCredential(mockSchema);
-        const challenge = {
-            credentials: [
-                {
-                    schema: credentialDid,
-                    attestors: [alice, bob]
-                }
-            ]
-        };
-        const challengeDid = await keymaster.createChallenge(challenge);
-        const challengeForBob = await keymaster.issueChallenge(challengeDid, bob);
-        const boundChallenge = await keymaster.decryptJSON(challengeForBob);
-
-        expect(boundChallenge.challenge).toBe(challengeDid);
-        expect(boundChallenge.from).toBe(alice);
-        expect(boundChallenge.to).toBe(bob);
-
-        const isValid = await keymaster.verifySignature(boundChallenge);
-        expect(isValid).toBe(true);
-
-        const validFrom = new Date(boundChallenge.validFrom);
-        const validUntil = new Date(boundChallenge.validUntil);
-        const now = new Date();
-
-        expect(validFrom < now).toBe(true);
-        expect(validUntil > now).toBe(true);
-    });
-});
-
 describe('createResponse', () => {
 
     afterEach(() => {
@@ -1267,14 +1224,12 @@ describe('createResponse', () => {
             ]
         };
         const challengeDid = await keymaster.createChallenge(challenge);
-        const challengeForBob = await keymaster.issueChallenge(challengeDid, bob);
 
         keymaster.useId('Bob');
-        const vpDid = await keymaster.createResponse(challengeForBob);
-        const vpDoc = await keymaster.resolveDID(vpDid);
-        const data = vpDoc.didDocumentMetadata.data;
+        const vpDid = await keymaster.createResponse(challengeDid);
+        const data = await keymaster.decryptJSON(vpDid);
 
-        expect(data.challenge).toBe(challengeForBob);
+        expect(data.challenge).toBe(challengeDid);
         expect(data.credentials.length).toBe(1);
         expect(data.credentials[0].vc).toBe(vcDid);
     });
@@ -1346,13 +1301,12 @@ describe('verifyResponse', () => {
             ]
         };
         const challengeDid = await keymaster.createChallenge(challenge);
-        const challengeForCarol = await keymaster.issueChallenge(challengeDid, carol);
 
         keymaster.useId('Carol');
-        const vpDid = await keymaster.createResponse(challengeForCarol);
-        const data = await keymaster.resolveAsset(vpDid);
+        const vpDid = await keymaster.createResponse(challengeDid);
+        const data = await keymaster.decryptJSON(vpDid);
 
-        expect(data.challenge).toBe(challengeForCarol);
+        expect(data.challenge).toBe(challengeDid);
         expect(data.credentials.length).toBe(4);
 
         keymaster.useId('Victor');

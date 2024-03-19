@@ -657,25 +657,6 @@ export async function createChallenge(challenge) {
     return createData(challenge);
 }
 
-export async function issueChallenge(challenge, holder, expiresIn = 24) {
-    const id = getCurrentId();
-    const now = new Date();
-    const expires = new Date();
-    expires.setHours(now.getHours() + expiresIn);
-    const challengeDID = lookupDID(challenge);
-    const holderDID = lookupDID(holder);
-    const issue = {
-        challenge: challengeDID,
-        from: id.did,
-        to: holderDID,
-        validFrom: now.toISOString(),
-        validUntil: expires.toISOString(),
-    };
-    const signed = await addSignature(issue);
-    const cipherDid = await encryptJSON(signed, holderDID);
-    return cipherDid;
-}
-
 async function findMatchingCredential(credential) {
     const id = getCurrentId();
 
@@ -723,15 +704,20 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(did) {
-    const id = getCurrentId();
     const challenge = lookupDID(did);
-    const boundChallenge = await decryptJSON(challenge);
 
-    if (!boundChallenge.challenge || boundChallenge.to !== id.did) {
+    if (!challenge) {
         throw "Invalid challenge";
     }
 
-    const { credentials } = await resolveAsset(boundChallenge.challenge);
+    const doc = await resolveDID(challenge);
+    const requestor = doc.didDocument.controller;
+    const { credentials } = await resolveAsset(challenge);
+
+    if (!credentials) {
+        throw "Invalid challenge";
+    }
+
     const matches = [];
 
     for (let credential of credentials) {
@@ -750,24 +736,37 @@ export async function createResponse(did) {
 
     for (let vcDid of matches) {
         const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, boundChallenge.from);
+        const vpDid = await encrypt(plaintext, requestor);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
-    const responseDid = await createData({
-        challenge: did,
+    const requested = credentials.length;
+    const fulfilled = matches.length;
+    const match = (requested === fulfilled);
+    const response = {
+        challenge: challenge,
         credentials: pairs,
-    });
+        requested: requested,
+        fulfilled: fulfilled,
+        match: match,
+    };
+
+    const responseDid = await encryptJSON(response, requestor);
 
     return responseDid;
 }
 
 export async function verifyResponse(did) {
-    const response = lookupDID(did);
-    const { credentials } = await resolveAsset(response);
+    const responseDID = lookupDID(did);
+
+    if (!responseDID) {
+        throw "Invalid response";
+    }
+
+    const response = await decryptJSON(responseDID);
     const vps = [];
 
-    for (let credential of credentials) {
+    for (let credential of response.credentials) {
         const vcData = await resolveAsset(credential.vc);
         const vpData = await resolveAsset(credential.vp);
 
