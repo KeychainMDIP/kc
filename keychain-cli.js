@@ -325,20 +325,6 @@ program
     });
 
 program
-    .command('issue-challenge <challenge> <user>')
-    .description('Issue a challenge to a user')
-    .action(async (challenge, user) => {
-        try {
-            const did = await keymaster.issueChallenge(challenge, user);
-            console.log(did);
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-
-program
     .command('bind-credential <file> <did>')
     .description('Create bound credential for a user')
     .action(async (file, did) => {
