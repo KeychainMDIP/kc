@@ -657,24 +657,24 @@ export async function createChallenge(challenge) {
     return createData(challenge);
 }
 
-export async function issueChallenge(challenge, holder, expiresIn = 24) {
-    const id = getCurrentId();
-    const now = new Date();
-    const expires = new Date();
-    expires.setHours(now.getHours() + expiresIn);
-    const challengeDID = lookupDID(challenge);
-    const holderDID = lookupDID(holder);
-    const issue = {
-        challenge: challengeDID,
-        from: id.did,
-        to: holderDID,
-        validFrom: now.toISOString(),
-        validUntil: expires.toISOString(),
-    };
-    const signed = await addSignature(issue);
-    const cipherDid = await encryptJSON(signed, holderDID);
-    return cipherDid;
-}
+// export async function issueChallenge(challenge, holder, expiresIn = 24) {
+//     const id = getCurrentId();
+//     const now = new Date();
+//     const expires = new Date();
+//     expires.setHours(now.getHours() + expiresIn);
+//     const challengeDID = lookupDID(challenge);
+//     const holderDID = lookupDID(holder);
+//     const issue = {
+//         challenge: challengeDID,
+//         from: id.did,
+//         to: holderDID,
+//         validFrom: now.toISOString(),
+//         validUntil: expires.toISOString(),
+//     };
+//     const signed = await addSignature(issue);
+//     const cipherDid = await encryptJSON(signed, holderDID);
+//     return cipherDid;
+// }
 
 async function findMatchingCredential(credential) {
     const id = getCurrentId();
@@ -722,45 +722,45 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function oldcreateResponse(did) {
-    const id = getCurrentId();
-    const challenge = lookupDID(did);
-    const boundChallenge = await decryptJSON(challenge);
+// export async function oldcreateResponse(did) {
+//     const id = getCurrentId();
+//     const challenge = lookupDID(did);
+//     const boundChallenge = await decryptJSON(challenge);
 
-    if (!boundChallenge.challenge || boundChallenge.to !== id.did) {
-        throw "Invalid challenge";
-    }
+//     if (!boundChallenge.challenge || boundChallenge.to !== id.did) {
+//         throw "Invalid challenge";
+//     }
 
-    const { credentials } = await resolveAsset(boundChallenge.challenge);
-    const matches = [];
+//     const { credentials } = await resolveAsset(boundChallenge.challenge);
+//     const matches = [];
 
-    for (let credential of credentials) {
-        const vc = await findMatchingCredential(credential);
+//     for (let credential of credentials) {
+//         const vc = await findMatchingCredential(credential);
 
-        if (vc) {
-            matches.push(vc);
-        }
-    }
+//         if (vc) {
+//             matches.push(vc);
+//         }
+//     }
 
-    if (!matches) {
-        throw "VCs don't match challenge";
-    }
+//     if (!matches) {
+//         throw "VCs don't match challenge";
+//     }
 
-    const pairs = [];
+//     const pairs = [];
 
-    for (let vcDid of matches) {
-        const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, boundChallenge.from);
-        pairs.push({ vc: vcDid, vp: vpDid });
-    }
+//     for (let vcDid of matches) {
+//         const plaintext = await decrypt(vcDid);
+//         const vpDid = await encrypt(plaintext, boundChallenge.from);
+//         pairs.push({ vc: vcDid, vp: vpDid });
+//     }
 
-    const responseDid = await createData({
-        challenge: did,
-        credentials: pairs,
-    });
+//     const responseDid = await createData({
+//         challenge: did,
+//         credentials: pairs,
+//     });
 
-    return responseDid;
-}
+//     return responseDid;
+// }
 
 export async function createResponse(did) {
     const challenge = lookupDID(did);
@@ -770,6 +770,7 @@ export async function createResponse(did) {
     }
 
     const doc = await resolveDID(challenge);
+    const requestor = doc.didDocument.controller;
     const { credentials } = await resolveAsset(challenge);
 
     if (!credentials) {
@@ -794,7 +795,7 @@ export async function createResponse(did) {
 
     for (let vcDid of matches) {
         const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, boundChallenge.from);
+        const vpDid = await encrypt(plaintext, requestor);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -809,44 +810,43 @@ export async function createResponse(did) {
         match: match,
     };
 
-    const requestor = doc.didDocument.controller;
     const responseDid = await encryptJSON(response, requestor);
 
     return responseDid;
 }
 
-export async function oldverifyResponse(did) {
-    const response = lookupDID(did);
-    const { credentials } = await resolveAsset(response);
-    const vps = [];
+// export async function oldverifyResponse(did) {
+//     const response = lookupDID(did);
+//     const { credentials } = await resolveAsset(response);
+//     const vps = [];
 
-    for (let credential of credentials) {
-        const vcData = await resolveAsset(credential.vc);
-        const vpData = await resolveAsset(credential.vp);
+//     for (let credential of credentials) {
+//         const vcData = await resolveAsset(credential.vc);
+//         const vpData = await resolveAsset(credential.vp);
 
-        if (!vcData) {
-            // revoked
-            continue;
-        }
+//         if (!vcData) {
+//             // revoked
+//             continue;
+//         }
 
-        if (vcData.cipher_hash !== vpData.cipher_hash) {
-            continue;
-        }
+//         if (vcData.cipher_hash !== vpData.cipher_hash) {
+//             continue;
+//         }
 
-        const vp = await decryptJSON(credential.vp);
-        const isValid = await verifySignature(vp);
+//         const vp = await decryptJSON(credential.vp);
+//         const isValid = await verifySignature(vp);
 
-        if (!isValid) {
-            continue;
-        }
+//         if (!isValid) {
+//             continue;
+//         }
 
-        vps.push(vp);
-    }
+//         vps.push(vp);
+//     }
 
-    // TBD ensure VPs match challenge
+//     // TBD ensure VPs match challenge
 
-    return vps;
-}
+//     return vps;
+// }
 
 export async function verifyResponse(did) {
     const responseDID = lookupDID(did);
