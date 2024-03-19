@@ -763,14 +763,19 @@ export async function oldcreateResponse(did) {
 }
 
 export async function createResponse(did) {
-    const id = getCurrentId();
     const challenge = lookupDID(did);
 
     if (!challenge) {
         throw "Invalid challenge";
     }
 
+    const doc = await resolveDID(challenge);
     const { credentials } = await resolveAsset(challenge);
+
+    if (!credentials) {
+        throw "Invalid challenge";
+    }
+
     const matches = [];
 
     for (let credential of credentials) {
@@ -796,24 +801,64 @@ export async function createResponse(did) {
     const requested = credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
-
-    const responseDid = await createData({
+    const response = {
         challenge: challenge,
         credentials: pairs,
         requested: requested,
         fulfilled: fulfilled,
         match: match,
-    });
+    };
+
+    const requestor = doc.didDocument.controller;
+    const responseDid = await encryptJSON(response, requestor);
 
     return responseDid;
 }
 
-export async function verifyResponse(did) {
+export async function oldverifyResponse(did) {
     const response = lookupDID(did);
     const { credentials } = await resolveAsset(response);
     const vps = [];
 
     for (let credential of credentials) {
+        const vcData = await resolveAsset(credential.vc);
+        const vpData = await resolveAsset(credential.vp);
+
+        if (!vcData) {
+            // revoked
+            continue;
+        }
+
+        if (vcData.cipher_hash !== vpData.cipher_hash) {
+            continue;
+        }
+
+        const vp = await decryptJSON(credential.vp);
+        const isValid = await verifySignature(vp);
+
+        if (!isValid) {
+            continue;
+        }
+
+        vps.push(vp);
+    }
+
+    // TBD ensure VPs match challenge
+
+    return vps;
+}
+
+export async function verifyResponse(did) {
+    const responseDID = lookupDID(did);
+
+    if (!responseDID) {
+        throw "Invalid response";
+    }
+
+    const response = await decryptJSON(responseDID);
+    const vps = [];
+
+    for (let credential of response.credentials) {
         const vcData = await resolveAsset(credential.vc);
         const vpData = await resolveAsset(credential.vp);
 
