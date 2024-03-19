@@ -8,11 +8,12 @@ EventEmitter.defaultMaxListeners = 100;
 gatekeeper.start();
 
 const app = express();
+const v1router = express.Router();
 
 app.use(morgan('dev'));
 app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
 
-app.get('/version', async (req, res) => {
+v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
     } catch (error) {
@@ -20,7 +21,7 @@ app.get('/version', async (req, res) => {
     }
 });
 
-app.post('/did', async (req, res) => {
+v1router.post('/did', async (req, res) => {
     try {
         const txn = req.body;
         const did = await gatekeeper.createDID(txn);
@@ -31,7 +32,7 @@ app.post('/did', async (req, res) => {
     }
 });
 
-app.get('/did/:did', async (req, res) => {
+v1router.get('/did/:did', async (req, res) => {
     try {
         const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
         res.json(doc);
@@ -41,7 +42,7 @@ app.get('/did/:did', async (req, res) => {
     }
 });
 
-app.get('/explore/:did', async (req, res) => {
+v1router.get('/explore/:did', async (req, res) => {
     try {
         const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
         var hthead = '<html><body>';
@@ -67,7 +68,7 @@ app.get('/explore/:did', async (req, res) => {
     }
 });
 
-app.post('/did/:did', async (req, res) => {
+v1router.post('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const ok = await gatekeeper.updateDID(txn);
@@ -78,7 +79,7 @@ app.post('/did/:did', async (req, res) => {
     }
 });
 
-app.delete('/did/:did', async (req, res) => {
+v1router.delete('/did/:did', async (req, res) => {
     try {
         const txn = req.body;
         const ok = await gatekeeper.deleteDID(txn);
@@ -89,7 +90,7 @@ app.delete('/did/:did', async (req, res) => {
     }
 });
 
-app.get('/export/:did', async (req, res) => {
+v1router.get('/export/:did', async (req, res) => {
     try {
         const txns = await gatekeeper.exportDID(req.params.did);
         res.json(txns);
@@ -99,7 +100,7 @@ app.get('/export/:did', async (req, res) => {
     }
 });
 
-app.post('/import', async (req, res) => {
+v1router.post('/import', async (req, res) => {
     try {
         const txns = req.body;
         const did = await gatekeeper.importDID(txns);
@@ -110,7 +111,7 @@ app.post('/import', async (req, res) => {
     }
 });
 
-app.post('/merge', async (req, res) => {
+v1router.post('/merge', async (req, res) => {
     try {
         const batch = req.body;
         const did = await gatekeeper.mergeBatch(batch);
@@ -122,6 +123,8 @@ app.post('/merge', async (req, res) => {
 });
 
 const port = 3000;
+
+app.use('/api/v1', v1router);
 
 gatekeeper.verifyDb().then((invalid) => {
     if (invalid === 0) {
