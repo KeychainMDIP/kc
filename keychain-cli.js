@@ -285,11 +285,12 @@ program
     });
 
 program
-    .command('create-challenge <file> [name]')
-    .description('Create challenge from a file')
+    .command('create-challenge [file] [name]')
+    .description('Create challenge (optionally from a file)')
     .action(async (file, name) => {
         try {
-            const challenge = JSON.parse(fs.readFileSync(file).toString());
+            const defaultChallenge = { credentials: [] };
+            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : defaultChallenge;
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {

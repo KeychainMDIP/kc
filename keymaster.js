@@ -722,7 +722,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did) {
+export async function oldcreateResponse(did) {
     const id = getCurrentId();
     const challenge = lookupDID(did);
     const boundChallenge = await decryptJSON(challenge);
@@ -757,6 +757,52 @@ export async function createResponse(did) {
     const responseDid = await createData({
         challenge: did,
         credentials: pairs,
+    });
+
+    return responseDid;
+}
+
+export async function createResponse(did) {
+    const id = getCurrentId();
+    const challenge = lookupDID(did);
+
+    if (!challenge) {
+        throw "Invalid challenge";
+    }
+
+    const { credentials } = await resolveAsset(challenge);
+    const matches = [];
+
+    for (let credential of credentials) {
+        const vc = await findMatchingCredential(credential);
+
+        if (vc) {
+            matches.push(vc);
+        }
+    }
+
+    if (!matches) {
+        throw "VCs don't match challenge";
+    }
+
+    const pairs = [];
+
+    for (let vcDid of matches) {
+        const plaintext = await decrypt(vcDid);
+        const vpDid = await encrypt(plaintext, boundChallenge.from);
+        pairs.push({ vc: vcDid, vp: vpDid });
+    }
+
+    const requested = credentials.length;
+    const fulfilled = matches.length;
+    const match = (requested === fulfilled);
+
+    const responseDid = await createData({
+        challenge: challenge,
+        credentials: pairs,
+        requested: requested,
+        fulfilled: fulfilled,
+        match: match,
     });
 
     return responseDid;
