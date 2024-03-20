@@ -283,8 +283,9 @@ async function generateDoc(did, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
-                    "mdip": anchor.mdip,
                 },
+                "didDocumentData": {},
+                "mdip": anchor.mdip,
             };
 
             return doc;
@@ -300,9 +301,9 @@ async function generateDoc(did, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
-                    "mdip": anchor.mdip,
-                    "data": anchor.data,
                 },
+                "didDocumentData": anchor.data,
+                "mdip": anchor.mdip,
             };
 
             return doc;
@@ -361,7 +362,7 @@ export function fetchUpdates(registry, did) {
 
 export async function resolveDID(did, asOfTime = null, verify = false) {
     let doc = await generateDoc(did);
-    let mdip = doc?.didDocumentMetadata?.mdip;
+    let mdip = doc?.mdip;
 
     if (!mdip) {
         throw "Invalid DID";
@@ -406,18 +407,18 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
 
         if (operation.type === 'update') {
             // Maintain mdip metadata across versions
-            mdip = doc.didDocumentMetadata.mdip;
+            mdip = doc.mdip;
 
             // TBD if registry change in operation.doc.didDocumentMetadata.mdip,
             // fetch updates from new registry and search for same operation
             doc = operation.doc;
             doc.didDocumentMetadata.updated = time;
-            doc.didDocumentMetadata.mdip = mdip;
+            doc.mdip = mdip;
         }
         else if (operation.type === 'delete') {
             doc.didDocument = {};
+            doc.didDocumentData = {};
             doc.didDocumentMetadata.deactivated = true;
-            doc.didDocumentMetadata.data = null; // in case of asset
             doc.didDocumentMetadata.updated = time;
         }
         else {
@@ -441,7 +442,7 @@ export async function updateDID(operation) {
             return false;
         }
 
-        const registry = doc.didDocumentMetadata.mdip.registry;
+        const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
         submitTxn(operation.did, registry, operation, operation.signature.signed);
@@ -459,7 +460,7 @@ export async function deleteDID(operation) {
 
 export async function exportDID(did) {
     const doc = await generateDoc(did);
-    const registry = doc?.didDocumentMetadata?.mdip?.registry;
+    const registry = doc?.mdip?.registry;
 
     if (!registry) {
         return [];

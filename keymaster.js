@@ -288,7 +288,7 @@ export async function resolveAsset(did) {
 
     if (doc?.didDocumentMetadata) {
         if (!doc.didDocumentMetadata.deactivated) {
-            return doc.didDocumentMetadata.data;
+            return doc.didDocumentData;
         }
     }
 
@@ -377,10 +377,10 @@ export async function backupId() {
     const msg = JSON.stringify(data);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const doc = await resolveDID(id.did);
-    const registry = doc.didDocumentMetadata.mdip.registry;
+    const registry = doc.mdip.registry;
     const vaultDid = await createData({ backup: backup }, registry);
 
-    doc.didDocumentMetadata.vault = vaultDid;
+    doc.didDocumentData.vault = vaultDid;
     const ok = await updateDID(id.did, doc);
 
     return ok;
@@ -391,7 +391,7 @@ export async function recoverId(did) {
         const wallet = loadWallet();
         const keypair = hdKeyPair();
         const doc = await resolveDID(did);
-        const vault = await resolveAsset(doc.didDocumentMetadata.vault);
+        const vault = await resolveAsset(doc.didDocumentData.vault);
         const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
         const data = JSON.parse(backup);
 
@@ -613,15 +613,15 @@ export async function publishCredential(did, reveal = false) {
 
         const doc = await resolveDID(id.did);
 
-        if (!doc.didDocumentMetadata.manifest) {
-            doc.didDocumentMetadata.manifest = {};
+        if (!doc.didDocumentData.manifest) {
+            doc.didDocumentData.manifest = {};
         }
 
         if (!reveal) {
             // Remove the credential values
             vc.credential = null;
         }
-        doc.didDocumentMetadata.manifest[credential] = vc;
+        doc.didDocumentData.manifest[credential] = vc;
 
         await updateDID(id.did, doc);
 
@@ -637,7 +637,7 @@ export async function unpublishCredential(did) {
         const id = getCurrentId();
         const doc = await resolveDID(id.did);
         const credential = lookupDID(did);
-        const manifest = doc.didDocumentMetadata.manifest;
+        const manifest = doc.didDocumentData.manifest;
 
         if (manifest && manifest.hasOwnProperty(credential)) {
             delete manifest[credential];
