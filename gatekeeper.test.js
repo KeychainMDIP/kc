@@ -307,7 +307,7 @@ describe('importDID', () => {
 
         const N = 20;
         for (let i = 0; i < N; i++) {
-            doc.didDocumentMetadata.data = `mock-${i}`;
+            doc.didDocumentData = { mock: `${i}` };
             const updateTxn = await createUpdateTxn(keypair, did, doc);
             const ok = await gatekeeper.updateDID(updateTxn);
         }
