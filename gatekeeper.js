@@ -13,7 +13,7 @@ export const dbName = `${dataFolder}/mdip.json`;
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['peerbit', 'BTC', 'tBTC', 'local', 'hyperswarm'];
+const validRegistries = ['local', 'hyperswarm'];
 
 export function loadDb() {
     if (fs.existsSync(dbName)) {
