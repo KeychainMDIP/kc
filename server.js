@@ -23,8 +23,8 @@ v1router.get('/version', async (req, res) => {
 
 v1router.post('/did', async (req, res) => {
     try {
-        const txn = req.body;
-        const did = await gatekeeper.createDID(txn);
+        const operation = req.body;
+        const did = await gatekeeper.createDID(operation);
         res.json(did);
     } catch (error) {
         console.error(error);
@@ -44,8 +44,8 @@ v1router.get('/did/:did', async (req, res) => {
 
 v1router.post('/did/:did', async (req, res) => {
     try {
-        const txn = req.body;
-        const ok = await gatekeeper.updateDID(txn);
+        const operation = req.body;
+        const ok = await gatekeeper.updateDID(operation);
         res.json(ok);
     } catch (error) {
         console.error(error);
@@ -55,8 +55,8 @@ v1router.post('/did/:did', async (req, res) => {
 
 v1router.delete('/did/:did', async (req, res) => {
     try {
-        const txn = req.body;
-        const ok = await gatekeeper.deleteDID(txn);
+        const operation = req.body;
+        const ok = await gatekeeper.deleteDID(operation);
         res.json(ok);
     } catch (error) {
         console.error(error);
@@ -66,8 +66,8 @@ v1router.delete('/did/:did', async (req, res) => {
 
 v1router.get('/export/:did', async (req, res) => {
     try {
-        const txns = await gatekeeper.exportDID(req.params.did);
-        res.json(txns);
+        const ops = await gatekeeper.exportDID(req.params.did);
+        res.json(ops);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -76,8 +76,8 @@ v1router.get('/export/:did', async (req, res) => {
 
 v1router.post('/import', async (req, res) => {
     try {
-        const txns = req.body;
-        const did = await gatekeeper.importDID(txns);
+        const ops = req.body;
+        const did = await gatekeeper.importDID(ops);
         res.json(did);
     } catch (error) {
         console.error(error);

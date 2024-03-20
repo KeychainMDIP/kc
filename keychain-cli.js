@@ -503,8 +503,8 @@ program
     .description('Export DID to file')
     .action(async (did) => {
         try {
-            const txns = await keymaster.exportDID(did);
-            console.log(JSON.stringify(txns, null, 4));
+            const ops = await keymaster.exportDID(did);
+            console.log(JSON.stringify(ops, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -517,8 +517,8 @@ program
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const txns = JSON.parse(contents);
-            const did = await keymaster.importDID(txns);
+            const ops = JSON.parse(contents);
+            const did = await keymaster.importDID(ops);
             console.log(did);
         }
         catch (error) {

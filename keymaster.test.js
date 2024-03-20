@@ -420,11 +420,11 @@ describe('rotateKeys', () => {
             await keymaster.rotateKeys();
         }
 
-        const txns = await keymaster.exportDID(alice);
+        const ops = await keymaster.exportDID(alice);
 
         fs.rmSync(gatekeeper.dbName);
 
-        const imported = await keymaster.importDID(txns);
+        const imported = await keymaster.importDID(ops);
 
         expect(imported).toBe(rotations + 1);
     });
@@ -1078,12 +1078,12 @@ describe('revokeCredential', () => {
         const ok = await keymaster.revokeCredential(did);
 
         const userTxns = await keymaster.exportDID(userDid);
-        const txns = await keymaster.exportDID(did);
+        const ops = await keymaster.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
 
         await keymaster.importDID(userTxns);
-        const imported = await keymaster.importDID(txns);
+        const imported = await keymaster.importDID(ops);
 
         expect(imported).toBe(2);
     });

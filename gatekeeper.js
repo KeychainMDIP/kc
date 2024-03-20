@@ -74,14 +74,14 @@ export async function stop() {
     helia.stop();
 }
 
-function submitTxn(did, registry, txn, time, ordinal = 0) {
+function submitTxn(did, registry, operation, time, ordinal = 0) {
     const db = loadDb();
 
     const update = {
         time: time,
         ordinal: ordinal,
         did: did,
-        txn: txn,
+        operation: operation,
     };
 
     if (!db.hasOwnProperty(registry)) {
@@ -121,91 +121,91 @@ export async function anchorSeed(seed) {
     return did;
 }
 
-export async function generateDID(txn) {
-    const did = await anchorSeed(txn);
-    const txns = await exportDID(did);
+export async function generateDID(operation) {
+    const did = await anchorSeed(operation);
+    const ops = await exportDID(did);
 
-    if (txns.length === 0) {
-        submitTxn(did, txn.mdip.registry, txn, txn.created);
+    if (ops.length === 0) {
+        submitTxn(did, operation.mdip.registry, operation, operation.created);
     }
 
     return did;
 }
 
-async function createAgent(txn) {
-    if (!txn.signature) {
-        throw "Invalid txn";
+async function createAgent(operation) {
+    if (!operation.signature) {
+        throw "Invalid operation";
     }
 
-    if (!txn.publicJwk) {
-        throw "Invalid txn";
+    if (!operation.publicJwk) {
+        throw "Invalid operation";
     }
 
-    const txnCopy = JSON.parse(JSON.stringify(txn));
-    delete txnCopy.signature;
+    const operationCopy = JSON.parse(JSON.stringify(operation));
+    delete operationCopy.signature;
 
-    const msgHash = cipher.hashJSON(txnCopy);
-    const isValid = cipher.verifySig(msgHash, txn.signature.value, txn.publicJwk);
+    const msgHash = cipher.hashJSON(operationCopy);
+    const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 
     if (!isValid) {
-        throw "Invalid txn";
+        throw "Invalid operation";
     }
 
-    return generateDID(txn);
+    return generateDID(operation);
 }
 
-async function createAsset(txn) {
-    if (txn.controller !== txn.signature.signer) {
-        throw "Invalid txn";
+async function createAsset(operation) {
+    if (operation.controller !== operation.signature.signer) {
+        throw "Invalid operation";
     }
 
-    const doc = await resolveDID(txn.signature.signer, txn.signature.signed);
-    const txnCopy = JSON.parse(JSON.stringify(txn));
-    delete txnCopy.signature;
-    const msgHash = cipher.hashJSON(txnCopy);
+    const doc = await resolveDID(operation.signature.signer, operation.signature.signed);
+    const operationCopy = JSON.parse(JSON.stringify(operation));
+    delete operationCopy.signature;
+    const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, txn.signature.value, publicJwk);
+    const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 
     if (!isValid) {
-        throw "Invalid txn";
+        throw "Invalid operation";
     }
 
-    return generateDID(txn);
+    return generateDID(operation);
 }
 
-export async function createDID(txn) {
-    if (txn?.op !== "create") {
-        throw "Invalid txn";
+export async function createDID(operation) {
+    if (operation?.type !== "create") {
+        throw "Invalid operation";
     }
 
-    if (!txn.created) {
+    if (!operation.created) {
         // TBD ensure valid timestamp format
-        throw "Invalid txn";
+        throw "Invalid operation";
     }
 
-    if (!txn.mdip) {
-        throw "Invalid txn";
+    if (!operation.mdip) {
+        throw "Invalid operation";
     }
 
-    if (!validVersions.includes(txn.mdip.version)) {
+    if (!validVersions.includes(operation.mdip.version)) {
         throw `Valid versions include: ${validVersions}`;
     }
 
-    if (!validTypes.includes(txn.mdip.type)) {
+    if (!validTypes.includes(operation.mdip.type)) {
         throw `Valid types include: ${validTypes}`;
     }
 
-    if (!validRegistries.includes(txn.mdip.registry)) {
+    if (!validRegistries.includes(operation.mdip.registry)) {
         throw `Valid registries include: ${validRegistries}`;
     }
 
-    if (txn.mdip.type === 'agent') {
-        return createAgent(txn);
+    if (operation.mdip.type === 'agent') {
+        return createAgent(operation);
     }
 
-    if (txn.mdip.type === 'asset') {
-        return createAsset(txn);
+    if (operation.mdip.type === 'asset') {
+        return createAsset(operation);
     }
 
     throw "Unknown type";
@@ -299,19 +299,19 @@ async function generateDoc(did, asofTime) {
     return {}; // TBD unknown type error
 }
 
-async function verifyUpdate(txn, doc) {
+async function verifyUpdate(operation, doc) {
 
     if (!doc?.didDocument) {
         return false;
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, txn.signature.signed);
-        return verifyUpdate(txn, controllerDoc);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, operation.signature.signed);
+        return verifyUpdate(operation, controllerDoc);
     }
 
     if (doc.didDocument.verificationMethod) {
-        const jsonCopy = JSON.parse(JSON.stringify(txn));
+        const jsonCopy = JSON.parse(JSON.stringify(operation));
 
         const signature = jsonCopy.signature;
         delete jsonCopy.signature;
@@ -357,19 +357,19 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
 
     const updates = fetchUpdates(mdip.registry, did);
 
-    for (const { time, txn } of updates) {
+    for (const { time, operation } of updates) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
 
-        if (txn.op === 'create') {
+        if (operation.type === 'create') {
             // Proof-of-existence in the DID's registry
             continue;
         }
 
         const hash = cipher.hashJSON(doc);
 
-        if (hash !== txn.prev) {
+        if (hash !== operation.prev) {
             // hash mismatch
             // if (verify) {
             //     throw "Invalid hash";
@@ -378,7 +378,7 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
             // continue;
         }
 
-        const valid = await verifyUpdate(txn, doc);
+        const valid = await verifyUpdate(operation, doc);
 
         if (!valid) {
             if (verify) {
@@ -388,17 +388,17 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
             continue;
         }
 
-        if (txn.op === 'update') {
+        if (operation.type === 'update') {
             // Maintain mdip metadata across versions
             mdip = doc.didDocumentMetadata.mdip;
 
-            // TBD if registry change in txn.doc.didDocumentMetadata.mdip,
-            // fetch updates from new registry and search for same txn
-            doc = txn.doc;
+            // TBD if registry change in operation.doc.didDocumentMetadata.mdip,
+            // fetch updates from new registry and search for same operation
+            doc = operation.doc;
             doc.didDocumentMetadata.updated = time;
             doc.didDocumentMetadata.mdip = mdip;
         }
-        else if (txn.op === 'delete') {
+        else if (operation.type === 'delete') {
             doc.didDocument = {};
             doc.didDocumentMetadata.deactivated = true;
             doc.didDocumentMetadata.data = null; // in case of asset
@@ -409,17 +409,17 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
                 throw "Invalid operation";
             }
 
-            console.error(`unknown op ${txn.op}`);
+            console.error(`unknown type ${operation.type}`);
         }
     }
 
     return doc;
 }
 
-export async function updateDID(txn) {
+export async function updateDID(operation) {
     try {
-        const doc = await resolveDID(txn.did);
-        const updateValid = await verifyUpdate(txn, doc);
+        const doc = await resolveDID(operation.did);
+        const updateValid = await verifyUpdate(operation, doc);
 
         if (!updateValid) {
             return false;
@@ -428,7 +428,7 @@ export async function updateDID(txn) {
         const registry = doc.didDocumentMetadata.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        submitTxn(txn.did, registry, txn, txn.signature.signed);
+        submitTxn(operation.did, registry, operation, operation.signature.signed);
         return true;
     }
     catch (error) {
@@ -437,8 +437,8 @@ export async function updateDID(txn) {
     }
 }
 
-export async function deleteDID(txn) {
-    return updateDID(txn);
+export async function deleteDID(operation) {
+    return updateDID(operation);
 }
 
 export async function exportDID(did) {
@@ -452,39 +452,39 @@ export async function exportDID(did) {
     return fetchUpdates(registry, did);
 }
 
-export async function importDID(txns) {
+export async function importDID(ops) {
 
-    if (!txns || !Array.isArray(txns) || txns.length < 1) {
+    if (!ops || !Array.isArray(ops) || ops.length < 1) {
         throw "Invalid import";
     }
 
-    const create = txns[0];
+    const create = ops[0];
     const did = create.did;
     const current = await exportDID(did);
 
     if (current.length === 0) {
-        const check = await createDID(create.txn);
+        const check = await createDID(create.operation);
 
         if (did !== check) {
             throw "Invalid import";
         }
     }
     else {
-        if (create.txn.signature.value !== current[0].txn.signature.value) {
+        if (create.operation.signature.value !== current[0].operation.signature.value) {
             throw "Invalid import";
         }
     }
 
-    for (let i = 1; i < txns.length; i++) {
+    for (let i = 1; i < ops.length; i++) {
         if (i < current.length) {
-            // Verify previous update txns
-            if (txns[i].txn.signature.value !== current[i].txn.signature.value) {
+            // Verify previous update ops
+            if (ops[i].operation.signature.value !== current[i].operation.signature.value) {
                 throw "Invalid import";
             }
         }
         else {
             // Add new updates
-            const ok = await updateDID(txns[i].txn);
+            const ok = await updateDID(ops[i].operation);
 
             if (!ok) {
                 throw "Invalid import";
@@ -503,9 +503,9 @@ export async function mergeBatch(batch) {
     let updated = 0;
     let failed = 0;
 
-    for (const txns of batch) {
+    for (const ops of batch) {
         try {
-            const diff = await importDID(txns);
+            const diff = await importDID(ops);
 
             if (diff > 0) {
                 updated += 1;
