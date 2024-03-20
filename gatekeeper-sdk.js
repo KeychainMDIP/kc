@@ -27,9 +27,9 @@ export async function getVersion() {
     }
 }
 
-export async function createDID(txn) {
+export async function createDID(operation) {
     try {
-        const response = await axios.post(`${URL}/did/`, txn);
+        const response = await axios.post(`${URL}/did/`, operation);
         return response.data;
     }
     catch (error) {
@@ -53,9 +53,9 @@ export async function resolveDID(did, asof = null) {
     }
 }
 
-export async function updateDID(txn) {
+export async function updateDID(operation) {
     try {
-        const response = await axios.post(`${URL}/did/${txn.did}`, txn);
+        const response = await axios.post(`${URL}/did/${operation.did}`, operation);
         return response.data;
     }
     catch (error) {
@@ -63,9 +63,9 @@ export async function updateDID(txn) {
     }
 }
 
-export async function deleteDID(txn) {
+export async function deleteDID(operation) {
     try {
-        const response = await axios.delete(`${URL}/did/${txn.did}`, { data: txn });
+        const response = await axios.delete(`${URL}/did/${operation.did}`, { data: operation });
         return response.data;
     }
     catch (error) {
@@ -83,9 +83,9 @@ export async function exportDID(did) {
     }
 }
 
-export async function importDID(txns) {
+export async function importDID(ops) {
     try {
-        const response = await axios.post(`${URL}/import/`, txns);
+        const response = await axios.post(`${URL}/import/`, ops);
         return response.data;
     }
     catch (error) {

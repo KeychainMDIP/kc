@@ -67,7 +67,7 @@ export function loadWallet() {
     return newWallet();
 }
 
-export async function backupWallet(registry = 'BTC') {
+export async function backupWallet(registry = defaultRegistry) {
     const wallet = loadWallet();
     const keypair = hdKeyPair();
     const msg = JSON.stringify(wallet);
@@ -229,14 +229,14 @@ async function updateDID(did, doc) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
-    const txn = {
-        op: "update",
+    const operation = {
+        type: "update",
         did: did,
         doc: doc,
         prev: prev,
     };
 
-    const signed = await addSignature(txn);
+    const signed = await addSignature(operation);
     return gatekeeper.updateDID(signed);
 }
 
@@ -244,13 +244,13 @@ async function revokeDID(did) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
-    const txn = {
-        op: "delete",
+    const operation = {
+        type: "delete",
         did: did,
         prev: prev,
     };
 
-    const signed = await addSignature(txn);
+    const signed = await addSignature(operation);
     return gatekeeper.deleteDID(signed);
 }
 
@@ -308,8 +308,8 @@ export async function createId(name, registry = defaultRegistry) {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
 
-    const txn = {
-        op: "create",
+    const operation = {
+        type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
@@ -319,10 +319,10 @@ export async function createId(name, registry = defaultRegistry) {
         publicJwk: keypair.publicJwk,
     };
 
-    const msgHash = cipher.hashJSON(txn);
+    const msgHash = cipher.hashJSON(operation);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
-        ...txn,
+        ...operation,
         signature: {
             signed: new Date().toISOString(),
             hash: msgHash,
@@ -518,8 +518,8 @@ export async function createData(data, registry = defaultRegistry) {
 
     const id = getCurrentId();
 
-    const txn = {
-        op: "create",
+    const operation = {
+        type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
@@ -530,7 +530,7 @@ export async function createData(data, registry = defaultRegistry) {
         data: data,
     };
 
-    const signed = await addSignature(txn);
+    const signed = await addSignature(operation);
     const did = await gatekeeper.createDID(signed);
 
     addToOwned(did);
@@ -798,6 +798,6 @@ export async function exportDID(did) {
     return gatekeeper.exportDID(lookupDID(did));
 }
 
-export async function importDID(txns) {
-    return gatekeeper.importDID(txns);
+export async function importDID(ops) {
+    return gatekeeper.importDID(ops);
 }

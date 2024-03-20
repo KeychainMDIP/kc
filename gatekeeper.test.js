@@ -17,11 +17,11 @@ describe('generateDid', () => {
         mockFs.restore();
     });
 
-    it('should create DID from txn', async () => {
+    it('should create DID from operation', async () => {
         mockFs({});
 
         const mockTxn = {
-            op: "create",
+            type: "create",
             created: new Date().toISOString(),
             mdip: {
                 registry: "mockRegistry"
@@ -33,11 +33,11 @@ describe('generateDid', () => {
         expect(did.startsWith('did:mdip:'));
     });
 
-    it('should create same DID from same txn with date included', async () => {
+    it('should create same DID from same operation with date included', async () => {
         mockFs({});
 
         const mockTxn = {
-            op: "create",
+            type: "create",
             created: new Date().toISOString(),
             mdip: {
                 registry: "mockRegistry"
@@ -51,8 +51,8 @@ describe('generateDid', () => {
 });
 
 async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
-    const txn = {
-        op: "create",
+    const operation = {
+        type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: version,
@@ -62,11 +62,11 @@ async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
         publicJwk: keypair.publicJwk,
     };
 
-    const msgHash = cipher.hashJSON(txn);
+    const msgHash = cipher.hashJSON(operation);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
     return {
-        ...txn,
+        ...operation,
         signature: {
             signed: new Date().toISOString(),
             hash: msgHash,
@@ -79,18 +79,18 @@ async function createUpdateTxn(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
     const prev = cipher.hashJSON(current);
 
-    const txn = {
-        op: "update",
+    const operation = {
+        type: "update",
         did: did,
         doc: doc,
         prev: prev,
     };
 
-    const msgHash = cipher.hashJSON(txn);
+    const msgHash = cipher.hashJSON(operation);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
 
     const signed = {
-        ...txn,
+        ...operation,
         signature: {
             signer: did,
             created: new Date().toISOString(),
@@ -104,12 +104,12 @@ async function createUpdateTxn(keypair, did, doc) {
 
 async function createAssetTxn(agent, keypair) {
     const dataAnchor = {
-        op: "create",
+        type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
-            registry: "BTC",
+            registry: "hyperswarm",
         },
         controller: agent,
         data: "mockData",
@@ -135,48 +135,11 @@ describe('createDID', () => {
         mockFs.restore();
     });
 
-    it('should create DID from agent txn', async () => {
+    it('should create DID from agent operation', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create DID for peerbit registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'peerbit');
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-
-    it('should create DID for BTC registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'BTC');
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create DID for tBTC registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'tBTC');
 
         const did = await gatekeeper.createDID(agentTxn);
 
@@ -224,7 +187,7 @@ describe('createDID', () => {
         }
     });
 
-    it('should create DID from asset txn', async () => {
+    it('should create DID from asset operation', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -252,18 +215,18 @@ describe('exportDID', () => {
         const agentTxn = await createAgentTxn(keypair);
         const did = await gatekeeper.createDID(agentTxn);
 
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
-        expect(txns.length).toBe(1);
-        expect(txns[0].did).toStrictEqual(did);
-        expect(txns[0].txn).toStrictEqual(agentTxn);
+        expect(ops.length).toBe(1);
+        expect(ops[0].did).toStrictEqual(did);
+        expect(ops[0].operation).toStrictEqual(agentTxn);
     });
 
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
-        const txns = await gatekeeper.exportDID('mockDID');
-        expect(txns).toStrictEqual([]);
+        const ops = await gatekeeper.exportDID('mockDID');
+        expect(ops).toStrictEqual([]);
     });
 });
 
@@ -279,9 +242,9 @@ describe('importDID', () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
         const did = await gatekeeper.createDID(agentTxn);
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(0);
     });
@@ -294,14 +257,14 @@ describe('importDID', () => {
         const agentDID = await gatekeeper.createDID(agentTxn);
         const assetTxn = await createAssetTxn(agentDID, keypair);
         const assetDID = await gatekeeper.createDID(assetTxn);
-        const txns = await gatekeeper.exportDID(assetDID);
+        const ops = await gatekeeper.exportDID(assetDID);
 
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(0);
     });
 
-    it('should report 0 txns reported when DID exists', async () => {
+    it('should report 0 ops reported when DID exists', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -310,14 +273,14 @@ describe('importDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         const updateTxn = await createUpdateTxn(keypair, did, doc);
         const ok = await gatekeeper.updateDID(updateTxn);
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(0);
     });
 
-    it('should report 2 txns imported when DID deleted first', async () => {
+    it('should report 2 ops imported when DID deleted first', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -326,15 +289,15 @@ describe('importDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         const updateTxn = await createUpdateTxn(keypair, did, doc);
         const ok = await gatekeeper.updateDID(updateTxn);
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(2);
     });
 
-    it('should report N+1 txns imported for N updates', async () => {
+    it('should report N+1 ops imported for N updates', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -349,12 +312,12 @@ describe('importDID', () => {
             const ok = await gatekeeper.updateDID(updateTxn);
         }
 
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(N+1);
+        expect(imported).toBe(N + 1);
     });
 
     it('should resolve an imported DID', async () => {
@@ -363,11 +326,11 @@ describe('importDID', () => {
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
         const did = await gatekeeper.createDID(agentTxn);
-        const txns = await gatekeeper.exportDID(did);
+        const ops = await gatekeeper.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
 
-        const imported = await gatekeeper.importDID(txns);
+        const imported = await gatekeeper.importDID(ops);
         const doc = await gatekeeper.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
@@ -381,12 +344,12 @@ describe('importDID', () => {
         const did1 = await gatekeeper.createDID(agentTxn1);
         const agentTxn2 = await createAgentTxn(keypair);
         const did2 = await gatekeeper.createDID(agentTxn2);
-        const txns = await gatekeeper.exportDID(did1);
+        const ops = await gatekeeper.exportDID(did1);
 
-        txns[0].did = did2;
+        ops[0].did = did2;
 
         try {
-            const imported = await gatekeeper.importDID(txns);
+            const imported = await gatekeeper.importDID(ops);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -433,7 +396,7 @@ describe('importDID', () => {
             const imported = await gatekeeper.importDID([1, 2, 3]);
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid txn');
+            expect(error).toBe('Invalid operation');
         }
     });
 });

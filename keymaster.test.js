@@ -420,11 +420,11 @@ describe('rotateKeys', () => {
             await keymaster.rotateKeys();
         }
 
-        const txns = await keymaster.exportDID(alice);
+        const ops = await keymaster.exportDID(alice);
 
         fs.rmSync(gatekeeper.dbName);
 
-        const imported = await keymaster.importDID(txns);
+        const imported = await keymaster.importDID(ops);
 
         expect(imported).toBe(rotations + 1);
     });
@@ -1078,12 +1078,12 @@ describe('revokeCredential', () => {
         const ok = await keymaster.revokeCredential(did);
 
         const userTxns = await keymaster.exportDID(userDid);
-        const txns = await keymaster.exportDID(did);
+        const ops = await keymaster.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
 
         await keymaster.importDID(userTxns);
-        const imported = await keymaster.importDID(txns);
+        const imported = await keymaster.importDID(ops);
 
         expect(imported).toBe(2);
     });
@@ -1244,10 +1244,10 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice', 'BTC');
-        const bob = await keymaster.createId('Bob', 'tBTC');
-        const carol = await keymaster.createId('Carol', 'peerbit');
-        const victor = await keymaster.createId('Victor', 'peerbit');
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
 
         keymaster.useId('Alice');
 
@@ -1257,8 +1257,8 @@ describe('verifyResponse', () => {
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const bc2 = await keymaster.bindCredential(credential2, carol);
 
-        const vc1 = await keymaster.attestCredential(bc1, 'BTC');
-        const vc2 = await keymaster.attestCredential(bc2, 'BTC');
+        const vc1 = await keymaster.attestCredential(bc1);
+        const vc2 = await keymaster.attestCredential(bc2);
 
         keymaster.useId('Bob');
 
@@ -1268,8 +1268,8 @@ describe('verifyResponse', () => {
         const bc3 = await keymaster.bindCredential(credential3, carol);
         const bc4 = await keymaster.bindCredential(credential4, carol);
 
-        const vc3 = await keymaster.attestCredential(bc3, 'tBTC');
-        const vc4 = await keymaster.attestCredential(bc4, 'tBTC');
+        const vc3 = await keymaster.attestCredential(bc3);
+        const vc4 = await keymaster.attestCredential(bc4);
 
         keymaster.useId('Carol');
 

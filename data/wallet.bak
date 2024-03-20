@@ -1,0 +1,75 @@
+{
+    "seed": {
+        "mnemonic": "uUl9dUCmlRFDFRUhv7B2YWguG7jY-CaKRYOKj_98RWf10754kRjWby7As4xrCKbsuGV2nX-K1QeAOus7067qeIxFo35gtpdHiOitVWnxn0mHCtiH0PDpsXcKPFwTeI9jq5UEmevLF-B5yn7F2Qz8uXYQ0s-N",
+        "hdkey": {
+            "xpriv": "xprv9s21ZrQH143K38fwaCm1SeWdphFLhbUKbnwxdA1oEPsgavcn1nt2vLeRvkkfPy9RoQxCZXfmYNyP977QmpDR3GFK433bgBXSmaPRTBGPoyX",
+            "xpub": "xpub661MyMwAqRbcFckQgEJ1onTNNj5q74CAy1sZRYRQnjQfTiwvZLCHU8xun3UCVwkGc52yF9bZZbPXaMEpkKjRVuqLRTbCorkxfRmY4WXStK5"
+        }
+    },
+    "counter": 8,
+    "ids": {
+        "David": {
+            "did": "did:mdip:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri",
+            "account": 1,
+            "index": 0,
+            "owned": [
+                "did:mdip:z3v8AuaYMHafTVzrykyRyXjWsTuByAYon8pA7W5iZZtXYBqkMV7",
+                "did:mdip:z3v8AuaYM272pA9GDrnawbjLmL65Hxc131e9Vt1EqteRHXZkk1J",
+                "did:mdip:z3v8AuadYk2AHM3oQdwj2d4J5VeG8wzShDkDeHJVXjnXS3Zg2qd",
+                "did:mdip:z3v8AuagpiowaGV48THePjz41zgqwdVp8x4ThXD34bL7NtUtrzU",
+                "did:mdip:z3v8AuaggWbYhN2oqwVQCYTeT3whCZyovrXtyPqC4uwwtB2GhN7",
+                "did:mdip:z3v8AuaYB9P3wMWFQ3nCEZsmEfWfZ9V6Gt1dbmguZfSkPieaEEH",
+                "did:mdip:z3v8Auaaj52QQxEDrW93xhUdisRxURN8soSrkHtF3P8iXiqWWj8",
+                "did:mdip:z3v8AuaZu9GYACZvkBBVfTUFPf8Nwe6VjC7eZEiKpb3JBTbSPmg",
+                "did:mdip:z3v8AuahQDpnHEPkHgbhKabjSbSH8Vi8fKhahCxDqZVRGhaS962"
+            ],
+            "held": [
+                "did:mdip:z3v8AuaboMc8LJW7k1Rn23qjaJMoH6vMrfnU4ouprsSayy9QE4f"
+            ]
+        },
+        "Alpha": {
+            "did": "did:mdip:z3v8AuackpFBm4kgetF7qYk88HvWthGY9VewyKqYDV5xogMNWVd",
+            "account": 1,
+            "index": 6,
+            "owned": [
+                "did:mdip:z3v8AuaboMc8LJW7k1Rn23qjaJMoH6vMrfnU4ouprsSayy9QE4f",
+                "did:mdip:z3v8AuabiAPcUDB9zDc9HB8reUXfR4BorbbuDSCZP616NEYD6FN"
+            ]
+        },
+        "Bubba": {
+            "did": "did:mdip:z3v8Auafr3xUZnciBuRiwpyifuot342JwBw4weCvvAohSncYx1t",
+            "account": 4,
+            "index": 2,
+            "owned": [
+                "did:mdip:z3v8AuabyKpKraCMjveuxGbPeDGbg394ZvL4sa4v4HsDewMEGAH",
+                "did:mdip:z3v8AuaeJkyqtUZbK84rD18TcWycKHSsKoXLEk7Gvb6bTUsJ7LE",
+                "did:mdip:z3v8AuaeGum7MN7rDCUMPcC19DFwPNPMs233vQRHxD8anXEc4qG",
+                "did:mdip:z3v8Auaf8QrrFEaGxK2apUwBk9MbntxWgyqfXMHiQ9PV6CTr8kt",
+                "did:mdip:z3v8AuacTHXEtMfaNdkP2Y9P1YeVUeAQPTLhdCFUiPRskZc1jpi",
+                "did:mdip:z3v8AuababPKv4HGPpv9UYyHQZu5TnCYyR2H5DdALwb2aG29Wga",
+                "did:mdip:z3v8AuaTdLaYU9Apvyedk4XNwaFGU8voHtFGfijEjPsCtxtHBXL",
+                "did:mdip:z3v8AuagpnR5qtVgXp5FfwL5xtP1i7udRWoHVRN4xRJxbBop9sc",
+                "did:mdip:z3v8Auah2jBurFYwJUeDYgMsfdznNPxFytuLM8VnuEGsq5uzBhm",
+                "did:mdip:z3v8AuagKPzo4JzQR9HmTgL7k4tkJrnpnmNGLJmcPWe83JHmEnm",
+                "did:mdip:z3v8AuagoYAu9KSs3Uzmj2bSwocdydBJe7WV4DYFvXnjEokcVA3",
+                "did:mdip:z3v8AuaXRBuGV3cpXKghCixa1UuWvhz7JpXffqYR9M9jwMaD199",
+                "did:mdip:z3v8AuabPSrC1SxF3UC5X8WEzn3ZZr1T9pk8vP5sHczjUfQCn55"
+            ]
+        }
+    },
+    "current": "Bubba",
+    "names": {
+        "social": "did:mdip:z3v8AuaYMHafTVzrykyRyXjWsTuByAYon8pA7W5iZZtXYBqkMV7",
+        "Alex": "did:mdip:z3v8AuajuYULXU4mxx3jWTaMFtiNNncLAJew3j85acdkr9P4XaW",
+        "Christian": "did:mdip:z3v8AuacJqNkwUrSRDcbvXWNWw3GPLksq2iGzC4EPmSBc7FuxGN",
+        "Vigas": "did:mdip:z3v8AuafCzChd82dqhgUW8v3gtQXGQcAUBjjmrrgoGE5h1LuhUA",
+        "twitter": "did:mdip:z3v8AuaboMc8LJW7k1Rn23qjaJMoH6vMrfnU4ouprsSayy9QE4f",
+        "me": "did:mdip:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri",
+        "flaxscrip": "did:mdip:z3v8AuaeNsiAhhDjkDyHCVrwAo73NQsnTzX2UoziGPaegt5SHPR",
+        "email": "did:mdip:z3v8Auaaj52QQxEDrW93xhUdisRxURN8soSrkHtF3P8iXiqWWj8",
+        "ch1": "did:mdip:z3v8AuacTHXEtMfaNdkP2Y9P1YeVUeAQPTLhdCFUiPRskZc1jpi",
+        "ch2": "did:mdip:z3v8AuagKPzo4JzQR9HmTgL7k4tkJrnpnmNGLJmcPWe83JHmEnm",
+        "ch3": "did:mdip:z3v8AuabiAPcUDB9zDc9HB8reUXfR4BorbbuDSCZP616NEYD6FN",
+        "rsp3": "did:mdip:z3v8AuahQDpnHEPkHgbhKabjSbSH8Vi8fKhahCxDqZVRGhaS962"
+    }
+}
