@@ -12,7 +12,7 @@ import config from './config.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.03.18';
+const protocol = '/MDIP/v22.03.20';
 
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
@@ -202,8 +202,8 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function start() {
-    console.log(`hyperswarm peer id: ${peerName}`);
-    console.log('joined topic:', b4a.toString(topic, 'hex'));
+    console.log(`hyperswarm peer id: ${shortName(peerName)}`);
+    console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
 
     setInterval(async () => {
         try {
