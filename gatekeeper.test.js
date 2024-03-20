@@ -109,7 +109,7 @@ async function createAssetTxn(agent, keypair) {
         mdip: {
             version: 1,
             type: "asset",
-            registry: "BTC",
+            registry: "hyperswarm",
         },
         controller: agent,
         data: "mockData",
@@ -140,43 +140,6 @@ describe('createDID', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentTxn = await createAgentTxn(keypair);
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create DID for peerbit registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'peerbit');
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-
-    it('should create DID for BTC registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'BTC');
-
-        const did = await gatekeeper.createDID(agentTxn);
-
-        expect(did.length).toBe(60);
-        expect(did.startsWith('did:mdip:'));
-    });
-
-    it('should create DID for tBTC registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'tBTC');
 
         const did = await gatekeeper.createDID(agentTxn);
 

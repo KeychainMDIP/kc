@@ -67,7 +67,7 @@ export function loadWallet() {
     return newWallet();
 }
 
-export async function backupWallet(registry = 'BTC') {
+export async function backupWallet(registry = defaultRegistry) {
     const wallet = loadWallet();
     const keypair = hdKeyPair();
     const msg = JSON.stringify(wallet);
