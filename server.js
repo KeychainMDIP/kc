@@ -127,15 +127,13 @@ const port = 3000;
 app.use('/api/v1', v1router);
 
 gatekeeper.verifyDb().then((invalid) => {
-    if (invalid === 0) {
-        app.listen(port, () => {
-            console.log(`Server is running on port ${port}`);
-        });
+    if (invalid > 0) {
+        console.log(`${invalid} invalid DIDs removed from MDIP db`);
     }
-    else {
-        console.log(`${invalid} invalid DIDs in MDIP db`);
-        process.exit();
-    }
+
+    app.listen(port, () => {
+        console.log(`Server is running on port ${port}`);
+    });
 });
 
 process.on('uncaughtException', (error) => {

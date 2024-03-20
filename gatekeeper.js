@@ -34,6 +34,7 @@ export function writeDb(db) {
 
 export async function verifyDb() {
     const db = loadDb();
+    const backup = JSON.parse(JSON.stringify(db));
 
     if (!db.anchors) {
         return 0;
@@ -52,7 +53,22 @@ export async function verifyDb() {
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
+
+            if (db.anchors[did]) {
+                const anchor = db.anchors[did];
+                const registry = anchor.mdip.registry;
+                delete db[registry][did];
+                delete db.anchors[did];
+            }
         }
+    }
+
+    if (invalid > 0) {
+        const today = new Date();
+        const dateString = today.toISOString().split('T')[0];
+        const backupName = `${dataFolder}/mdip.backup.${dateString}.json`;
+        fs.writeFileSync(backupName, JSON.stringify(backup, null, 4));
+        writeDb(db);
     }
 
     return invalid;
