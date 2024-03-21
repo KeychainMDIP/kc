@@ -1,7 +1,7 @@
 import axios from 'axios';
 import config from './config.js';
 
-const URL = `${config.gatekeeperURL}/api/v1`;
+const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}/api/v1`;
 
 function throwError(error) {
     if (error.response) {
