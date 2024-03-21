@@ -9,7 +9,7 @@ services:
     volumes:
       - ./data:/app/data
     ports:
-      - "3000:3000"
+      - "4224:4224"
 
   hyperswarm:
     build:
@@ -17,7 +17,8 @@ services:
       dockerfile: Dockerfile.hyperswarm
     image: macterra/hyperswarm-mediator
     environment:
-      - GATEKEEPER_URL=http://gatekeeper:3000
+      - GATEKEEPER_URL=http://gatekeeper
+      - GATEKEEPER_PORT=4224
     volumes:
       - ./data:/app/data
     depends_on:

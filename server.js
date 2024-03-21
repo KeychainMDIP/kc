@@ -1,6 +1,7 @@
 import express from 'express';
 import morgan from 'morgan';
 import * as gatekeeper from './gatekeeper.js';
+import config from './config.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
@@ -122,7 +123,6 @@ app.get('/explore/:did', async (req, res) => {
     }
 });
 
-const port = 3000;
 
 app.use('/api/v1', v1router);
 
@@ -130,6 +130,8 @@ gatekeeper.verifyDb().then((invalid) => {
     if (invalid > 0) {
         console.log(`${invalid} invalid DIDs removed from MDIP db`);
     }
+
+    const port = config.gatekeeperPort;
 
     app.listen(port, () => {
         console.log(`Server is running on port ${port}`);
