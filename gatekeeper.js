@@ -48,6 +48,10 @@ export async function verifyDb() {
     for (const did of dids) {
         n += 1;
         try {
+            if (!did.startsWith(config.didPrefix)) {
+                throw "Invalid DID";
+            }
+
             const doc = await resolveDID(did, null, true);
             console.log(`${n} ${did} OK`);
         }
