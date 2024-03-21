@@ -12,7 +12,7 @@ import config from './config.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.03.20';
+const protocol = '/MDIP/v22.03.21';
 
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
