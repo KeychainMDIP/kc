@@ -29,7 +29,6 @@ describe('generateDid', () => {
         };
         const did = await gatekeeper.generateDID(mockTxn);
 
-        expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
 
@@ -143,7 +142,6 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentTxn);
 
-        expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
 
@@ -155,7 +153,6 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentTxn);
 
-        expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
 
@@ -197,7 +194,6 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(assetTxn);
 
-        expect(did.length).toBe(60);
         expect(did.startsWith('did:mdip:'));
     });
 });

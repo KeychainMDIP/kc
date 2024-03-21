@@ -7,6 +7,7 @@ import { FsBlockstore } from 'blockstore-fs';
 import { performance } from 'perf_hooks';
 
 import * as cipher from './cipher.js';
+import config from './config.js';
 
 const dataFolder = 'data';
 export const dbName = `${dataFolder}/mdip.json`;
@@ -123,7 +124,7 @@ export async function anchorSeed(seed) {
     // console.log("Adding seed to IPFS took " + (t1 - t0) + " milliseconds.");
 
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `did:mdip:${cid.toString(base58btc)}`;
+    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
     const db = loadDb();
 
     if (!db.anchors) {
@@ -228,10 +229,6 @@ export async function createDID(operation) {
 }
 
 async function getAnchor(did) {
-    // const suffix = did.split(':').pop(); // everything after "did:mdip:"
-    // const cid = CID.parse(suffix);
-    // const docSeed = await ipfs.get(cid);
-
     const db = loadDb();
     const docSeed = db.anchors[did];
 
