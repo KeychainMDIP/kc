@@ -220,7 +220,7 @@ async function start() {
 }
 
 function main() {
-    console.log(`connecting to gatekeeper at ${config.gatekeeperURL}`);
+    console.log(`connecting to gatekeeper at ${gatekeeper.URL}`);
 
     const discovery = swarm.join(topic, { client: true, server: true });
 

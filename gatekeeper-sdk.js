@@ -1,7 +1,7 @@
 import axios from 'axios';
 import config from './config.js';
 
-const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}/api/v1`;
+export const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}`;
 
 function throwError(error) {
     if (error.response) {
@@ -19,7 +19,7 @@ export async function stop() {
 
 export async function getVersion() {
     try {
-        const response = await axios.get(`${URL}/version/`);
+        const response = await axios.get(`${URL}/api/v1/version/`);
         return response.data;
     }
     catch (error) {
@@ -29,7 +29,7 @@ export async function getVersion() {
 
 export async function createDID(operation) {
     try {
-        const response = await axios.post(`${URL}/did/`, operation);
+        const response = await axios.post(`${URL}/api/v1/did/`, operation);
         return response.data;
     }
     catch (error) {
@@ -40,11 +40,11 @@ export async function createDID(operation) {
 export async function resolveDID(did, asof = null) {
     try {
         if (asof) {
-            const response = await axios.get(`${URL}/did/${did}?asof=${asof}`);
+            const response = await axios.get(`${URL}/api/v1/did/${did}?asof=${asof}`);
             return response.data;
         }
         else {
-            const response = await axios.get(`${URL}/did/${did}`);
+            const response = await axios.get(`${URL}/api/v1/did/${did}`);
             return response.data;
         }
     }
@@ -55,7 +55,7 @@ export async function resolveDID(did, asof = null) {
 
 export async function updateDID(operation) {
     try {
-        const response = await axios.post(`${URL}/did/${operation.did}`, operation);
+        const response = await axios.post(`${URL}/api/v1/did/${operation.did}`, operation);
         return response.data;
     }
     catch (error) {
@@ -65,7 +65,7 @@ export async function updateDID(operation) {
 
 export async function deleteDID(operation) {
     try {
-        const response = await axios.delete(`${URL}/did/${operation.did}`, { data: operation });
+        const response = await axios.delete(`${URL}/api/v1/did/${operation.did}`, { data: operation });
         return response.data;
     }
     catch (error) {
@@ -75,7 +75,7 @@ export async function deleteDID(operation) {
 
 export async function exportDID(did) {
     try {
-        const response = await axios.get(`${URL}/export/${did}`);
+        const response = await axios.get(`${URL}/api/v1/export/${did}`);
         return response.data;
     }
     catch (error) {
@@ -85,7 +85,7 @@ export async function exportDID(did) {
 
 export async function importDID(ops) {
     try {
-        const response = await axios.post(`${URL}/import/`, ops);
+        const response = await axios.post(`${URL}/api/v1/import/`, ops);
         return response.data;
     }
     catch (error) {
@@ -95,7 +95,7 @@ export async function importDID(ops) {
 
 export async function mergeBatch(batch) {
     try {
-        const response = await axios.post(`${URL}/merge/`, batch);
+        const response = await axios.post(`${URL}/api/v1/merge/`, batch);
         return response.data;
     }
     catch (error) {
