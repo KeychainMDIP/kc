@@ -1,3 +1,4 @@
+import fs from 'fs';
 import * as keymaster from './keymaster.js';
 import * as gatekeeper from './gatekeeper.js';
 //import * as gatekeeper from './gatekeeper-sdk.js';
@@ -17,6 +18,12 @@ const mockSchema = {
 };
 
 async function runWorkflow() {
+    const walletFile = 'data/wallet.json';
+    const backupFile = 'data/workflow-backup.json';
+
+    if (fs.existsSync(walletFile)) {
+        fs.renameSync(walletFile, backupFile);
+    }
 
     await keymaster.start(gatekeeper);
 
@@ -98,11 +105,8 @@ async function runWorkflow() {
     const challengeDid = await keymaster.createChallenge(mockChallenge);
     console.log(`Victor created challenge ${challengeDid}`);
 
-    const challengeForCarol = await keymaster.issueChallenge(challengeDid, carol);
-    console.log(`Victor issued challenge to Carol ${challengeForCarol}`);
-
     keymaster.useId('Carol');
-    const vpDid = await keymaster.createResponse(challengeForCarol);
+    const vpDid = await keymaster.createResponse(challengeDid);
     console.log(`Carol created response for Victor ${vpDid}`);
 
     keymaster.useId('Victor');
@@ -144,6 +148,13 @@ async function runWorkflow() {
     console.log(`Victor verified response ${vcList4.length} valid credentials`);
 
     keymaster.stop();
+
+    fs.rmSync(walletFile);
+
+    if (fs.existsSync(backupFile)) {
+        fs.renameSync(backupFile, walletFile);
+    }
+
     process.exit();
 }
 
