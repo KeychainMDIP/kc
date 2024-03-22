@@ -1,7 +1,5 @@
 import { program } from 'commander';
 import fs from 'fs';
-import assert from 'assert';
-//import * as gatekeeper from './gatekeeper.js';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
 
@@ -13,48 +11,78 @@ program
     .command('create-wallet')
     .description('Create new wallet (or show existing wallet)')
     .action(() => {
-        const wallet = keymaster.loadWallet();
-        console.log(JSON.stringify(wallet, null, 4));
+        try {
+            const wallet = keymaster.loadWallet();
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
     .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {
-        const wallet = keymaster.newWallet(recoveryPhrase);
-        console.log(JSON.stringify(wallet, null, 4));
+        try {
+            const wallet = keymaster.newWallet(recoveryPhrase);
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
     .command('show-wallet')
     .description('Show wallet')
     .action(() => {
-        const wallet = keymaster.loadWallet();
-        console.log(JSON.stringify(wallet, null, 4));
+        try {
+            const wallet = keymaster.loadWallet();
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
     .command('show-mnemonic')
     .description('Show recovery phrase for wallet')
     .action(() => {
-        const mnenomic = keymaster.decryptMnemonic();
-        console.log(mnenomic);
+        try {
+            const mnenomic = keymaster.decryptMnemonic();
+            console.log(mnenomic);
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
     .command('backup-wallet')
     .description('Backup wallet to encrypted DID')
     .action(async () => {
-        const did = await keymaster.backupWallet();
-        console.log(did);
+        try {
+            const did = await keymaster.backupWallet();
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
     .command('recover-wallet <did>')
     .description('Recover wallet from encrypted DID')
     .action(async (did) => {
-        const wallet = await keymaster.recoverWallet(did);
-        console.log(JSON.stringify(wallet, null, 4));
+        try {
+            const wallet = await keymaster.recoverWallet(did);
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
     });
 
 program
