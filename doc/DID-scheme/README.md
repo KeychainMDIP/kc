@@ -43,7 +43,7 @@ MDIP DIDs support two main types of DID Subject: **agents** and **assets**. Agen
 To create an agent DID, the MDIP client must sign and submit a "create" operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
 
 1. Generate a new private key
-    1. We recommend deriving a new private key from an HD wallet (BIP-32).
+    1. We recommend deriving a new private key from an Hierarchical Deterministic (HD) wallet (BIP-32).
 1. Generate a public key from the private key
 1. Convert to JWK (JSON Web Key) format
 1. Create a operation object with these fields in any order:
