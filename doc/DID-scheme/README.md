@@ -210,7 +210,7 @@ For registries such as BTC with non-trivial transaction costs, it is expected th
 
 ## DID Revocation
 
-Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers will return a document set with empty the `didMetada.deactivated` property set to `true`. The `didDocument` and `didDocumentData` properties will be set to empty.
+Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers will return a document set with the `didMetada.deactivated` property set to `true`. The `didDocument` and `didDocumentData` properties will be set to empty.
 
 To revoke a DID, the MDIP client must sign and submit a `delete` operation to the MDIP node.
 
