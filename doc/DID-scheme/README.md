@@ -40,7 +40,7 @@ MDIP DIDs support two main types of DID Subject: **agents** and **assets**. Agen
 
 ### Agents
 
-To create an agent DID, the MDIP client must sign and submit a "create" operation to the MDIP node. This operation will be used to anchor the DID in IPFS.
+To create an agent DID, the MDIP client must sign and submit a "create" operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
 
 1. Generate a new private key
     1. We recommend deriving a new private key from an HD wallet (BIP-32).
@@ -55,7 +55,7 @@ To create an agent DID, the MDIP client must sign and submit a "create" operatio
     1. `publicJwk` is the public key in JWK format
     1. `created` time in ISO format
 1. Sign the JSON with the private key corresponding the the public key (this enables the MDIP node to verify that the operation is coming from the owner of the public key)
-1. Submit the operation to the MDIP node. For example, with a  REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
+1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
 
 Example
 ```json
@@ -90,7 +90,7 @@ The resulting content address (CID for IPFS) in base58btc encoding is used as th
 
 ### Assets
 
-To create an asset DID, the MDIP client must sign and submit a "create" operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
+To create an asset DID, the MDIP client must sign and submit a `create` operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
 
 1. Create a operation object with these fields in any order:
     1. `type`  must be "create"
@@ -101,8 +101,8 @@ To create an asset DID, the MDIP client must sign and submit a "create" operatio
     1. `controller` specifies the DID of the owner/controller of the new DID
     1. `data` can contain any data in JSON format, as long as it is not empty
     1. `created` time in ISO format
-1. Sign the JSON with the private key corresponding the the public key (this enables the MDIP node to verify that the operation is coming from the owner of the public key)
-1. Submit the operation to the MDIP node. For example, with a  REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
+1. Sign the JSON with the private key of the controller
+1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
 
 Example
 ```json
@@ -136,16 +136,19 @@ For example, the operation above that specifies an empty Credential asset corres
 
 # DID Update
 
-A DID Update is a change to the Document associated with the DID. To initiate an update the MDIP client must sign a operation that includes the following fields:
+A DID Update is a change to any of the documents associated with the DID. To initiate an update the MDIP client must sign a operation that includes the following fields:
 
-1. `type` must be set to "update"
-1. `did` specifies the DID
-1. `doc` is set to the new version of the Document, which must include:
-    1. `didDocument` the main document
-    1. `didDocumentMetadata` the document's metadata
-    1. `didDocumentData` the document's data
-    1. `mdip` the MDIP protocol spec
-1. `prev` the sha256 hash of the canonicalized JSON of the previous version's doc
+1. Create a operation object with these fields in any order:
+    1. `type` must be set to "update"
+    1. `did` specifies the DID
+    1. `doc` is set to the new version of the document set, which must include:
+        1. `didDocument` the main document
+        1. `didDocumentMetadata` the document's metadata
+        1. `didDocumentData` the document's data
+        1. `mdip` the MDIP protocol spec
+    1. `prev` the sha256 hash of the canonicalized JSON of the previous version's doc
+1. Sign the JSON with the private key of the controller of the DID
+1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
 
 It is recommended the client fetches the current version of the document and metadata, makes changes to it, then submit the new version in an update operation in order to preserve the fields that shouldn't change.
 
@@ -207,9 +210,17 @@ For registries such as BTC with non-trivial transaction costs, it is expected th
 
 ## DID Revocation
 
-Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers will return an empty DID document and metadata indicating the DID has been terminated.
+Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers will return a document set with empty the `didMetada.deactivated` property set to `true`. The `didDocument` and `didDocumentData` properties will be set to empty.
 
 To revoke a DID, the MDIP client must sign and submit a `delete` operation to the MDIP node.
+
+1. Create a operation object with these fields in any order:
+    1. `type`  must be "delete"
+    1. `did` specifies the DID to be deleted
+    1. `prev` the sha256 hash of the canonicalized JSON of the previous version's doc
+1. Sign the JSON with the private key of the controller of the DID
+1. Submit the operation to the MDIP node. For example, with a REST API, post the operation using the `DELETE` method to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
+
 
 Example deletion operation:
 ```json
@@ -255,9 +266,12 @@ The metadata has a deactivated field set to true to conform to the [W3C specific
 
 Resolution is the operation of responding to a DID with a DID Document. If you think of the DID as a secure reference or pointer, then resolution is equivalent to dereferencing.
 
-Given a DID and an optional resolution time, the resolver infers the CAS from the format of the suffix, then retrieves the associated document seed, parsing it as plaintext JSON. If CAS cannot be inferred, or the data cannot be retrieved, then the resolver should delegate the resolution request to a fallback node. If the data can be retrieved but is not a valid MDIP seed document, an error is returned immediately. The resolver then evaluates the JSON to determine whether it is a known type (an agent or an asset). If it is not a known type an error is returned.
+Given a DID and an optional resolution time, the resolver infers the CAS from the format of the suffix, then retrieves the associated document seed, parsing it as plaintext JSON.
+If CAS cannot be inferred, or the data cannot be retrieved, then the resolver should delegate the resolution request to a fallback node.
+Otherwise, if the data can be retrieved but is not a valid MDIP seed document, an error is returned immediately.
+Otherwise, the resolver then evaluates the JSON to determine whether it is a known type (an agent or an asset). If it is not a known type an error is returned.
 
-The resolver then looks up the DID's specified registry in its document seed. If the node does not support the registry (meaning the node is not actively monitoring the registry for updates), then it must forward the resolution request to a trusted node that does support the registry. If the node is not configured with any trusted nodes for the specified registry, then it must forward the request to a trusted fallback node to handle unknown registries.
+If we get this far, the resolver then looks up the DID's specified registry in its document seed. If the node does not support the registry (meaning the node is not actively monitoring the registry for updates), then it must forward the resolution request to a trusted node that does support the registry. If the node is not configured with any trusted nodes for the specified registry, then it must forward the request to a trusted fallback node to handle unknown registries.
 
 If the node does support the specified registry, the resolver retrieves all update records from its local database that are keyed to the DID, and ordered by each update's ordinal key. The ordinal key is a value or set of values that can be used to sort the updates into chronological order. For example, the ordinal key for the BTC registry will be a tuple `{block index, transaction index, batch index}`.
 
@@ -265,7 +279,7 @@ The document is then generated by creating an initial version of the document fr
 
 If there are any update operations, each one is validated by:
 1. verifying that it is signed by the controller of the DID at the time the update was created,
-1. verifying the prev hash in the operation is identical to the hash of the doc it is updating,
+1. verifying that the previous version hash in the operation is identical to the hash of the document set that it is updating,
 1. verifying the new version is a valid DID document (schema validation).
 
 If invalid, the update is ignored, otherwise it is applied to the previous document in sequence up to the specified resolution time (if specified) or to the end of the sequence (if no resolution time is specified). The resulting DID document is returned to the requestor.
