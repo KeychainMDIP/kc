@@ -203,10 +203,10 @@ Example update to rotate keys for an agent DID:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
-1. The node should node verify prev hash
+1. Verify the previous hash.
 1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
 
-For registries such as BTC with non-trivial transaction costs, it is expected that update operations will be placed in a queue, then registered periodically in a batch in order to balance costs and latency of updates. If the registry has trivial transaction costs, the update operation may be distributed individually and immediately. The MDIP defers this tradeoff between cost, speed, and security to the node operators.
+For registries such as BTC with non-trivial transaction costs, it is expected that update operations will be placed in a queue, then registered periodically in a batch in order to balance costs and latency of updates. If the registry has trivial transaction costs, the update operation may be distributed individually and immediately. MDIP defers this tradeoff between cost, speed, and security to the node operators.
 
 ## DID Revocation
 
@@ -239,6 +239,7 @@ Example deletion operation:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
+1. Verify the previous hash.
 1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
 
 After revocation is confirmed on the DID's registry, resolving the DID will result in response like this:
