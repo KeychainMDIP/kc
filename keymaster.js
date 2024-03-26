@@ -25,6 +25,10 @@ function saveWallet(wallet) {
 }
 
 export function newWallet(mnemonic) {
+    if (fs.existsSync(walletName)) {
+        throw "Wallet already exists";
+    }
+
     try {
         if (!mnemonic) {
             mnemonic = cipher.generateMnemonic();
