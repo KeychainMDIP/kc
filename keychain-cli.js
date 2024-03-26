@@ -5,7 +5,8 @@ import * as keymaster from './keymaster.js';
 
 program
     .version('1.0.0')
-    .description('Keychain CLI tool');
+    .description('Keychain CLI tool')
+    .configureHelp({ sortSubcommands: true });
 
 program
     .command('create-wallet')
