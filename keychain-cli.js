@@ -398,14 +398,18 @@ program
     });
 
 program
-    .command('accept-credential <did>')
+    .command('accept-credential <did> [name]')
     .description('Save verifiable credential for current ID')
-    .action(async (did) => {
+    .action(async (did, name) => {
         try {
             const ok = await keymaster.acceptCredential(did);
 
             if (ok) {
                 console.log('OK saved');
+
+                if (name) {
+                    keymaster.addName(name, did);
+                }
             }
             else {
                 console.log('Not saved');
