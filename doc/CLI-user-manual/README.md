@@ -13,7 +13,7 @@ The Keychain CLI brings together functionality from three important sub-componen
 
 All the CLI commands are self-documented using the help argument, or by running kc  with no flags::
 
-```
+```sh
 $ kc
 Usage: keychain-cli [options] [command]
 
@@ -71,19 +71,19 @@ The CLI is a Command Line Interface to the Keychain implementation of the MultiD
 `kc` (short for KeyChain) is a script invoked in a terminal shell such as bash on linux or MacOs.
 In the following examples we will use a `$` to denote the shell prompt.
 
-```
+```sh
 $ kc
 ```
 
 !!! note on linux you may need to invoke kc with a `./` prefix to run the script in the current directory like so
 
-```
+```sh
 $ ./kc
 ```
 
 The first thing you will want to do is create a new identity. This will be described in more detail later, but try it now with your own first name
 
-```
+```sh
 $ kc create-id [your first name]
 did:mdip:test:z3v8AuaYd1CGfC6PCQDXKyKkbt5kJ4o3h2ABBNPGyGNQfEQ99Ce
 ```
@@ -108,7 +108,7 @@ The wallet contains a user's private data, including secret keys and associated 
 
 Creating a wallet generates a unique seed that is used to derive a hierarchical-deterministic key-pair. This key-pair will be used to generate new unique key-pairs for each future DID generated using this wallet.
 
-```
+```json
 $ kc create-wallet
 {
     "seed": {
@@ -125,7 +125,7 @@ $ kc create-wallet
 
 Use the command below to view the contents of your wallet; initially, the wallet is empty, but we will see private content added to the wallet as we create MDIP identities and operations.
 
-```
+```json
 $ kc show-wallet
 {
     "seed": {
@@ -148,14 +148,14 @@ To recover a wallet from a backup, you need two pieces of information:
 
 The mnemonic consists of 12 short words (BIP-39) that are used to generate the wallet's private keys
 
-```
+```sh
 $ kc show-mnemonic
 know soon mind pen polar pulse patient salmon wage friend equip rotate
 ```
 
 Creating a wallet backup encrypts the current state of a user wallet content in a DID Document.
 
-```
+```sh
 $ kc backup-wallet
 did:mdip:test:z3v8Auairrc7XjSdoA1QvuytZXmGdmjcaFsPb2xKjM6TzowPKRn
 ```
@@ -164,7 +164,7 @@ If you lose the wallet file, you can regenerate the private keys from the mnemon
 
 !!! Danger: import-wallet will overwrite an existing wallet!
 
-```
+```json
 $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend equip rotate"
 {
     "seed": {
@@ -181,7 +181,7 @@ $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend eq
 
 You can recover a wallet from a backup DID generated using the backup process above.
 
-```
+```json
 $ kc recover-wallet did:mdip:z3v8AuaXcTg74E4nWXDkX3wtZXjGjvp55z7QYixWSUHyG89qFTy
 {
     "seed": {
@@ -221,12 +221,12 @@ We see examples of these DIDs throughout this document. MDIP DID example:
 
 Creating a new agent DID uses the wallet's key-pairs to generate a new DID identifier. The new DID and associated name are stored the user's private wallet. The new DID can also be registered on a registry of the user's choosing.
 
-```
+```sh
 $ kc create-id Alice
 did:mdip:test:z3v8AuabRm9DaiakqbwFPgsLd6vSYBQtdj7poQFGYBgsZCfqTvY
 ```
 
-```
+```json
 $ kc show-wallet
 {
     "seed": {
@@ -253,7 +253,7 @@ $ kc show-wallet
 Resolving an ID means fetching the documents associated with an ID.
 The current CLI user's agent documents can be displayed using the kc resolve-id command without a DID argument.
 
-```
+```json
 $ kc resolve-id
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -295,12 +295,12 @@ $ kc resolve-id
 
 Backing up an identity is the process of posting an encrypted document DID to the identity's Vault. The Vault DID document contains the encrypted history of the identity at the time of the backup, enabling recovery of all Verifiable Credentials (VCs) associated with the DID.
 
-```
+```sh
 $ kc backup-id
 OK
 ```
 
-```
+```json
 $ kc resolve-id
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -347,14 +347,14 @@ Note that each wallet and each identity have their own backups. This will allow 
 
 At any time, a user may remove a named DID from their wallet.
 
-```
+```sh
 $ kc remove-id Alice
 ID Alice removed
 ```
 
 ### Recovering an ID
 
-```
+```sh
 $ kc recover-id did:mdip:test:z3v8AuabRm9DaiakqbwFPgsLd6vSYBQtdj7poQFGYBgsZCfqTvY
 Recovered Alice!
 ```
@@ -365,12 +365,12 @@ Recovery of a DID's history using the Vault DID is possible because the Vault da
 
 A user's wallet may contain any number of MDIP agent DID identities.
 
-```
+```sh
 $ kc create-id Bob
 did:mdip:test:z3v8AuairhLoGZqf6UDKw7zXyBknTvanvSzFHnLpwy8nwa7WLzk
 ```
 
-```
+```sh
 $ kc list-ids
 Alice
 Bob  <<< current
@@ -380,12 +380,12 @@ Bob  <<< current
 
 A user can switch between their various MDIP identities.
 
-```
+```sh
 $kc use-id Alice
 OK
 ```
 
-```
+```sh
 $ kc list-ids
 Alice  <<< current
 Bob
@@ -395,7 +395,7 @@ Bob
 
 A user can rotate the public keys associated with a particular DID. This is a common privacy and security feature that allows the user to keep the same DID but sign future documents with new keys. The command rotates the keys of the wallet's currently active user id (ex: charlie).
 
-```
+```json
 $ kc rotate-keys
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -446,7 +446,7 @@ Resolving a DID means fetching the documents associated with a DID.
 The documents are returns in a single JSON object.
 This example returns a Credential object that includes a schema in its didDocumentData.
 
-```
+```json
 $ ./kc resolve-did did:mdip:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -489,7 +489,7 @@ $ ./kc resolve-did did:mdip:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDj
 
 For offline and off-network use, a DID can be exported to file so it can be stored or transported offline. The export-did command can be used to export any DID, including both agent or asset documents. The resulting output will include the entire history of a DID, including prior versions of keys.
 
-```
+```json
 $ kc export-did did:mdip:z3v8AuagbRf9UrW7AQQqHCGejPYafoczuQ5uTuF3mFuc5vEMUkj
 [
     {
@@ -516,7 +516,7 @@ $ kc export-did did:mdip:z3v8AuagbRf9UrW7AQQqHCGejPYafoczuQ5uTuF3mFuc5vEMUkj
 
 For offline and off-network use, a DID can be imported from a file so it can be stored on a new node's registry. The import-did command will import DIDs export by the export-did command.
 
-```
+```sh
 $ kc import-did exported-DID-file.json
 1
 ```
@@ -557,7 +557,7 @@ Carol will grant Bob access only if Bob can prove that he owns a particular cred
 
 JSON Schemas are commonplace. The schema defines the content of a future credential. Standardized schemas (ex: schema.org) for common credentials (ex: address, membership, etc) should be used to facilitate data interoperability.
 
-```
+```json
 $ cat data/schema/social-media.json
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -582,19 +582,19 @@ $ cat data/schema/social-media.json
 
 MDIP-compatible credentials are created using a JSON schema file as a template. The schema file will be registered with a Gatekeeper to create the Credential and receive its associated DID.
 
-```
+```sh
 $ kc create-credential data/schema/social-media.json social-media
 did:mdip:test:z3v8AuaeAPf9JMuyYZ1D79D626uUzDQmRPwq4d8oB1Th6ztzAS7
 ```
 
-```
+```json
 $ kc list-names
 {
     "social-media": "did:mdip:test:z3v8AuaeAPf9JMuyYZ1D79D626uUzDQmRPwq4d8oB1Th6ztzAS7"
 }
 ```
 
-```
+```json
 $ kc resolve-did social-media
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -640,7 +640,7 @@ The command above created a DID document with the schema file provided. For conv
 The Credential DID must now be bound to the Agent DID who is to become the Subject of the new credential. The binding process will generate a credential in JSON form that will be pre-populated with the DIDs of subject, issuer and credential type.
 In the command below, both social-media and Bob  are resolved to their respective DIDs using the named alias and identity names from the user's private wallet.
 
-```
+```json
 $ kc bind-credential social-media Bob
 {
     "@context": [
@@ -670,14 +670,14 @@ This JSON Bound Credential does not yet contain user-specific information other 
 
 The bound credential must be populated with holder-specific information. This step will typically be automated in most deployments. In the case of our social media schema, we must populate a service field with the name of an online social media provider, and we must populate the account field with a URL to the holder's specific social media account.
 
-```
+```sh
 $ kc bind-credential social-media Bob > bob-twitter.json
 (output sent to bob-twitter.json file)
 ```
 
 Edit the bob-twitter.json file to populate the credential.account and credential.service fields with information that is pertinent with the subject of the credential.
 
-```
+```sh
 $ cat bob-twitter.json
 {
     "@context": [
@@ -705,7 +705,7 @@ $ cat bob-twitter.json
 
 The credential, bound and populated with the subject's information, must now be signed by the issuer and encrypted to the subject's keys.
 
-```
+```sh
 $ kc attest-credential bob-twitter.json
 did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 ```
@@ -716,7 +716,7 @@ The issuer (Alice) should now send the VC's DID to the subject (Bob).
 
 Only the issuer and holder of a VC can verify it since it is encrypted. When Bob receives the credential from Alice, he can view its contents before accepting it.
 
-```
+```json
 $ kc decrypt-json did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 {
     "@context": [
@@ -750,12 +750,12 @@ $ kc decrypt-json did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5A
 
 Accepting a credential adds the DID to the user's local wallet.
 
-```
+```sh
 $ kc accept-credential did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 OK saved
 ```
 
-```
+```json
 $ kc show-wallet
 {
     "seed": {
@@ -796,12 +796,12 @@ $ kc show-wallet
 
 The issuer of a credential can revoke their attestation at any time. This will blank out the VC's credential content data and set the didDocumentMetadata.deactivated property to true.
 
-```
+```sh
 $ kc revoke-credential did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 OK revoked
 ```
 
-```
+```json
 $ kc resolve-did kc revoke-credential did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -828,7 +828,7 @@ The DID Manifest is a public data container that is returned with the DID docume
 
 Example of didDocumentData with a manifest :
 
-```
+```json
 {
     "manifest": {
         "did:mdip:test:z3v8Auaf3eZEUqJEu8xu1uUwxK3ZTLLXsfg9U7p6awPzyuD1AAT": {
@@ -862,12 +862,12 @@ Example of didDocumentData with a manifest :
 
 Publishing a VC to a DID Manifest will make it known that the DID holder has received a particular Verifiable Credential without revealing the credential's values. In this example, we know that Bob has a social-media attestation, but we do not know the details.
 
-```
+```sh
 $ kc add-name bob-twitter did:mdip:test:z3v8Auaf3eZEUqJEu8xu1uUwxK3ZTLLXsfg9U7p6awPzyuD1AAT
 OK Saved
 ```
 
-```
+```json
 $ kc publish-credential bob-twitter
 {
     "@context": [
@@ -894,7 +894,7 @@ $ kc publish-credential bob-twitter
 }
 ```
 
-```
+```json
 $ kc resolve-id
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -963,7 +963,7 @@ $ kc resolve-id
 
 Revealing a VC to a DID Manifest will decrypt and expose the entire VC content to the public. In this example, the homepage of charlie is revealed.
 
-```
+```json
 $ kc reveal-credential bob-twitter
 {
     "@context": [
@@ -997,7 +997,7 @@ $ kc reveal-credential bob-twitter
 
 At any time, a VC holder can decide to remove VCs published on their DID Manifest.
 
-```
+```sh
 $ kc unpublish-credential bob-twitter
 OK
 ```
@@ -1012,14 +1012,14 @@ The VC model enables 3rd party entities to issue a Challenge requesting proof fr
 
 The challenge is created from a Schema file or from an existing DID pointing to an existing schema Credential. To create a challenge from a schema file, use kc create-challenge ; to create a challenge from an existing credential DID, use kc create-challenge-cc instead.
 
-```
+```sh
 $ kc create-challenge-cc social-media sm-challenge
 did:mdip:test:z3v8AuaaxRxwZCPUnpCc4RoV5CZjeYVJepmJTVeJrpvyyB6LmwN
 ```
 
 In the command above, social-media  is a named alias in Alice's wallet that resolves to the DID of the social-medial credential in examples above. sm-challenge is a new named alias in Alice's wallet that contains the DID of the new Challenge document.
 
-```
+```json
 $ kc resolve-did sm-challenge
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -1052,7 +1052,7 @@ $ kc resolve-did sm-challenge
 
 When presented with a Challenge, a user can prepare a Verifiable Presentation of the credentials claims requested in the Challenge.
 
-```
+```sh
 $ kc use-id Bob
 OK
 $ kc create-response sm-challenge
@@ -1065,7 +1065,7 @@ The command above mapped the Challenge with previously received VCs and found on
 
 To verify the response received to a challenge, a user simply passes the DID of the VP received from the VC Holder being challenged.
 
-```
+```json
 $ kc use-id Alice
 OK
 kc verify-response did:mdip:test:z3v8AuadZ56m4x2UTpeY3HhSFvFQnrCUyASBYA77vqrqQr9SR99
@@ -1109,7 +1109,7 @@ Throughout this document, we used "aliased names" to facilitate interactions wit
 
 Adding a name will append a new alias to the current user's local wallet.
 
-```
+```sh
 $ kc add-name david "did:mdip:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri"
 OK
 ```
@@ -1118,7 +1118,7 @@ OK
 
 Listing names will reveal the list of aliases stored in the current user's local wallet.
 
-```
+```json
 $ kc list-names
 {
     "vc-social-media": "did:mdip:z3v8AuahM2jN3QRaQ5ZWTmzje9HoNdikuAyNjsGfunGfLCGj87J",
@@ -1133,7 +1133,7 @@ $ kc list-names
 
 Removing a name will delete an alias from the current user's local wallet.
 
-```
+```sh
 $ kc remove-name david
 OK
 ```
@@ -1148,7 +1148,7 @@ Encryption is a way to scramble data so that only authorized parties can unscram
 
 The MDIP CLI can be used to encrypt a file so that it only can be decrypted by the user controlling a specific agent DID keys.
 
-```
+```sh
 $ echo 'this is a secret message' > tmp/secret.txt
 $ kc encrypt-file tmp/secret.txt david
 did:mdip:z3v8AuadZVYKXq9oyoWmCgqGREsvMxCKDWxwLHNw3tHpfDyrNr3
@@ -1156,7 +1156,7 @@ did:mdip:z3v8AuadZVYKXq9oyoWmCgqGREsvMxCKDWxwLHNw3tHpfDyrNr3
 
 The DID returned by the encrypt-file function can only be decrypted by the user controlling "david"'s agent DID keys.
 
-```
+```json
 $ kc resolve-did did:mdip:z3v8AuadZVYKXq9oyoWmCgqGREsvMxCKDWxwLHNw3tHpfDyrNr3
 {
     "@context": "https://w3id.org/did-resolution/v1",
@@ -1189,7 +1189,7 @@ $ kc resolve-did did:mdip:z3v8AuadZVYKXq9oyoWmCgqGREsvMxCKDWxwLHNw3tHpfDyrNr3
 
 The MDIP CLI can be used to encrypt a message that can only be decrypted by the targeted DID.
 
-```
+```sh
 $ kc encrypt-msg 'this is another secret message' david
 did:mdip:z3v8AuacNPvBNSN8o1LgJxSD9jZVQBkre8BfHdrPgSugb7zuhqs
 ```
@@ -1198,7 +1198,7 @@ did:mdip:z3v8AuacNPvBNSN8o1LgJxSD9jZVQBkre8BfHdrPgSugb7zuhqs
 
 Recipients of MDIP encrypted messages or files can use the command below to decrypt the received content.
 
-```
+```sh
 $ kc decrypt-did did:mdip:z3v8AuacNPvBNSN8o1LgJxSD9jZVQBkre8BfHdrPgSugb7zuhqs
 this is another secret message
 ```
@@ -1207,7 +1207,7 @@ this is another secret message
 
 All other MDIP documents are also encrypted. The command below is used to decrypt content from VCs and other documents.
 
-```
+```json
 $ kc decrypt-json charlie-homepage
 {
     "@context": [
@@ -1239,7 +1239,7 @@ $ kc decrypt-json charlie-homepage
 
 Only the MDIP agent DID user with the necessary wallet key-pairs can decrypt the VC "charlie-homepage". Anyone else on the network only sees encrypted content.
 
-```
+```json
 $ kc resolve-did did:mdip:z3v8AuaamvoV6JnvnhJk3E1npohd3jxThPSXFAzZZ4WwzMrirbq
 {
     "@context": "https://w3id.org/did-resolution/v1",
