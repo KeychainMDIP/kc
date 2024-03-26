@@ -11,10 +11,13 @@ The Keychain CLI brings together functionality from three important sub-componen
 1. Verifiable Credential (VC) attestation and management as defined by W3C VC Data Model.
 1. Crypto keys and wallet management.
 
-All the CLI commands are self-documented using the help argument, or by running kc  with no flags::
+All the CLI commands are self-documented using the `--help` flag, or by running `kc` with no flags:
+
+<details>
+
+<summary><code>kc --help</code></summary>
 
 ```sh
-$ kc
 Usage: keychain-cli [options] [command]
 
 Keychain CLI tool
@@ -64,6 +67,8 @@ Commands:
   import-did <file>                           Import DID from file
   help [command]                              display help for command
 ```
+
+</details>
 
 ## Quick Start
 
