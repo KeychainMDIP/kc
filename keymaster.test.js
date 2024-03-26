@@ -67,14 +67,28 @@ describe('newWallet', () => {
         mockFs.restore();
     });
 
-    it('should overwrite an existing wallet', async () => {
+    it('should overwrite an existing wallet when allowed', async () => {
         mockFs({});
 
         const wallet1 = keymaster.loadWallet();
-        keymaster.newWallet();
+        keymaster.newWallet(null, true);
         const wallet2 = keymaster.loadWallet();
 
         expect(wallet1.seed.mnemonic !== wallet2.seed.mnemonic).toBe(true);
+    });
+
+    it('should not overwrite an existing wallet by default', async () => {
+        mockFs({});
+
+        const wallet1 = keymaster.loadWallet();
+
+        try {
+            keymaster.newWallet();
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Wallet already exists');
+        }
     });
 
     it('should create a wallet from a mnemonic', async () => {
@@ -131,7 +145,7 @@ describe('recoverWallet', () => {
         const did = await keymaster.backupWallet();
 
         // Recover wallet from mnemonic and recovery DID
-        keymaster.newWallet(mnemonic);
+        keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet(did);
 
         expect(wallet).toStrictEqual(recovered);
@@ -301,7 +315,7 @@ describe('recoverId', () => {
         await keymaster.backupId();
 
         // reset wallet
-        keymaster.newWallet(mnemonic);
+        keymaster.newWallet(mnemonic, true);
         wallet = keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 
@@ -319,7 +333,7 @@ describe('recoverId', () => {
         await keymaster.backupId();
 
         // reset to a different wallet
-        keymaster.newWallet();
+        keymaster.newWallet(null, true);
 
         try {
             const ok = await keymaster.recoverId(did);
