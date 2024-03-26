@@ -24,8 +24,8 @@ function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
-export function newWallet(mnemonic) {
-    if (fs.existsSync(walletName)) {
+export function newWallet(mnemonic, overwrite=false) {
+    if (fs.existsSync(walletName) && !overwrite) {
         throw "Wallet already exists";
     }
 
