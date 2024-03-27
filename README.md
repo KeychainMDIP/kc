@@ -1,10 +1,15 @@
-# Quick start
+# kc
+
+kc is the reference implementation of the Multi Dimensional Identity Protocol ([MDIP](doc/DID-scheme/README.md)).
+Details on each command can be found in the [CLI User Manual](doc/CLI-user-manual/README.md).
+
+## Quick start
 
 requires: node v18
 
 ```
-$ git clone https://github.com/KeychainMDIP/keychain-cli
-$ cd keychain-cli
+$ git clone https://github.com/KeychainMDIP/kc
+$ cd kc
 $ npm install
 ```
 
@@ -76,3 +81,4 @@ Commands:
   verify-file <file>                          Verify the signature in a JSON file
   verify-response <did>                       Decrypt and validate a Verifiable Presentation
 ```
+
