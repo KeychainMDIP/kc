@@ -172,9 +172,6 @@ did:mdip:test:z3v8Auairrc7XjSdoA1QvuytZXmGdmjcaFsPb2xKjM6TzowPKRn
 
 If you lose the wallet file, you can regenerate the private keys from the mnemonic:
 
-> [!caution]
-import-wallet will overwrite an existing wallet!
-
 ```json
 $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend equip rotate"
 {
