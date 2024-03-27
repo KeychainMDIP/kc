@@ -552,7 +552,7 @@ The basic workflow involves three actors: Alice (the Issuer), Bob (the Holder), 
 1. The Holder (Bob) accepts the VC (adding it to their wallet for future use).
 1. The Verifier (Carol) creates a Challenge. A Challenge is a list of Credentials and trusted Issuers.
 1. The Holder creates a Response to the Challenge. A Response contains a list of Verified Presentations that correspond to the Credentials and trusted Issuers listed in the Challenge. If the User's wallet contains the right Verified Credentials, then it will be possible to create a valid Response to the Challenge. The Response is encrypted for the Verifier.
-1. The Verifier verifies the Response. The Response is validated by checking that it contains a Verified Presentation for every Credential in the Challenge, and that the VP is issued by a trusted Issuer, and that the VC corresponding the VP has not been revoked. If everything checks out the Response is accepted and the Holder is granted authorization.
+1. The Verifier validates the Response. The Response is verified by checking that it contains a Verified Presentation for every Credential in the Challenge,  that the VP is issued by a trusted Issuer, and that the VC corresponding the VP has not been revoked. If everything checks out the Response is accepted and the Holder is granted authorization.
 
 ### Preparing or Selecting a Credential Schema File
 
