@@ -80,7 +80,8 @@ The following examples use a `$` to denote the shell prompt:
 $ kc
 ```
 
-!!! note Unless you edit your shell's `$PATH` variable, you need to invoke kc with a `./` prefix to run the script in the current directory:
+> [!NOTE]
+Unless you edit your shell's `$PATH` variable, you need to invoke kc with a `./` prefix to run the script in the current directory:
 
 ```sh
 $ ./kc
@@ -101,7 +102,8 @@ Creating a new ID automatically creates a new wallet for your ID, which we will 
 
 ## Working with Wallets
 
-!!! warning The Keychain CLI wallet is only to be used for experimental and development purposes.
+> [!warning]
+The Keychain CLI wallet is only to be used for experimental and development purposes.
 
 The Keychain CLI wallet is not encrypted and is stored on the local user's file system. Future MDIP wallets will implement additional capabilities (ex: SIWYS). 3rd party wallet developers will also be invited to create MDIP-compatible user wallet implementations.
 
@@ -113,7 +115,8 @@ The wallet contains a user's private data, including secret keys and associated 
 
 Creating a wallet generates a unique seed that is used to derive a hierarchical-deterministic key-pair. This key-pair will be used to generate new unique key-pairs for each future DID generated using this wallet:
 
-!!! note `kc create-wallet` does nothing when you already have a wallet, like the one created by `create-id` above.
+> [!NOTE]
+`kc create-wallet` does nothing when you already have a wallet, like the one created by `create-id` above.
 
 ```json
 $ kc create-wallet
@@ -169,7 +172,8 @@ did:mdip:test:z3v8Auairrc7XjSdoA1QvuytZXmGdmjcaFsPb2xKjM6TzowPKRn
 
 If you lose the wallet file, you can regenerate the private keys from the mnemonic:
 
-!!! danger import-wallet will overwrite an existing wallet!
+> [!caution]
+import-wallet will overwrite an existing wallet!
 
 ```json
 $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend equip rotate"
@@ -1066,7 +1070,8 @@ When presented with a challenge, a user can prepare a Verifiable Presentation of
     $ kc add-name sm-challenge did:mdip:test:z3v8AuaaxRxwZCPUnpCc4RoV5CZjeYVJepmJTVeJrpvyyB6LmwN
     ```
 
-    !!! note If you're testing as both Alice and Bob from a single wallet, you can skip this step.
+    > [!NOTE]
+If you're testing as both Alice and Bob from a single wallet, you can skip this step.
 
 1. Then the user can create a repsonse:
 
