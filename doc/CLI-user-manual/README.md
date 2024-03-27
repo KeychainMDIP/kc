@@ -829,7 +829,7 @@ $ kc resolve-did did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5AS
 
 ### What is the DID Manifest?
 
-The DID Manifest is a public data container that is returned with the DID document metadata. Users can chose to publish or reveal any attestation they receive. All information in the manifest is publicly viewable.
+The DID Manifest is a public data container that is returned with the DID document data. Users can chose to publish or reveal any attestation they receive. All information in the manifest is publicly viewable.
 
 Example of `didDocumentData` with a manifest :
 
