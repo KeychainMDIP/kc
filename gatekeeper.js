@@ -3,9 +3,6 @@ import { base58btc } from 'multiformats/bases/base58';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
-import { FsBlockstore } from 'blockstore-fs';
-import { performance } from 'perf_hooks';
-
 import * as cipher from './cipher.js';
 import config from './config.js';
 
@@ -84,8 +81,6 @@ let ipfs = null;
 
 export async function start() {
     if (!ipfs) {
-        const blockstore = new FsBlockstore(`${dataFolder}/ipfs`);
-        //helia = await createHelia({ blockstore });
         helia = await createHelia();
         ipfs = json(helia);
     }
@@ -120,13 +115,6 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
 }
 
 export async function anchorSeed(seed) {
-    // let t0, t1;
-
-    // t0 = performance.now();
-    // const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    // t1 = performance.now();
-    // console.log("Adding seed to IPFS took " + (t1 - t0) + " milliseconds.");
-
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
     const db = loadDb();

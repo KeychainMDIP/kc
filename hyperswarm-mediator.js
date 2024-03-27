@@ -4,12 +4,10 @@ import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
 import fs from 'fs';
 import asyncLib from 'async';
-
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
-import config from './config.js';
-
 import { EventEmitter } from 'events';
+
 EventEmitter.defaultMaxListeners = 100;
 
 const protocol = '/MDIP/v22.03.21';
