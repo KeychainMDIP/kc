@@ -1223,7 +1223,7 @@ this is another secret message
 
 ### Decrypting JSON from a VC
 
-All other MDIP documents are also encrypted. The command below is used to decrypt content from VCs and other documents:
+Some MDIP documents such as VCs are encrypted JSON. This command  combines decrypting with parsing as JSON:
 
 ```json
 $ kc decrypt-json charlie-homepage
