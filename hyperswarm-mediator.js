@@ -4,9 +4,10 @@ import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
 import fs from 'fs';
 import asyncLib from 'async';
+import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
-import { EventEmitter } from 'events';
+import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -70,6 +71,7 @@ async function shareDb() {
             hash: hash.toString(),
             data: db.hyperswarm,
             relays: [],
+            node: config.nodeName,
         };
 
         await relayDb(msg);
@@ -82,7 +84,7 @@ async function shareDb() {
 async function relayDb(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)}`);
+    console.log(`publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName})`);
 
     for (const conn of conns) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -147,9 +149,6 @@ let queue = asyncLib.queue(async function (task, callback) {
                 return;
             }
 
-            // const dbName = `${hash}.json`
-            // fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
-
             msg.relays.push(name);
             logMsg(msg.relays[0], hash);
             relayDb(msg);
@@ -157,7 +156,7 @@ let queue = asyncLib.queue(async function (task, callback) {
             await mergeDb(db);
         }
         else {
-            console.log(`received old db:  ${shortName(hash)} from: ${shortName(name)}`);
+            console.log(`received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'})`);
         }
     }
     catch (error) {
