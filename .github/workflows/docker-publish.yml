@@ -58,6 +58,7 @@ jobs:
             ${{ env.REGISTRY }}/keychainmdip/gatekeeper:${{ steps.calver.outputs.version }}
             ${{ env.REGISTRY }}/keychainmdip/gatekeeper:release
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64/v8
 
       - name: Build and push hyperswarm image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
@@ -69,3 +70,4 @@ jobs:
             ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ steps.calver.outputs.version }}
             ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64/v8
