@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gatekeeper
-    image: macterra/gatekeeper
+    image: keychainmdip/gatekeeper
     volumes:
       - ./data:/app/data
     ports:
@@ -15,7 +15,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.hyperswarm
-    image: macterra/hyperswarm-mediator
+    image: keychainmdip/hyperswarm-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper
       - KC_GATEKEEPER_PORT=4224
