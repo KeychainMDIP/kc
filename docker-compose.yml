@@ -19,7 +19,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper
       - KC_GATEKEEPER_PORT=4224
-      - KC_NODE_NAME=anon
+      - KC_NODE_NAME=${KC_NODE_NAME}
     volumes:
       - ./data:/app/data
     depends_on:
