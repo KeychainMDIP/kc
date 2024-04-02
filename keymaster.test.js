@@ -80,7 +80,7 @@ describe('newWallet', () => {
     it('should not overwrite an existing wallet by default', async () => {
         mockFs({});
 
-        const wallet1 = keymaster.loadWallet();
+        keymaster.loadWallet();
 
         try {
             keymaster.newWallet();
@@ -122,7 +122,7 @@ describe('backupWallet', () => {
         mockFs({});
 
         try {
-            const did = await keymaster.backupWallet();
+            await keymaster.backupWallet();
             throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`No current ID`);
@@ -139,7 +139,7 @@ describe('recoverWallet', () => {
     it('should recover wallet from backup DID', async () => {
         mockFs({});
 
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Bob');
         const wallet = keymaster.loadWallet();
         const mnemonic = keymaster.decryptMnemonic();
         const did = await keymaster.backupWallet();
@@ -173,7 +173,7 @@ describe('createId', () => {
         mockFs({});
 
         const name = 'Bob';
-        const did = await keymaster.createId(name);
+        await keymaster.createId(name);
 
         try {
             await keymaster.createId(name);
@@ -286,7 +286,7 @@ describe('backupId', () => {
         mockFs({});
 
         const name = 'Bob';
-        const did = await keymaster.createId(name);
+        await keymaster.createId(name);
 
         await keymaster.backupId();
 
@@ -319,7 +319,7 @@ describe('recoverId', () => {
         wallet = keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 
-        const ok = await keymaster.recoverId(did);
+        await keymaster.recoverId(did);
         wallet = keymaster.loadWallet();
         expect(wallet.ids[name]).toStrictEqual(bob);
         expect(wallet.current === name);
@@ -336,7 +336,7 @@ describe('recoverId', () => {
         keymaster.newWallet(null, true);
 
         try {
-            const ok = await keymaster.recoverId(did);
+            await keymaster.recoverId(did);
             throw "Expected to throw an exception";
         }
         catch (error) {
@@ -392,7 +392,7 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const secrets = [];
         const msg = "Hi Bob!";
@@ -457,6 +457,7 @@ describe('addName', () => {
         const ok = keymaster.addName('Jack', bob);
         const wallet = keymaster.loadWallet();
 
+        expect(ok).toBe(true);
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
@@ -515,7 +516,7 @@ describe('resolveDID', () => {
     it('should resolve a valid id name', async () => {
         mockFs({});
 
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Bob');
         const doc1 = await keymaster.resolveId();
         const doc2 = await keymaster.resolveDID('Bob');
 
@@ -525,7 +526,7 @@ describe('resolveDID', () => {
     it('should resolve a valid asset name', async () => {
         mockFs({});
 
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Bob');
 
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createData(mockAnchor);
@@ -542,7 +543,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         try {
-            const doc = await keymaster.resolveDID('mock');
+            await keymaster.resolveDID('mock');
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid DID');
@@ -727,15 +728,15 @@ describe('decrypt', () => {
         mockFs({});
 
         const name1 = 'Alice';
-        const did1 = await keymaster.createId(name1);
+        await keymaster.createId(name1);
 
         const name2 = 'Bob';
-        const did2 = await keymaster.createId(name2);
+        const did = await keymaster.createId(name2);
 
         keymaster.useId(name1);
 
         const msg = 'Hi Bob!';
-        const encryptDid = await keymaster.encrypt(msg, did2);
+        const encryptDid = await keymaster.encrypt(msg, did);
 
         keymaster.useId(name2);
         const decipher = await keymaster.decrypt(encryptDid);
@@ -747,15 +748,15 @@ describe('decrypt', () => {
         mockFs({});
 
         const name1 = 'Alice';
-        const did1 = await keymaster.createId(name1);
+        await keymaster.createId(name1);
 
         const name2 = 'Bob';
-        const did2 = await keymaster.createId(name2);
+        const did = await keymaster.createId(name2);
 
         keymaster.useId(name1);
 
         const msg = generateRandomString(1024);
-        const encryptDid = await keymaster.encrypt(msg, did2);
+        const encryptDid = await keymaster.encrypt(msg, did);
 
         keymaster.useId(name2);
         const decipher = await keymaster.decrypt(encryptDid);
@@ -780,7 +781,7 @@ describe('encryptJSON', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const bobDoc = await keymaster.resolveDID(bob);
+        await keymaster.resolveDID(bob);
 
         const did = await keymaster.encryptJSON(mockJson, bob);
         const data = await keymaster.resolveAsset(did);
@@ -1003,7 +1004,7 @@ describe('attestCredential', () => {
     it('should throw an exception if user is not issuer', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
         keymaster.useId('Alice');
@@ -1067,7 +1068,7 @@ describe('revokeCredential', () => {
     it('should return false if user does not control verifiable credential', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
         keymaster.useId('Alice');
@@ -1090,6 +1091,7 @@ describe('revokeCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.attestCredential(boundCredential);
         const ok = await keymaster.revokeCredential(did);
+        expect(ok).toBe(true);
 
         const userTxns = await keymaster.exportDID(userDid);
         const ops = await keymaster.exportDID(did);
@@ -1112,7 +1114,7 @@ describe('acceptCredential', () => {
     it('should add a valid verifiable credential to user wallet', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
         keymaster.useId('Alice');
@@ -1134,9 +1136,9 @@ describe('acceptCredential', () => {
     it('should return false if user is not the credential subject', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Carol');
 
         keymaster.useId('Alice');
 
@@ -1153,8 +1155,8 @@ describe('acceptCredential', () => {
     it('should return false if the verifiable credential is invalid', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
 
         keymaster.useId('Alice');
 
@@ -1210,7 +1212,7 @@ describe('createResponse', () => {
 
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-        const victor = await keymaster.createId('Victor');
+        await keymaster.createId('Victor');
 
         keymaster.useId('Alice');
 
@@ -1261,7 +1263,7 @@ describe('verifyResponse', () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const carol = await keymaster.createId('Carol');
-        const victor = await keymaster.createId('Victor');
+        await keymaster.createId('Victor');
 
         keymaster.useId('Alice');
 
@@ -1374,7 +1376,7 @@ describe('publishCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
 
-        const ok = await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, true);
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -1391,7 +1393,7 @@ describe('publishCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
 
-        const ok = await keymaster.publishCredential(did, false);
+        await keymaster.publishCredential(did, false);
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -1416,7 +1418,7 @@ describe('unpublishCredential', () => {
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
-        const ok = await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, true);
 
         await keymaster.unpublishCredential(did);
 
