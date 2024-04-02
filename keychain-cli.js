@@ -515,7 +515,7 @@ program
 program
     .command('list-names')
     .description('Lists names of DIDs')
-    .action(async (name) => {
+    .action(async () => {
         try {
             const wallet = keymaster.loadWallet();
 

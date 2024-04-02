@@ -24,7 +24,7 @@ function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
-export function newWallet(mnemonic, overwrite=false) {
+export function newWallet(mnemonic, overwrite = false) {
     if (fs.existsSync(walletName) && !overwrite) {
         throw "Wallet already exists";
     }
@@ -301,7 +301,7 @@ export async function resolveAsset(did) {
 
 export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
-    if (wallet.ids && wallet.ids.hasOwnProperty(name)) {
+    if (wallet.ids && Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
         throw `Already have an ID named ${name}`;
     }
 
@@ -351,7 +351,7 @@ export async function createId(name, registry = defaultRegistry) {
 
 export function removeId(name) {
     const wallet = loadWallet();
-    if (wallet.ids.hasOwnProperty(name)) {
+    if (Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
         delete wallet.ids[name];
 
         if (wallet.current === name) {
@@ -420,7 +420,7 @@ export function listIds() {
 
 export function useId(name) {
     const wallet = loadWallet();
-    if (wallet.ids.hasOwnProperty(name)) {
+    if (Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
         wallet.current = name;
         saveWallet(wallet);
     }
@@ -463,7 +463,7 @@ export function addName(name, did) {
         wallet.names = {};
     }
 
-    if (wallet.names.hasOwnProperty(name)) {
+    if (Object.prototype.hasOwnProperty.call(wallet.names, name)) {
         throw `Name already in use`;
     }
 
@@ -477,7 +477,7 @@ export function removeName(name) {
     const wallet = loadWallet();
 
     if (wallet.names) {
-        if (wallet.names.hasOwnProperty(name)) {
+        if (Object.prototype.hasOwnProperty.call(wallet.names, name)) {
             delete wallet.names[name];
             saveWallet(wallet);
         }
@@ -495,13 +495,13 @@ export function lookupDID(name) {
     const wallet = loadWallet();
 
     if (wallet.names) {
-        if (wallet.names.hasOwnProperty(name)) {
+        if (Object.prototype.hasOwnProperty.call(wallet.names, name)) {
             return wallet.names[name];
         }
     }
 
     if (wallet.ids) {
-        if (wallet.ids.hasOwnProperty(name)) {
+        if (Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
             return wallet.ids[name].did;
         }
     }
@@ -643,7 +643,7 @@ export async function unpublishCredential(did) {
         const credential = lookupDID(did);
         const manifest = doc.didDocumentData.manifest;
 
-        if (manifest && manifest.hasOwnProperty(credential)) {
+        if (manifest && Object.prototype.hasOwnProperty.call(manifest, credential)) {
             delete manifest[credential];
             await updateDID(id.did, doc);
         }

@@ -163,7 +163,7 @@ describe('createDID', () => {
         const agentTxn = await createAgentTxn(keypair, 2);
 
         try {
-            const did = await gatekeeper.createDID(agentTxn);
+            await gatekeeper.createDID(agentTxn);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error.startsWith('Valid versions include')).toBe(true);
@@ -177,7 +177,7 @@ describe('createDID', () => {
         const agentTxn = await createAgentTxn(keypair, 1, 'mockRegistry');
 
         try {
-            const did = await gatekeeper.createDID(agentTxn);
+            await gatekeeper.createDID(agentTxn);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error.startsWith('Valid registries include')).toBe(true);
@@ -268,7 +268,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentTxn);
         const doc = await gatekeeper.resolveDID(did);
         const updateTxn = await createUpdateTxn(keypair, did, doc);
-        const ok = await gatekeeper.updateDID(updateTxn);
+        await gatekeeper.updateDID(updateTxn);
         const ops = await gatekeeper.exportDID(did);
 
         const imported = await gatekeeper.importDID(ops);
@@ -284,7 +284,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentTxn);
         const doc = await gatekeeper.resolveDID(did);
         const updateTxn = await createUpdateTxn(keypair, did, doc);
-        const ok = await gatekeeper.updateDID(updateTxn);
+        await gatekeeper.updateDID(updateTxn);
         const ops = await gatekeeper.exportDID(did);
 
         fs.rmSync(gatekeeper.dbName);
@@ -305,7 +305,7 @@ describe('importDID', () => {
         for (let i = 0; i < N; i++) {
             doc.didDocumentData = { mock: `${i}` };
             const updateTxn = await createUpdateTxn(keypair, did, doc);
-            const ok = await gatekeeper.updateDID(updateTxn);
+            await gatekeeper.updateDID(updateTxn);
         }
 
         const ops = await gatekeeper.exportDID(did);
@@ -326,7 +326,7 @@ describe('importDID', () => {
 
         fs.rmSync(gatekeeper.dbName);
 
-        const imported = await gatekeeper.importDID(ops);
+        await gatekeeper.importDID(ops);
         const doc = await gatekeeper.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
@@ -345,7 +345,7 @@ describe('importDID', () => {
         ops[0].did = did2;
 
         try {
-            const imported = await gatekeeper.importDID(ops);
+            await gatekeeper.importDID(ops);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -356,7 +356,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            const imported = await gatekeeper.importDID();
+            await gatekeeper.importDID();
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -367,7 +367,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            const imported = await gatekeeper.importDID('mock');
+            await gatekeeper.importDID('mock');
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -378,7 +378,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            const imported = await gatekeeper.importDID([]);
+            await gatekeeper.importDID([]);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -389,7 +389,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            const imported = await gatekeeper.importDID([1, 2, 3]);
+            await gatekeeper.importDID([1, 2, 3]);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid operation');

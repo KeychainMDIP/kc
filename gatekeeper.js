@@ -49,7 +49,7 @@ export async function verifyDb() {
                 throw "Invalid DID";
             }
 
-            const doc = await resolveDID(did, null, true);
+            await resolveDID(did, null, true);
             console.log(`${n} ${did} OK`);
         }
         catch (error) {
@@ -100,11 +100,11 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
         operation: operation,
     };
 
-    if (!db.hasOwnProperty(registry)) {
+    if (!Object.prototype.hasOwnProperty.call(db, registry)) {
         db[registry] = {};
     }
 
-    if (db[registry].hasOwnProperty(did)) {
+    if (Object.prototype.hasOwnProperty.call(db[registry], did)) {
         db[registry][did].push(update);
     }
     else {
@@ -340,8 +340,8 @@ async function verifyUpdate(operation, doc) {
 export function fetchUpdates(registry, did) {
     const db = loadDb();
 
-    if (db.hasOwnProperty(registry)) {
-        if (db[registry].hasOwnProperty(did)) {
+    if (Object.prototype.hasOwnProperty.call(db, registry)) {
+        if (Object.prototype.hasOwnProperty.call(db[registry], did)) {
             return db[registry][did];
         }
     }

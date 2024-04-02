@@ -138,12 +138,11 @@ gatekeeper.verifyDb().then((invalid) => {
     });
 });
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', () => {
     console.error('Unhandled exception caught');
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-    //console.error('Unhandled rejection at:', promise, 'reason:', reason);
+process.on('unhandledRejection', () => {
     console.error('Unhandled rejection caught');
 });
 
