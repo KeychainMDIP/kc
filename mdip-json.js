@@ -23,6 +23,10 @@ function writeDb(db) {
 }
 
 export function backupDb() {
+    if (!fs.existsSync(dbName)) {
+        return;
+    }
+
     const today = new Date();
     const dateString = today.toISOString().split('.')[0];
     const backupFolder = `${dataFolder}/backup`;
