@@ -4,6 +4,7 @@ import fs from 'fs';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
+import * as dbx from './dbx-json.js';
 import config from './config.js';
 
 const dataFolder = 'data';
@@ -94,10 +95,11 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
     const db = loadDb();
 
     const update = {
-        time: time,
-        ordinal: ordinal,
-        did: did,
-        operation: operation,
+        registry,
+        time,
+        ordinal,
+        did,
+        operation,
     };
 
     if (!Object.prototype.hasOwnProperty.call(db, registry)) {
@@ -112,6 +114,8 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
     }
 
     writeDb(db);
+
+    dbx.addUpdate(update);
 }
 
 export async function anchorSeed(seed) {
@@ -220,16 +224,16 @@ export async function createDID(operation) {
     throw "Unknown type";
 }
 
-async function getAnchor(did) {
-    const db = loadDb();
-    const docSeed = db.anchors[did];
+// async function getAnchor(did) {
+//     const db = loadDb();
+//     const docSeed = db.anchors[did];
 
-    return docSeed;
-}
+//     return docSeed;
+// }
 
 async function generateDoc(did, asofTime) {
     try {
-        const anchor = await getAnchor(did);
+        const anchor = await dbx.getAnchor(did);
 
         if (!anchor?.mdip) {
             return {};
@@ -361,7 +365,8 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
         // TBD What to return if DID was created after specified time?
     }
 
-    const updates = fetchUpdates(mdip.registry, did);
+    //const updates = fetchUpdates(mdip.registry, did);
+    const updates = dbx.fetchUpdates(did);
 
     for (const { time, operation } of updates) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
