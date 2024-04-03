@@ -14,6 +14,16 @@ const v1router = express.Router();
 app.use(morgan('dev'));
 app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
 
+let serverReady = false;
+
+v1router.get('/ready', async (req, res) => {
+    try {
+        res.json(serverReady);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
@@ -123,7 +133,6 @@ app.get('/explore/:did', async (req, res) => {
     }
 });
 
-
 app.use('/api/v1', v1router);
 
 gatekeeper.verifyDb().then((invalid) => {
@@ -135,6 +144,7 @@ gatekeeper.verifyDb().then((invalid) => {
 
     app.listen(port, () => {
         console.log(`Server is running on port ${port}`);
+        serverReady = true;
     });
 });
 
