@@ -84,7 +84,7 @@ async function shareDb() {
 async function relayDb(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName})`);
+    console.log(`* publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
     for (const conn of conns) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -152,11 +152,11 @@ let queue = asyncLib.queue(async function (task, callback) {
             msg.relays.push(name);
             logMsg(msg.relays[0], hash);
             relayDb(msg);
-            console.log(`* merging db ${shortName(hash)} *`);
+            console.log(`* merging new db ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
             await mergeDb(db);
         }
         else {
-            console.log(`received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'})`);
+            console.log(`* received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
         }
     }
     catch (error) {
@@ -166,7 +166,14 @@ let queue = asyncLib.queue(async function (task, callback) {
 }, 1); // concurrency is 1
 
 async function receiveMsg(name, json) {
-    queue.push({ name, json });
+    const ready = await gatekeeper.isReady();
+
+    if (ready) {
+        queue.push({ name, json });
+    }
+    else {
+        console.log('receiveMsg: gatekeeper not ready');
+    }
 }
 
 function logMsg(name, hash) {
@@ -204,9 +211,9 @@ async function start() {
 
     setInterval(async () => {
         try {
-            const version = gatekeeper.getVersion();
+            const ready = await gatekeeper.isReady();
 
-            if (version) {
+            if (ready) {
                 shareDb();
             }
         }
