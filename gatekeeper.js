@@ -52,8 +52,8 @@ export async function stop() {
     helia.stop();
 }
 
-function submitTxn(did, registry, operation, time, ordinal = 0) {
-    const update = {
+function addOperation(did, registry, operation, time, ordinal = 0) {
+    const op = {
         registry,
         time,
         ordinal,
@@ -61,7 +61,7 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
         operation,
     };
 
-    db.addUpdate(update);
+    db.addOperation(op);
 }
 
 export async function anchorSeed(seed) {
@@ -75,7 +75,7 @@ export async function generateDID(operation) {
     const ops = await exportDID(did);
 
     if (ops.length === 0) {
-        submitTxn(did, operation.mdip.registry, operation, operation.created);
+        addOperation(did, operation.mdip.registry, operation, operation.created);
     }
 
     return did;
@@ -358,7 +358,7 @@ export async function updateDID(operation) {
         const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        submitTxn(operation.did, registry, operation, operation.signature.signed);
+        addOperation(operation.did, registry, operation, operation.signature.signed);
         return true;
     }
     catch (error) {

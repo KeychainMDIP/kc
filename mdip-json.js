@@ -39,28 +39,18 @@ export function resetDb() {
     fs.rmSync(dbName);
 }
 
-export function addUpdate(update) {
+export function addOperation(op) {
     const db = loadDb();
-    const suffix = update.did.split(':').pop();
+    const suffix = op.did.split(':').pop();
 
     if (Object.prototype.hasOwnProperty.call(db.dids, suffix)) {
-        db.dids[suffix].push(update);
+        db.dids[suffix].push(op);
     }
     else {
-        db.dids[suffix] = [update];
+        db.dids[suffix] = [op];
     }
 
     writeDb(db);
-}
-
-export function getAnchor(did) {
-    const db = loadDb();
-    const suffix = did.split(':').pop();
-    const updates = db.dids[suffix];
-
-    if (updates && updates.length > 0) {
-        return updates[0].operation;
-    }
 }
 
 export function fetchOperations(did) {
@@ -88,7 +78,6 @@ export function getAllDIDs() {
 
     for (const suffix of cids) {
         const ops = db.dids[suffix];
-        //console.log(ops);
         dids.push(ops[0].did);
     }
 
