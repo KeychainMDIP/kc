@@ -3,7 +3,7 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-import * as dbx from './mdip-json.js';
+import * as db from './mdip-json.js';
 import config from './config.js';
 
 const validVersions = [1];
@@ -11,9 +11,9 @@ const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
 
 export async function verifyDb() {
-    dbx.backupDb();
+    db.backupDb();
 
-    const dids = dbx.getAllDIDs();
+    const dids = db.getAllDIDs();
     let n = 0;
     let invalid = 0;
 
@@ -26,7 +26,7 @@ export async function verifyDb() {
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-            dbx.deleteDID(did);
+            db.deleteDID(did);
         }
     }
 
@@ -35,7 +35,7 @@ export async function verifyDb() {
 
 // For testing purposes
 export function resetDb() {
-    dbx.resetDb();
+    db.resetDb();
 }
 
 let helia = null;
@@ -61,7 +61,7 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
         operation,
     };
 
-    dbx.addUpdate(update);
+    db.addUpdate(update);
 }
 
 export async function anchorSeed(seed) {
@@ -269,7 +269,7 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, asOfTime = null, verify = false) {
-    const ops = dbx.fetchOperations(did);
+    const ops = db.fetchOperations(did);
 
     if (ops.length === 0) {
         throw "Invalid DID";
@@ -372,7 +372,7 @@ export async function deleteDID(operation) {
 }
 
 export async function exportDID(did) {
-    return dbx.fetchOperations(did);
+    return db.fetchOperations(did);
 }
 
 export async function importDID(ops) {
