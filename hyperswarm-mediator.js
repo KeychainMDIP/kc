@@ -141,19 +141,23 @@ let queue = asyncLib.queue(async function (task, callback) {
         const seen = messagesSeen[hash];
 
         if (!seen) {
-            messagesSeen[hash] = true;
+            const ready = await gatekeeper.isReady();
 
-            const db = msg.data;
+            if (ready) {
+                messagesSeen[hash] = true;
 
-            if (isEmpty(db)) {
-                return;
+                const db = msg.data;
+
+                if (isEmpty(db)) {
+                    return;
+                }
+
+                msg.relays.push(name);
+                logMsg(msg.relays[0], hash);
+                relayDb(msg);
+                console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+                await mergeDb(db);
             }
-
-            msg.relays.push(name);
-            logMsg(msg.relays[0], hash);
-            relayDb(msg);
-            console.log(`* merging new db ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
-            await mergeDb(db);
         }
         else {
             console.log(`* received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
@@ -166,21 +170,13 @@ let queue = asyncLib.queue(async function (task, callback) {
 }, 1); // concurrency is 1
 
 async function receiveMsg(name, json) {
-    const ready = await gatekeeper.isReady();
-
-    if (ready) {
-        queue.push({ name, json });
-    }
-    else {
-        console.log('receiveMsg: gatekeeper not ready');
-    }
+    queue.push({ name, json });
 }
 
 function logMsg(name, hash) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
-    console.log(`received new db: ${shortName(hash)} from: ${shortName(name)}`);
     console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
 }
 
