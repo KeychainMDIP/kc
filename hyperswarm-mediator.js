@@ -84,7 +84,7 @@ async function shareDb() {
 async function relayDb(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName})`);
+    console.log(`* publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
     for (const conn of conns) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -141,22 +141,26 @@ let queue = asyncLib.queue(async function (task, callback) {
         const seen = messagesSeen[hash];
 
         if (!seen) {
-            messagesSeen[hash] = true;
+            const ready = await gatekeeper.isReady();
 
-            const db = msg.data;
+            if (ready) {
+                messagesSeen[hash] = true;
 
-            if (isEmpty(db)) {
-                return;
+                const db = msg.data;
+
+                if (isEmpty(db)) {
+                    return;
+                }
+
+                msg.relays.push(name);
+                logConnection(msg.relays[0]);
+                relayDb(msg);
+                console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+                await mergeDb(db);
             }
-
-            msg.relays.push(name);
-            logMsg(msg.relays[0], hash);
-            relayDb(msg);
-            console.log(`* merging db ${shortName(hash)} *`);
-            await mergeDb(db);
         }
         else {
-            console.log(`received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'})`);
+            console.log(`* received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
         }
     }
     catch (error) {
@@ -169,11 +173,10 @@ async function receiveMsg(name, json) {
     queue.push({ name, json });
 }
 
-function logMsg(name, hash) {
+function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
-    console.log(`received new db: ${shortName(hash)} from: ${shortName(name)}`);
     console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
 }
 
@@ -204,9 +207,9 @@ async function start() {
 
     setInterval(async () => {
         try {
-            const version = gatekeeper.getVersion();
+            const ready = await gatekeeper.isReady();
 
-            if (version) {
+            if (ready) {
                 shareDb();
             }
         }

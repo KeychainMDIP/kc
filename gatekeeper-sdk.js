@@ -17,9 +17,19 @@ export async function start() {
 export async function stop() {
 }
 
+export async function isReady() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/ready`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
 export async function getVersion() {
     try {
-        const response = await axios.get(`${URL}/api/v1/version/`);
+        const response = await axios.get(`${URL}/api/v1/version`);
         return response.data;
     }
     catch (error) {
