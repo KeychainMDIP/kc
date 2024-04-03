@@ -153,7 +153,7 @@ let queue = asyncLib.queue(async function (task, callback) {
                 }
 
                 msg.relays.push(name);
-                logMsg(msg.relays[0], hash);
+                logConnection(msg.relays[0]);
                 relayDb(msg);
                 console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
                 await mergeDb(db);
@@ -173,7 +173,7 @@ async function receiveMsg(name, json) {
     queue.push({ name, json });
 }
 
-function logMsg(name, hash) {
+function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
