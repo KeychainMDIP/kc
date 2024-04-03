@@ -41,7 +41,7 @@ function isEmpty(obj) {
 }
 
 function loadDb() {
-    const dbName = 'data/mdip.json';
+    const dbName = 'data/mdip-v2.json';
 
     if (fs.existsSync(dbName)) {
         return JSON.parse(fs.readFileSync(dbName));
@@ -59,17 +59,17 @@ async function shareDb() {
     try {
         const db = loadDb();
 
-        if (isEmpty(db) || !db.hyperswarm || isEmpty(db.hyperswarm)) {
+        if (isEmpty(db) || !db.dids || isEmpty(db.dids)) {
             return;
         }
 
-        const hash = cipher.hashJSON(db.hyperswarm);
+        const hash = cipher.hashJSON(db.dids);
 
         messagesSeen[hash] = true;
 
         const msg = {
             hash: hash.toString(),
-            data: db.hyperswarm,
+            data: db.dids,
             relays: [],
             node: config.nodeName,
         };
@@ -119,7 +119,6 @@ async function mergeDb(db) {
 
         let batch = [];
         for (const did of dids) {
-            //console.log(`Adding to batch: ${did} ${db.hyperswarm[did][0].time}`);
             batch.push(db[did]);
 
             if (batch.length >= 100) {
@@ -202,7 +201,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function start() {
-    console.log(`hyperswarm peer id: ${shortName(peerName)}`);
+    console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
 
     setInterval(async () => {
