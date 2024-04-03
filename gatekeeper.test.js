@@ -1,4 +1,3 @@
-import fs from 'fs';
 import mockFs from 'mock-fs';
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper.js';
@@ -49,7 +48,7 @@ describe('generateDid', () => {
     });
 });
 
-async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
+async function createAgentOp(keypair, version = 1, registry = 'hyperswarm') {
     const operation = {
         type: "create",
         created: new Date().toISOString(),
@@ -74,7 +73,7 @@ async function createAgentTxn(keypair, version = 1, registry = 'hyperswarm') {
     };
 }
 
-async function createUpdateTxn(keypair, did, doc) {
+async function createUpdateOp(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -101,7 +100,7 @@ async function createUpdateTxn(keypair, did, doc) {
     return signed;
 }
 
-async function createAssetTxn(agent, keypair) {
+async function createAssetOp(agent, keypair) {
     const dataAnchor = {
         type: "create",
         created: new Date().toISOString(),
@@ -116,7 +115,7 @@ async function createAssetTxn(agent, keypair) {
 
     const msgHash = cipher.hashJSON(dataAnchor);
     const signature = await cipher.signHash(msgHash, keypair.privateJwk);
-    const assetTxn = {
+    const assetOp = {
         ...dataAnchor,
         signature: {
             signer: agent,
@@ -126,7 +125,7 @@ async function createAssetTxn(agent, keypair) {
         }
     };
 
-    return assetTxn;
+    return assetOp;
 }
 
 describe('createDID', () => {
@@ -138,9 +137,9 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
+        const agentOp = await createAgentOp(keypair);
 
-        const did = await gatekeeper.createDID(agentTxn);
+        const did = await gatekeeper.createDID(agentOp);
 
         expect(did.startsWith('did:mdip:'));
     });
@@ -149,9 +148,9 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'local');
+        const agentOp = await createAgentOp(keypair, 1, 'local');
 
-        const did = await gatekeeper.createDID(agentTxn);
+        const did = await gatekeeper.createDID(agentOp);
 
         expect(did.startsWith('did:mdip:'));
     });
@@ -160,10 +159,10 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 2);
+        const agentOp = await createAgentOp(keypair, 2);
 
         try {
-            await gatekeeper.createDID(agentTxn);
+            await gatekeeper.createDID(agentOp);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error.startsWith('Valid versions include')).toBe(true);
@@ -174,10 +173,10 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair, 1, 'mockRegistry');
+        const agentOp = await createAgentOp(keypair, 1, 'mockRegistry');
 
         try {
-            await gatekeeper.createDID(agentTxn);
+            await gatekeeper.createDID(agentOp);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error.startsWith('Valid registries include')).toBe(true);
@@ -188,11 +187,11 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const agent = await gatekeeper.createDID(agentTxn);
-        const assetTxn = await createAssetTxn(agent, keypair);
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agent, keypair);
 
-        const did = await gatekeeper.createDID(assetTxn);
+        const did = await gatekeeper.createDID(assetOp);
 
         expect(did.startsWith('did:mdip:'));
     });
@@ -208,14 +207,14 @@ describe('exportDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
 
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(1);
         expect(ops[0].did).toStrictEqual(did);
-        expect(ops[0].operation).toStrictEqual(agentTxn);
+        expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
     it('should return empty array on an invalid DID', async () => {
@@ -236,8 +235,8 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
         const imported = await gatekeeper.importDID(ops);
@@ -249,10 +248,10 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const agentDID = await gatekeeper.createDID(agentTxn);
-        const assetTxn = await createAssetTxn(agentDID, keypair);
-        const assetDID = await gatekeeper.createDID(assetTxn);
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
         const ops = await gatekeeper.exportDID(assetDID);
 
         const imported = await gatekeeper.importDID(ops);
@@ -264,10 +263,10 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
-        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const updateTxn = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateTxn);
         const ops = await gatekeeper.exportDID(did);
 
@@ -280,14 +279,15 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
-        const updateTxn = await createUpdateTxn(keypair, did, doc);
+        const updateTxn = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateTxn);
         const ops = await gatekeeper.exportDID(did);
 
-        fs.rmSync(gatekeeper.dbName);
+        gatekeeper.resetDb();
+
         const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(2);
@@ -297,20 +297,20 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
         const N = 20;
         for (let i = 0; i < N; i++) {
             doc.didDocumentData = { mock: `${i}` };
-            const updateTxn = await createUpdateTxn(keypair, did, doc);
+            const updateTxn = await createUpdateOp(keypair, did, doc);
             await gatekeeper.updateDID(updateTxn);
         }
 
         const ops = await gatekeeper.exportDID(did);
 
-        fs.rmSync(gatekeeper.dbName);
+        gatekeeper.resetDb();
         const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(N + 1);
@@ -320,11 +320,11 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn = await createAgentTxn(keypair);
-        const did = await gatekeeper.createDID(agentTxn);
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        fs.rmSync(gatekeeper.dbName);
+        gatekeeper.resetDb();
 
         await gatekeeper.importDID(ops);
         const doc = await gatekeeper.resolveDID(did);
@@ -336,10 +336,10 @@ describe('importDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentTxn1 = await createAgentTxn(keypair);
-        const did1 = await gatekeeper.createDID(agentTxn1);
-        const agentTxn2 = await createAgentTxn(keypair);
-        const did2 = await gatekeeper.createDID(agentTxn2);
+        const agentOp1 = await createAgentOp(keypair);
+        const did1 = await gatekeeper.createDID(agentOp1);
+        const agentOp2 = await createAgentOp(keypair);
+        const did2 = await gatekeeper.createDID(agentOp2);
         const ops = await gatekeeper.exportDID(did1);
 
         ops[0].did = did2;

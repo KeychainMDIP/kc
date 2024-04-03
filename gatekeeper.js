@@ -1,80 +1,41 @@
 import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
-import fs from 'fs';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-import * as dbx from './dbx-json.js';
+import * as dbx from './mdip-json.js';
 import config from './config.js';
-
-const dataFolder = 'data';
-export const dbName = `${dataFolder}/mdip.json`;
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
 
-export function loadDb() {
-    if (fs.existsSync(dbName)) {
-        return JSON.parse(fs.readFileSync(dbName));
-    }
-    else {
-        return {}
-    }
-}
-
-export function writeDb(db) {
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
-    }
-
-    fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
-}
-
 export async function verifyDb() {
-    const db = loadDb();
-    const backup = JSON.parse(JSON.stringify(db));
+    dbx.backupDb();
 
-    if (!db.anchors) {
-        return 0;
-    }
-
-    const dids = Object.keys(db.anchors);
+    const dids = dbx.getAllDIDs();
     let n = 0;
     let invalid = 0;
 
     for (const did of dids) {
         n += 1;
         try {
-            if (!did.startsWith(config.didPrefix)) {
-                throw "Invalid DID";
-            }
-
             await resolveDID(did, null, true);
             console.log(`${n} ${did} OK`);
         }
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-
-            if (db.anchors[did]) {
-                const anchor = db.anchors[did];
-                const registry = anchor.mdip.registry;
-                delete db[registry][did];
-                delete db.anchors[did];
-            }
+            dbx.deleteDID(did);
         }
     }
 
-    if (invalid > 0) {
-        const today = new Date();
-        const dateString = today.toISOString().split('T')[0];
-        const backupName = `${dataFolder}/mdip.backup.${dateString}.json`;
-        fs.writeFileSync(backupName, JSON.stringify(backup, null, 4));
-        writeDb(db);
-    }
-
     return invalid;
+}
+
+// For testing purposes
+export function resetDb() {
+    dbx.resetDb();
 }
 
 let helia = null;
@@ -92,8 +53,6 @@ export async function stop() {
 }
 
 function submitTxn(did, registry, operation, time, ordinal = 0) {
-    const db = loadDb();
-
     const update = {
         registry,
         time,
@@ -102,35 +61,12 @@ function submitTxn(did, registry, operation, time, ordinal = 0) {
         operation,
     };
 
-    if (!Object.prototype.hasOwnProperty.call(db, registry)) {
-        db[registry] = {};
-    }
-
-    if (Object.prototype.hasOwnProperty.call(db[registry], did)) {
-        db[registry][did].push(update);
-    }
-    else {
-        db[registry][did] = [update];
-    }
-
-    writeDb(db);
-
     dbx.addUpdate(update);
 }
 
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    const db = loadDb();
-
-    if (!db.anchors) {
-        db.anchors = {};
-    }
-
-    const anchor = await ipfs.get(cid);
-    db.anchors[did] = anchor;
-
-    writeDb(db);
     return did;
 }
 
@@ -224,17 +160,8 @@ export async function createDID(operation) {
     throw "Unknown type";
 }
 
-// async function getAnchor(did) {
-//     const db = loadDb();
-//     const docSeed = db.anchors[did];
-
-//     return docSeed;
-// }
-
-async function generateDoc(did, asofTime) {
+async function generateDoc(did, anchor, asofTime) {
     try {
-        const anchor = await dbx.getAnchor(did);
-
         if (!anchor?.mdip) {
             return {};
         }
@@ -341,20 +268,15 @@ async function verifyUpdate(operation, doc) {
     return false;
 }
 
-export function fetchUpdates(registry, did) {
-    const db = loadDb();
+export async function resolveDID(did, asOfTime = null, verify = false) {
+    const ops = dbx.fetchOperations(did);
 
-    if (Object.prototype.hasOwnProperty.call(db, registry)) {
-        if (Object.prototype.hasOwnProperty.call(db[registry], did)) {
-            return db[registry][did];
-        }
+    if (ops.length === 0) {
+        throw "Invalid DID";
     }
 
-    return [];
-}
-
-export async function resolveDID(did, asOfTime = null, verify = false) {
-    let doc = await generateDoc(did);
+    const anchor = ops[0].operation;
+    let doc = await generateDoc(did, anchor);
     let mdip = doc?.mdip;
 
     if (!mdip) {
@@ -365,10 +287,7 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
         // TBD What to return if DID was created after specified time?
     }
 
-    //const updates = fetchUpdates(mdip.registry, did);
-    const updates = dbx.fetchUpdates(did);
-
-    for (const { time, operation } of updates) {
+    for (const { time, operation } of ops) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
@@ -453,14 +372,7 @@ export async function deleteDID(operation) {
 }
 
 export async function exportDID(did) {
-    const doc = await generateDoc(did);
-    const registry = doc?.mdip?.registry;
-
-    if (!registry) {
-        return [];
-    }
-
-    return fetchUpdates(registry, did);
+    return dbx.fetchOperations(did);
 }
 
 export async function importDID(ops) {
