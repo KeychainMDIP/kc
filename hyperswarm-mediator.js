@@ -45,7 +45,7 @@ function fetchDids() {
     const dids = db.getAllDIDs();
 
     for (const did of dids) {
-        data[did] = db.fetchOperations(did);
+        data[did] = db.getOperations(did);
     }
 
     return data;

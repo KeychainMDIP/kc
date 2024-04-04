@@ -269,7 +269,7 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, asOfTime = null, verify = false) {
-    const ops = db.fetchOperations(did);
+    const ops = db.getOperations(did);
 
     if (ops.length === 0) {
         throw "Invalid DID";
@@ -372,7 +372,7 @@ export async function deleteDID(operation) {
 }
 
 export async function exportDID(did) {
-    return db.fetchOperations(did);
+    return db.getDID(did);
 }
 
 export async function importDID(ops) {

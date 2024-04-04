@@ -57,7 +57,7 @@ export function addOperation(op) {
     writeDb(db);
 }
 
-export function fetchOperations(did) {
+export function getOperations(did) {
     try {
         const db = loadDb();
         const suffix = did.split(':').pop();
