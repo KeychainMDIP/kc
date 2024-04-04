@@ -22,9 +22,6 @@ export async function stop() {
     await db.close();
 }
 
-export async function backupDb() {
-}
-
 export async function resetDb() {
     await db.run('DELETE FROM dids');
 }

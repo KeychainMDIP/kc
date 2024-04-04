@@ -14,8 +14,6 @@ const validRegistries = ['local', 'hyperswarm'];
 const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
 
 export async function verifyDb() {
-    await db.backupDb();
-
     const dids = await db.getAllDIDs();
     let n = 0;
     let invalid = 0;
@@ -390,8 +388,6 @@ export async function importDID(ops) {
     const create = ops[0];
     const did = create.did;
     const current = await exportDID(did);
-
-    console.log(`importing ${did}`);
 
     if (current.length === 0) {
         const check = await createDID(create.operation);

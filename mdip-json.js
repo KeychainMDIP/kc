@@ -28,23 +28,6 @@ export async function start() {
 export async function stop() {
 }
 
-export async function backupDb() {
-//     if (!fs.existsSync(dbName)) {
-//         return;
-//     }
-
-//     const today = new Date();
-//     const dateString = today.toISOString().split('.')[0];
-//     const backupFolder = `${dataFolder}/backup`;
-//     const backupName = `${backupFolder}/mdip-v2.${dateString}.json`;
-
-//     if (!fs.existsSync(backupFolder)) {
-//         fs.mkdirSync(backupFolder);
-//     }
-
-//     fs.copyFileSync(dbName, backupName);
-}
-
 export async function resetDb() {
     fs.rmSync(dbName);
 }
