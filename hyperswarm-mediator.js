@@ -2,12 +2,12 @@ import Hyperswarm from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
-import fs from 'fs';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
+import * as db from './mdip-json.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -40,15 +40,15 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
-function loadDb() {
-    const dbName = 'data/mdip-v2.json';
+function fetchDids() {
+    const data = {};
+    const dids = db.getAllDIDs();
 
-    if (fs.existsSync(dbName)) {
-        return JSON.parse(fs.readFileSync(dbName));
+    for (const did of dids) {
+        data[did] = db.fetchOperations(did);
     }
-    else {
-        return {}
-    }
+
+    return data;
 }
 
 async function shareDb() {
@@ -57,19 +57,19 @@ async function shareDb() {
     }
 
     try {
-        const db = loadDb();
+        const dids = fetchDids();
 
-        if (isEmpty(db) || !db.dids || isEmpty(db.dids)) {
+        if (isEmpty(dids)) {
             return;
         }
 
-        const hash = cipher.hashJSON(db.dids);
+        const hash = cipher.hashJSON(dids);
 
         messagesSeen[hash] = true;
 
         const msg = {
             hash: hash.toString(),
-            data: db.dids,
+            data: dids,
             relays: [],
             node: config.nodeName,
         };
