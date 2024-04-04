@@ -3,13 +3,15 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-//import * as db from './mdip-json.js';
-import * as db from './mdip-sqlite.js';
+import * as db_json from './mdip-json.js';
+import * as db_sqlite from './mdip-sqlite.js';
 import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
+
+const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
 
 export async function verifyDb() {
     await db.backupDb();
@@ -47,10 +49,13 @@ export async function start() {
         helia = await createHelia();
         ipfs = json(helia);
     }
+
+    await db.start();
 }
 
 export async function stop() {
     helia.stop();
+    await db.stop();
 }
 
 async function addOperation(did, registry, operation, time, ordinal = 0) {
@@ -385,6 +390,8 @@ export async function importDID(ops) {
     const create = ops[0];
     const did = create.did;
     const current = await exportDID(did);
+
+    console.log(`importing ${did}`);
 
     if (current.length === 0) {
         const check = await createDID(create.operation);

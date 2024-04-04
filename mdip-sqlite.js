@@ -2,17 +2,25 @@ import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 
 const dataFolder = 'data';
-const dbName = `${dataFolder}/mdip-v2.db`;
+const dbName = `${dataFolder}/mdip.db`;
 
-const db = await sqlite.open({
-    filename: dbName,
-    driver: sqlite3.Database
-});
+let db;
 
-await db.exec(`CREATE TABLE IF NOT EXISTS dids (
-    id TEXT PRIMARY KEY,
-    ops TEXT
-)`);
+export async function start() {
+    db = await sqlite.open({
+        filename: dbName,
+        driver: sqlite3.Database
+    });
+
+    await db.exec(`CREATE TABLE IF NOT EXISTS dids (
+        id TEXT PRIMARY KEY,
+        ops TEXT
+    )`);
+}
+
+export async function stop() {
+    await db.close();
+}
 
 export async function backupDb() {
 }

@@ -1,7 +1,7 @@
 import fs from 'fs';
 
 const dataFolder = 'data';
-const dbName = `${dataFolder}/mdip-v2.json`;
+const dbName = `${dataFolder}/mdip.json`;
 
 function loadDb() {
     if (fs.existsSync(dbName)) {
@@ -22,21 +22,27 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
+export async function start() {
+}
+
+export async function stop() {
+}
+
 export async function backupDb() {
-    if (!fs.existsSync(dbName)) {
-        return;
-    }
+//     if (!fs.existsSync(dbName)) {
+//         return;
+//     }
 
-    const today = new Date();
-    const dateString = today.toISOString().split('.')[0];
-    const backupFolder = `${dataFolder}/backup`;
-    const backupName = `${backupFolder}/mdip-v2.${dateString}.json`;
+//     const today = new Date();
+//     const dateString = today.toISOString().split('.')[0];
+//     const backupFolder = `${dataFolder}/backup`;
+//     const backupName = `${backupFolder}/mdip-v2.${dateString}.json`;
 
-    if (!fs.existsSync(backupFolder)) {
-        fs.mkdirSync(backupFolder);
-    }
+//     if (!fs.existsSync(backupFolder)) {
+//         fs.mkdirSync(backupFolder);
+//     }
 
-    fs.copyFileSync(dbName, backupName);
+//     fs.copyFileSync(dbName, backupName);
 }
 
 export async function resetDb() {

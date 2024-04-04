@@ -6,7 +6,7 @@ import config from './config.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-gatekeeper.start();
+await gatekeeper.start();
 
 const app = express();
 const v1router = express.Router();
@@ -141,9 +141,10 @@ gatekeeper.verifyDb().then((invalid) => {
     }
 
     const port = config.gatekeeperPort;
+    const db = config.gatekeeperDb;
 
     app.listen(port, () => {
-        console.log(`Server is running on port ${port}`);
+        console.log(`Server is running on port ${port}, persisting with ${db}`);
         serverReady = true;
     });
 });
@@ -152,7 +153,7 @@ process.on('uncaughtException', () => {
     console.error('Unhandled exception caught');
 });
 
-process.on('unhandledRejection', (a, b) => {
-    console.error('Unhandled rejection caught', a, b);
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection caught', reason, promise);
 });
 

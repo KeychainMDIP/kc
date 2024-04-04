@@ -7,17 +7,23 @@ import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
-//import * as db from './mdip-json.js';
-import * as db from './mdip-sqlite.js';
+import * as db_json from './mdip-json.js';
+import * as db_sqlite from './mdip-sqlite.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
 const protocol = '/MDIP/v22.04.03';
+const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
+
+await db.start();
 
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
-goodbye(() => swarm.destroy())
+goodbye(() => {
+    swarm.destroy();
+    db.stop();
+});
 
 const nodes = {};
 const messagesSeen = {};
@@ -46,6 +52,7 @@ async function fetchDids() {
     const dids = await db.getAllDIDs();
 
     for (const did of dids) {
+        console.log(`fetching ${did}`);
         data[did] = await db.getOperations(did);
     }
 
@@ -203,6 +210,7 @@ const topic = b4a.from(networkID, 'hex');
 
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
+    console.log(`using ${config.gatekeeperDb} db`);
     console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
 
     setInterval(async () => {
