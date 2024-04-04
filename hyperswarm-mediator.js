@@ -7,7 +7,8 @@ import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
-import * as db from './mdip-json.js';
+//import * as db from './mdip-json.js';
+import * as db from './mdip-sqlite.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -40,12 +41,12 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
-function fetchDids() {
+async function fetchDids() {
     const data = {};
-    const dids = db.getAllDIDs();
+    const dids = await db.getAllDIDs();
 
     for (const did of dids) {
-        data[did] = db.getOperations(did);
+        data[did] = await db.getOperations(did);
     }
 
     return data;
@@ -57,7 +58,7 @@ async function shareDb() {
     }
 
     try {
-        const dids = fetchDids();
+        const dids = await fetchDids();
 
         if (isEmpty(dids)) {
             return;

@@ -22,7 +22,7 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-export function backupDb() {
+export async function backupDb() {
     if (!fs.existsSync(dbName)) {
         return;
     }
@@ -39,11 +39,11 @@ export function backupDb() {
     fs.copyFileSync(dbName, backupName);
 }
 
-export function resetDb() {
+export async function resetDb() {
     fs.rmSync(dbName);
 }
 
-export function addOperation(op) {
+export async function addOperation(op) {
     const db = loadDb();
     const suffix = op.did.split(':').pop();
 
@@ -57,7 +57,7 @@ export function addOperation(op) {
     writeDb(db);
 }
 
-export function getOperations(did) {
+export async function getOperations(did) {
     try {
         const db = loadDb();
         const suffix = did.split(':').pop();
@@ -75,7 +75,7 @@ export function getOperations(did) {
     }
 }
 
-export function getAllDIDs() {
+export async function getAllDIDs() {
     const db = loadDb();
     const cids = Object.keys(db.dids);
     const dids = [];
@@ -88,7 +88,7 @@ export function getAllDIDs() {
     return dids;
 }
 
-export function deleteDID(did) {
+export async function deleteDID(did) {
     const db = loadDb();
     const suffix = did.split(':').pop();
 

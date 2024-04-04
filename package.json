@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "start": "node server.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose",
     "lint": "eslint ."
   },
   "author": "",
@@ -34,7 +34,9 @@
     "json-schema-faker": "^0.5.5",
     "morgan": "^1.10.0",
     "multiformats": "^13.0.0",
-    "perf_hooks": "^0.0.1"
+    "perf_hooks": "^0.0.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

@@ -435,7 +435,7 @@ describe('rotateKeys', () => {
 
         const ops = await keymaster.exportDID(alice);
 
-        gatekeeper.resetDb();
+        await gatekeeper.resetDb();
 
         const imported = await keymaster.importDID(ops);
 
@@ -1095,7 +1095,7 @@ describe('revokeCredential', () => {
         const userTxns = await keymaster.exportDID(userDid);
         const ops = await keymaster.exportDID(did);
 
-        gatekeeper.resetDb();
+        await gatekeeper.resetDb();
 
         await keymaster.importDID(userTxns);
         const imported = await keymaster.importDID(ops);

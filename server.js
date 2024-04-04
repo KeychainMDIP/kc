@@ -152,7 +152,7 @@ process.on('uncaughtException', () => {
     console.error('Unhandled exception caught');
 });
 
-process.on('unhandledRejection', () => {
-    console.error('Unhandled rejection caught');
+process.on('unhandledRejection', (a, b) => {
+    console.error('Unhandled rejection caught', a, b);
 });
 

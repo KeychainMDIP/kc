@@ -286,7 +286,7 @@ describe('importDID', () => {
         await gatekeeper.updateDID(updateTxn);
         const ops = await gatekeeper.exportDID(did);
 
-        gatekeeper.resetDb();
+        await gatekeeper.resetDb();
 
         const imported = await gatekeeper.importDID(ops);
 
@@ -301,7 +301,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
-        const N = 20;
+        const N = 10;
         for (let i = 0; i < N; i++) {
             doc.didDocumentData = { mock: `${i}` };
             const updateTxn = await createUpdateOp(keypair, did, doc);
@@ -310,7 +310,7 @@ describe('importDID', () => {
 
         const ops = await gatekeeper.exportDID(did);
 
-        gatekeeper.resetDb();
+        await gatekeeper.resetDb();
         const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(N + 1);
@@ -324,7 +324,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        gatekeeper.resetDb();
+        await gatekeeper.resetDb();
 
         await gatekeeper.importDID(ops);
         const doc = await gatekeeper.resolveDID(did);

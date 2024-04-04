@@ -3,7 +3,8 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-import * as db from './mdip-json.js';
+//import * as db from './mdip-json.js';
+import * as db from './mdip-sqlite.js';
 import config from './config.js';
 
 const validVersions = [1];
@@ -11,9 +12,9 @@ const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
 
 export async function verifyDb() {
-    db.backupDb();
+    await db.backupDb();
 
-    const dids = db.getAllDIDs();
+    const dids = await db.getAllDIDs();
     let n = 0;
     let invalid = 0;
 
@@ -26,7 +27,7 @@ export async function verifyDb() {
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-            db.deleteDID(did);
+            await db.deleteDID(did);
         }
     }
 
@@ -34,8 +35,8 @@ export async function verifyDb() {
 }
 
 // For testing purposes
-export function resetDb() {
-    db.resetDb();
+export async function resetDb() {
+    await db.resetDb();
 }
 
 let helia = null;
@@ -52,7 +53,7 @@ export async function stop() {
     helia.stop();
 }
 
-function addOperation(did, registry, operation, time, ordinal = 0) {
+async function addOperation(did, registry, operation, time, ordinal = 0) {
     const op = {
         registry,
         time,
@@ -61,7 +62,7 @@ function addOperation(did, registry, operation, time, ordinal = 0) {
         operation,
     };
 
-    db.addOperation(op);
+    await db.addOperation(op);
 }
 
 export async function anchorSeed(seed) {
@@ -75,7 +76,7 @@ export async function generateDID(operation) {
     const ops = await exportDID(did);
 
     if (ops.length === 0) {
-        addOperation(did, operation.mdip.registry, operation, operation.created);
+        await addOperation(did, operation.mdip.registry, operation, operation.created);
     }
 
     return did;
@@ -269,7 +270,7 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, asOfTime = null, verify = false) {
-    const ops = db.getOperations(did);
+    const ops = await db.getOperations(did);
 
     if (ops.length === 0) {
         throw "Invalid DID";
@@ -358,7 +359,7 @@ export async function updateDID(operation) {
         const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        addOperation(operation.did, registry, operation, operation.signature.signed);
+        await addOperation(operation.did, registry, operation, operation.signature.signed);
         return true;
     }
     catch (error) {
@@ -372,7 +373,7 @@ export async function deleteDID(operation) {
 }
 
 export async function exportDID(did) {
-    return db.getDID(did);
+    return await db.getOperations(did);
 }
 
 export async function importDID(ops) {
