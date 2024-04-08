@@ -3,18 +3,11 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
-import * as db_mongodb from './db-mongodb.js';
 import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
-
-const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
-    : (config.gatekeeperDb === 'mongodb') ? db_mongodb
-        : db_json;
 
 export async function verifyDb() {
     const dids = await db.getAllKeys();
@@ -42,16 +35,17 @@ export async function resetDb() {
     await db.resetDb();
 }
 
+let db = null;
 let helia = null;
 let ipfs = null;
 
-export async function start(dbName) {
+export async function start(injectedDb) {
     if (!ipfs) {
         helia = await createHelia();
         ipfs = json(helia);
     }
 
-    await db.start(dbName);
+    db = injectedDb;
 }
 
 export async function stop() {

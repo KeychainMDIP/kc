@@ -1,7 +1,7 @@
 import fs from 'fs';
 import * as keymaster from './keymaster.js';
 import * as gatekeeper from './gatekeeper.js';
-//import * as gatekeeper from './gatekeeper-sdk.js';
+import * as db_json from './db-json.js';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -25,6 +25,8 @@ async function runWorkflow() {
         fs.renameSync(walletFile, backupFile);
     }
 
+    await db_json.start('mdip-workflow');
+    await gatekeeper.start(db_json);
     await keymaster.start(gatekeeper);
 
     const alice = await keymaster.createId('Alice');
