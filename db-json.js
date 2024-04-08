@@ -1,7 +1,7 @@
 import fs from 'fs';
 
 const dataFolder = 'data';
-const dbName = `${dataFolder}/mdip.json`;
+let dbName;
 
 function loadDb() {
     if (fs.existsSync(dbName)) {
@@ -22,7 +22,8 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-export async function start() {
+export async function start(name = 'mdip') {
+    dbName = `${dataFolder}/${name}.json`;
 }
 
 export async function stop() {
@@ -76,7 +77,7 @@ export async function deleteOperations(did) {
     }
 }
 
-export async function getAllDIDs() {
+export async function getAllKeys() {
     const db = loadDb();
     const ids = Object.keys(db.dids);
     return ids;

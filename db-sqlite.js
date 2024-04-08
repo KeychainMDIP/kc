@@ -2,11 +2,12 @@ import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 
 const dataFolder = 'data';
-const dbName = `${dataFolder}/mdip.db`;
 
 let db;
 
-export async function start() {
+export async function start(name = 'mdip') {
+    const dbName = `${dataFolder}/${name}.db`;
+
     db = await sqlite.open({
         filename: dbName,
         driver: sqlite3.Database
@@ -53,7 +54,7 @@ export async function deleteOperations(did) {
     await db.run('DELETE FROM dids WHERE id = ?', id);
 }
 
-export async function getAllDIDs() {
+export async function getAllKeys() {
     const rows = await db.all('SELECT id FROM dids');
     const ids = rows.map(row => row.id);
     return ids;

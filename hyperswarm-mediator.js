@@ -49,7 +49,7 @@ function isEmpty(obj) {
 
 async function fetchDids() {
     const data = {};
-    const dids = await db.getAllDIDs();
+    const dids = await db.getAllKeys();
 
     for (const did of dids) {
         console.log(`fetching ${did}`);

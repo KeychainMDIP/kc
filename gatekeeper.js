@@ -17,7 +17,7 @@ const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
         : db_json;
 
 export async function verifyDb() {
-    const dids = await db.getAllDIDs();
+    const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
 
@@ -45,13 +45,13 @@ export async function resetDb() {
 let helia = null;
 let ipfs = null;
 
-export async function start() {
+export async function start(dbName) {
     if (!ipfs) {
         helia = await createHelia();
         ipfs = json(helia);
     }
 
-    await db.start();
+    await db.start(dbName);
 }
 
 export async function stop() {

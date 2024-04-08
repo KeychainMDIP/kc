@@ -1,11 +1,10 @@
 import { MongoClient } from 'mongodb';
 
 const url = 'mongodb://localhost:27017';
-const dbName = 'mdip';
 let client;
 let db;
 
-export async function start() {
+export async function start(dbName = 'mdip') {
     client = new MongoClient(url);
     await client.connect();
     db = client.db(dbName);
@@ -50,7 +49,7 @@ export async function deleteOperations(did) {
     await db.collection('dids').deleteOne({ id: id });
 }
 
-export async function getAllDIDs() {
+export async function getAllKeys() {
     const rows = await db.collection('dids').find().toArray();
     const ids = rows.map(row => row.id);
     return ids;

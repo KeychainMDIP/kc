@@ -51,7 +51,7 @@ async function importDIDs(db) {
 }
 
 async function exportDIDs(db) {
-    const ids = await db.getAllDIDs();
+    const ids = await db.getAllKeys();
 
     for (const i in ids) {
         const id = ids[i];
@@ -63,7 +63,7 @@ async function exportDIDs(db) {
 }
 
 async function runBenchmark(db) {
-    await db.start();
+    await db.start('mdip-benchmark');
     await db.resetDb();
 
     console.time('>> importDIDs');
