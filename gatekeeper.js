@@ -3,8 +3,8 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
-import * as db_json from './mdip-json.js';
-import * as db_sqlite from './mdip-sqlite.js';
+import * as db_json from './db-json.js';
+import * as db_sqlite from './db-sqlite.js';
 import config from './config.js';
 
 const validVersions = [1];

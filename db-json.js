@@ -29,7 +29,9 @@ export async function stop() {
 }
 
 export async function resetDb() {
-    fs.rmSync(dbName);
+    if (fs.existsSync(dbName)) {
+        fs.rmSync(dbName);
+    }
 }
 
 export async function addOperation(op) {

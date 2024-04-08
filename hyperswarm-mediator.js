@@ -7,12 +7,12 @@ import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
-import * as db_json from './mdip-json.js';
-import * as db_sqlite from './mdip-sqlite.js';
+import * as db_json from './db-json.js';
+import * as db_sqlite from './db-sqlite.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.04.03';
+const protocol = '/MDIP/v22.04.08';
 const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
 
 await db.start();
