@@ -5,13 +5,16 @@ import { createHelia } from 'helia';
 import * as cipher from './cipher.js';
 import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
+import * as db_mongodb from './db-mongodb.js';
 import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
 
-const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
+const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
+    : (config.gatekeeperDb === 'mongodb') ? db_mongodb
+        : db_json;
 
 export async function verifyDb() {
     const dids = await db.getAllDIDs();
@@ -27,7 +30,7 @@ export async function verifyDb() {
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-            await db.deleteDID(did);
+            await db.deleteOperations(did);
         }
     }
 

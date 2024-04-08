@@ -66,20 +66,7 @@ export async function getOperations(did) {
     }
 }
 
-export async function getAllDIDs() {
-    const db = loadDb();
-    const cids = Object.keys(db.dids);
-    const dids = [];
-
-    for (const suffix of cids) {
-        const ops = db.dids[suffix];
-        dids.push(ops[0].did);
-    }
-
-    return dids;
-}
-
-export async function deleteDID(did) {
+export async function deleteOperations(did) {
     const db = loadDb();
     const suffix = did.split(':').pop();
 
@@ -87,4 +74,10 @@ export async function deleteDID(did) {
         delete db.dids[suffix];
         writeDb(db);
     }
+}
+
+export async function getAllDIDs() {
+    const db = loadDb();
+    const ids = Object.keys(db.dids);
+    return ids;
 }

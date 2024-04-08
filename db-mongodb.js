@@ -45,20 +45,13 @@ export async function getOperations(did) {
     }
 }
 
+export async function deleteOperations(did) {
+    const id = did.split(':').pop();
+    await db.collection('dids').deleteOne({ id: id });
+}
+
 export async function getAllDIDs() {
     const rows = await db.collection('dids').find().toArray();
     const ids = rows.map(row => row.id);
-    const dids = [];
-
-    for (const id of ids) {
-        const ops = await getOperations(id);
-        dids.push(ops[0].did);
-    }
-
-    return dids;
-}
-
-export async function deleteDID(did) {
-    const id = did.split(':').pop();
-    await db.collection('dids').deleteOne({ id: id });
+    return ids;
 }

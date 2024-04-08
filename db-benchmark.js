@@ -1,12 +1,9 @@
 import * as uuid from 'uuid';
-//import * as db from './db-json.js';
-//import * as db from './db-sqlite.js';
-import * as db from './db-mongodb.js';
+import * as db_json from './db-json.js';
+import * as db_sqlite from './db-sqlite.js';
+import * as db_mongodb from './db-mongodb.js';
 
-export async function main() {
-
-    await db.start();
-    await db.resetDb();
+async function importDIDs(db) {
 
     for (let i = 0; i < 100; i++) {
 
@@ -51,20 +48,45 @@ export async function main() {
 
         console.timeEnd('add DID');
     }
+}
 
+async function exportDIDs(db) {
     const ids = await db.getAllDIDs();
 
     for (const i in ids) {
         const id = ids[i];
         console.time('getOperations');
-        await db.getOperations(id);
+        const ops = await db.getOperations(id);
         console.timeEnd('getOperations');
-        console.log(i, id);
+        console.log(i, id, ops);
     }
+}
+
+async function runBenchmark(db) {
+    await db.start();
+    await db.resetDb();
+
+    console.time('>> importDIDs');
+    await importDIDs(db);
+    console.timeEnd('>> importDIDs');
+
+    console.time('>> exportDIDs');
+    await exportDIDs(db);
+    console.timeEnd('>> exportDIDs');
 
     await db.stop();
 }
 
-console.time('main');
-await main();
-console.timeEnd('main');
+async function main() {
+    console.log('>> db_json');
+    await runBenchmark(db_json);
+
+    console.log('>> db_sqlite');
+    await runBenchmark(db_sqlite);
+
+    console.log('>> db_mongodb');
+    await runBenchmark(db_mongodb);
+}
+
+main();
+
