@@ -1,8 +1,6 @@
 import * as uuid from 'uuid';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
-
-const db = db_sqlite;
+import * as db from './db-json.js';
+//import * as db from './db-sqlite.js';
 
 export async function main() {
 
@@ -58,7 +56,7 @@ export async function main() {
     for (const i in ids) {
         const id = ids[i];
         console.time('getOperations');
-        const ops = await db.getOperations(id);
+        await db.getOperations(id);
         console.timeEnd('getOperations');
         console.log(i, id);
     }
