@@ -32,11 +32,13 @@
     "helia": "^3.0.0",
     "hyperswarm": "^4.7.14",
     "json-schema-faker": "^0.5.5",
+    "mongodb": "^6.5.0",
     "morgan": "^1.10.0",
     "multiformats": "^13.0.0",
     "perf_hooks": "^0.0.1",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
