@@ -65,12 +65,9 @@ When presented with a challenge, a user can prepare a Verifiable Presentation of
     $ kc add-name sm-challenge did:mdip:test:z3v8AuaaxRxwZCPUnpCc4RoV5CZjeYVJepmJTVeJrpvyyB6LmwN
     ```
 
-    :::note
+    > [!NOTE]
+    >If you're testing as both Alice and Bob from a single wallet, you can skip this step.
     
-    If you're testing as both Alice and Bob from a single wallet, you can skip this step.
-    
-    :::
-
 1. Then the user can create a repsonse:
 
     ```sh

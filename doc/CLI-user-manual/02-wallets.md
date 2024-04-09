@@ -4,13 +4,10 @@ sidebar_label: Wallets
 slug: wallets
 ---
 
-:::warning
-
-The Keychain CLI wallet is only to be used for experimental and development purposes.
-
-:::
-
-The Keychain CLI wallet is not encrypted and is stored on the local user's file system. Future MDIP wallets will implement additional capabilities (ex: SIWYS). 3rd party wallet developers will also be invited to create MDIP-compatible user wallet implementations.
+> [!WARNING]
+> The Keychain CLI wallet is only to be used for experimental and development purposes.
+>
+> The Keychain CLI wallet is not encrypted and is stored on the local user's file system. Future MDIP wallets will implement additional capabilities (ex: SIWYS). 3rd party wallet developers will also be invited to create MDIP-compatible user wallet implementations.
 
 ## What is a Wallet?
 
@@ -20,11 +17,8 @@ The wallet contains a user's private data, including secret keys and associated 
 
 Creating a wallet generates a unique seed that is used to derive a hierarchical-deterministic key-pair. This key-pair will be used to generate new unique key-pairs for each future DID generated using this wallet:
 
-:::note
-
-`kc create-wallet` does nothing when you already have a wallet, like the one created by `create-id`.
-
-:::
+> [!NOTE]
+> `kc create-wallet` does nothing when you already have a wallet, like the one created by `create-id`.
 
 ```json
 $ kc create-wallet
