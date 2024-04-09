@@ -1,7 +1,7 @@
 ---
 title: Working with Wallets
 sidebar_label: Wallets
-sidebar_position: 20
+slug: wallets
 ---
 
 :::warning

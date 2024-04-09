@@ -1,7 +1,7 @@
 ---
 title: Working with DIDs
 sidebar_label: DIDs
-sidebar_position: 40
+slug: dids
 ---
 
 ## What is a DID

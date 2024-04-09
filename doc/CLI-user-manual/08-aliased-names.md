@@ -1,7 +1,7 @@
 ---
 title: Working with Aliased Names
 sidebar_label: Aliased Names
-sidebar_position: 80
+slug: aliased-names
 ---
 
 ## What is an alias name?

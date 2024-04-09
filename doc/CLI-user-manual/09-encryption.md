@@ -1,7 +1,7 @@
 ---
 title: Working with Encryption
 sidebar_label: Encryption
-sidebar_position: 90
+slug: encryption
 ---
 
 ## What is encryption?

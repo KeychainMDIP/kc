@@ -1,7 +1,7 @@
 ---
 title: Working with Credentials
 sidebar_label: Credentials
-sidebar_position: 50
+slug: credentials
 ---
 
 The credential operations below meet the specifications defined in [W3C VC Data Model](https://www.w3.org/TR/vc-data-model/).

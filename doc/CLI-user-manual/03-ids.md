@@ -1,7 +1,7 @@
 ---
 title: Working with IDs
-sidebar_position: 30
 sidebar_label: IDs
+slug: ids
 ---
 
 The identity operations below meet the specifications defined by [W3C DID Core](https://www.w3.org/TR/did-core/).

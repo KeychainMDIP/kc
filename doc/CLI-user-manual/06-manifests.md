@@ -1,7 +1,7 @@
 ---
 title: What is the DID Manifest?
 sidebar_label: DID Manifest
-sidebar_position: 60
+slug: manifests
 ---
 
 ### 

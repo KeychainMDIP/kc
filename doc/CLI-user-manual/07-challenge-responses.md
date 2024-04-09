@@ -1,7 +1,7 @@
 ---
 title: Working with Challenges and Responses
 sidebar_label: Challenges and Responses
-sidebar_position: 70
+slug: challenge-responses
 ---
 
 ## What is a challenge and response?
