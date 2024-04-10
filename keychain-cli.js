@@ -452,8 +452,8 @@ program
     .description('Remove a credential from the current user manifest')
     .action(async (did) => {
         try {
-            await keymaster.unpublishCredential(did);
-            console.log('OK');
+            const response = await keymaster.unpublishCredential(did);
+            console.log(response);
         }
         catch (error) {
             console.error(error);
