@@ -636,22 +636,19 @@ export async function publishCredential(did, reveal = false) {
 }
 
 export async function unpublishCredential(did) {
-    try {
-        const id = getCurrentId();
-        const doc = await resolveDID(id.did);
-        const credential = lookupDID(did);
-        const manifest = doc.didDocumentData.manifest;
+    const id = getCurrentId();
+    const doc = await resolveDID(id.did);
+    const credential = lookupDID(did);
+    const manifest = doc.didDocumentData.manifest;
 
-        if (manifest && Object.prototype.hasOwnProperty.call(manifest, credential)) {
-            delete manifest[credential];
-            await updateDID(id.did, doc);
-        }
+    if (credential && manifest && Object.prototype.hasOwnProperty.call(manifest, credential)) {
+        delete manifest[credential];
+        await updateDID(id.did, doc);
 
-        return true;
+        return `OK credential ${did} removed from manifest`;
     }
-    catch (error) {
-        return error;
-    }
+
+    throw `Error: credential ${did} not found in manifest`;
 }
 
 export async function createChallenge(challenge) {

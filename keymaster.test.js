@@ -1429,4 +1429,47 @@ describe('unpublishCredential', () => {
 
         expect(manifest).toStrictEqual({});
     });
+
+    it('should throw an exception when no current ID', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.unpublishCredential('mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('No current ID');
+        }
+    });
+
+    it('should throw an exception when credential invalid', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.unpublishCredential('mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Error: credential mock not found in manifest');
+        }
+    });
+
+    it('should throw an exception when credential not found', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const did = await keymaster.attestCredential(boundCredential);
+
+        try {
+            await keymaster.unpublishCredential(did);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe(`Error: credential ${did} not found in manifest`);
+        }
+    });
 });
