@@ -46,6 +46,11 @@ async function importDIDs(db) {
             console.timeEnd('addOperation');
         }
 
+        console.time('getAllKeys');
+        const keys = await db.getAllKeys();
+        console.timeEnd('getAllKeys');
+        console.log(`${keys.length} keys`);
+
         console.timeEnd('add DID');
     }
 }

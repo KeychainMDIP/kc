@@ -9,6 +9,24 @@ const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm'];
 
+let db = null;
+let helia = null;
+let ipfs = null;
+
+export async function start(injectedDb) {
+    if (!ipfs) {
+        helia = await createHelia();
+        ipfs = json(helia);
+    }
+
+    db = injectedDb;
+}
+
+export async function stop() {
+    helia.stop();
+    await db.stop();
+}
+
 export async function verifyDb() {
     const dids = await db.getAllKeys();
     let n = 0;
@@ -35,22 +53,10 @@ export async function resetDb() {
     await db.resetDb();
 }
 
-let db = null;
-let helia = null;
-let ipfs = null;
-
-export async function start(injectedDb) {
-    if (!ipfs) {
-        helia = await createHelia();
-        ipfs = json(helia);
-    }
-
-    db = injectedDb;
-}
-
-export async function stop() {
-    helia.stop();
-    await db.stop();
+export async function anchorSeed(seed) {
+    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
+    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
+    return did;
 }
 
 async function addOperation(did, registry, operation, time, ordinal = 0) {
@@ -63,12 +69,6 @@ async function addOperation(did, registry, operation, time, ordinal = 0) {
     };
 
     await db.addOperation(op);
-}
-
-export async function anchorSeed(seed) {
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    return did;
 }
 
 export async function generateDID(operation) {
@@ -372,6 +372,12 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
+export async function getDIDs() {
+    const keys = await db.getAllKeys();
+    const dids = keys.map(key => `${config.didPrefix}:${key}`);
+    return dids;
+}
+
 export async function exportDID(did) {
     return await db.getOperations(did);
 }
@@ -429,7 +435,9 @@ export async function mergeBatch(batch) {
 
     for (const ops of batch) {
         try {
+            console.time('importDID');
             const diff = await importDID(ops);
+            console.timeEnd('importDID');
 
             if (diff > 0) {
                 updated += 1;

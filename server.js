@@ -83,6 +83,16 @@ v1router.delete('/did/:did', async (req, res) => {
     }
 });
 
+v1router.get('/did/', async (req, res) => {
+    try {
+        const dids = await gatekeeper.getDIDs();
+        res.json(dids);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/export/:did', async (req, res) => {
     try {
         const ops = await gatekeeper.exportDID(req.params.did);

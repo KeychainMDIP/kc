@@ -83,6 +83,16 @@ export async function deleteDID(operation) {
     }
 }
 
+export async function getDIDs() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/did/`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function exportDID(did) {
     try {
         const response = await axios.get(`${URL}/api/v1/export/${did}`);

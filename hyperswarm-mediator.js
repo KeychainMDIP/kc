@@ -7,22 +7,15 @@ import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
 const protocol = '/MDIP/v22.04.08';
-const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite : db_json;
-
-await db.start();
-
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
 goodbye(() => {
     swarm.destroy();
-    db.stop();
 });
 
 const nodes = {};
@@ -49,11 +42,11 @@ function isEmpty(obj) {
 
 async function fetchDids() {
     const data = {};
-    const dids = await db.getAllKeys();
+    const dids = await gatekeeper.getDIDs();
 
     for (const did of dids) {
         //console.log(`fetching ${did}`);
-        data[did] = await db.getOperations(did);
+        data[did] = await gatekeeper.exportDID(did);
     }
 
     return data;
@@ -65,7 +58,10 @@ async function shareDb() {
     }
 
     try {
+        console.time('fetchDIDs');
         const dids = await fetchDids();
+        console.timeEnd('fetchDIDs');
+        console.log(`${Object.keys(dids).length} DIDs fetched`);
 
         if (isEmpty(dids)) {
             return;
@@ -226,7 +222,7 @@ async function start() {
         catch (error) {
             console.error(`Error: ${error}`);
         }
-    }, 10000);
+    }, 30000);
 }
 
 function main() {
