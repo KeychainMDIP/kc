@@ -52,7 +52,7 @@ async function fetchDids() {
     const dids = await db.getAllKeys();
 
     for (const did of dids) {
-        console.log(`fetching ${did}`);
+        //console.log(`fetching ${did}`);
         data[did] = await db.getOperations(did);
     }
 
@@ -110,7 +110,9 @@ async function relayDb(msg) {
 async function mergeBatch(batch) {
     try {
         console.log(`mergeBatch: merging ${batch.length} DIDs...`);
+        console.time('mergeBatch');
         const { verified, updated, failed } = await gatekeeper.mergeBatch(batch);
+        console.timeEnd('mergeBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
     catch (error) {

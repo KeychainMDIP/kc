@@ -1,11 +1,11 @@
 import { MongoClient } from 'mongodb';
+import config from './config.js';
 
-const url = 'mongodb://localhost:27017';
 let client;
 let db;
 
 export async function start(dbName = 'mdip') {
-    client = new MongoClient(url);
+    client = new MongoClient(config.mongodbUrl);
     await client.connect();
     db = client.db(dbName);
 }
