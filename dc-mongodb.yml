@@ -24,8 +24,6 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper
       - KC_GATEKEEPER_PORT=4224
-      - KC_GATEKEEPER_DB=mongodb
-      - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_NODE_NAME=${KC_NODE_NAME}
     volumes:
       - ./data:/app/data
