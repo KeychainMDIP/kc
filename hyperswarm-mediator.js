@@ -208,7 +208,6 @@ const topic = b4a.from(networkID, 'hex');
 
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log(`using ${config.gatekeeperDb} db`);
     console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
 
     setInterval(async () => {
