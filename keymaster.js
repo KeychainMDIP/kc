@@ -9,7 +9,6 @@ const defaultRegistry = 'hyperswarm';
 
 export async function start(gk) {
     gatekeeper = gk;
-    await gatekeeper.start();
 }
 
 export async function stop() {

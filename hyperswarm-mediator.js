@@ -2,7 +2,6 @@ import Hyperswarm from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
-import fs from 'fs';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 import * as gatekeeper from './gatekeeper-sdk.js';
@@ -11,12 +10,13 @@ import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.03.21';
-
+const protocol = '/MDIP/v22.04.10';
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
-goodbye(() => swarm.destroy())
+goodbye(() => {
+    swarm.destroy();
+});
 
 const nodes = {};
 const messagesSeen = {};
@@ -40,15 +40,16 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
-function loadDb() {
-    const dbName = 'data/mdip.json';
+async function fetchDids() {
+    const data = {};
+    const dids = await gatekeeper.getDIDs();
 
-    if (fs.existsSync(dbName)) {
-        return JSON.parse(fs.readFileSync(dbName));
+    for (const did of dids) {
+        //console.log(`fetching ${did}`);
+        data[did] = await gatekeeper.exportDID(did);
     }
-    else {
-        return {}
-    }
+
+    return data;
 }
 
 async function shareDb() {
@@ -57,19 +58,22 @@ async function shareDb() {
     }
 
     try {
-        const db = loadDb();
+        console.time('fetchDIDs');
+        const dids = await fetchDids();
+        console.timeEnd('fetchDIDs');
+        console.log(`${Object.keys(dids).length} DIDs fetched`);
 
-        if (isEmpty(db) || !db.hyperswarm || isEmpty(db.hyperswarm)) {
+        if (isEmpty(dids)) {
             return;
         }
 
-        const hash = cipher.hashJSON(db.hyperswarm);
+        const hash = cipher.hashJSON(dids);
 
         messagesSeen[hash] = true;
 
         const msg = {
             hash: hash.toString(),
-            data: db.hyperswarm,
+            data: dids,
             relays: [],
             node: config.nodeName,
         };
@@ -102,7 +106,9 @@ async function relayDb(msg) {
 async function mergeBatch(batch) {
     try {
         console.log(`mergeBatch: merging ${batch.length} DIDs...`);
+        console.time('mergeBatch');
         const { verified, updated, failed } = await gatekeeper.mergeBatch(batch);
+        console.timeEnd('mergeBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
     catch (error) {
@@ -119,7 +125,6 @@ async function mergeDb(db) {
 
         let batch = [];
         for (const did of dids) {
-            //console.log(`Adding to batch: ${did} ${db.hyperswarm[did][0].time}`);
             batch.push(db[did]);
 
             if (batch.length >= 100) {
@@ -202,7 +207,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function start() {
-    console.log(`hyperswarm peer id: ${shortName(peerName)}`);
+    console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
 
     setInterval(async () => {
@@ -216,7 +221,7 @@ async function start() {
         catch (error) {
             console.error(`Error: ${error}`);
         }
-    }, 10000);
+    }, 30000);
 }
 
 function main() {

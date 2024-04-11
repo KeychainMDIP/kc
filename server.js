@@ -2,11 +2,19 @@ import express from 'express';
 import morgan from 'morgan';
 import * as gatekeeper from './gatekeeper.js';
 import config from './config.js';
+import * as db_json from './db-json.js';
+import * as db_sqlite from './db-sqlite.js';
+import * as db_mongodb from './db-mongodb.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-gatekeeper.start();
+const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
+    : (config.gatekeeperDb === 'mongodb') ? db_mongodb
+        : db_json;
+
+await db.start();
+await gatekeeper.start(db);
 
 const app = express();
 const v1router = express.Router();
@@ -69,6 +77,16 @@ v1router.delete('/did/:did', async (req, res) => {
         const operation = req.body;
         const ok = await gatekeeper.deleteDID(operation);
         res.json(ok);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/did/', async (req, res) => {
+    try {
+        const dids = await gatekeeper.getDIDs();
+        res.json(dids);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -141,9 +159,10 @@ gatekeeper.verifyDb().then((invalid) => {
     }
 
     const port = config.gatekeeperPort;
+    const db = config.gatekeeperDb;
 
     app.listen(port, () => {
-        console.log(`Server is running on port ${port}`);
+        console.log(`Server is running on port ${port}, persisting with ${db}`);
         serverReady = true;
     });
 });
@@ -152,7 +171,7 @@ process.on('uncaughtException', () => {
     console.error('Unhandled exception caught');
 });
 
-process.on('unhandledRejection', () => {
-    console.error('Unhandled rejection caught');
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection caught', reason, promise);
 });
 

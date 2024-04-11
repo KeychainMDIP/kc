@@ -1,2 +1,4 @@
 *.json
+*.db
 ipfs/
+db/

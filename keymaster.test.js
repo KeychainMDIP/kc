@@ -1,11 +1,13 @@
-import fs from 'fs';
 import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
 import * as keymaster from './keymaster.js';
 import * as gatekeeper from './gatekeeper.js';
 import * as cipher from './cipher.js';
+import * as db_json from './db-json.js';
 
 beforeEach(async () => {
+    db_json.start('mdip');
+    await gatekeeper.start(db_json);
     await keymaster.start(gatekeeper);
 });
 
@@ -436,7 +438,7 @@ describe('rotateKeys', () => {
 
         const ops = await keymaster.exportDID(alice);
 
-        fs.rmSync(gatekeeper.dbName);
+        await gatekeeper.resetDb();
 
         const imported = await keymaster.importDID(ops);
 
@@ -1096,7 +1098,7 @@ describe('revokeCredential', () => {
         const userTxns = await keymaster.exportDID(userDid);
         const ops = await keymaster.exportDID(did);
 
-        fs.rmSync(gatekeeper.dbName);
+        await gatekeeper.resetDb();
 
         await keymaster.importDID(userTxns);
         const imported = await keymaster.importDID(ops);
