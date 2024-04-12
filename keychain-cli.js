@@ -612,6 +612,91 @@ program
         }
     });
 
+program
+    .command('create-schema <file> [name]')
+    .description('Create schema from a file')
+    .action(async (file, name) => {
+        try {
+            const schema = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createSchema(schema);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('create-template <schema>')
+    .description('Create a template from a schema')
+    .action(async (schema) => {
+        try {
+            const template = await keymaster.createTemplate(schema);
+            console.log(JSON.stringify(template, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-create <file>')
+    .description('Create poll')
+    .action(async (file) => {
+        try {
+            const poll = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createPoll(poll);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-view <poll>')
+    .description('View poll details')
+    .action(async (poll) => {
+        try {
+            const response = await keymaster.viewPoll(poll);
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-vote <poll> <vote>')
+    .description('Vote in a poll')
+    .action(async (poll, vote) => {
+        try {
+            const did = await keymaster.votePoll(poll, vote);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-add <poll> <ballot>')
+    .description('Add a ballot to the poll')
+    .action(async (poll, ballot) => {
+        try {
+            const response = await keymaster.addBallot(poll, ballot);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

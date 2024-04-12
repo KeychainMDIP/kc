@@ -873,3 +873,123 @@ export async function groupTest(group, member) {
     const isMember = data.members.includes(didMember);
     return isMember;
 }
+
+export async function createSchema(schema) {
+    try {
+        // Validate schema
+        JSONSchemaFaker.generate(schema);
+    }
+    catch {
+        throw "Invalid schema";
+    }
+
+    return createData(schema);
+}
+
+export async function createTemplate(did) {
+    const didSchema = lookupDID(did);
+    const schema = await resolveAsset(didSchema);
+    const template = JSONSchemaFaker.generate(schema);
+
+    template['$schema'] = didSchema;
+
+    return template;
+}
+
+export async function createPoll(poll) {
+    // TBD validate poll
+    return createData(poll);
+}
+
+export async function viewPoll(poll) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const data = doc.didDocumentData;
+
+    return {
+        description: data.description,
+        options: data.options,
+        deadline: data.deadline,
+        owner: (doc.didDocument.controller === id.did),
+        eligible: await groupTest(data.roster, id.did),
+        expired: (Date(data.deadline) > new Date()),
+    };
+}
+
+export async function votePoll(poll, vote) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const data = doc.didDocumentData;
+    const eligible = await groupTest(data.roster, id.did);
+    const expired = (Date(data.deadline) > new Date());
+    const owner = doc.didDocument.controller;
+
+    if (!eligible) {
+        throw "Not eligible to vote on this poll";
+    }
+
+    if (expired) {
+        throw "The deadline to vote has passed for this poll";
+    }
+
+    const ballot = {
+        poll,
+        vote
+    };
+
+    const didBallot = await encryptJSON(ballot, owner);
+
+    return didBallot;
+}
+
+export async function addBallot(poll, ballot) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const data = doc.didDocumentData;
+    const owner = doc.didDocument.controller;
+
+    if (id.did !== owner) {
+        throw "Only poll owners can add a ballot";
+    }
+
+    const didBallot = lookupDID(ballot);
+    const docBallot = await resolveDID(didBallot);
+    const voter = docBallot.didDocument.controller;
+    const eligible = await groupTest(data.roster, voter);
+    const expired = (Date(data.deadline) > new Date());
+
+    if (!eligible) {
+        throw "Voter not eligible to vote on this poll";
+    }
+
+    if (expired) {
+        throw "The deadline to vote has passed for this poll";
+    }
+
+    const dataBallot = await decryptJSON(didBallot);
+
+    if (!dataBallot.poll || !dataBallot.vote) {
+        throw "Invalid ballot";
+    }
+
+    if (dataBallot.poll !== didPoll) {
+        throw "Invalid ballot";
+    }
+
+    if (!data.ballots) {
+        data.ballots = {};
+    }
+
+    data.ballots[voter] = didBallot;
+
+    const ok = await updateDID(didPoll, doc);
+
+    if (!ok) {
+        throw "Error: poll update failed";
+    }
+
+    return "OK ballot accepted";
+}
