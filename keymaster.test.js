@@ -548,7 +548,7 @@ describe('resolveDID', () => {
             await keymaster.resolveDID('mock');
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe('Unknown DID');
         }
     });
 });
@@ -1448,11 +1448,11 @@ describe('unpublishCredential', () => {
         await keymaster.createId('Bob');
 
         try {
-            await keymaster.unpublishCredential('mock');
+            await keymaster.unpublishCredential('did:mdip:mock');
             throw 'Expected to throw an exception';
         }
         catch (error) {
-            expect(error).toBe('Error: credential mock not found in manifest');
+            expect(error).toBe('Error: credential did:mdip:mock not found in manifest');
         }
     });
 
