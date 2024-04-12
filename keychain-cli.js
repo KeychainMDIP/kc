@@ -559,6 +559,59 @@ program
         }
     });
 
+program
+    .command('create-group <name>')
+    .description('Create a new group')
+    .action(async (name) => {
+        try {
+            const did = await keymaster.createGroup(name);
+            console.log(did);
+            keymaster.addName(name, did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-add <group> <member>')
+    .description('Add a member to a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupAdd(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-remove <group> <member>')
+    .description('Remove a member from a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupRemove(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-test <group> <member>')
+    .description('Determine if a member is in a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupTest(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

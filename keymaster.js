@@ -504,6 +504,8 @@ export function lookupDID(name) {
             return wallet.ids[name].did;
         }
     }
+
+    throw "Unknown DID";
 }
 
 export async function createData(data, registry = defaultRegistry) {
@@ -800,4 +802,74 @@ export async function exportDID(did) {
 
 export async function importDID(ops) {
     return gatekeeper.importDID(ops);
+}
+
+export async function createGroup(name) {
+    const group = {
+        name: name,
+        members: []
+    };
+
+    return createData(group);
+}
+
+export async function groupAdd(group, member) {
+    const didGroup = lookupDID(group);
+    const didMember = lookupDID(member);
+    const doc = await resolveDID(didGroup);
+    const data = doc.didDocumentData;
+
+    if (!data.members) {
+        throw "Invalid group";
+    }
+
+    const members = new Set(data.members);
+    members.add(didMember);
+    data.members = Array.from(members);
+
+    const ok = await updateDID(didGroup, doc);
+
+    if (!ok) {
+        throw `Error: can't update ${group}`
+    }
+
+    return data;
+}
+
+export async function groupRemove(group, member) {
+    const didGroup = lookupDID(group);
+    const didMember = lookupDID(member);
+    const doc = await resolveDID(didGroup);
+    const data = doc.didDocumentData;
+
+    if (!data.members) {
+        throw "Invalid group";
+    }
+
+    const members = new Set(data.members);
+    members.delete(didMember);
+    data.members = Array.from(members);
+
+    const ok = await updateDID(didGroup, doc);
+
+    if (!ok) {
+        throw `Error: can't update ${group}`
+    }
+
+    return data;
+}
+
+export async function groupTest(group, member) {
+    const didGroup = lookupDID(group);
+    const didMember = lookupDID(member);
+    const doc = await resolveDID(didGroup);
+    const data = doc.didDocumentData;
+
+    if (!data.members) {
+        throw "Invalid group";
+    }
+
+    // TBD implement recursive test for groups within groups
+    const isMember = data.members.includes(didMember);
+    return isMember;
 }
