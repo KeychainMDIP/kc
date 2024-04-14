@@ -988,15 +988,64 @@ export async function viewPoll(poll) {
         hasVoted = !!data.ballots[id];
     }
 
-    return {
+    const voteExpired = Date(data.deadline) > new Date();
+    const isEligible = await groupTest(data.roster, id.did);
+
+    const view = {
         description: data.description,
         options: data.options,
         deadline: data.deadline,
         isOwner: (doc.didDocument.controller === id.did),
-        isEligible: await groupTest(data.roster, id.did),
-        voteExpired: (Date(data.deadline) > new Date()),
+        isEligible: isEligible,
+        voteExpired: voteExpired,
         hasVoted: hasVoted,
     };
+
+    if (id.did === doc.didDocument.controller) {
+        let voted = 0;
+
+        const results = {
+            tally: [],
+            ballots: [],
+        }
+
+        results.tally.push({
+            vote: 0,
+            option: 'spoil',
+            count: 0,
+        });
+
+        for (let i = 0; i < data.options.length; i++) {
+            results.tally.push({
+                vote: i + 1,
+                option: data.options[i],
+                count: 0,
+            });
+        }
+
+        for (let voter in data.ballots) {
+            const ballot = await decryptJSON(data.ballots[voter].ballot);
+            results.ballots.push({
+                voter: voter,
+                vote: ballot.vote,
+                received: data.ballots[voter].received,
+            });
+            voted += 1;
+            results.tally[ballot.vote].count += 1;
+        }
+
+        const roster = await resolveAsset(data.roster);
+        const total = roster.members.length;
+
+        results.votesEligible = total;
+        results.votesRecieved = voted;
+        results.votesPending = total - voted;
+        results.resultsFinal = voteExpired || (voted === total);
+
+        view.results = results;
+    }
+
+    return view;
 }
 
 export async function votePoll(poll, vote, spoil = false) {
@@ -1020,9 +1069,8 @@ export async function votePoll(poll, vote, spoil = false) {
 
     if (spoil) {
         ballot = {
-            poll: poll,
+            poll: didPoll,
             vote: 0,
-            option: 'spoil'
         };
     }
     else {
@@ -1034,9 +1082,8 @@ export async function votePoll(poll, vote, spoil = false) {
         }
 
         ballot = {
-            poll: poll,
+            poll: didPoll,
             vote: vote,
-            option: data.options[vote-1]
         };
     }
 
@@ -1072,19 +1119,25 @@ export async function addBallot(poll, ballot) {
 
     const dataBallot = await decryptJSON(didBallot);
 
-    if (!dataBallot.poll || !dataBallot.vote) {
-        throw "Invalid ballot";
+    if (!dataBallot.poll || dataBallot.poll !== didPoll) {
+        throw "Invalid ballot poll";
     }
 
-    if (dataBallot.poll !== didPoll) {
-        throw "Invalid ballot";
+    const max = data.options.length;
+    const vote = parseInt(dataBallot.vote);
+
+    if (!vote || vote < 0 || vote > max) {
+        throw "Invalid ballot vote";
     }
 
     if (!data.ballots) {
         data.ballots = {};
     }
 
-    data.ballots[voter] = didBallot;
+    data.ballots[voter] = {
+        ballot: didBallot,
+        received: new Date().toISOString(),
+    };
 
     const ok = await updateDID(didPoll, doc);
 
