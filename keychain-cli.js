@@ -677,7 +677,7 @@ program
     .action(async (file) => {
         try {
             const poll = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.pollCreate(poll);
+            const did = await keymaster.createPoll(poll);
             console.log(did);
         }
         catch (error) {
@@ -699,11 +699,11 @@ program
     });
 
 program
-    .command('poll-vote <poll> <vote>')
+    .command('poll-vote <poll> <vote> [spoil]')
     .description('Vote in a poll')
-    .action(async (poll, vote) => {
+    .action(async (poll, vote, spoil) => {
         try {
-            const did = await keymaster.votePoll(poll, vote);
+            const did = await keymaster.votePoll(poll, vote, spoil);
             console.log(did);
         }
         catch (error) {

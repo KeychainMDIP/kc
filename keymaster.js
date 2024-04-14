@@ -930,7 +930,7 @@ export async function pollTemplate() {
     };
 }
 
-export async function pollCreate(poll) {
+export async function createPoll(poll) {
     if (poll.type !== 'poll') {
         throw "Invalid poll type";
     }
@@ -999,7 +999,7 @@ export async function viewPoll(poll) {
     };
 }
 
-export async function votePoll(poll, vote) {
+export async function votePoll(poll, vote, spoil = false) {
     const id = getCurrentId();
     const didPoll = lookupDID(poll);
     const doc = await resolveDID(didPoll);
@@ -1016,10 +1016,29 @@ export async function votePoll(poll, vote) {
         throw "The deadline to vote has passed for this poll";
     }
 
-    const ballot = {
-        poll,
-        vote
-    };
+    let ballot;
+
+    if (spoil) {
+        ballot = {
+            poll: poll,
+            vote: 0,
+            option: 'spoil'
+        };
+    }
+    else {
+        const max = data.options.length;
+        vote = parseInt(vote);
+
+        if (!Number.isInteger(vote) || vote < 1 || vote > max) {
+            return `Vote must be a number between 1 and ${max}`;
+        }
+
+        ballot = {
+            poll: poll,
+            vote: vote,
+            option: data.options[vote-1]
+        };
+    }
 
     const didBallot = await encryptJSON(ballot, owner);
 
