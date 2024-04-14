@@ -804,7 +804,7 @@ export async function importDID(ops) {
     return gatekeeper.importDID(ops);
 }
 
-export async function createGroup(name) {
+export async function groupCreate(name) {
     const group = {
         name: name,
         members: []
@@ -861,17 +861,36 @@ export async function groupRemove(group, member) {
 
 export async function groupTest(group, member) {
     const didGroup = lookupDID(group);
-    const didMember = lookupDID(member);
-    const doc = await resolveDID(didGroup);
-    const data = doc.didDocumentData;
 
-    if (!data.members) {
-        throw "Invalid group";
+    if (!didGroup) {
+        return false;
     }
 
-    // TBD implement recursive test for groups within groups
-    const isMember = data.members.includes(didMember);
-    return isMember;
+    const doc = await resolveDID(didGroup);
+
+    if (!doc) {
+        return false;
+    }
+
+    const data = doc.didDocumentData;
+
+    if (!data) {
+        return false;
+    }
+
+    // Check if data.members is an array
+    if (!Array.isArray(data.members)) {
+        return false;
+    }
+
+    if (member) {
+        const didMember = lookupDID(member);
+        // TBD implement recursive test for groups within groups
+        const isMember = data.members.includes(didMember);
+        return isMember;
+    }
+
+    return true;
 }
 
 export async function createSchema(schema) {
@@ -896,7 +915,63 @@ export async function createTemplate(did) {
     return template;
 }
 
-export async function createPoll(poll) {
+export async function pollTemplate() {
+    const now = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(now.getDate() + 7);
+
+    return {
+        type: 'poll',
+        version: 1,
+        description: 'What is this poll about?',
+        roster: 'DID of the eligible voter group',
+        options: ['yes', 'no', 'abstain'],
+        deadline: nextWeek.toISOString(),
+    };
+}
+
+export async function pollCreate(poll) {
+    if (poll.type !== 'poll') {
+        throw "Invalid poll type";
+    }
+
+    if (poll.version !== 1) {
+        throw "Invalid poll version";
+    }
+
+    if (!poll.description) {
+        throw "Invalid poll description";
+    }
+
+    if (!poll.options || poll.options.length < 2 || poll.options.length > 10) {
+        throw "Invalid poll options";
+    }
+
+    if (!poll.roster) {
+        throw "Invalid poll roster";
+    }
+
+    try {
+        const isValidGroup = await groupTest(poll.roster);
+
+        if (!isValidGroup) {
+            throw "Invalid poll roster";
+        }
+    }
+    catch {
+        throw "Invalid poll roster";
+    }
+
+    if (!poll.deadline) {
+        throw "Invalid poll deadline";
+    }
+
+    const deadline = new Date(poll.deadline);
+
+    if (deadline < new Date()) {
+        throw "Invalid poll deadline";
+    }
+
     // TBD validate poll
     return createData(poll);
 }
@@ -907,13 +982,20 @@ export async function viewPoll(poll) {
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
 
+    let hasVoted = false;
+
+    if (data.ballots) {
+        hasVoted = !!data.ballots[id];
+    }
+
     return {
         description: data.description,
         options: data.options,
         deadline: data.deadline,
-        owner: (doc.didDocument.controller === id.did),
-        eligible: await groupTest(data.roster, id.did),
-        expired: (Date(data.deadline) > new Date()),
+        isOwner: (doc.didDocument.controller === id.did),
+        isEligible: await groupTest(data.roster, id.did),
+        voteExpired: (Date(data.deadline) > new Date()),
+        hasVoted: hasVoted,
     };
 }
 

@@ -560,11 +560,11 @@ program
     });
 
 program
-    .command('create-group <name>')
+    .command('group-create <name>')
     .description('Create a new group')
     .action(async (name) => {
         try {
-            const did = await keymaster.createGroup(name);
+            const did = await keymaster.groupCreate(name);
             console.log(did);
             keymaster.addName(name, did);
         }
@@ -600,7 +600,7 @@ program
     });
 
 program
-    .command('group-test <group> <member>')
+    .command('group-test <group> [member]')
     .description('Determine if a member is in a group')
     .action(async (group, member) => {
         try {
@@ -645,12 +645,39 @@ program
     });
 
 program
+    .command('create-asset <file>')
+    .description('Create an asset from a JSON file')
+    .action(async (file) => {
+        try {
+            const asset = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createAsset(asset);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-template')
+    .description('Generate a poll template')
+    .action(async () => {
+        try {
+            const template = await keymaster.pollTemplate();
+            console.log(JSON.stringify(template, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('poll-create <file>')
     .description('Create poll')
     .action(async (file) => {
         try {
             const poll = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createPoll(poll);
+            const did = await keymaster.pollCreate(poll);
             console.log(did);
         }
         catch (error) {
