@@ -486,6 +486,9 @@ export function removeName(name) {
 }
 
 export function lookupDID(name) {
+    if (!name) {
+        throw "Invalid DID";
+    }
 
     if (name.startsWith('did:mdip:')) {
         return name;
@@ -982,6 +985,10 @@ export async function viewPoll(poll) {
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
 
+    if (!data || !data.options || !data.deadline) {
+        throw "Invalid poll";
+    }
+
     let hasVoted = false;
 
     if (data.ballots) {
@@ -1024,23 +1031,28 @@ export async function viewPoll(poll) {
         }
 
         for (let voter in data.ballots) {
-            const ballot = await decryptJSON(data.ballots[voter].ballot);
+            const ballot = data.ballots[voter];
+            const decrypted = await decryptJSON(ballot.ballot);
+            const vote = decrypted.vote;
             results.ballots.push({
+                ...ballot,
                 voter: voter,
-                vote: ballot.vote,
-                received: data.ballots[voter].received,
+                vote: vote,
+                option: data.options[vote - 1],
             });
             voted += 1;
-            results.tally[ballot.vote].count += 1;
+            results.tally[vote].count += 1;
         }
 
         const roster = await resolveAsset(data.roster);
         const total = roster.members.length;
 
-        results.votesEligible = total;
-        results.votesRecieved = voted;
-        results.votesPending = total - voted;
-        results.resultsFinal = voteExpired || (voted === total);
+        results.votes = {
+            eligible: total,
+            received: voted,
+            pending: total - voted,
+        };
+        results.final = voteExpired || (voted === total);
 
         view.results = results;
     }
@@ -1146,4 +1158,56 @@ export async function addBallot(poll, ballot) {
     }
 
     return "OK ballot accepted";
+}
+
+export async function publishPoll(poll, reveal = false) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const owner = doc.didDocument.controller;
+
+    if (id.did !== owner) {
+        throw "Only poll owners can publish";
+    }
+
+    const view = await viewPoll(poll);
+
+    if (!view.results.final) {
+        throw "Poll can be published only when results are final";
+    }
+
+    if (!reveal) {
+        delete view.results.ballots;
+    }
+
+    doc.didDocumentData.results = view.results;
+
+    const ok = await updateDID(didPoll, doc);
+
+    if (!ok) {
+        throw "Error: poll update failed";
+    }
+
+    return "OK poll results published";
+}
+
+export async function unpublishPoll(poll) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const owner = doc.didDocument.controller;
+
+    if (id.did !== owner) {
+        throw "Only poll owners can unpublish";
+    }
+
+    delete doc.didDocumentData.results;
+
+    const ok = await updateDID(didPoll, doc);
+
+    if (!ok) {
+        throw "Error: poll update failed";
+    }
+
+    return "OK poll results removed";
 }

@@ -724,6 +724,45 @@ program
         }
     });
 
+program
+    .command('poll-publish <poll>')
+    .description('Publish results to poll manifest')
+    .action(async (poll) => {
+        try {
+            const response = await keymaster.publishPoll(poll);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-reveal <poll>')
+    .description('Reveal results to poll manifest')
+    .action(async (poll) => {
+        try {
+            const response = await keymaster.publishPoll(poll, true);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-unpublish <poll>')
+    .description('Removed results to poll manifest')
+    .action(async (poll) => {
+        try {
+            const response = await keymaster.unpublishPoll(poll);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);
