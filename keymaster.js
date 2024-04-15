@@ -119,12 +119,12 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did, registry = defaultRegistry) {
+export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDID(did);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+    const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
     const cipherDid = await createData({
@@ -150,7 +150,7 @@ export async function decrypt(did) {
     const doc = await resolveDID(crypt.sender, crypt.created);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
+    const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
 
     let index = id.index;
     while (index >= 0) {
@@ -992,7 +992,7 @@ export async function viewPoll(poll) {
     let hasVoted = false;
 
     if (data.ballots) {
-        hasVoted = !!data.ballots[id];
+        hasVoted = !!data.ballots[id.did];
     }
 
     const voteExpired = Date(data.deadline) > new Date();
@@ -1099,7 +1099,8 @@ export async function votePoll(poll, vote, spoil = false) {
         };
     }
 
-    const didBallot = await encryptJSON(ballot, owner);
+    // Encrypt for receiver only
+    const didBallot = await encryptJSON(ballot, owner, false);
 
     return didBallot;
 }

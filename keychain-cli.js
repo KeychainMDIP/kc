@@ -672,12 +672,17 @@ program
     });
 
 program
-    .command('poll-create <file>')
+    .command('poll-create <file> [name]')
     .description('Create poll')
-    .action(async (file) => {
+    .action(async (file, name) => {
         try {
             const poll = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.createPoll(poll);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
             console.log(did);
         }
         catch (error) {
@@ -726,7 +731,7 @@ program
 
 program
     .command('poll-publish <poll>')
-    .description('Publish results to poll manifest')
+    .description('Publish results to poll, hiding ballots')
     .action(async (poll) => {
         try {
             const response = await keymaster.publishPoll(poll);
@@ -739,7 +744,7 @@ program
 
 program
     .command('poll-reveal <poll>')
-    .description('Reveal results to poll manifest')
+    .description('Publish results to poll, revealing ballots')
     .action(async (poll) => {
         try {
             const response = await keymaster.publishPoll(poll, true);
@@ -752,7 +757,7 @@ program
 
 program
     .command('poll-unpublish <poll>')
-    .description('Removed results to poll manifest')
+    .description('Remove results from poll')
     .action(async (poll) => {
         try {
             const response = await keymaster.unpublishPoll(poll);
