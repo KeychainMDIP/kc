@@ -2015,3 +2015,139 @@ describe('pollTemplate', () => {
         expect(template).toStrictEqual(expectedTemplate);
     });
 });
+
+describe('createPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a poll from a valid template', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createPoll(template);
+        const data = await keymaster.resolveAsset(did);
+
+        expect(data).toStrictEqual(template);
+    });
+
+    it('should not create a poll from an invalid template', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.type = "wrong type";
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll type');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.version = 0;
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll version');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.description;
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll description');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.roster;
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll roster');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.options;
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = ['one option'];
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = "not a list";
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.deadline;
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.deadline = "not a date";
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+
+            const now = new Date();
+            const lastWeek = new Date();
+            lastWeek.setDate(now.getDate() - 7);
+
+            poll.deadline = lastWeek.toISOString();
+            await keymaster.createPoll(poll);
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+    });
+});
