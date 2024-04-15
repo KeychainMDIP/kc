@@ -1561,6 +1561,43 @@ describe('groupAdd', () => {
         }
     });
 
+    it('should add a DID to a group alias', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, groupDid);
+        const data = await keymaster.groupAdd(alias, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not add a DID member to an unknown group alias', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupAdd('mockAlias', dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+
     it('should add a member to the group only once', async () => {
         mockFs({});
 
@@ -1648,6 +1685,62 @@ describe('groupAdd', () => {
         }
         catch (error) {
             expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should not add a member to a non-group', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupAdd(null, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(100, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd([1, 2, 3], dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd({ name: 'mock' }, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(agentDid, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+
+        try {
+            await keymaster.groupAdd(dataDid, agentDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
         }
     });
 });
