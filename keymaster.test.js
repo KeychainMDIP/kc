@@ -2386,3 +2386,30 @@ describe('publishPoll', () => {
         });
     });
 });
+
+describe('unpublishPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove results from poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        await keymaster.publishPoll(pollDid);
+        const ok = await keymaster.unpublishPoll(pollDid);
+
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results).toBe(undefined);
+    });
+});
