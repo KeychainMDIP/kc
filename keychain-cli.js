@@ -721,8 +721,13 @@ program
     .description('Add a ballot to the poll')
     .action(async (ballot) => {
         try {
-            const response = await keymaster.updatePoll(ballot);
-            console.log(response);
+            const ok = await keymaster.updatePoll(ballot);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
         }
         catch (error) {
             console.error(error);
@@ -734,8 +739,13 @@ program
     .description('Publish results to poll, hiding ballots')
     .action(async (poll) => {
         try {
-            const response = await keymaster.publishPoll(poll);
-            console.log(response);
+            const ok = await keymaster.publishPoll(poll);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
         }
         catch (error) {
             console.error(error);
@@ -747,8 +757,13 @@ program
     .description('Publish results to poll, revealing ballots')
     .action(async (poll) => {
         try {
-            const response = await keymaster.publishPoll(poll, true);
-            console.log(response);
+            const ok = await keymaster.publishPoll(poll, true);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
         }
         catch (error) {
             console.error(error);
@@ -760,8 +775,13 @@ program
     .description('Remove results from poll')
     .action(async (poll) => {
         try {
-            const response = await keymaster.unpublishPoll(poll);
-            console.log(response);
+            const ok = await keymaster.unpublishPoll(poll);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
         }
         catch (error) {
             console.error(error);

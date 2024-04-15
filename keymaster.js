@@ -1174,10 +1174,6 @@ export async function updatePoll(ballot) {
 
     const ok = await updateDID(didPoll, docPoll);
 
-    if (!ok) {
-        throw "Error: poll update failed";
-    }
-
     return ok;
 }
 
@@ -1205,11 +1201,7 @@ export async function publishPoll(poll, reveal = false) {
 
     const ok = await updateDID(didPoll, doc);
 
-    if (!ok) {
-        throw "Error: poll update failed";
-    }
-
-    return "OK poll results published";
+    return ok;
 }
 
 export async function unpublishPoll(poll) {
@@ -1226,9 +1218,5 @@ export async function unpublishPoll(poll) {
 
     const ok = await updateDID(didPoll, doc);
 
-    if (!ok) {
-        throw "Error: poll update failed";
-    }
-
-    return "OK poll results removed";
+    return ok;
 }

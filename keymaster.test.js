@@ -2311,3 +2311,78 @@ describe('updatePoll', () => {
         }
     });
 });
+
+describe('publishPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should publish results to poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        const ok = await keymaster.publishPoll(pollDid);
+
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results.final).toBe(true);
+        expect(pollData.results.votes.eligible).toBe(1);
+        expect(pollData.results.votes.pending).toBe(0);
+        expect(pollData.results.votes.received).toBe(1);
+        expect(pollData.results.tally.length).toBe(4);
+        expect(pollData.results.tally[0]).toStrictEqual({
+            vote: 0,
+            option: 'spoil',
+            count: 0,
+        });
+        expect(pollData.results.tally[1]).toStrictEqual({
+            vote: 1,
+            option: 'yes',
+            count: 1,
+        });
+        expect(pollData.results.tally[2]).toStrictEqual({
+            vote: 2,
+            option: 'no',
+            count: 0,
+        });
+        expect(pollData.results.tally[3]).toStrictEqual({
+            vote: 3,
+            option: 'abstain',
+            count: 0,
+        });
+    });
+
+    it('should reveal results to poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        const ok = await keymaster.publishPoll(pollDid, true);
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results.ballots.length).toBe(1);
+        expect(pollData.results.ballots[0]).toStrictEqual({
+            ballot: ballotDid,
+            voter: bobDid,
+            vote: 1,
+            option: 'yes',
+            received: expect.any(String),
+        });
+    });
+});
