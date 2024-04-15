@@ -717,11 +717,11 @@ program
     });
 
 program
-    .command('poll-add <poll> <ballot>')
+    .command('poll-update <ballot>')
     .description('Add a ballot to the poll')
-    .action(async (poll, ballot) => {
+    .action(async (ballot) => {
         try {
-            const response = await keymaster.addBallot(poll, ballot);
+            const response = await keymaster.updatePoll(ballot);
             console.log(response);
         }
         catch (error) {

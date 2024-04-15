@@ -2050,6 +2050,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.type = "wrong type";
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll type');
@@ -2059,6 +2060,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.version = 0;
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll version');
@@ -2068,6 +2070,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.description;
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll description');
@@ -2077,6 +2080,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.roster;
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll roster');
@@ -2086,6 +2090,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.options;
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll options');
@@ -2095,6 +2100,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = ['one option'];
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll options');
@@ -2104,6 +2110,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll options');
@@ -2113,6 +2120,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = "not a list";
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll options');
@@ -2122,6 +2130,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.deadline;
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll deadline');
@@ -2131,6 +2140,7 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.deadline = "not a date";
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll deadline');
@@ -2145,9 +2155,159 @@ describe('createPoll', () => {
 
             poll.deadline = lastWeek.toISOString();
             await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Invalid poll deadline');
+        }
+    });
+});
+
+describe('viewPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a valid view from a new poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createPoll(template);
+        const view = await keymaster.viewPoll(did);
+
+        expect(view.deadline).toBe(template.deadline);
+        expect(view.description).toBe(template.description);
+        expect(view.options).toStrictEqual(template.options);
+        expect(view.hasVoted).toBe(false);
+        expect(view.isEligible).toBe(true);
+        expect(view.isOwner).toBe(true);
+        expect(view.voteExpired).toBe(false);
+        expect(view.results.ballots).toStrictEqual([]);
+        expect(view.results.tally.length).toBe(4);
+        expect(view.results.votes.eligible).toBe(1);
+        expect(view.results.votes.pending).toBe(1);
+        expect(view.results.votes.received).toBe(0);
+        expect(view.results.final).toBe(false);
+    });
+});
+
+describe('votePoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a valid ballot', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        const ballot = await keymaster.decryptJSON(ballotDid);
+
+        const expectedBallot = {
+            poll: pollDid,
+            vote: 1,
+        };
+
+        expect(ballot).toStrictEqual(expectedBallot);
+    });
+
+    it('should not return a ballot for an invalid vote', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.votePoll(pollDid, 5);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Vote must be a number between 1 and 3');
+        }
+    });
+
+    it('should not return a ballot for an ineligiblew voter', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.votePoll(pollDid, 5);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Not eligible to vote on this poll');
+        }
+    });
+});
+
+describe('updatePoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update poll with valid ballot', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+
+        const ok = await keymaster.updatePoll(ballotDid);
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.ballots[bobDid].ballot).toBe(ballotDid);
+    });
+
+    it('should reject non-ballots', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.updatePoll(pollDid)
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid ballot');
         }
     });
 });
