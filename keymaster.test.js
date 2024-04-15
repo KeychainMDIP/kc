@@ -1929,3 +1929,65 @@ describe('groupRemove', () => {
         }
     });
 });
+
+describe('groupTest', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true when member in group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const test = await keymaster.groupTest(groupDid, dataDid);
+
+        expect(test).toBe(true);
+    });
+
+    it('should return false when member not in group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const test = await keymaster.groupTest(groupDid, dataDid);
+
+        expect(test).toBe(false);
+    });
+
+    it('should return true when testing group only', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        const test = await keymaster.groupTest(groupDid);
+
+        expect(test).toBe(true);
+    });
+
+    it('should return false when testing non-group only', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const test = await keymaster.groupTest(dataDid);
+
+        expect(test).toBe(false);
+    });
+
+    // TBD test recursive groups
+});
