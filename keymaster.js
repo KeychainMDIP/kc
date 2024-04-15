@@ -845,13 +845,16 @@ export async function groupAdd(group, member) {
 
 export async function groupRemove(group, member) {
     const didGroup = lookupDID(group);
-    const didMember = lookupDID(member);
     const doc = await resolveDID(didGroup);
     const data = doc.didDocumentData;
 
     if (!data.members) {
         throw "Invalid group";
     }
+
+    const didMember = lookupDID(member);
+    // test for valid member DID
+    await resolveDID(didMember);
 
     const members = new Set(data.members);
     members.delete(didMember);

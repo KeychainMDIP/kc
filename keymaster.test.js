@@ -1743,4 +1743,189 @@ describe('groupAdd', () => {
             expect(error).toBe('Invalid group');
         }
     });
+
+    // TBD should not be able to add a group to itself
+
+    // TBD should not be able to create groups that contain themselves
+});
+
+describe('groupRemove', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove a DID member from a group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const data = await keymaster.groupRemove(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should remove a DID alias from a group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, dataDid);
+
+        const data = await keymaster.groupRemove(groupDid, alias);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should be OK to remove a DID that is not in the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const data = await keymaster.groupRemove(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not remove a non-DID from the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupRemove(groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, 100);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, [1, 2, 3]);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, { name: 'mock' });
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, 'did:mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should not remove a member from a non-group', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupRemove();
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(null, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(100, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove([1, 2, 3], dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove({ name: 'mock' }, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(agentDid, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+
+        try {
+            await keymaster.groupRemove(dataDid, agentDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+    });
 });
