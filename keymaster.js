@@ -119,12 +119,12 @@ function currentKeyPair() {
     return keypair;
 }
 
-export async function encrypt(msg, did, registry = defaultRegistry) {
+export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = getCurrentId();
     const keypair = currentKeyPair();
     const doc = await resolveDID(did);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+    const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
     const cipherDid = await createData({
@@ -150,7 +150,7 @@ export async function decrypt(did) {
     const doc = await resolveDID(crypt.sender, crypt.created);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const ciphertext = (crypt.sender === id.did) ? crypt.cipher_sender : crypt.cipher_receiver;
+    const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
 
     let index = id.index;
     while (index >= 0) {
@@ -486,9 +486,13 @@ export function removeName(name) {
 }
 
 export function lookupDID(name) {
-
-    if (name.startsWith('did:mdip:')) {
-        return name;
+    try {
+        if (name.startsWith('did:')) {
+            return name;
+        }
+    }
+    catch {
+        throw "Invalid DID";
     }
 
     const wallet = loadWallet();
@@ -504,6 +508,8 @@ export function lookupDID(name) {
             return wallet.ids[name].did;
         }
     }
+
+    throw "Unknown DID";
 }
 
 export async function createData(data, registry = defaultRegistry) {
@@ -800,4 +806,417 @@ export async function exportDID(did) {
 
 export async function importDID(ops) {
     return gatekeeper.importDID(ops);
+}
+
+export async function createGroup(name) {
+    const group = {
+        name: name,
+        members: []
+    };
+
+    return createData(group);
+}
+
+export async function groupAdd(group, member) {
+    const didGroup = lookupDID(group);
+    const doc = await resolveDID(didGroup);
+    const data = doc.didDocumentData;
+
+    if (!data.members) {
+        throw "Invalid group";
+    }
+
+    const didMember = lookupDID(member);
+    // test for valid member DID
+    await resolveDID(didMember);
+
+    const members = new Set(data.members);
+    members.add(didMember);
+    data.members = Array.from(members);
+
+    const ok = await updateDID(didGroup, doc);
+
+    if (!ok) {
+        throw `Error: can't update ${group}`
+    }
+
+    return data;
+}
+
+export async function groupRemove(group, member) {
+    const didGroup = lookupDID(group);
+    const doc = await resolveDID(didGroup);
+    const data = doc.didDocumentData;
+
+    if (!data.members) {
+        throw "Invalid group";
+    }
+
+    const didMember = lookupDID(member);
+    // test for valid member DID
+    await resolveDID(didMember);
+
+    const members = new Set(data.members);
+    members.delete(didMember);
+    data.members = Array.from(members);
+
+    const ok = await updateDID(didGroup, doc);
+
+    if (!ok) {
+        throw `Error: can't update ${group}`
+    }
+
+    return data;
+}
+
+export async function groupTest(group, member) {
+    const didGroup = lookupDID(group);
+
+    if (!didGroup) {
+        return false;
+    }
+
+    const doc = await resolveDID(didGroup);
+
+    if (!doc) {
+        return false;
+    }
+
+    const data = doc.didDocumentData;
+
+    if (!data) {
+        return false;
+    }
+
+    // Check if data.members is an array
+    if (!Array.isArray(data.members)) {
+        return false;
+    }
+
+    if (member) {
+        const didMember = lookupDID(member);
+        // TBD implement recursive test for groups within groups
+        const isMember = data.members.includes(didMember);
+        return isMember;
+    }
+
+    return true;
+}
+
+export async function createSchema(schema) {
+    try {
+        // Validate schema
+        JSONSchemaFaker.generate(schema);
+    }
+    catch {
+        throw "Invalid schema";
+    }
+
+    return createData(schema);
+}
+
+export async function createTemplate(did) {
+    const didSchema = lookupDID(did);
+    const schema = await resolveAsset(didSchema);
+    const template = JSONSchemaFaker.generate(schema);
+
+    template['$schema'] = didSchema;
+
+    return template;
+}
+
+export async function pollTemplate() {
+    const now = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(now.getDate() + 7);
+
+    return {
+        type: 'poll',
+        version: 1,
+        description: 'What is this poll about?',
+        roster: 'DID of the eligible voter group',
+        options: ['yes', 'no', 'abstain'],
+        deadline: nextWeek.toISOString(),
+    };
+}
+
+export async function createPoll(poll) {
+    if (poll.type !== 'poll') {
+        throw "Invalid poll type";
+    }
+
+    if (poll.version !== 1) {
+        throw "Invalid poll version";
+    }
+
+    if (!poll.description) {
+        throw "Invalid poll description";
+    }
+
+    if (!poll.options || !Array.isArray(poll.options) || poll.options.length < 2 || poll.options.length > 10) {
+        throw "Invalid poll options";
+    }
+
+    if (!poll.roster) {
+        throw "Invalid poll roster";
+    }
+
+    try {
+        const isValidGroup = await groupTest(poll.roster);
+
+        if (!isValidGroup) {
+            throw "Invalid poll roster";
+        }
+    }
+    catch {
+        throw "Invalid poll roster";
+    }
+
+    if (!poll.deadline) {
+        throw "Invalid poll deadline";
+    }
+
+    const deadline = new Date(poll.deadline);
+
+    if (isNaN(deadline.getTime())) {
+        throw "Invalid poll deadline";
+    }
+
+    if (deadline < new Date()) {
+        throw "Invalid poll deadline";
+    }
+
+    // TBD validate poll
+    return createData(poll);
+}
+
+export async function viewPoll(poll) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const data = doc.didDocumentData;
+
+    if (!data || !data.options || !data.deadline) {
+        throw "Invalid poll";
+    }
+
+    let hasVoted = false;
+
+    if (data.ballots) {
+        hasVoted = !!data.ballots[id.did];
+    }
+
+    const voteExpired = Date(data.deadline) > new Date();
+    const isEligible = await groupTest(data.roster, id.did);
+
+    const view = {
+        description: data.description,
+        options: data.options,
+        deadline: data.deadline,
+        isOwner: (doc.didDocument.controller === id.did),
+        isEligible: isEligible,
+        voteExpired: voteExpired,
+        hasVoted: hasVoted,
+    };
+
+    if (id.did === doc.didDocument.controller) {
+        let voted = 0;
+
+        const results = {
+            tally: [],
+            ballots: [],
+        }
+
+        results.tally.push({
+            vote: 0,
+            option: 'spoil',
+            count: 0,
+        });
+
+        for (let i = 0; i < data.options.length; i++) {
+            results.tally.push({
+                vote: i + 1,
+                option: data.options[i],
+                count: 0,
+            });
+        }
+
+        for (let voter in data.ballots) {
+            const ballot = data.ballots[voter];
+            const decrypted = await decryptJSON(ballot.ballot);
+            const vote = decrypted.vote;
+            results.ballots.push({
+                ...ballot,
+                voter: voter,
+                vote: vote,
+                option: data.options[vote - 1],
+            });
+            voted += 1;
+            results.tally[vote].count += 1;
+        }
+
+        const roster = await resolveAsset(data.roster);
+        const total = roster.members.length;
+
+        results.votes = {
+            eligible: total,
+            received: voted,
+            pending: total - voted,
+        };
+        results.final = voteExpired || (voted === total);
+
+        view.results = results;
+    }
+
+    return view;
+}
+
+export async function votePoll(poll, vote, spoil = false) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const data = doc.didDocumentData;
+    const eligible = await groupTest(data.roster, id.did);
+    const expired = (Date(data.deadline) > new Date());
+    const owner = doc.didDocument.controller;
+
+    if (!eligible) {
+        throw "Not eligible to vote on this poll";
+    }
+
+    if (expired) {
+        throw "The deadline to vote has passed for this poll";
+    }
+
+    let ballot;
+
+    if (spoil) {
+        ballot = {
+            poll: didPoll,
+            vote: 0,
+        };
+    }
+    else {
+        const max = data.options.length;
+        vote = parseInt(vote);
+
+        if (!Number.isInteger(vote) || vote < 1 || vote > max) {
+            throw `Vote must be a number between 1 and ${max}`;
+        }
+
+        ballot = {
+            poll: didPoll,
+            vote: vote,
+        };
+    }
+
+    // Encrypt for receiver only
+    const didBallot = await encryptJSON(ballot, owner, false);
+
+    return didBallot;
+}
+
+export async function updatePoll(ballot) {
+    const id = getCurrentId();
+
+    const didBallot = lookupDID(ballot);
+    const docBallot = await resolveDID(didBallot);
+    const didVoter = docBallot.didDocument.controller;
+    let dataBallot;
+
+    try {
+        dataBallot = await decryptJSON(didBallot);
+
+        if (!dataBallot.poll || !dataBallot.vote) {
+            throw "Invalid ballot";
+        }
+    }
+    catch {
+        throw "Invalid ballot";
+    }
+
+    const didPoll = lookupDID(dataBallot.poll);
+    const docPoll = await resolveDID(didPoll);
+    const dataPoll = docPoll.didDocumentData;
+    const didOwner = docPoll.didDocument.controller;
+
+    if (id.did !== didOwner) {
+        throw "Only poll owners can add a ballot";
+    }
+
+    const eligible = await groupTest(dataPoll.roster, didVoter);
+
+    if (!eligible) {
+        throw "Voter not eligible to vote on this poll";
+    }
+
+    const expired = (Date(dataPoll.deadline) > new Date());
+
+    if (expired) {
+        throw "The deadline to vote has passed for this poll";
+    }
+
+    const max = dataPoll.options.length;
+    const vote = parseInt(dataBallot.vote);
+
+    if (!vote || vote < 0 || vote > max) {
+        throw "Invalid ballot vote";
+    }
+
+    if (!dataPoll.ballots) {
+        dataPoll.ballots = {};
+    }
+
+    dataPoll.ballots[didVoter] = {
+        ballot: didBallot,
+        received: new Date().toISOString(),
+    };
+
+    const ok = await updateDID(didPoll, docPoll);
+
+    return ok;
+}
+
+export async function publishPoll(poll, reveal = false) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const owner = doc.didDocument.controller;
+
+    if (id.did !== owner) {
+        throw "Only poll owners can publish";
+    }
+
+    const view = await viewPoll(poll);
+
+    if (!view.results.final) {
+        throw "Poll can be published only when results are final";
+    }
+
+    if (!reveal) {
+        delete view.results.ballots;
+    }
+
+    doc.didDocumentData.results = view.results;
+
+    const ok = await updateDID(didPoll, doc);
+
+    return ok;
+}
+
+export async function unpublishPoll(poll) {
+    const id = getCurrentId();
+    const didPoll = lookupDID(poll);
+    const doc = await resolveDID(didPoll);
+    const owner = doc.didDocument.controller;
+
+    if (id.did !== owner) {
+        throw "Only poll owners can unpublish";
+    }
+
+    delete doc.didDocumentData.results;
+
+    const ok = await updateDID(didPoll, doc);
+
+    return ok;
 }

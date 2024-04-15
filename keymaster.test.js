@@ -548,7 +548,7 @@ describe('resolveDID', () => {
             await keymaster.resolveDID('mock');
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe('Unknown DID');
         }
     });
 });
@@ -1448,11 +1448,11 @@ describe('unpublishCredential', () => {
         await keymaster.createId('Bob');
 
         try {
-            await keymaster.unpublishCredential('mock');
+            await keymaster.unpublishCredential('did:mdip:mock');
             throw 'Expected to throw an exception';
         }
         catch (error) {
-            expect(error).toBe('Error: credential mock not found in manifest');
+            expect(error).toBe('Error: credential did:mdip:mock not found in manifest');
         }
     });
 
@@ -1471,5 +1471,945 @@ describe('unpublishCredential', () => {
         catch (error) {
             expect(error).toBe(`Error: credential ${did} not found in manifest`);
         }
+    });
+});
+
+describe('createGroup', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a new named group', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const doc = await keymaster.resolveDID(groupDid);
+
+        expect(doc.didDocument.id).toBe(groupDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedGroup);
+    });
+});
+
+describe('groupAdd', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should add a DID member to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        const data = await keymaster.groupAdd(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should add a DID alias to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, dataDid);
+        const data = await keymaster.groupAdd(groupDid, alias);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not add an unknown DID alias to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupAdd(groupDid, 'mockAlias');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+
+    it('should add a DID to a group alias', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, groupDid);
+        const data = await keymaster.groupAdd(alias, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not add a DID member to an unknown group alias', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupAdd('mockAlias', dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+
+    it('should add a member to the group only once', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const data = await keymaster.groupAdd(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should add multiple members to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const memberCount = 5;
+
+        for (let i = 0; i < memberCount; i++) {
+            const mockAnchor = { name: `mock-${i}` };
+            const dataDid = await keymaster.createData(mockAnchor);
+            await keymaster.groupAdd(groupDid, dataDid);
+        }
+
+        const data = await keymaster.resolveAsset(groupDid);
+
+        expect(data.members.length).toBe(memberCount);
+    });
+
+    it('should not add a non-DID to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupAdd(groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, 100);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, [1, 2, 3]);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, { name: 'mock' });
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, 'did:mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should not add a member to a non-group', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupAdd(null, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(100, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd([1, 2, 3], dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd({ name: 'mock' }, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(agentDid, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+
+        try {
+            await keymaster.groupAdd(dataDid, agentDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+    });
+
+    // TBD should not be able to add a group to itself
+
+    // TBD should not be able to create groups that contain themselves
+});
+
+describe('groupRemove', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove a DID member from a group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const data = await keymaster.groupRemove(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should remove a DID alias from a group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, dataDid);
+
+        const data = await keymaster.groupRemove(groupDid, alias);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should be OK to remove a DID that is not in the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const data = await keymaster.groupRemove(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not remove a non-DID from the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupRemove(groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, 100);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, [1, 2, 3]);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, { name: 'mock' });
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(groupDid, 'did:mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should not remove a member from a non-group', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        try {
+            await keymaster.groupRemove();
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(null, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(100, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove([1, 2, 3], dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove({ name: 'mock' }, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupRemove(agentDid, dataDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+
+        try {
+            await keymaster.groupRemove(dataDid, agentDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+    });
+});
+
+describe('groupTest', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true when member in group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const test = await keymaster.groupTest(groupDid, dataDid);
+
+        expect(test).toBe(true);
+    });
+
+    it('should return false when member not in group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const test = await keymaster.groupTest(groupDid, dataDid);
+
+        expect(test).toBe(false);
+    });
+
+    it('should return true when testing group only', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        const test = await keymaster.groupTest(groupDid);
+
+        expect(test).toBe(true);
+    });
+
+    it('should return false when testing non-group only', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const test = await keymaster.groupTest(dataDid);
+
+        expect(test).toBe(false);
+    });
+
+    // TBD test recursive groups
+});
+
+describe('pollTemplate', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a poll template', async () => {
+        mockFs({});
+
+        const template = await keymaster.pollTemplate();
+
+        const expectedTemplate = {
+            type: 'poll',
+            version: 1,
+            description: 'What is this poll about?',
+            roster: 'DID of the eligible voter group',
+            options: ['yes', 'no', 'abstain'],
+            deadline: expect.any(String),
+        };
+
+        expect(template).toStrictEqual(expectedTemplate);
+    });
+});
+
+describe('createPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a poll from a valid template', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createPoll(template);
+        const data = await keymaster.resolveAsset(did);
+
+        expect(data).toStrictEqual(template);
+    });
+
+    it('should not create a poll from an invalid template', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.type = "wrong type";
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll type');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.version = 0;
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll version');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.description;
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll description');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.roster;
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll roster');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.options;
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = ['one option'];
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.options = "not a list";
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll options');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            delete poll.deadline;
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+            poll.deadline = "not a date";
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+
+            const now = new Date();
+            const lastWeek = new Date();
+            lastWeek.setDate(now.getDate() - 7);
+
+            poll.deadline = lastWeek.toISOString();
+            await keymaster.createPoll(poll);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid poll deadline');
+        }
+    });
+});
+
+describe('viewPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a valid view from a new poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createPoll(template);
+        const view = await keymaster.viewPoll(did);
+
+        expect(view.deadline).toBe(template.deadline);
+        expect(view.description).toBe(template.description);
+        expect(view.options).toStrictEqual(template.options);
+        expect(view.hasVoted).toBe(false);
+        expect(view.isEligible).toBe(true);
+        expect(view.isOwner).toBe(true);
+        expect(view.voteExpired).toBe(false);
+        expect(view.results.ballots).toStrictEqual([]);
+        expect(view.results.tally.length).toBe(4);
+        expect(view.results.votes.eligible).toBe(1);
+        expect(view.results.votes.pending).toBe(1);
+        expect(view.results.votes.received).toBe(0);
+        expect(view.results.final).toBe(false);
+    });
+});
+
+describe('votePoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a valid ballot', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        const ballot = await keymaster.decryptJSON(ballotDid);
+
+        const expectedBallot = {
+            poll: pollDid,
+            vote: 1,
+        };
+
+        expect(ballot).toStrictEqual(expectedBallot);
+    });
+
+    it('should not return a ballot for an invalid vote', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.votePoll(pollDid, 5);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Vote must be a number between 1 and 3');
+        }
+    });
+
+    it('should not return a ballot for an ineligiblew voter', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.votePoll(pollDid, 5);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Not eligible to vote on this poll');
+        }
+    });
+});
+
+describe('updatePoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update poll with valid ballot', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+
+        const ok = await keymaster.updatePoll(ballotDid);
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.ballots[bobDid].ballot).toBe(ballotDid);
+    });
+
+    it('should reject non-ballots', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+
+        try {
+            await keymaster.updatePoll(pollDid)
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid ballot');
+        }
+    });
+});
+
+describe('publishPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should publish results to poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        const ok = await keymaster.publishPoll(pollDid);
+
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results.final).toBe(true);
+        expect(pollData.results.votes.eligible).toBe(1);
+        expect(pollData.results.votes.pending).toBe(0);
+        expect(pollData.results.votes.received).toBe(1);
+        expect(pollData.results.tally.length).toBe(4);
+        expect(pollData.results.tally[0]).toStrictEqual({
+            vote: 0,
+            option: 'spoil',
+            count: 0,
+        });
+        expect(pollData.results.tally[1]).toStrictEqual({
+            vote: 1,
+            option: 'yes',
+            count: 1,
+        });
+        expect(pollData.results.tally[2]).toStrictEqual({
+            vote: 2,
+            option: 'no',
+            count: 0,
+        });
+        expect(pollData.results.tally[3]).toStrictEqual({
+            vote: 3,
+            option: 'abstain',
+            count: 0,
+        });
+    });
+
+    it('should reveal results to poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        const ok = await keymaster.publishPoll(pollDid, true);
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results.ballots.length).toBe(1);
+        expect(pollData.results.ballots[0]).toStrictEqual({
+            ballot: ballotDid,
+            voter: bobDid,
+            vote: 1,
+            option: 'yes',
+            received: expect.any(String),
+        });
+    });
+});
+
+describe('unpublishPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove results from poll', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.groupAdd(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        await keymaster.publishPoll(pollDid);
+        const ok = await keymaster.unpublishPoll(pollDid);
+
+        const pollData = await keymaster.resolveAsset(pollDid);
+
+        expect(ok).toBe(true);
+        expect(pollData.results).toBe(undefined);
     });
 });

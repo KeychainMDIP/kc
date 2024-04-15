@@ -559,6 +559,235 @@ program
         }
     });
 
+program
+    .command('group-create <name>')
+    .description('Create a new group')
+    .action(async (name) => {
+        try {
+            const did = await keymaster.createGroup(name);
+            console.log(did);
+            keymaster.addName(name, did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-add <group> <member>')
+    .description('Add a member to a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupAdd(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-remove <group> <member>')
+    .description('Remove a member from a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupRemove(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('group-test <group> [member]')
+    .description('Determine if a member is in a group')
+    .action(async (group, member) => {
+        try {
+            const response = await keymaster.groupTest(group, member);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('create-schema <file> [name]')
+    .description('Create schema from a file')
+    .action(async (file, name) => {
+        try {
+            const schema = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createSchema(schema);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('create-template <schema>')
+    .description('Create a template from a schema')
+    .action(async (schema) => {
+        try {
+            const template = await keymaster.createTemplate(schema);
+            console.log(JSON.stringify(template, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('create-asset <file>')
+    .description('Create an asset from a JSON file')
+    .action(async (file) => {
+        try {
+            const asset = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createAsset(asset);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-template')
+    .description('Generate a poll template')
+    .action(async () => {
+        try {
+            const template = await keymaster.pollTemplate();
+            console.log(JSON.stringify(template, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-create <file> [name]')
+    .description('Create poll')
+    .action(async (file, name) => {
+        try {
+            const poll = JSON.parse(fs.readFileSync(file).toString());
+            const did = await keymaster.createPoll(poll);
+
+            if (name) {
+                keymaster.addName(name, did);
+            }
+
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-view <poll>')
+    .description('View poll details')
+    .action(async (poll) => {
+        try {
+            const response = await keymaster.viewPoll(poll);
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-vote <poll> <vote> [spoil]')
+    .description('Vote in a poll')
+    .action(async (poll, vote, spoil) => {
+        try {
+            const did = await keymaster.votePoll(poll, vote, spoil);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-update <ballot>')
+    .description('Add a ballot to the poll')
+    .action(async (ballot) => {
+        try {
+            const ok = await keymaster.updatePoll(ballot);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-publish <poll>')
+    .description('Publish results to poll, hiding ballots')
+    .action(async (poll) => {
+        try {
+            const ok = await keymaster.publishPoll(poll);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-reveal <poll>')
+    .description('Publish results to poll, revealing ballots')
+    .action(async (poll) => {
+        try {
+            const ok = await keymaster.publishPoll(poll, true);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('poll-unpublish <poll>')
+    .description('Remove results from poll')
+    .action(async (poll) => {
+        try {
+            const ok = await keymaster.unpublishPoll(poll);
+            if (ok) {
+                console.log("OK");
+            }
+            else {
+                console.log("Update failed");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);
