@@ -486,12 +486,13 @@ export function removeName(name) {
 }
 
 export function lookupDID(name) {
-    if (!name) {
-        throw "Invalid DID";
+    try {
+        if (name.startsWith('did:')) {
+            return name;
+        }
     }
-
-    if (name.startsWith('did:mdip:')) {
-        return name;
+    catch {
+        throw "Invalid DID";
     }
 
     const wallet = loadWallet();
@@ -807,7 +808,7 @@ export async function importDID(ops) {
     return gatekeeper.importDID(ops);
 }
 
-export async function groupCreate(name) {
+export async function createGroup(name) {
     const group = {
         name: name,
         members: []
@@ -818,13 +819,16 @@ export async function groupCreate(name) {
 
 export async function groupAdd(group, member) {
     const didGroup = lookupDID(group);
-    const didMember = lookupDID(member);
     const doc = await resolveDID(didGroup);
     const data = doc.didDocumentData;
 
     if (!data.members) {
         throw "Invalid group";
     }
+
+    const didMember = lookupDID(member);
+    // test for valid member DID
+    await resolveDID(didMember);
 
     const members = new Set(data.members);
     members.add(didMember);

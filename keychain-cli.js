@@ -564,7 +564,7 @@ program
     .description('Create a new group')
     .action(async (name) => {
         try {
-            const did = await keymaster.groupCreate(name);
+            const did = await keymaster.createGroup(name);
             console.log(did);
             keymaster.addName(name, did);
         }

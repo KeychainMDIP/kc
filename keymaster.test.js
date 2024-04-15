@@ -1473,3 +1473,181 @@ describe('unpublishCredential', () => {
         }
     });
 });
+
+describe('createGroup', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a new named group', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const doc = await keymaster.resolveDID(groupDid);
+
+        expect(doc.didDocument.id).toBe(groupDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [],
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedGroup);
+    });
+});
+
+describe('groupAdd', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should add a DID member to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+        const data = await keymaster.groupAdd(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should add a DID alias to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        const alias = 'mockAlias';
+        keymaster.addName(alias, dataDid);
+        const data = await keymaster.groupAdd(groupDid, alias);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not add an unknown DID alias to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupAdd(groupDid, 'mockAlias');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+
+    it('should add a member to the group only once', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createData(mockAnchor);
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.groupAdd(groupDid, dataDid);
+
+        const data = await keymaster.groupAdd(groupDid, dataDid);
+
+        const expectedGroup = {
+            name: groupName,
+            members: [dataDid],
+        };
+
+        expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should add multiple members to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const memberCount = 5;
+
+        for (let i = 0; i < memberCount; i++) {
+            const mockAnchor = { name: `mock-${i}` };
+            const dataDid = await keymaster.createData(mockAnchor);
+            await keymaster.groupAdd(groupDid, dataDid);
+        }
+
+        const data = await keymaster.resolveAsset(groupDid);
+
+        expect(data.members.length).toBe(memberCount);
+    });
+
+    it('should not add a non-DID to the group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+
+        try {
+            await keymaster.groupAdd(groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, 100);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, [1, 2, 3]);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, { name: 'mock' });
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await keymaster.groupAdd(groupDid, 'did:mock');
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+});
