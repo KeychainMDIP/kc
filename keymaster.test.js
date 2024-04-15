@@ -1991,3 +1991,27 @@ describe('groupTest', () => {
 
     // TBD test recursive groups
 });
+
+describe('pollTemplate', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return a poll template', async () => {
+        mockFs({});
+
+        const template = await keymaster.pollTemplate();
+
+        const expectedTemplate = {
+            type: 'poll',
+            version: 1,
+            description: 'What is this poll about?',
+            roster: 'DID of the eligible voter group',
+            options: ['yes', 'no', 'abstain'],
+            deadline: expect.any(String),
+        };
+
+        expect(template).toStrictEqual(expectedTemplate);
+    });
+});
