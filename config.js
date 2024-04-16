@@ -9,6 +9,10 @@ const config = {
     gatekeeperDb: process.env.KC_GATEKEEPER_DB || 'json',
     nodeName: process.env.KC_NODE_NAME || 'anon',
     mongodbUrl: process.env.KC_MONGODB_URL || 'mongodb://localhost:27017',
+    btcHost: process.env.KC_BTC_HOST || 'localhost',
+    btcPort: process.env.KC_BTC_PORT || 8332,
+    btcUser: process.env.KC_BTC_USER,
+    btcPass: process.env.KC_BTC_PASS,
 };
 
 export default config;
