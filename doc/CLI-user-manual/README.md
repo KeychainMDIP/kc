@@ -48,11 +48,23 @@ Commands:
   encrypt-file <file> <did>                   Encrypt a file for a DID
   encrypt-msg <msg> <did>                     Encrypt a message for a DID
   export-did <did>                            Export DID to file
+  group-add <group> <member>                  Add a member to a group
+  group-create <name>                         Create a new group
+  group-remove <group> <member>               Remove a member from a group
+  group-test <group> [member]                 Determine if a member is in a group
   help [command]                              display help for command
   import-did <file>                           Import DID from file
   import-wallet <recovery-phrase>             Create new wallet from a recovery phrase
   list-ids                                    List IDs and show current ID
   list-names                                  Lists names of DIDs
+  poll-create <file> [name]                   Create poll
+  poll-publish <poll>                         Publish results to poll, hiding ballots
+  poll-reveal <poll>                          Publish results to poll, revealing ballots
+  poll-template                               Generate a poll template
+  poll-unpublish <poll>                       Remove results from poll
+  poll-update <ballot>                        Add a ballot to the poll
+  poll-view <poll>                            View poll details
+  poll-vote <poll> <vote> [spoil]             Vote in a poll
   publish-credential <did>                    Publish the existence of a credential to the current user manifest
   recover-id <did>                            Recovers the ID from the DID
   recover-wallet <did>                        Recover wallet from encrypted DID
