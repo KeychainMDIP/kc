@@ -101,6 +101,19 @@ program
         }
     });
 
+program
+    .command('import-batch <batch>')
+    .description('Import a batch')
+    .action(async (registry, batch) => {
+        try {
+            const queue = await keymaster.resolveAsset(batch);
+            console.log(JSON.stringify(queue, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

@@ -3,7 +3,7 @@ import BtcClient from 'bitcoin-core';
 import config from './config.js';
 
 //const FIRST = 816793;
-const FIRST = 2587300;
+const FIRST = 2587350;
 
 const client = new BtcClient({
     network: 'testnet',
@@ -31,7 +31,7 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function fetchTransaction(height, index, txnid) {
+async function fetchTransaction(height, index, timestamp, txnid) {
     try {
         const txn = await client.getTransactionByHash(txnid);
         const asm = txn.vout[0].scriptPubKey.asm;
@@ -49,6 +49,7 @@ async function fetchTransaction(height, index, txnid) {
                 db.discovered.push({
                     height: height,
                     index: index,
+                    time: timestamp,
                     txnid: txnid,
                     did: textString,
                 });
@@ -65,16 +66,17 @@ async function fetchBlock(height, blockCount) {
     try {
         const blockHash = await client.getBlockHash(height);
         const block = await client.getBlock(blockHash);
+        const timestamp = new Date(block.time * 1000).toISOString();
 
         for (let i = 0; i < block.nTx; i++) {
             const txnid = block.tx[i];
             console.log(height, i, txnid);
-            await fetchTransaction(height, i, txnid);
+            await fetchTransaction(height, i, timestamp, txnid);
         }
 
         const db = loadDb();
         db.height = height;
-        db.time = new Date(block.time * 1000).toISOString();
+        db.time = timestamp;
         db.scanned = height - FIRST + 1;
         db.blockCount = blockCount;
         db.pending = blockCount - height;
@@ -106,7 +108,7 @@ async function sync() {
     }
 }
 
-async function createOpReturnTxn(opReturnData) {
+export async function createOpReturnTxn(opReturnData) {
     try {
         const utxos = await client.listUnspent();
         const utxo = utxos[0];
@@ -142,25 +144,6 @@ async function createOpReturnTxn(opReturnData) {
         console.error(`Error creating OP_RETURN transaction: ${error}`);
     }
 }
-
-async function fetchUtxos() {
-    try {
-        // Get the list of unspent transaction outputs (UTXOs)
-        const utxos = await client.listUnspent();
-
-        // Log the UTXOs
-        console.log(JSON.stringify(utxos, null, 4));
-
-        const feeEstimate = await client.estimateSmartFee(2);
-
-        // Log the estimated fee per kilobyte (in BTC)
-        console.log(feeEstimate.feerate);
-    } catch (error) {
-        console.error(`Error fetching UTXOs: ${error}`);
-    }
-}
-
-//fetchUtxos();
 
 sync();
 

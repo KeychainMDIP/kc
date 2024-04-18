@@ -372,7 +372,7 @@ export async function updateDID(operation, queue=true) {
         const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        if (queue) {
+        if (queue && registry !== 'hyperswarm') {
             await queueOperation(operation.did, registry, operation, operation.signature.signed);
         }
         else {
