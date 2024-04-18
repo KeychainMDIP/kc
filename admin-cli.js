@@ -1,6 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
+import * as keymaster from './keymaster.js';
 
 program
     .version('1.0.0')
@@ -58,8 +59,52 @@ program
         }
     });
 
+program
+    .command('create-batch <registry>')
+    .description('Create a batch for a registry')
+    .action(async (registry) => {
+        try {
+            const batch = await gatekeeper.getQueue(registry);
+            console.log(JSON.stringify(batch, null, 4));
+
+            if (batch.length > 0) {
+                const did = await keymaster.createData(batch);
+                console.log(did);
+            }
+            else {
+                console.log('empty batch');
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('clear-batch <registry> <batch>')
+    .description('Clear a batch from a registry')
+    .action(async (registry, batch) => {
+        try {
+            const queue = await keymaster.resolveAsset(batch);
+            console.log(JSON.stringify(queue, null, 4));
+            const ok = await gatekeeper.clearQueue(registry, queue);
+
+            if (ok) {
+                console.log("Batch cleared");
+            }
+            else {
+                console.log("Error: batch not cleared");
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
+    await keymaster.start(gatekeeper);
     program.parse(process.argv);
+    await keymaster.stop();
 }
 
 run();

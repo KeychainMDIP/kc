@@ -2,10 +2,11 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import config from './config.js';
 
-const FIRST = 816793;
+//const FIRST = 816793;
+const FIRST = 2587300;
 
 const client = new BtcClient({
-    network: 'mainnet',
+    network: 'testnet',
     username: config.btcUser,
     password: config.btcPass,
     host: config.btcHost,
@@ -39,7 +40,7 @@ async function fetchTransaction(height, index, txnid) {
             const hexString = asm.slice(10);
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
-            if (textString.startsWith('Qm')) {
+            if (textString.startsWith('did:mdip:')) {
                 console.log(txnid);
                 console.log(asm);
                 console.log(textString);
@@ -105,6 +106,62 @@ async function sync() {
     }
 }
 
-//fetchBlock(838932);
+async function createOpReturnTxn(opReturnData) {
+    try {
+        const utxos = await client.listUnspent();
+        const utxo = utxos[0];
+        const amountIn = utxo.amount;
+        const txnfee = 0.00010000;
+        const amountBack = amountIn - txnfee;
+
+        // Convert the OP_RETURN data to a hex string
+        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
+
+        // Fetch a new address for the transaction output
+        const address = await client.getNewAddress();
+
+        const rawTxn = await client.createRawTransaction([{
+            txid: utxo.txid,
+            vout: utxo.vout
+        }], {
+            data: opReturnHex,
+            [address]: amountBack.toFixed(8)
+        });
+
+        // Sign the raw transaction
+        const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+
+        console.log(JSON.stringify(signedTxn, null, 4));
+        console.log(amountBack);
+
+        // Broadcast the transaction
+        const txid = await client.sendRawTransaction(signedTxn.hex);
+
+        console.log(`Transaction broadcasted with txid: ${txid}`);
+    } catch (error) {
+        console.error(`Error creating OP_RETURN transaction: ${error}`);
+    }
+}
+
+async function fetchUtxos() {
+    try {
+        // Get the list of unspent transaction outputs (UTXOs)
+        const utxos = await client.listUnspent();
+
+        // Log the UTXOs
+        console.log(JSON.stringify(utxos, null, 4));
+
+        const feeEstimate = await client.estimateSmartFee(2);
+
+        // Log the estimated fee per kilobyte (in BTC)
+        console.log(feeEstimate.feerate);
+    } catch (error) {
+        console.error(`Error fetching UTXOs: ${error}`);
+    }
+}
+
+//fetchUtxos();
 
 sync();
+
+//createOpReturnTxn('did:mdip:test:z3v8AuaVMfPPDLy8kBQ8tJ4ytB5Kugbn9xd94ePgg9e199bEhuv');

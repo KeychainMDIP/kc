@@ -122,3 +122,23 @@ export async function mergeBatch(batch) {
         throwError(error);
     }
 }
+
+export async function getQueue(registry) {
+    try {
+        const response = await axios.get(`${URL}/api/v1/queue/${registry}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function clearQueue(registry, batch) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/queue/${registry}/clear`, batch);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}

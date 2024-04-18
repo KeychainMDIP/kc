@@ -7,7 +7,7 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm'];
+const validRegistries = ['local', 'hyperswarm', 'tBTC'];
 
 let db = null;
 let helia = null;
@@ -71,12 +71,25 @@ async function addOperation(did, registry, operation, time, ordinal = 0) {
     await db.addOperation(op);
 }
 
+async function queueOperation(did, registry, operation, time, ordinal = 0) {
+    const op = {
+        registry,
+        time,
+        ordinal,
+        did,
+        operation,
+    };
+
+    await db.queueOperation(op);
+}
+
 export async function generateDID(operation) {
     const did = await anchorSeed(operation);
     const ops = await exportDID(did);
 
     if (ops.length === 0) {
         await addOperation(did, operation.mdip.registry, operation, operation.created);
+        await queueOperation(did, operation.mdip.registry, operation, operation.created);
     }
 
     return did;
@@ -347,7 +360,7 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
     return doc;
 }
 
-export async function updateDID(operation) {
+export async function updateDID(operation, queue=true) {
     try {
         const doc = await resolveDID(operation.did);
         const updateValid = await verifyUpdate(operation, doc);
@@ -359,7 +372,12 @@ export async function updateDID(operation) {
         const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        await addOperation(operation.did, registry, operation, operation.signature.signed);
+        if (queue) {
+            await queueOperation(operation.did, registry, operation, operation.signature.signed);
+        }
+        else {
+            await addOperation(operation.did, registry, operation, operation.signature.signed);
+        }
         return true;
     }
     catch (error) {
@@ -414,7 +432,7 @@ export async function importDID(ops) {
         }
         else {
             // Add new updates
-            const ok = await updateDID(ops[i].operation);
+            const ok = await updateDID(ops[i].operation, false);
 
             if (!ok) {
                 throw "Invalid import";
@@ -456,4 +474,14 @@ export async function mergeBatch(batch) {
         updated: updated,
         failed: failed,
     };
+}
+
+export async function getQueue(registry) {
+    const queue = db.getQueue(registry);
+    return queue;
+}
+
+export async function clearQueue(registry, queue) {
+    const ok = db.clearQueue(registry, queue);
+    return ok;
 }
