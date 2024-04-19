@@ -361,7 +361,7 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
     return doc;
 }
 
-export async function updateDID(operation, queue=true) {
+export async function updateDID(operation, queue = true) {
     try {
         const doc = await resolveDID(operation.did);
         const updateValid = await verifyUpdate(operation, doc);
@@ -474,7 +474,8 @@ export async function importDIDs(batch) {
                 verified += 1;
             }
         }
-        catch {
+        catch (error) {
+            console.error(error);
             failed += 1;
         }
         console.timeEnd('importDID');

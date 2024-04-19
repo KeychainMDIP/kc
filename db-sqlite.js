@@ -63,7 +63,6 @@ export async function deleteOperations(did) {
     await db.run('DELETE FROM dids WHERE id = ?', id);
 }
 
-
 export async function queueOperation(op) {
     const ops = await getQueue(op.registry);
 

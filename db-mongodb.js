@@ -8,6 +8,7 @@ export async function start(dbName = 'mdip') {
     client = new MongoClient(config.mongodbUrl);
     await client.connect();
     db = client.db(dbName);
+    await db.collection('dids').createIndex({ id: 1 });
 }
 
 export async function stop() {
@@ -19,25 +20,24 @@ export async function resetDb() {
 }
 
 export async function addOperation(op) {
-    const did = op.did;
-    const ops = await getOperations(did);
-
-    ops.push(op);
-
     const id = op.did.split(':').pop();
+
+    console.time('updateOne');
     await db.collection('dids').updateOne(
         { id: id },
-        { $set: { ops: JSON.stringify(ops) } },
+        { $push: { ops: op } },
         { upsert: true }
     );
+    console.timeEnd('updateOne');
 }
 
 export async function getOperations(did) {
     try {
         const id = did.split(':').pop();
+        console.time('findOne');
         const row = await db.collection('dids').findOne({ id: id });
-        const ops = JSON.parse(row.ops);
-        return ops;
+        console.timeEnd('findOne');
+        return row.ops;
     }
     catch {
         return [];
@@ -47,6 +47,19 @@ export async function getOperations(did) {
 export async function deleteOperations(did) {
     const id = did.split(':').pop();
     await db.collection('dids').deleteOne({ id: id });
+}
+
+export async function queueOperation(op) {
+    op;
+}
+
+export async function getQueue(registry) {
+    registry;
+}
+
+export async function clearQueue(registry, batch) {
+    registry;
+    batch;
 }
 
 export async function getAllKeys() {

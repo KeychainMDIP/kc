@@ -41,8 +41,24 @@ program
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const data = JSON.parse(contents);
-            const batch = Object.values(data);
+            const db = JSON.parse(contents);
+
+            // Import DIDs by creation time order to avoid dependency errors
+            let dids = Object.keys(db);
+            dids.sort((a, b) => db[a][0].time - db[b][0].time);
+
+            let batch = [];
+            for (const did of dids) {
+                batch.push(db[did]);
+
+                if (batch.length >= 10) {
+                    console.time('importDIDs');
+                    const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+                    console.timeEnd('importDIDs');
+                    console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+                    batch = [];
+                }
+            }
 
             console.time('importDIDs');
             const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
