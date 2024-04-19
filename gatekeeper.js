@@ -8,6 +8,7 @@ import config from './config.js';
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm', 'tBTC'];
+const queueRegistries = ['tBTC'];
 
 let db = null;
 let helia = null;
@@ -372,7 +373,7 @@ export async function updateDID(operation, queue=true) {
         const registry = doc.mdip.registry;
 
         // TBD figure out time for blockchain registries
-        if (queue && registry !== 'hyperswarm') {
+        if (queue && queueRegistries.includes(registry)) {
             await queueOperation(operation.did, registry, operation, operation.signature.signed);
         }
         else {
