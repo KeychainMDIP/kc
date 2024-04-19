@@ -463,10 +463,9 @@ export async function importDIDs(batch) {
     let failed = 0;
 
     for (const ops of batch) {
+        console.time('importDID');
         try {
-            console.time('importDID');
             const diff = await importDID(ops);
-            console.timeEnd('importDID');
 
             if (diff > 0) {
                 updated += 1;
@@ -478,6 +477,7 @@ export async function importDIDs(batch) {
         catch {
             failed += 1;
         }
+        console.timeEnd('importDID');
     }
 
     return {

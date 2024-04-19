@@ -17,6 +17,16 @@ export async function start() {
 export async function stop() {
 }
 
+export async function resetDb() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/reset-db`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
 export async function isReady() {
     try {
         const response = await axios.get(`${URL}/api/v1/ready`);

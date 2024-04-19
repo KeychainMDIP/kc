@@ -114,6 +114,19 @@ program
         }
     });
 
+program
+    .command('reset-db')
+    .description('Reset the database to empty')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.resetDb();
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

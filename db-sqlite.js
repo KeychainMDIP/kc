@@ -17,6 +17,11 @@ export async function start(name = 'mdip') {
         id TEXT PRIMARY KEY,
         ops TEXT
     )`);
+
+    await db.exec(`CREATE TABLE IF NOT EXISTS queue (
+        id TEXT PRIMARY KEY,
+        ops TEXT
+    )`);
 }
 
 export async function stop() {
@@ -34,13 +39,17 @@ export async function addOperation(op) {
     ops.push(op);
 
     const id = op.did.split(':').pop();
+    console.time("INSERT");
     await db.run(`INSERT OR REPLACE INTO dids(id, ops) VALUES(?, ?)`, id, JSON.stringify(ops));
+    console.timeEnd("INSERT");
 }
 
 export async function getOperations(did) {
     try {
         const id = did.split(':').pop();
+        console.time("SELECT");
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
+        console.timeEnd("SELECT");
         const ops = JSON.parse(row.ops);
         return ops;
     }
@@ -52,6 +61,38 @@ export async function getOperations(did) {
 export async function deleteOperations(did) {
     const id = did.split(':').pop();
     await db.run('DELETE FROM dids WHERE id = ?', id);
+}
+
+
+export async function queueOperation(op) {
+    const ops = await getQueue(op.registry);
+
+    ops.push(op);
+
+    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, id, JSON.stringify(ops));
+}
+
+export async function getQueue(registry) {
+    try {
+        const row = await db.get('SELECT * FROM queue WHERE id = ?', registry);
+
+        if (!row) {
+            return [];
+        }
+
+        const ops = JSON.parse(row.ops);
+        return ops;
+    }
+    catch {
+        return [];
+    }
+}
+
+export async function clearQueue(registry, batch) {
+    const oldQueue = getQueue(registry);
+    const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+
+    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, id, JSON.stringify(newQueue));
 }
 
 export async function getAllKeys() {

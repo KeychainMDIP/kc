@@ -40,6 +40,15 @@ v1router.get('/version', async (req, res) => {
     }
 });
 
+v1router.get('/reset-db', async (req, res) => {
+    try {
+        await gatekeeper.resetDb();
+        res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/did', async (req, res) => {
     try {
         const operation = req.body;
