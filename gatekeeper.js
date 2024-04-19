@@ -476,6 +476,62 @@ export async function mergeBatch(batch) {
     };
 }
 
+export async function importOperation(op) {
+    const current = await exportDID(op.did);
+
+    if (current.length === 0) {
+        const check = await createDID(op.operation);
+
+        if (op.did !== check) {
+            throw "Invalid operation";
+        }
+
+        return 1;
+    }
+
+    if (current.find(item => item.operation.signature.value === op.operation.signature.value)) {
+        return 0;
+    }
+
+    const ok = await updateDID(op.operation, false);
+
+    if (!ok) {
+        throw "Invalid operation";
+    }
+
+    return 1;
+}
+
+export async function importBatch(batch) {
+    let verified = 0;
+    let updated = 0;
+    let failed = 0;
+
+    for (const op of batch) {
+        try {
+            console.time('importOperation');
+            const imported = await importOperation(op);
+            console.timeEnd('importOperation');
+
+            if (imported) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        catch {
+            failed += 1;
+        }
+    }
+
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
+}
+
 export async function getQueue(registry) {
     const queue = db.getQueue(registry);
     return queue;

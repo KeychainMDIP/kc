@@ -102,12 +102,17 @@ program
     });
 
 program
-    .command('import-batch <batch>')
+    .command('import-batch <did>')
     .description('Import a batch')
-    .action(async (registry, batch) => {
+    .action(async (did) => {
         try {
-            const queue = await keymaster.resolveAsset(batch);
-            console.log(JSON.stringify(queue, null, 4));
+            const batch = await keymaster.resolveAsset(did);
+            console.log(JSON.stringify(batch, null, 4));
+
+            console.time('mergeBatch');
+            const { verified, updated, failed } = await gatekeeper.importBatch(batch);
+            console.timeEnd('mergeBatch');
+            console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
         }
         catch (error) {
             console.error(error);

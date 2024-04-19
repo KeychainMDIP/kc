@@ -125,6 +125,17 @@ v1router.post('/merge', async (req, res) => {
     }
 });
 
+v1router.post('/importbatch', async (req, res) => {
+    try {
+        const batch = req.body;
+        const did = await gatekeeper.importBatch(batch);
+        res.json(did);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/queue/:registry', async (req, res) => {
     try {
         const queue = await gatekeeper.getQueue(req.params.registry);
