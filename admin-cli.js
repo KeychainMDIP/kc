@@ -22,17 +22,12 @@ program
     });
 
 program
-    .command('export-all')
+    .command('export-dids')
     .description('Export all DIDs')
     .action(async () => {
         try {
-            const data = {};
             const dids = await gatekeeper.getDIDs();
-
-            for (const did of dids) {
-                data[did] = await gatekeeper.exportDID(did);
-            }
-
+            const data = await gatekeeper.exportDIDs(dids);
             console.log(JSON.stringify(data, null, 4));
         }
         catch (error) {
@@ -41,7 +36,7 @@ program
     });
 
 program
-    .command('merge-batch <file>')
+    .command('import-dids <file>')
     .description('Import batch of DIDs')
     .action(async (file) => {
         try {
@@ -49,9 +44,9 @@ program
             const data = JSON.parse(contents);
             const batch = Object.values(data);
 
-            console.time('mergeBatch');
-            const { verified, updated, failed } = await gatekeeper.mergeBatch(batch);
-            console.timeEnd('mergeBatch');
+            console.time('importDIDs');
+            const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+            console.timeEnd('importDIDs');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
         }
         catch (error) {
@@ -109,9 +104,9 @@ program
             const batch = await keymaster.resolveAsset(did);
             console.log(JSON.stringify(batch, null, 4));
 
-            console.time('mergeBatch');
+            console.time('importBatch');
             const { verified, updated, failed } = await gatekeeper.importBatch(batch);
-            console.timeEnd('mergeBatch');
+            console.timeEnd('importBatch');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
         }
         catch (error) {

@@ -401,6 +401,16 @@ export async function exportDID(did) {
     return await db.getOperations(did);
 }
 
+export async function exportDIDs(dids) {
+    const batch = [];
+
+    for (const did of dids) {
+        batch.push(await db.getOperations(did));
+    }
+
+    return batch;
+}
+
 export async function importDID(ops) {
 
     if (!ops || !Array.isArray(ops) || ops.length < 1) {
@@ -447,7 +457,7 @@ export async function importDID(ops) {
     return diff;
 }
 
-export async function mergeBatch(batch) {
+export async function importDIDs(batch) {
     let verified = 0;
     let updated = 0;
     let failed = 0;

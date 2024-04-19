@@ -103,6 +103,17 @@ v1router.get('/export/:did', async (req, res) => {
     }
 });
 
+v1router.post('/export-dids', async (req, res) => {
+    try {
+        const dids = req.body;
+        const ops = await gatekeeper.exportDIDs(dids);
+        res.json(ops);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/import', async (req, res) => {
     try {
         const ops = req.body;
@@ -114,10 +125,10 @@ v1router.post('/import', async (req, res) => {
     }
 });
 
-v1router.post('/merge', async (req, res) => {
+v1router.post('/import-dids', async (req, res) => {
     try {
         const batch = req.body;
-        const did = await gatekeeper.mergeBatch(batch);
+        const did = await gatekeeper.importDIDs(batch);
         res.json(did);
     } catch (error) {
         console.error(error);
@@ -125,7 +136,7 @@ v1router.post('/merge', async (req, res) => {
     }
 });
 
-v1router.post('/importbatch', async (req, res) => {
+v1router.post('/import-batch', async (req, res) => {
     try {
         const batch = req.body;
         const did = await gatekeeper.importBatch(batch);

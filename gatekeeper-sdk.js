@@ -113,9 +113,19 @@ export async function importDID(ops) {
     }
 }
 
-export async function mergeBatch(batch) {
+export async function exportDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/merge/`, batch);
+        const response = await axios.post(`${URL}/api/v1/export-dids`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function importDIDs(batch) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/import-dids/`, batch);
         return response.data;
     }
     catch (error) {
@@ -125,7 +135,7 @@ export async function mergeBatch(batch) {
 
 export async function importBatch(batch) {
     try {
-        const response = await axios.post(`${URL}/api/v1/importbatch/`, batch);
+        const response = await axios.post(`${URL}/api/v1/import-batch/`, batch);
         return response.data;
     }
     catch (error) {

@@ -40,27 +40,19 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
-async function fetchDids() {
-    const data = {};
-    const dids = await gatekeeper.getDIDs();
-
-    for (const did of dids) {
-        //console.log(`fetching ${did}`);
-        data[did] = await gatekeeper.exportDID(did);
-    }
-
-    return data;
-}
-
 async function shareDb() {
     if (merging) {
         return;
     }
 
     try {
-        console.time('fetchDIDs');
-        const dids = await fetchDids();
-        console.timeEnd('fetchDIDs');
+        console.time('getDIDs');
+        const didList = await gatekeeper.getDIDs();
+        console.timeEnd('getDIDs');
+
+        console.time('exportDIDs');
+        const dids = await gatekeeper.exportDIDs(didList);
+        console.timeEnd('exportDIDs');
         console.log(`${Object.keys(dids).length} DIDs fetched`);
 
         if (isEmpty(dids)) {
@@ -103,16 +95,16 @@ async function relayDb(msg) {
     }
 }
 
-async function mergeBatch(batch) {
+async function importDIDs(batch) {
     try {
-        console.log(`mergeBatch: merging ${batch.length} DIDs...`);
-        console.time('mergeBatch');
-        const { verified, updated, failed } = await gatekeeper.mergeBatch(batch);
-        console.timeEnd('mergeBatch');
+        console.log(`importDIDs: merging ${batch.length} DIDs...`);
+        console.time('importDIDs');
+        const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+        console.timeEnd('importDIDs');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
     catch (error) {
-        console.error(`mergeBatch error: ${error}`);
+        console.error(`importDIDs error: ${error}`);
     }
 }
 
@@ -128,12 +120,12 @@ async function mergeDb(db) {
             batch.push(db[did]);
 
             if (batch.length >= 100) {
-                await mergeBatch(batch);
+                await importDIDs(batch);
                 batch = [];
             }
         }
 
-        await mergeBatch(batch);
+        await importDIDs(batch);
     }
     merging = false;
 }
