@@ -888,19 +888,28 @@ export async function groupTest(group, member) {
         return false;
     }
 
-    // Check if data.members is an array
     if (!Array.isArray(data.members)) {
         return false;
     }
 
-    if (member) {
-        const didMember = lookupDID(member);
-        // TBD implement recursive test for groups within groups
-        const isMember = data.members.includes(didMember);
-        return isMember;
+    if (!member) {
+        return true;
     }
 
-    return true;
+    const didMember = lookupDID(member);
+    let isMember = data.members.includes(didMember);
+
+    if (!isMember) {
+        for (const did of data.members) {
+            isMember = await groupTest(did, didMember);
+
+            if (isMember) {
+                break;
+            }
+        }
+    }
+
+    return isMember;
 }
 
 export async function createSchema(schema) {
