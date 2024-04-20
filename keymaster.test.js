@@ -1744,9 +1744,40 @@ describe('groupAdd', () => {
         }
     });
 
-    // TBD should not be able to add a group to itself
+    it('should not add a group to itself', async () => {
+        mockFs({});
 
-    // TBD should not be able to create groups that contain themselves
+        await keymaster.createId('Bob');
+        const groupDid = await keymaster.createGroup('group');
+
+        try {
+            await keymaster.groupAdd(groupDid, groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid member');
+        }
+    });
+
+    it('should not add a member that contains group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const group1Did = await keymaster.createGroup('group-1');
+        const group2Did = await keymaster.createGroup('group-2');
+        const group3Did = await keymaster.createGroup('group-3');
+
+        await keymaster.groupAdd(group1Did, group2Did);
+        await keymaster.groupAdd(group2Did, group3Did);
+
+        try {
+            await keymaster.groupAdd(group3Did, group1Did);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid member');
+        }
+    });
 });
 
 describe('groupRemove', () => {

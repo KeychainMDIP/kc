@@ -827,6 +827,17 @@ export async function groupAdd(group, member) {
     }
 
     const didMember = lookupDID(member);
+
+    if (didMember === didGroup) {
+        throw "Invalid member";
+    }
+
+    const isMember = await groupTest(member, group);
+
+    if (isMember) {
+        throw "Invalid member";
+    }
+
     // test for valid member DID
     await resolveDID(didMember);
 
