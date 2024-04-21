@@ -1744,9 +1744,40 @@ describe('groupAdd', () => {
         }
     });
 
-    // TBD should not be able to add a group to itself
+    it('should not add a group to itself', async () => {
+        mockFs({});
 
-    // TBD should not be able to create groups that contain themselves
+        await keymaster.createId('Bob');
+        const groupDid = await keymaster.createGroup('group');
+
+        try {
+            await keymaster.groupAdd(groupDid, groupDid);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid member');
+        }
+    });
+
+    it('should not add a member that contains group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const group1Did = await keymaster.createGroup('group-1');
+        const group2Did = await keymaster.createGroup('group-2');
+        const group3Did = await keymaster.createGroup('group-3');
+
+        await keymaster.groupAdd(group1Did, group2Did);
+        await keymaster.groupAdd(group2Did, group3Did);
+
+        try {
+            await keymaster.groupAdd(group3Did, group1Did);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid member');
+        }
+    });
 });
 
 describe('groupRemove', () => {
@@ -1989,7 +2020,33 @@ describe('groupTest', () => {
         expect(test).toBe(false);
     });
 
-    // TBD test recursive groups
+    it('should return true when testing recursive groups', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const group1Did = await keymaster.createGroup('level-1');
+        const group2Did = await keymaster.createGroup('level-2');
+        const group3Did = await keymaster.createGroup('level-3');
+        const group4Did = await keymaster.createGroup('level-4');
+        const group5Did = await keymaster.createGroup('level-5');
+
+        await keymaster.groupAdd(group1Did, group2Did);
+        await keymaster.groupAdd(group2Did, group3Did);
+        await keymaster.groupAdd(group3Did, group4Did);
+        await keymaster.groupAdd(group4Did, group5Did);
+
+        const test1 = await keymaster.groupTest(group1Did, group2Did);
+        expect(test1).toBe(true);
+
+        const test2 = await keymaster.groupTest(group1Did, group3Did);
+        expect(test2).toBe(true);
+
+        const test3 = await keymaster.groupTest(group1Did, group4Did);
+        expect(test3).toBe(true);
+
+        const test4 = await keymaster.groupTest(group1Did, group5Did);
+        expect(test4).toBe(true);
+    });
 });
 
 describe('pollTemplate', () => {
