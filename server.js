@@ -219,8 +219,8 @@ gatekeeper.verifyDb().then((invalid) => {
     });
 });
 
-process.on('uncaughtException', () => {
-    console.error('Unhandled exception caught');
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {

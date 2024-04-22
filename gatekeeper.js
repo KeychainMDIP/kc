@@ -479,16 +479,18 @@ export async function importDIDs(batch) {
     let updated = 0;
     let failed = 0;
 
-    for (const ops of batch) {
+    for (const events of batch) {
         console.time('importDID');
         try {
-            const diff = await importDID(ops);
+            for (const event of events) {
+                const imported = await importEvent(event);
 
-            if (diff > 0) {
-                updated += 1;
-            }
-            else {
-                verified += 1;
+                if (imported) {
+                    updated += 1;
+                }
+                else {
+                    verified += 1;
+                }
             }
         }
         catch (error) {
@@ -553,10 +555,10 @@ export async function importBatch(batch) {
     let updated = 0;
     let failed = 0;
 
-    for (const op of batch) {
+    for (const event of batch) {
         try {
             console.time('importOperation');
-            const imported = await importEvent(op);
+            const imported = await importEvent(event);
             console.timeEnd('importOperation');
 
             if (imported) {
