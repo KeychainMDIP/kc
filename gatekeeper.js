@@ -361,7 +361,7 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
     return doc;
 }
 
-export async function updateDID(operation, queue = true) {
+export async function updateDID(operation) {
     try {
         const doc = await resolveDID(operation.did);
         const updateValid = await verifyUpdate(operation, doc);
@@ -372,13 +372,30 @@ export async function updateDID(operation, queue = true) {
 
         const registry = doc.mdip.registry;
 
-        // TBD figure out time for blockchain registries
-        if (queue && queueRegistries.includes(registry)) {
+        if (queueRegistries.includes(registry)) {
             await queueOperation(operation.did, registry, operation, operation.signature.signed);
         }
-        else {
-            await addOperation(operation.did, registry, operation, operation.signature.signed);
+
+        await addOperation(operation.did, 'hyperswarm', operation, operation.signature.signed);
+
+        return true;
+    }
+    catch (error) {
+        console.error(error);
+        return false;
+    }
+}
+
+export async function importUpdateEvent(event) {
+    try {
+        const doc = await resolveDID(event.operation.did);
+        const updateValid = await verifyUpdate(event.operation, doc);
+
+        if (!updateValid) {
+            return false;
         }
+
+        await addOperation(event.operation.did, event.registry, event.operation, event.time, event.ordinal);
         return true;
     }
     catch (error) {
@@ -411,13 +428,13 @@ export async function exportDIDs(dids) {
     return batch;
 }
 
-export async function importDID(ops) {
+export async function importDID(events) {
 
-    if (!ops || !Array.isArray(ops) || ops.length < 1) {
+    if (!events || !Array.isArray(events) || events.length < 1) {
         throw "Invalid import";
     }
 
-    const create = ops[0];
+    const create = events[0];
     const did = create.did;
     const current = await exportDID(did);
 
@@ -434,16 +451,16 @@ export async function importDID(ops) {
         }
     }
 
-    for (let i = 1; i < ops.length; i++) {
+    for (let i = 1; i < events.length; i++) {
         if (i < current.length) {
             // Verify previous update ops
-            if (ops[i].operation.signature.value !== current[i].operation.signature.value) {
+            if (events[i].operation.signature.value !== current[i].operation.signature.value) {
                 throw "Invalid import";
             }
         }
         else {
             // Add new updates
-            const ok = await updateDID(ops[i].operation, false);
+            const ok = await importUpdateEvent(events[i]);
 
             if (!ok) {
                 throw "Invalid import";
@@ -488,24 +505,24 @@ export async function importDIDs(batch) {
     };
 }
 
-export async function importOperation(op) {
-    const current = await exportDID(op.did);
+export async function importEvent(event) {
+    const current = await exportDID(event.did);
 
     if (current.length === 0) {
-        const check = await createDID(op.operation);
+        const check = await createDID(event.operation);
 
-        if (op.did !== check) {
+        if (event.did !== check) {
             throw "Invalid operation";
         }
 
         return 1;
     }
 
-    if (current.find(item => item.operation.signature.value === op.operation.signature.value)) {
+    if (current.find(item => item.operation.signature.value === event.operation.signature.value)) {
         return 0;
     }
 
-    const ok = await updateDID(op.operation, false);
+    const ok = await importUpdateEvent(event);
 
     if (!ok) {
         throw "Invalid operation";
@@ -522,7 +539,7 @@ export async function importBatch(batch) {
     for (const op of batch) {
         try {
             console.time('importOperation');
-            const imported = await importOperation(op);
+            const imported = await importEvent(op);
             console.timeEnd('importOperation');
 
             if (imported) {
@@ -549,7 +566,8 @@ export async function getQueue(registry) {
     return queue;
 }
 
-export async function clearQueue(registry, queue) {
-    const ok = db.clearQueue(registry, queue);
+export async function clearQueue(events) {
+    const registry = events[0].registry;
+    const ok = db.clearQueue(registry, events);
     return ok;
 }

@@ -71,6 +71,19 @@ program
     });
 
 program
+    .command('show-queue <registry>')
+    .description('Show queue for a registry')
+    .action(async (registry) => {
+        try {
+            const batch = await gatekeeper.getQueue(registry);
+            console.log(JSON.stringify(batch, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('create-batch <registry>')
     .description('Create a batch for a registry')
     .action(async (registry) => {
@@ -92,13 +105,13 @@ program
     });
 
 program
-    .command('clear-batch <registry> <batch>')
-    .description('Clear a batch from a registry')
-    .action(async (registry, batch) => {
+    .command('clear-queue <batch>')
+    .description('Clear a registry queue')
+    .action(async (batch) => {
         try {
-            const queue = await keymaster.resolveAsset(batch);
-            console.log(JSON.stringify(queue, null, 4));
-            const ok = await gatekeeper.clearQueue(registry, queue);
+            const events = await keymaster.resolveAsset(batch);
+            console.log(JSON.stringify(events, null, 4));
+            const ok = await gatekeeper.clearQueue(events);
 
             if (ok) {
                 console.log("Batch cleared");
