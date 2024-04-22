@@ -49,7 +49,6 @@ export async function addOperation(op) {
     writeDb(db);
 }
 
-
 export async function getOperations(did) {
     try {
         const db = loadDb();
@@ -66,6 +65,14 @@ export async function getOperations(did) {
     catch {
         return [];
     }
+}
+
+export async function setOperations(did, ops) {
+    const db = loadDb();
+    const suffix = did.split(':').pop();
+    
+    db.dids[suffix] = ops;
+    writeDb(db);
 }
 
 export async function deleteOperations(did) {

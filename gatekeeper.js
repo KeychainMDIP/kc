@@ -89,7 +89,7 @@ export async function generateDID(operation) {
     const ops = await exportDID(did);
 
     if (ops.length === 0) {
-        await addOperation(did, operation.mdip.registry, operation, operation.created);
+        await addOperation(did, 'hyperswarm', operation, operation.created);
         await queueOperation(did, operation.mdip.registry, operation, operation.created);
     }
 
@@ -518,7 +518,24 @@ export async function importEvent(event) {
         return 1;
     }
 
-    if (current.find(item => item.operation.signature.value === event.operation.signature.value)) {
+    const create = current[0];
+    const registry = create.operation.mdip.registry;
+    const match = current.find(item => item.operation.signature.value === event.operation.signature.value);
+
+    if (match) {
+        if (match.registry === registry) {
+            return 0;
+        }
+
+        if (event.registry === registry) {
+            match.registry = event.registry;
+            match.time = event.time;
+            match.ordinal = event.ordinal;
+
+            db.setOperations(match.did, current);
+            return 1;
+        }
+
         return 0;
     }
 
@@ -549,7 +566,8 @@ export async function importBatch(batch) {
                 verified += 1;
             }
         }
-        catch {
+        catch (error) {
+            console.error(error);
             failed += 1;
         }
     }

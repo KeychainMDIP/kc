@@ -126,13 +126,20 @@ program
     });
 
 program
-    .command('import-batch <did>')
+    .command('import-batch <did> <registry>')
     .description('Import a batch')
-    .action(async (did) => {
+    .action(async (did, registry) => {
         try {
             const batch = await keymaster.resolveAsset(did);
-            console.log(JSON.stringify(batch, null, 4));
+            const now = new Date().toISOString();
 
+            for (const i in batch) {
+                batch[i].registry = registry;
+                batch[i].time = now;
+                batch[i].ordinal = i;
+            }
+
+            console.log(JSON.stringify(batch, null, 4));
             console.time('importBatch');
             const { verified, updated, failed } = await gatekeeper.importBatch(batch);
             console.timeEnd('importBatch');
