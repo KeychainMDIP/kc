@@ -381,7 +381,7 @@ export async function updateDID(operation) {
         return true;
     }
     catch (error) {
-        console.error(error);
+        //console.error(error);
         return false;
     }
 }
@@ -399,7 +399,7 @@ export async function importUpdateEvent(event) {
         return true;
     }
     catch (error) {
-        console.error(error);
+        //console.error(error);
         return false;
     }
 }
@@ -429,49 +429,21 @@ export async function exportDIDs(dids) {
 }
 
 export async function importDID(events) {
-
     if (!events || !Array.isArray(events) || events.length < 1) {
         throw "Invalid import";
     }
 
-    const create = events[0];
-    const did = create.did;
-    const current = await exportDID(did);
+    let updated = 0;
 
-    if (current.length === 0) {
-        const check = await createDID(create.operation);
+    for (const event of events) {
+        const imported = await importEvent(event);
 
-        if (did !== check) {
-            throw "Invalid import";
-        }
-    }
-    else {
-        if (create.operation.signature.value !== current[0].operation.signature.value) {
-            throw "Invalid import";
+        if (imported) {
+            updated += 1;
         }
     }
 
-    for (let i = 1; i < events.length; i++) {
-        if (i < current.length) {
-            // Verify previous update ops
-            if (events[i].operation.signature.value !== current[i].operation.signature.value) {
-                throw "Invalid import";
-            }
-        }
-        else {
-            // Add new updates
-            const ok = await importUpdateEvent(events[i]);
-
-            if (!ok) {
-                throw "Invalid import";
-            }
-        }
-    }
-
-    const after = await exportDID(did);
-    const diff = after.length - current.length;
-
-    return diff;
+    return updated;
 }
 
 export async function importDIDs(batch) {
@@ -557,9 +529,9 @@ export async function importBatch(batch) {
 
     for (const event of batch) {
         try {
-            console.time('importOperation');
+            console.time('importEvent');
             const imported = await importEvent(event);
-            console.timeEnd('importOperation');
+            console.timeEnd('importEvent');
 
             if (imported) {
                 updated += 1;

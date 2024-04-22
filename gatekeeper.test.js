@@ -350,7 +350,7 @@ describe('importDID', () => {
             await gatekeeper.importDID(ops);
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe('Invalid operation');
         }
     });
 
