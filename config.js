@@ -9,12 +9,11 @@ const config = {
     gatekeeperDb: process.env.KC_GATEKEEPER_DB || 'json',
     nodeName: process.env.KC_NODE_NAME || 'anon',
     mongodbUrl: process.env.KC_MONGODB_URL || 'mongodb://localhost:27017',
-    btcHost: process.env.KC_BTC_HOST || 'localhost',
-    btcPort: process.env.KC_BTC_PORT || 8332,
-    btcNetwork: process.env.KC_BTC_NETWORK || 'mainnet',
-    btcUser: process.env.KC_BTC_USER,
-    btcPass: process.env.KC_BTC_PASS,
-    btcStart: process.env.KC_BTC_START,
+    tessHost: process.env.KC_TESS_HOST,
+    tessPort: process.env.KC_TESS_PORT,
+    tessUser: process.env.KC_TESS_USER,
+    tessPass: process.env.KC_TESS_PASS,
+    tessStart: process.env.KC_TESS_START,
 };
 
 export default config;

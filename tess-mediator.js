@@ -5,14 +5,14 @@ import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = config.btcStart;
+const FIRST = config.tessStart;
 
 const client = new BtcClient({
     network: 'mainnet',
-    username: config.btcUser,
-    password: config.btcPass,
-    host: config.btcHost,
-    port: config.btcPort,
+    username: config.tessUser,
+    password: config.tessPass,
+    host: config.tessHost,
+    port: config.tessPort,
 });
 
 const dbName = 'data/tess-mediator.json';
@@ -24,6 +24,11 @@ function loadDb() {
     else {
         return {
             height: 0,
+            time: "",
+            blockCount: 0,
+            scanned: 0,
+            pending: 0,
+            registered: [],
             discovered: [],
         }
     }
