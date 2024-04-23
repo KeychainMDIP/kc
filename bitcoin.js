@@ -2,11 +2,10 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import config from './config.js';
 
-//const FIRST = 816793;
-const FIRST = 2587350;
+const FIRST = config.btcStart;
 
 const client = new BtcClient({
-    network: 'testnet',
+    network: 'mainnet',
     username: config.btcUser,
     password: config.btcPass,
     host: config.btcHost,
@@ -92,6 +91,8 @@ async function sync() {
         let start = FIRST;
         let blockCount = await client.getBlockCount();
 
+        console.log(`current block height: ${blockCount}`);
+
         const db = loadDb();
 
         if (db.height) {
@@ -106,6 +107,16 @@ async function sync() {
     } catch (error) {
         console.error(`Error fetching block: ${error}`);
     }
+}
+
+async function startSync() {
+    try {
+        await sync();
+        console.log('waiting 60s...');
+    } catch (error) {
+        console.error(`Error fetching block: ${error}`);
+    }
+    setTimeout(startSync, 60 * 1000);  // Restart after 60 seconds
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -131,7 +142,9 @@ export async function createOpReturnTxn(opReturnData) {
         });
 
         // Sign the raw transaction
-        const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+        //const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+        // Old method name for Tesseract
+        const signedTxn = await client.signRawTransaction(rawTxn);
 
         console.log(JSON.stringify(signedTxn, null, 4));
         console.log(amountBack);
@@ -145,6 +158,6 @@ export async function createOpReturnTxn(opReturnData) {
     }
 }
 
-sync();
+startSync();
 
-//createOpReturnTxn('did:mdip:test:z3v8AuaVMfPPDLy8kBQ8tJ4ytB5Kugbn9xd94ePgg9e199bEhuv');
+//createOpReturnTxn('did:mdip:test:z3v8AuaUEfvh6DGwCamErsktsdwgrZEatK6bjugUj5TbD6Hx4nU');
