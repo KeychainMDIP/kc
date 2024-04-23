@@ -89,6 +89,11 @@ export async function recoverWallet(did) {
     return wallet;
 }
 
+export function getCurrentIdName() {
+    const wallet = loadWallet();
+    return wallet.current;
+}
+
 function getCurrentId() {
     const wallet = loadWallet();
     const id = wallet.ids[wallet.current];

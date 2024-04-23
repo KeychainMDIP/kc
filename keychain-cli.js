@@ -156,11 +156,11 @@ program
     .description('List IDs and show current ID')
     .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const current = keymaster.getCurrentIdName();
             const ids = keymaster.listIds();
 
             for (let id of ids) {
-                if (id === wallet.current) {
+                if (id === current) {
                     console.log(id, ' <<< current');
                 }
                 else {

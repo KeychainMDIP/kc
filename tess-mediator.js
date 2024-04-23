@@ -4,6 +4,7 @@ import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
 import config from './config.js';
 
+const REGISTRY = 'TESS';
 const FIRST = config.btcStart;
 
 const client = new BtcClient({
@@ -117,7 +118,7 @@ async function importBatch() {
             const batch = await keymaster.resolveAsset(item.did);
 
             for (const i in batch) {
-                if (batch[i].registry !== 'TESS') {
+                if (batch[i].registry !== REGISTRY) {
                     throw "Invalid registry";
                 }
 
@@ -134,7 +135,40 @@ async function importBatch() {
     }
 }
 
-async function loop() {
+async function registerBatch() {
+    const batch = await gatekeeper.getQueue(REGISTRY);
+    console.log(JSON.stringify(batch, null, 4));
+
+    if (batch.length > 0) {
+        const saveName = keymaster.getCurrentIdName();
+        keymaster.useId('Tesseract');
+        const did = await keymaster.createData(batch);
+        const txid = await createOpReturnTxn(did);
+        const ok = await gatekeeper.clearQueue(batch);
+
+        if (ok) {
+            const db = loadDb();
+
+            if (!db.registered) {
+                db.registered = [];
+            }
+
+            db.registered.push({
+                did,
+                txid,
+            })
+
+            writeDb(db);
+        }
+
+        keymaster.useId(saveName);
+    }
+    else {
+        console.log('empty batch');
+    }
+}
+
+async function fastLoop() {
     try {
         await sync();
         await importBatch();
@@ -142,12 +176,23 @@ async function loop() {
     } catch (error) {
         console.error(`Error in sync: ${error}`);
     }
-    setTimeout(loop, 60 * 1000);  // Restart after 60 seconds
+    setTimeout(fastLoop, 60 * 1000);  // Restart after 60 seconds
+}
+
+async function slowLoop() {
+    try {
+        await registerBatch();
+        console.log('waiting 5m...');
+    } catch (error) {
+        console.error(`Error in sync: ${error}`);
+    }
+    setTimeout(slowLoop, 5 * 60 * 1000);  // Restart after 5 minutes
 }
 
 async function main() {
     await keymaster.start(gatekeeper);
-    loop();
+    fastLoop();
+    slowLoop();
     await keymaster.stop();
 }
 
@@ -185,6 +230,7 @@ export async function createOpReturnTxn(opReturnData) {
         const txid = await client.sendRawTransaction(signedTxn.hex);
 
         console.log(`Transaction broadcasted with txid: ${txid}`);
+        return txid;
     } catch (error) {
         console.error(`Error creating OP_RETURN transaction: ${error}`);
     }
