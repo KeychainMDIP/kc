@@ -7,8 +7,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm', 'tBTC'];
-const queueRegistries = ['tBTC'];
+const validRegistries = ['local', 'hyperswarm', 'TESS'];
+const queueRegistries = ['TESS'];
 
 let db = null;
 let helia = null;
@@ -528,10 +528,9 @@ export async function importBatch(batch) {
     let failed = 0;
 
     for (const event of batch) {
+        console.time('importEvent');
         try {
-            console.time('importEvent');
             const imported = await importEvent(event);
-            console.timeEnd('importEvent');
 
             if (imported) {
                 updated += 1;
@@ -544,6 +543,7 @@ export async function importBatch(batch) {
             console.error(error);
             failed += 1;
         }
+        console.timeEnd('importEvent');
     }
 
     return {

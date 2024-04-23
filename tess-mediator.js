@@ -1,5 +1,7 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
+import * as gatekeeper from './gatekeeper-sdk.js';
+import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const FIRST = config.btcStart;
@@ -12,7 +14,7 @@ const client = new BtcClient({
     port: config.btcPort,
 });
 
-const dbName = 'data/btc-mediator.json';
+const dbName = 'data/tess-mediator.json';
 
 function loadDb() {
     if (fs.existsSync(dbName)) {
@@ -69,7 +71,7 @@ async function fetchBlock(height, blockCount) {
 
         for (let i = 0; i < block.nTx; i++) {
             const txnid = block.tx[i];
-            console.log(height, i, txnid);
+            console.log(height, String(i).padStart(4), txnid);
             await fetchTransaction(height, i, timestamp, txnid);
         }
 
@@ -87,36 +89,66 @@ async function fetchBlock(height, blockCount) {
 }
 
 async function sync() {
-    try {
-        let start = FIRST;
-        let blockCount = await client.getBlockCount();
+    let start = FIRST;
+    let blockCount = await client.getBlockCount();
 
-        console.log(`current block height: ${blockCount}`);
+    console.log(`current block height: ${blockCount}`);
 
-        const db = loadDb();
+    const db = loadDb();
 
-        if (db.height) {
-            start = db.height + 1;
-        }
+    if (db.height) {
+        start = db.height + 1;
+    }
 
-        for (let height = start; height <= blockCount; height++) {
-            console.log(height);
-            await fetchBlock(height, blockCount);
-            blockCount = await client.getBlockCount();
-        }
-    } catch (error) {
-        console.error(`Error fetching block: ${error}`);
+    for (let height = start; height <= blockCount; height++) {
+        console.log(height);
+        await fetchBlock(height, blockCount);
+        blockCount = await client.getBlockCount();
     }
 }
 
-async function startSync() {
+async function importBatch() {
+    const db = loadDb();
+
+    for (const item of db.discovered) {
+        if (!item.imported) {
+            console.log(JSON.stringify(item, null, 4));
+
+            const batch = await keymaster.resolveAsset(item.did);
+
+            for (const i in batch) {
+                if (batch[i].registry !== 'TESS') {
+                    throw "Invalid registry";
+                }
+
+                batch[i].time = item.time;
+                batch[i].ordinal = i;
+            }
+
+            console.log(JSON.stringify(batch, null, 4));
+            const imported = await gatekeeper.importBatch(batch);
+            item.imported = imported;
+            writeDb(db);
+            console.log(JSON.stringify(item, null, 4));
+        }
+    }
+}
+
+async function loop() {
     try {
         await sync();
+        await importBatch();
         console.log('waiting 60s...');
     } catch (error) {
-        console.error(`Error fetching block: ${error}`);
+        console.error(`Error in sync: ${error}`);
     }
-    setTimeout(startSync, 60 * 1000);  // Restart after 60 seconds
+    setTimeout(loop, 60 * 1000);  // Restart after 60 seconds
+}
+
+async function main() {
+    await keymaster.start(gatekeeper);
+    loop();
+    await keymaster.stop();
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -158,6 +190,6 @@ export async function createOpReturnTxn(opReturnData) {
     }
 }
 
-startSync();
+main();
 
-//createOpReturnTxn('did:mdip:test:z3v8AuaUEfvh6DGwCamErsktsdwgrZEatK6bjugUj5TbD6Hx4nU');
+//createOpReturnTxn('did:mdip:test:z3v8Auaish14RTNpxseGqUJg938eqVP32SXadHhuifhWn2bjYQs');
