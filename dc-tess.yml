@@ -1,0 +1,57 @@
+version: "3"
+services:
+
+  gatekeeper:
+    build:
+      context: .
+      dockerfile: Dockerfile.gatekeeper
+    image: keychainmdip/gatekeeper
+    environment:
+      - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "4224:4224"
+
+  hyperswarm:
+    build:
+      context: .
+      dockerfile: Dockerfile.hyperswarm
+    image: keychainmdip/hyperswarm-mediator
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_NAME=${KC_NODE_NAME}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - gatekeeper
+
+  tess-node:
+    image: macterra/tesseract-node:v21.08.03
+    ports:
+      - "7333:7333"
+      - "8333:8333"
+    volumes:
+      - ./data/tesseract:/data
+
+  tess-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.tess
+    image: keychainmdip/tess-mediator
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_NAME=${KC_NODE_NAME}
+      - KC_TESS_HOST=tess-node
+      - KC_TESS_PORT=8333
+      - KC_TESS_USER=${KC_TESS_USER}
+      - KC_TESS_PASS=${KC_TESS_PASS}
+      - KC_TESS_START=${KC_TESS_START}
+      - KC_TESS_ID=${KC_TESS_ID}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - gatekeeper
+      - tess-node

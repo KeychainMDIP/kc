@@ -2,3 +2,4 @@
 *.db
 ipfs/
 db/
+tesseract/
