@@ -6,6 +6,7 @@ import config from './config.js';
 
 const REGISTRY = 'TESS';
 const FIRST = config.tessStart;
+const TESS_ID = config.tessID;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -146,7 +147,7 @@ async function registerBatch() {
 
     if (batch.length > 0) {
         const saveName = keymaster.getCurrentIdName();
-        keymaster.useId('Tesseract');
+        keymaster.useId(TESS_ID);
         const did = await keymaster.createData(batch);
         const txid = await createOpReturnTxn(did);
         const ok = await gatekeeper.clearQueue(batch);
@@ -173,33 +174,34 @@ async function registerBatch() {
     }
 }
 
-async function fastLoop() {
+async function importLoop() {
     try {
         await sync();
         await importBatch();
         console.log('waiting 60s...');
     } catch (error) {
-        console.error(`Error in fastLoop: ${error}`);
+        console.error(`Error in importLoop: ${error}`);
     }
-    setTimeout(fastLoop, 60 * 1000);  // Restart after 60 seconds
+    setTimeout(importLoop, 60 * 1000);
 }
 
-async function slowLoop() {
+async function registerLoop() {
     try {
         await registerBatch();
         console.log('waiting 5m...');
     } catch (error) {
-        console.error(`Error in slowLoop: ${error}`);
+        console.error(`Error in registerLoop: ${error}`);
     }
-    setTimeout(slowLoop, 5 * 60 * 1000);  // Restart after 5 minutes
+    setTimeout(registerLoop, 5 * 60 * 1000);
 }
 
 async function main() {
-    console.log(`connecting to TESS on ${config.tessHost} on port ${config.tessPort}`);
+    console.log(`Connecting to TESS on ${config.tessHost} on port ${config.tessPort}`);
+    console.log(`Using keymaster ID ${TESS_ID}`);
 
     await keymaster.start(gatekeeper);
-    fastLoop();
-    slowLoop();
+    importLoop();
+    registerLoop();
     await keymaster.stop();
 }
 

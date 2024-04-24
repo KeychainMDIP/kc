@@ -14,6 +14,7 @@ const config = {
     tessUser: process.env.KC_TESS_USER,
     tessPass: process.env.KC_TESS_PASS,
     tessStart: process.env.KC_TESS_START,
+    tessID: process.env.KC_TESS_ID,
 };
 
 export default config;

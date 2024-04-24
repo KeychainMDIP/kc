@@ -41,6 +41,7 @@ services:
       - KC_TESS_USER=${KC_TESS_USER}
       - KC_TESS_PASS=${KC_TESS_PASS}
       - KC_TESS_START=${KC_TESS_START}
+      - KC_TESS_ID=${KC_TESS_ID}
     volumes:
       - ./data:/app/data
     depends_on:
