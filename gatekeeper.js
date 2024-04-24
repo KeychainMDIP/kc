@@ -90,7 +90,6 @@ export async function generateDID(operation) {
 
     if (ops.length === 0) {
         await addOperation(did, 'hyperswarm', operation, operation.created);
-        await queueOperation(did, operation.mdip.registry, operation, operation.created);
     }
 
     return did;
@@ -138,7 +137,7 @@ async function createAsset(operation) {
     return generateDID(operation);
 }
 
-export async function createDID(operation) {
+export async function createDID(operation, queue=true) {
     if (operation?.type !== "create") {
         throw "Invalid operation";
     }
@@ -164,15 +163,25 @@ export async function createDID(operation) {
         throw `Valid registries include: ${validRegistries}`;
     }
 
+    let did;
+
     if (operation.mdip.type === 'agent') {
-        return createAgent(operation);
+        did = await createAgent(operation);
     }
 
     if (operation.mdip.type === 'asset') {
-        return createAsset(operation);
+        did = await createAsset(operation);
     }
 
-    throw "Unknown type";
+    if (!did) {
+        throw "Unknown type";
+    }
+
+    if (queue) {
+        await queueOperation(did, operation.mdip.registry, operation, operation.created);
+    }
+
+    return did;
 }
 
 async function generateDoc(did, anchor, asofTime) {
@@ -483,7 +492,7 @@ export async function importEvent(event) {
     const current = await exportDID(event.did);
 
     if (current.length === 0) {
-        const check = await createDID(event.operation);
+        const check = await createDID(event.operation, false);
 
         if (event.did !== check) {
             throw "Invalid operation";
