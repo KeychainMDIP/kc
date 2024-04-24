@@ -179,7 +179,7 @@ async function fastLoop() {
         await importBatch();
         console.log('waiting 60s...');
     } catch (error) {
-        console.error(`Error in sync: ${error}`);
+        console.error(`Error in fastLoop: ${error}`);
     }
     setTimeout(fastLoop, 60 * 1000);  // Restart after 60 seconds
 }
@@ -189,12 +189,14 @@ async function slowLoop() {
         await registerBatch();
         console.log('waiting 5m...');
     } catch (error) {
-        console.error(`Error in sync: ${error}`);
+        console.error(`Error in slowLoop: ${error}`);
     }
     setTimeout(slowLoop, 5 * 60 * 1000);  // Restart after 5 minutes
 }
 
 async function main() {
+    console.log(`connecting to TESS on ${config.tessHost} on port ${config.tessPort}`);
+
     await keymaster.start(gatekeeper);
     fastLoop();
     slowLoop();
