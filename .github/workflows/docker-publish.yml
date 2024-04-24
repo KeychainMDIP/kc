@@ -59,7 +59,7 @@ jobs:
             ${{ env.REGISTRY }}/keychainmdip/gatekeeper:release
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build and push hyperswarm image
+      - name: Build and push hyperswarm mediator image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
@@ -68,4 +68,15 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ steps.calver.outputs.version }}
             ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push TESS mediator image
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: Dockerfile.tess
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/keychainmdip/tess-mediator:${{ steps.calver.outputs.version }}
+            ${{ env.REGISTRY }}/keychainmdip/tess-mediator:release
           labels: ${{ steps.meta.outputs.labels }}
