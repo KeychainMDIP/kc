@@ -39,9 +39,9 @@ function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
-async function fetchTransaction(height, index, timestamp, txnid) {
+async function fetchTransaction(height, index, timestamp, txid) {
     try {
-        const txn = await client.getTransactionByHash(txnid);
+        const txn = await client.getTransactionByHash(txid);
         const asm = txn.vout[0].scriptPubKey.asm;
 
         if (asm.startsWith('OP_RETURN')) {
@@ -49,16 +49,12 @@ async function fetchTransaction(height, index, timestamp, txnid) {
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
             if (textString.startsWith('did:mdip:')) {
-                console.log(txnid);
-                console.log(asm);
-                console.log(textString);
-
                 const db = loadDb();
                 db.discovered.push({
                     height: height,
                     index: index,
                     time: timestamp,
-                    txnid: txnid,
+                    txid: txid,
                     did: textString,
                 });
                 writeDb(db);
@@ -77,9 +73,9 @@ async function fetchBlock(height, blockCount) {
         const timestamp = new Date(block.time * 1000).toISOString();
 
         for (let i = 0; i < block.nTx; i++) {
-            const txnid = block.tx[i];
-            console.log(height, String(i).padStart(4), txnid);
-            await fetchTransaction(height, i, timestamp, txnid);
+            const txid = block.tx[i];
+            console.log(height, String(i).padStart(4), txid);
+            await fetchTransaction(height, i, timestamp, txid);
         }
 
         const db = loadDb();
@@ -129,7 +125,8 @@ async function importBatch() {
                 }
 
                 batch[i].time = item.time;
-                batch[i].ordinal = i;
+                batch[i].ordinal = [item.height, item.index, i];
+                batch[i].txid = item.txid;
             }
 
             console.log(JSON.stringify(batch, null, 4));

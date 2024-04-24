@@ -502,9 +502,8 @@ export async function importEvent(event) {
         }
 
         if (event.registry === registry) {
-            match.registry = event.registry;
-            match.time = event.time;
-            match.ordinal = event.ordinal;
+            const index = current.indexOf(match);
+            current[index] = event;
 
             db.setOperations(match.did, current);
             return 1;

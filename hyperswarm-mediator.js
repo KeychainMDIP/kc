@@ -99,6 +99,13 @@ async function importDIDs(batch) {
     try {
         console.log(`importDIDs: merging ${batch.length} DIDs...`);
         console.time('importDIDs');
+
+        for (const events of batch) {
+            for (const event of events) {
+                event.registry = 'hyperswarm';
+            }
+        }
+
         const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
         console.timeEnd('importDIDs');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);

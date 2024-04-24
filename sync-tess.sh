@@ -1,2 +1,2 @@
-#!/usr/bin/env sh
+c
 docker compose -f dc-tess.yml up tess-node
