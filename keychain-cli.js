@@ -650,7 +650,7 @@ program
     .action(async (file) => {
         try {
             const asset = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createData(asset);
+            const did = await keymaster.createAsset(asset);
             console.log(did);
         }
         catch (error) {

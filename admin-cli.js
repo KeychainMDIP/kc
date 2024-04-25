@@ -92,7 +92,7 @@ program
             console.log(JSON.stringify(batch, null, 4));
 
             if (batch.length > 0) {
-                const did = await keymaster.createData(batch);
+                const did = await keymaster.createAsset(batch);
                 console.log(did);
             }
             else {

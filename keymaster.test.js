@@ -472,7 +472,7 @@ describe('addName', () => {
         try {
             keymaster.addName('Jack', alice);
             keymaster.addName('Jack', bob);
-            throw 'Expected createData to throw an exception';
+            throw 'Expected addName to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Name already in use');
@@ -531,7 +531,7 @@ describe('resolveDID', () => {
         await keymaster.createId('Bob');
 
         const mockAnchor = { name: 'mockAnchor' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         keymaster.addName('mock', dataDid);
 
@@ -553,7 +553,7 @@ describe('resolveDID', () => {
     });
 });
 
-describe('createData', () => {
+describe('createAsset', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -564,7 +564,7 @@ describe('createData', () => {
 
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
@@ -577,7 +577,7 @@ describe('createData', () => {
 
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = "mockAnchor";
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
@@ -590,7 +590,7 @@ describe('createData', () => {
 
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = [1, 2, 3];
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
@@ -603,8 +603,8 @@ describe('createData', () => {
 
         try {
             const mockAnchor = { name: 'mockAnchor' };
-            await keymaster.createData(mockAnchor);
-            throw 'Expected createData to throw an exception';
+            await keymaster.createAsset(mockAnchor);
+            throw 'Expected createAsset to throw an exception';
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -615,8 +615,8 @@ describe('createData', () => {
 
         try {
             await keymaster.createId('Bob');
-            await keymaster.createData();
-            throw ('Expected createData to throw an exception');
+            await keymaster.createAsset();
+            throw ('Expected createAsset to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -627,8 +627,8 @@ describe('createData', () => {
 
         try {
             await keymaster.createId('Bob');
-            await keymaster.createData("");
-            throw ('Expected createData to throw an exception');
+            await keymaster.createAsset("");
+            throw ('Expected createAsset to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -639,8 +639,8 @@ describe('createData', () => {
 
         try {
             await keymaster.createId('Bob');
-            await keymaster.createData([]);
-            throw ('Expected createData to throw an exception');
+            await keymaster.createAsset([]);
+            throw ('Expected createAsset to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -651,8 +651,8 @@ describe('createData', () => {
 
         try {
             await keymaster.createId('Bob');
-            await keymaster.createData({});
-            throw ('Expected createData to throw an exception');
+            await keymaster.createAsset({});
+            throw ('Expected createAsset to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -1513,7 +1513,7 @@ describe('groupAdd', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         const data = await keymaster.groupAdd(groupDid, dataDid);
 
         const expectedGroup = {
@@ -1531,7 +1531,7 @@ describe('groupAdd', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         const alias = 'mockAlias';
         keymaster.addName(alias, dataDid);
@@ -1568,7 +1568,7 @@ describe('groupAdd', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         const alias = 'mockAlias';
         keymaster.addName(alias, groupDid);
@@ -1587,7 +1587,7 @@ describe('groupAdd', () => {
 
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
             await keymaster.groupAdd('mockAlias', dataDid);
@@ -1605,7 +1605,7 @@ describe('groupAdd', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         await keymaster.groupAdd(groupDid, dataDid);
         await keymaster.groupAdd(groupDid, dataDid);
@@ -1631,7 +1631,7 @@ describe('groupAdd', () => {
 
         for (let i = 0; i < memberCount; i++) {
             const mockAnchor = { name: `mock-${i}` };
-            const dataDid = await keymaster.createData(mockAnchor);
+            const dataDid = await keymaster.createAsset(mockAnchor);
             await keymaster.groupAdd(groupDid, dataDid);
         }
 
@@ -1693,7 +1693,7 @@ describe('groupAdd', () => {
 
         const agentDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
             await keymaster.groupAdd(null, dataDid);
@@ -1762,7 +1762,7 @@ describe('groupRemove', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         await keymaster.groupAdd(groupDid, dataDid);
 
         const data = await keymaster.groupRemove(groupDid, dataDid);
@@ -1782,7 +1782,7 @@ describe('groupRemove', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         await keymaster.groupAdd(groupDid, dataDid);
 
         const alias = 'mockAlias';
@@ -1805,7 +1805,7 @@ describe('groupRemove', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         const data = await keymaster.groupRemove(groupDid, dataDid);
 
@@ -1870,7 +1870,7 @@ describe('groupRemove', () => {
 
         const agentDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
             await keymaster.groupRemove();
@@ -1943,7 +1943,7 @@ describe('groupTest', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
         await keymaster.groupAdd(groupDid, dataDid);
 
         const test = await keymaster.groupTest(groupDid, dataDid);
@@ -1958,7 +1958,7 @@ describe('groupTest', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         const test = await keymaster.groupTest(groupDid, dataDid);
 
@@ -1982,7 +1982,7 @@ describe('groupTest', () => {
 
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
-        const dataDid = await keymaster.createData(mockAnchor);
+        const dataDid = await keymaster.createAsset(mockAnchor);
 
         const test = await keymaster.groupTest(dataDid);
 

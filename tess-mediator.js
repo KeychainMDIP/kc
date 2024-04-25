@@ -145,7 +145,7 @@ async function registerBatch() {
     if (batch.length > 0) {
         const saveName = keymaster.getCurrentIdName();
         keymaster.useId(TESS_ID);
-        const did = await keymaster.createData(batch);
+        const did = await keymaster.createAsset(batch);
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
