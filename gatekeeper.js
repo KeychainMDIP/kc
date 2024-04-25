@@ -84,18 +84,7 @@ async function queueOperation(did, registry, operation, time, ordinal = 0) {
     await db.queueOperation(op);
 }
 
-export async function generateDID(operation) {
-    const did = await anchorSeed(operation);
-    const ops = await exportDID(did);
-
-    if (ops.length === 0) {
-        await addOperation(did, 'hyperswarm', operation, operation.created);
-    }
-
-    return did;
-}
-
-async function createAgent(operation) {
+async function verifyCreateAgent(operation) {
     if (!operation.signature) {
         throw "Invalid operation";
     }
@@ -110,14 +99,10 @@ async function createAgent(operation) {
     const msgHash = cipher.hashJSON(operationCopy);
     const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 
-    if (!isValid) {
-        throw "Invalid operation";
-    }
-
-    return generateDID(operation);
+    return isValid;
 }
 
-async function createAsset(operation) {
+async function verifyCreateAsset(operation) {
     if (operation.controller !== operation.signature.signer) {
         throw "Invalid operation";
     }
@@ -130,14 +115,10 @@ async function createAsset(operation) {
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 
-    if (!isValid) {
-        throw "Invalid operation";
-    }
-
-    return generateDID(operation);
+    return isValid;
 }
 
-export async function createDID(operation, queue=true) {
+async function verifyCreate(operation) {
     if (operation?.type !== "create") {
         throw "Invalid operation";
     }
@@ -163,25 +144,34 @@ export async function createDID(operation, queue=true) {
         throw `Valid registries include: ${validRegistries}`;
     }
 
-    let did;
-
     if (operation.mdip.type === 'agent') {
-        did = await createAgent(operation);
+        return verifyCreateAgent(operation);
     }
 
     if (operation.mdip.type === 'asset') {
-        did = await createAsset(operation);
+        return verifyCreateAsset(operation);
     }
 
-    if (!did) {
-        throw "Unknown type";
-    }
+    throw "Invalid operation";
+}
 
-    if (queue) {
-        await queueOperation(did, operation.mdip.registry, operation, operation.created);
-    }
+export async function createDID(operation) {
+    const valid = await verifyCreate(operation);
 
-    return did;
+    if (valid) {
+        const did = await anchorSeed(operation);
+        const ops = await exportDID(did);
+
+        if (ops.length === 0) {
+            await addOperation(did, 'hyperswarm', operation, operation.created);
+            await queueOperation(did, operation.mdip.registry, operation, operation.created);
+        }
+
+        return did;
+    }
+    else {
+        throw "Invalid operation";
+    }
 }
 
 async function generateDoc(did, anchor, asofTime) {
@@ -395,24 +385,6 @@ export async function updateDID(operation) {
     }
 }
 
-export async function importUpdateEvent(event) {
-    try {
-        const doc = await resolveDID(event.operation.did);
-        const updateValid = await verifyUpdate(event.operation, doc);
-
-        if (!updateValid) {
-            return false;
-        }
-
-        await addOperation(event.operation.did, event.registry, event.operation, event.time, event.ordinal);
-        return true;
-    }
-    catch (error) {
-        //console.error(error);
-        return false;
-    }
-}
-
 export async function deleteDID(operation) {
     return updateDID(operation);
 }
@@ -435,6 +407,46 @@ export async function exportDIDs(dids) {
     }
 
     return batch;
+}
+
+async function importCreateEvent(event) {
+    try {
+        const valid = await verifyCreate(event.operation);
+
+        if (valid) {
+            const did = await anchorSeed(event.operation);
+
+            if (did !== event.did) {
+                return false;
+            }
+
+            await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+            return true;
+        }
+
+        return false;
+    }
+    catch {
+        return false;
+    }
+}
+
+async function importUpdateEvent(event) {
+    try {
+        const doc = await resolveDID(event.operation.did);
+        const updateValid = await verifyUpdate(event.operation, doc);
+
+        if (!updateValid) {
+            return false;
+        }
+
+        await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+        return true;
+    }
+    catch (error) {
+        //console.error(error);
+        return false;
+    }
 }
 
 export async function importDID(events) {
@@ -492,13 +504,13 @@ export async function importEvent(event) {
     const current = await exportDID(event.did);
 
     if (current.length === 0) {
-        const check = await createDID(event.operation, false);
+        const ok = await importCreateEvent(event);
 
-        if (event.did !== check) {
+        if (!ok) {
             throw "Invalid operation";
         }
 
-        return 1;
+        return true;
     }
 
     const create = current[0];
@@ -507,18 +519,20 @@ export async function importEvent(event) {
 
     if (match) {
         if (match.registry === registry) {
-            return 0;
+            // Don't update if this op has already been validated on its native registry
+            return false;
         }
 
         if (event.registry === registry) {
+            // If this import is on the native registry, replace the current one
             const index = current.indexOf(match);
             current[index] = event;
 
             db.setOperations(match.did, current);
-            return 1;
+            return true;
         }
 
-        return 0;
+        return false;
     }
 
     const ok = await importUpdateEvent(event);
@@ -527,7 +541,7 @@ export async function importEvent(event) {
         throw "Invalid operation";
     }
 
-    return 1;
+    return true;
 }
 
 export async function importBatch(batch) {
