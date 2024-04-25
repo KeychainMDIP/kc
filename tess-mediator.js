@@ -119,7 +119,7 @@ async function importBatch() {
 
             const batch = await keymaster.resolveAsset(item.did);
 
-            for (const i in batch) {
+            for (let i = 0; i < batch.length; i++) {
                 if (batch[i].registry !== REGISTRY) {
                     throw "Invalid registry";
                 }
@@ -147,21 +147,24 @@ async function registerBatch() {
         keymaster.useId(TESS_ID);
         const did = await keymaster.createData(batch);
         const txid = await createOpReturnTxn(did);
-        const ok = await gatekeeper.clearQueue(batch);
 
-        if (ok) {
-            const db = loadDb();
+        if (txid) {
+            const ok = await gatekeeper.clearQueue(batch);
 
-            if (!db.registered) {
-                db.registered = [];
+            if (ok) {
+                const db = loadDb();
+
+                if (!db.registered) {
+                    db.registered = [];
+                }
+
+                db.registered.push({
+                    did,
+                    txid,
+                })
+
+                writeDb(db);
             }
-
-            db.registered.push({
-                did,
-                txid,
-            })
-
-            writeDb(db);
         }
 
         keymaster.useId(saveName);
