@@ -224,8 +224,6 @@ export async function createOpReturnTxn(opReturnData) {
         });
 
         // Sign the raw transaction
-        //const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
-        // Old method name for Tesseract
         const signedTxn = await client.signRawTransaction(rawTxn);
 
         console.log(JSON.stringify(signedTxn, null, 4));
@@ -242,5 +240,3 @@ export async function createOpReturnTxn(opReturnData) {
 }
 
 main();
-
-//createOpReturnTxn('did:mdip:test:z3v8Auaish14RTNpxseGqUJg938eqVP32SXadHhuifhWn2bjYQs');
