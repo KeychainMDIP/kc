@@ -88,7 +88,7 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(registry, batch) {
-    const oldQueue = getQueue(registry);
+    const oldQueue = await getQueue(registry);
     const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
 
     await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(newQueue));

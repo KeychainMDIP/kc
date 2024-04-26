@@ -125,27 +125,6 @@ program
     });
 
 program
-    .command('clear-queue <batch>')
-    .description('Clear a registry queue')
-    .action(async (batch) => {
-        try {
-            const events = await keymaster.resolveAsset(batch);
-            console.log(JSON.stringify(events, null, 4));
-            const ok = await gatekeeper.clearQueue(events);
-
-            if (ok) {
-                console.log("Batch cleared");
-            }
-            else {
-                console.log("Error: batch not cleared");
-            }
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
     .command('import-batch <did> <registry>')
     .description('Import a batch')
     .action(async (did, registry) => {

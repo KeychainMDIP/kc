@@ -49,21 +49,39 @@ export async function deleteOperations(did) {
     await db.collection('dids').deleteOne({ id: id });
 }
 
-export async function queueOperation(op) {
-    op;
-}
-
-export async function getQueue(registry) {
-    registry;
-}
-
-export async function clearQueue(registry, batch) {
-    registry;
-    batch;
-}
-
 export async function getAllKeys() {
     const rows = await db.collection('dids').find().toArray();
     const ids = rows.map(row => row.id);
     return ids;
+}
+
+export async function queueOperation(op) {
+    await db.collection('queue').updateOne(
+        { id: op.registry },
+        { $push: { ops: op } },
+        { upsert: true }
+    );
+}
+
+export async function getQueue(registry) {
+    try {
+        const row = await db.collection('queue').findOne({ id: registry });
+        return row ? row.ops : [];
+    }
+    catch {
+        return [];
+    }
+}
+
+export async function clearQueue(registry, batch) {
+    const queueCollection = db.collection('queue');
+    const oldQueueDocument = await queueCollection.findOne({ id: registry });
+    const oldQueue = oldQueueDocument.ops;
+    const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+
+    await queueCollection.updateOne(
+        { id: registry },
+        { $set: { ops: newQueue } },
+        { upsert: true }
+    );
 }

@@ -568,6 +568,14 @@ export async function importBatch(batch) {
         console.timeEnd('importEvent');
     }
 
+    if (batch.length > 0) {
+        const registry = batch[0].registry;
+
+        if (registry) {
+            db.clearQueue(registry, batch);
+        }
+    }
+
     return {
         verified: verified,
         updated: updated,
@@ -578,10 +586,4 @@ export async function importBatch(batch) {
 export async function getQueue(registry) {
     const queue = db.getQueue(registry);
     return queue;
-}
-
-export async function clearQueue(events) {
-    const registry = events[0].registry;
-    const ok = db.clearQueue(registry, events);
-    return ok;
 }
