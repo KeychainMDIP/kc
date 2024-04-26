@@ -2,6 +2,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster.js';
+import * as cipher from './cipher.js';
 
 program
     .version('1.0.0')
@@ -41,29 +42,48 @@ program
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const db = JSON.parse(contents);
+            const batch = JSON.parse(contents);
 
             // Import DIDs by creation time order to avoid dependency errors
-            let dids = Object.keys(db);
-            dids.sort((a, b) => db[a][0].time - db[b][0].time);
+            batch.sort((a, b) => a[0].time - b[0].time);
 
-            let batch = [];
-            for (const did of dids) {
-                batch.push(db[did]);
+            let chunk = [];
+            for (const events of batch) {
+                chunk.push(events);
 
-                if (batch.length >= 10) {
+                if (chunk.length >= 10) {
                     console.time('importDIDs');
-                    const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+                    const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
                     console.timeEnd('importDIDs');
                     console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
-                    batch = [];
+                    chunk = [];
                 }
             }
 
             console.time('importDIDs');
-            const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+            const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
             console.timeEnd('importDIDs');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('hash-dids <file>')
+    .description('Compute hash of batch')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const batch = JSON.parse(contents);
+
+            // Have to sort before the hash
+            //batch.sort((a, b) => a[0].time - b[0].time);
+            batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
+
+            const hash = cipher.hashJSON(batch);
+            console.log(hash);
         }
         catch (error) {
             console.error(error);
