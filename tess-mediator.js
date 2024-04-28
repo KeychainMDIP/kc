@@ -149,18 +149,22 @@ async function registerBatch() {
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
-            const db = loadDb();
+            const ok = await gatekeeper.clearQueue(batch);
 
-            if (!db.registered) {
-                db.registered = [];
+            if (ok) {
+                const db = loadDb();
+
+                if (!db.registered) {
+                    db.registered = [];
+                }
+
+                db.registered.push({
+                    did,
+                    txid,
+                })
+
+                writeDb(db);
             }
-
-            db.registered.push({
-                did,
-                txid,
-            })
-
-            writeDb(db);
         }
 
         keymaster.useId(saveName);

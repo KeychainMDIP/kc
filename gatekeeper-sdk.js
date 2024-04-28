@@ -162,3 +162,13 @@ export async function getQueue(registry) {
         throwError(error);
     }
 }
+
+export async function clearQueue(events) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/queue/clear`, events);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
