@@ -62,7 +62,7 @@ program
 
 program
     .command('backup-wallet')
-    .description('Backup wallet to encrypted DID')
+    .description('Backup wallet to encrypted DID and seed bank')
     .action(async () => {
         try {
             const did = await keymaster.backupWallet();
@@ -74,8 +74,8 @@ program
     });
 
 program
-    .command('recover-wallet <did>')
-    .description('Recover wallet from encrypted DID')
+    .command('recover-wallet [did]')
+    .description('Recover wallet from seed bank or encrypted DID')
     .action(async (did) => {
         try {
             const wallet = await keymaster.recoverWallet(did);
@@ -782,6 +782,19 @@ program
             else {
                 console.log("Update failed");
             }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('resolve-seed-bank')
+    .description('Resolves the seed bank ID')
+    .action(async () => {
+        try {
+            const doc = await keymaster.resolveSeedBank();
+            console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
             console.error(error);
