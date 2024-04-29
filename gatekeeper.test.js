@@ -12,7 +12,7 @@ afterEach(async () => {
     await gatekeeper.stop();
 });
 
-describe('generateDid', () => {
+describe('anchorSeed', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -28,7 +28,7 @@ describe('generateDid', () => {
                 registry: "mockRegistry"
             }
         };
-        const did = await gatekeeper.generateDID(mockTxn);
+        const did = await gatekeeper.anchorSeed(mockTxn);
 
         expect(did.startsWith('did:mdip:'));
     });
@@ -43,8 +43,8 @@ describe('generateDid', () => {
                 registry: "mockRegistry"
             }
         };
-        const did1 = await gatekeeper.generateDID(mockTxn);
-        const did2 = await gatekeeper.generateDID(mockTxn);
+        const did1 = await gatekeeper.anchorSeed(mockTxn);
+        const did2 = await gatekeeper.anchorSeed(mockTxn);
 
         expect(did1 === did2).toBe(true);
     });
@@ -219,6 +219,25 @@ describe('exportDID', () => {
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
+    it('should export a valid updated DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const ops = await gatekeeper.exportDID(did);
+
+        expect(ops.length).toBe(2);
+        expect(ops[0].did).toStrictEqual(did);
+        expect(ops[0].operation).toStrictEqual(agentOp);
+        expect(ops[1].did).toStrictEqual(did);
+        expect(ops[1].operation).toStrictEqual(updateOp);
+    });
+
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
@@ -261,17 +280,56 @@ describe('importDID', () => {
         expect(imported).toBe(0);
     });
 
-    it('should report 0 ops reported when DID exists', async () => {
+    it('should report 0 ops imported when DID exists', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
-        const updateTxn = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateTxn);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
+        const imported = await gatekeeper.importDID(ops);
+
+        expect(imported).toBe(0);
+    });
+
+    it('should update events when DID is imported from its native registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TESS';
+        ops[1].registry = 'TESS';
+        const imported = await gatekeeper.importDID(ops);
+
+        expect(imported).toBe(2);
+    });
+
+    it('should not overwrite events when verified DID is later synced from another registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+        ops[0].registry = 'TESS';
+        ops[1].registry = 'TESS';
+        await gatekeeper.importDID(ops);
+
+        ops[0].registry = 'hyperswarm';
+        ops[1].registry = 'hyperswarm';
         const imported = await gatekeeper.importDID(ops);
 
         expect(imported).toBe(0);
@@ -284,8 +342,8 @@ describe('importDID', () => {
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
-        const updateTxn = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateTxn);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
         await gatekeeper.resetDb();
@@ -306,8 +364,8 @@ describe('importDID', () => {
         const N = 10;
         for (let i = 0; i < N; i++) {
             doc.didDocumentData = { mock: `${i}` };
-            const updateTxn = await createUpdateOp(keypair, did, doc);
-            await gatekeeper.updateDID(updateTxn);
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gatekeeper.updateDID(updateOp);
         }
 
         const ops = await gatekeeper.exportDID(did);
@@ -350,7 +408,7 @@ describe('importDID', () => {
             await gatekeeper.importDID(ops);
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe('Invalid operation');
         }
     });
 

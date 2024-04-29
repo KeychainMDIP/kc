@@ -67,6 +67,14 @@ export async function getOperations(did) {
     }
 }
 
+export async function setOperations(did, ops) {
+    const db = loadDb();
+    const suffix = did.split(':').pop();
+    
+    db.dids[suffix] = ops;
+    writeDb(db);
+}
+
 export async function deleteOperations(did) {
     const db = loadDb();
     const suffix = did.split(':').pop();
@@ -74,6 +82,57 @@ export async function deleteOperations(did) {
     if (db.dids[suffix]) {
         delete db.dids[suffix];
         writeDb(db);
+    }
+}
+
+export async function queueOperation(op) {
+    const db = loadDb();
+
+    if (!db.queue) {
+        db.queue = {};
+    }
+
+    if (Object.prototype.hasOwnProperty.call(db.queue, op.registry)) {
+        db.queue[op.registry].push(op);
+    }
+    else {
+        db.queue[op.registry] = [op];
+    }
+
+    writeDb(db);
+}
+
+export async function getQueue(registry) {
+    try {
+        const db = loadDb();
+        const queue = db.queue[registry];
+
+        if (queue) {
+            return queue;
+        }
+        else {
+            return [];
+        }
+    }
+    catch {
+        return [];
+    }
+}
+
+export async function clearQueue(registry, batch) {
+    try {
+        const db = loadDb();
+        const oldQueue = db.queue[registry];
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+
+        db.queue[registry] = newQueue;
+        writeDb(db);
+
+        return true;
+    }
+    catch (error) {
+        console.error(error);
+        return false;
     }
 }
 

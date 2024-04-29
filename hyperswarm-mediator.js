@@ -10,7 +10,7 @@ import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.04.10';
+const protocol = '/MDIP/v22.04.23';
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
@@ -40,40 +40,34 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
-async function fetchDids() {
-    const data = {};
-    const dids = await gatekeeper.getDIDs();
-
-    for (const did of dids) {
-        //console.log(`fetching ${did}`);
-        data[did] = await gatekeeper.exportDID(did);
-    }
-
-    return data;
-}
-
 async function shareDb() {
     if (merging) {
         return;
     }
 
     try {
-        console.time('fetchDIDs');
-        const dids = await fetchDids();
-        console.timeEnd('fetchDIDs');
-        console.log(`${Object.keys(dids).length} DIDs fetched`);
+        console.time('getDIDs');
+        const didList = await gatekeeper.getDIDs();
+        console.timeEnd('getDIDs');
 
-        if (isEmpty(dids)) {
+        console.time('exportDIDs');
+        const batch = await gatekeeper.exportDIDs(didList);
+        console.timeEnd('exportDIDs');
+        console.log(`${batch.length} DIDs fetched`);
+
+        if (isEmpty(batch)) {
             return;
         }
 
-        const hash = cipher.hashJSON(dids);
+        // Have to sort before the hash
+        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
+        const hash = cipher.hashJSON(batch);
 
         messagesSeen[hash] = true;
 
         const msg = {
             hash: hash.toString(),
-            data: dids,
+            data: batch,
             relays: [],
             node: config.nodeName,
         };
@@ -103,38 +97,46 @@ async function relayDb(msg) {
     }
 }
 
-async function mergeBatch(batch) {
+async function importDIDs(batch) {
     try {
-        console.log(`mergeBatch: merging ${batch.length} DIDs...`);
-        console.time('mergeBatch');
-        const { verified, updated, failed } = await gatekeeper.mergeBatch(batch);
-        console.timeEnd('mergeBatch');
-        console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
-    }
-    catch (error) {
-        console.error(`mergeBatch error: ${error}`);
-    }
-}
+        console.log(`importDIDs: merging ${batch.length} DIDs...`);
+        console.time('importDIDs');
 
-async function mergeDb(db) {
-    merging = true;
-    if (db) {
-        // Import DIDs by creation time order to avoid dependency errors
-        let dids = Object.keys(db);
-        dids.sort((a, b) => db[a][0].time - db[b][0].time);
-
-        let batch = [];
-        for (const did of dids) {
-            batch.push(db[did]);
-
-            if (batch.length >= 100) {
-                await mergeBatch(batch);
-                batch = [];
+        for (const events of batch) {
+            for (const event of events) {
+                event.registry = 'hyperswarm';
             }
         }
 
-        await mergeBatch(batch);
+        const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
+        console.timeEnd('importDIDs');
+        console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
+    catch (error) {
+        console.error(`importDIDs error: ${error}`);
+    }
+}
+
+async function mergeDb(batch) {
+
+    if (!batch) {
+        return;
+    }
+
+    merging = true;
+
+    let chunk = [];
+    for (const events of batch) {
+        chunk.push(events);
+
+        if (chunk.length >= 100) {
+            await importDIDs(chunk);
+            chunk = [];
+        }
+    }
+
+    await importDIDs(chunk);
+
     merging = false;
 }
 
@@ -142,7 +144,11 @@ let queue = asyncLib.queue(async function (task, callback) {
     const { name, json } = task;
     try {
         const msg = JSON.parse(json);
-        const hash = cipher.hashJSON(msg.data);
+        const batch = msg.data;
+
+        // Have to sort before the hash
+        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
+        const hash = cipher.hashJSON(batch);
         const seen = messagesSeen[hash];
 
         if (!seen) {
@@ -151,9 +157,7 @@ let queue = asyncLib.queue(async function (task, callback) {
             if (ready) {
                 messagesSeen[hash] = true;
 
-                const db = msg.data;
-
-                if (isEmpty(db)) {
+                if (isEmpty(batch)) {
                     return;
                 }
 
@@ -161,7 +165,7 @@ let queue = asyncLib.queue(async function (task, callback) {
                 logConnection(msg.relays[0]);
                 relayDb(msg);
                 console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
-                await mergeDb(db);
+                await mergeDb(batch);
             }
         }
         else {

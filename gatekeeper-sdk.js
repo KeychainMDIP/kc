@@ -17,6 +17,16 @@ export async function start() {
 export async function stop() {
 }
 
+export async function resetDb() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/reset-db`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
 export async function isReady() {
     try {
         const response = await axios.get(`${URL}/api/v1/ready`);
@@ -113,9 +123,49 @@ export async function importDID(ops) {
     }
 }
 
-export async function mergeBatch(batch) {
+export async function exportDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/merge/`, batch);
+        const response = await axios.post(`${URL}/api/v1/export-dids`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function importDIDs(batch) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/import-dids/`, batch);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function importBatch(batch) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/import-batch/`, batch);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function getQueue(registry) {
+    try {
+        const response = await axios.get(`${URL}/api/v1/queue/${registry}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function clearQueue(events) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/queue/clear`, events);
         return response.data;
     }
     catch (error) {

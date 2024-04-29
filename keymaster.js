@@ -75,7 +75,7 @@ export async function backupWallet(registry = defaultRegistry) {
     const keypair = hdKeyPair();
     const msg = JSON.stringify(wallet);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-    const did = await createData({ backup: backup }, registry);
+    const did = await createAsset({ backup: backup }, registry);
 
     return did;
 }
@@ -87,6 +87,11 @@ export async function recoverWallet(did) {
     const wallet = JSON.parse(backup);
 
     return wallet;
+}
+
+export function getCurrentIdName() {
+    const wallet = loadWallet();
+    return wallet.current;
 }
 
 function getCurrentId() {
@@ -127,7 +132,7 @@ export async function encrypt(msg, did, encryptForSender = true, registry = defa
     const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
-    const cipherDid = await createData({
+    const cipherDid = await createAsset({
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
@@ -381,7 +386,7 @@ export async function backupId() {
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const doc = await resolveDID(id.did);
     const registry = doc.mdip.registry;
-    const vaultDid = await createData({ backup: backup }, registry);
+    const vaultDid = await createAsset({ backup: backup }, registry);
 
     doc.didDocumentData.vault = vaultDid;
     const ok = await updateDID(id.did, doc);
@@ -512,7 +517,7 @@ export function lookupDID(name) {
     throw "Unknown DID";
 }
 
-export async function createData(data, registry = defaultRegistry) {
+export async function createAsset(data, registry = defaultRegistry) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -548,7 +553,7 @@ export async function createData(data, registry = defaultRegistry) {
 
 export async function createCredential(schema) {
     // TBD validate schema
-    return createData(schema);
+    return createAsset(schema);
 }
 
 export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
@@ -660,7 +665,7 @@ export async function unpublishCredential(did) {
 export async function createChallenge(challenge) {
     // TBD validate challenge as list of requirements
     // each requirement is a object containing a list of trusted attestor DIDs and a list of acceptable schema DIDs
-    return createData(challenge);
+    return createAsset(challenge);
 }
 
 async function findMatchingCredential(credential) {
@@ -814,7 +819,7 @@ export async function createGroup(name) {
         members: []
     };
 
-    return createData(group);
+    return createAsset(group);
 }
 
 export async function groupAdd(group, member) {
@@ -932,7 +937,7 @@ export async function createSchema(schema) {
         throw "Invalid schema";
     }
 
-    return createData(schema);
+    return createAsset(schema);
 }
 
 export async function createTemplate(did) {
@@ -1007,7 +1012,7 @@ export async function createPoll(poll) {
     }
 
     // TBD validate poll
-    return createData(poll);
+    return createAsset(poll);
 }
 
 export async function viewPoll(poll) {

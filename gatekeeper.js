@@ -7,7 +7,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm'];
+const validRegistries = ['local', 'hyperswarm', 'TESS'];
+const queueRegistries = ['TESS'];
 
 let db = null;
 let helia = null;
@@ -71,18 +72,19 @@ async function addOperation(did, registry, operation, time, ordinal = 0) {
     await db.addOperation(op);
 }
 
-export async function generateDID(operation) {
-    const did = await anchorSeed(operation);
-    const ops = await exportDID(did);
+async function queueOperation(did, registry, operation, time, ordinal = 0) {
+    const op = {
+        registry,
+        time,
+        ordinal,
+        did,
+        operation,
+    };
 
-    if (ops.length === 0) {
-        await addOperation(did, operation.mdip.registry, operation, operation.created);
-    }
-
-    return did;
+    await db.queueOperation(op);
 }
 
-async function createAgent(operation) {
+async function verifyCreateAgent(operation) {
     if (!operation.signature) {
         throw "Invalid operation";
     }
@@ -97,14 +99,10 @@ async function createAgent(operation) {
     const msgHash = cipher.hashJSON(operationCopy);
     const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 
-    if (!isValid) {
-        throw "Invalid operation";
-    }
-
-    return generateDID(operation);
+    return isValid;
 }
 
-async function createAsset(operation) {
+async function verifyCreateAsset(operation) {
     if (operation.controller !== operation.signature.signer) {
         throw "Invalid operation";
     }
@@ -117,14 +115,10 @@ async function createAsset(operation) {
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 
-    if (!isValid) {
-        throw "Invalid operation";
-    }
-
-    return generateDID(operation);
+    return isValid;
 }
 
-export async function createDID(operation) {
+async function verifyCreate(operation) {
     if (operation?.type !== "create") {
         throw "Invalid operation";
     }
@@ -151,14 +145,33 @@ export async function createDID(operation) {
     }
 
     if (operation.mdip.type === 'agent') {
-        return createAgent(operation);
+        return verifyCreateAgent(operation);
     }
 
     if (operation.mdip.type === 'asset') {
-        return createAsset(operation);
+        return verifyCreateAsset(operation);
     }
 
-    throw "Unknown type";
+    throw "Invalid operation";
+}
+
+export async function createDID(operation) {
+    const valid = await verifyCreate(operation);
+
+    if (valid) {
+        const did = await anchorSeed(operation);
+        const ops = await exportDID(did);
+
+        if (ops.length === 0) {
+            await addOperation(did, 'hyperswarm', operation, operation.created);
+            await queueOperation(did, operation.mdip.registry, operation, operation.created);
+        }
+
+        return did;
+    }
+    else {
+        throw "Invalid operation";
+    }
 }
 
 async function generateDoc(did, anchor, asofTime) {
@@ -358,12 +371,16 @@ export async function updateDID(operation) {
 
         const registry = doc.mdip.registry;
 
-        // TBD figure out time for blockchain registries
-        await addOperation(operation.did, registry, operation, operation.signature.signed);
+        if (queueRegistries.includes(registry)) {
+            await queueOperation(operation.did, registry, operation, operation.signature.signed);
+        }
+
+        await addOperation(operation.did, 'hyperswarm', operation, operation.signature.signed);
+
         return true;
     }
     catch (error) {
-        console.error(error);
+        //console.error(error);
         return false;
     }
 }
@@ -382,73 +399,98 @@ export async function exportDID(did) {
     return await db.getOperations(did);
 }
 
-export async function importDID(ops) {
+export async function exportDIDs(dids) {
+    const batch = [];
 
-    if (!ops || !Array.isArray(ops) || ops.length < 1) {
+    for (const did of dids) {
+        batch.push(await db.getOperations(did));
+    }
+
+    return batch;
+}
+
+async function importCreateEvent(event) {
+    try {
+        const valid = await verifyCreate(event.operation);
+
+        if (valid) {
+            const did = await anchorSeed(event.operation);
+
+            if (did !== event.did) {
+                return false;
+            }
+
+            await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+            return true;
+        }
+
+        return false;
+    }
+    catch {
+        return false;
+    }
+}
+
+async function importUpdateEvent(event) {
+    try {
+        const doc = await resolveDID(event.operation.did);
+        const updateValid = await verifyUpdate(event.operation, doc);
+
+        if (!updateValid) {
+            return false;
+        }
+
+        await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+        return true;
+    }
+    catch (error) {
+        //console.error(error);
+        return false;
+    }
+}
+
+export async function importDID(events) {
+    if (!events || !Array.isArray(events) || events.length < 1) {
         throw "Invalid import";
     }
 
-    const create = ops[0];
-    const did = create.did;
-    const current = await exportDID(did);
+    let updated = 0;
 
-    if (current.length === 0) {
-        const check = await createDID(create.operation);
+    for (const event of events) {
+        const imported = await importEvent(event);
 
-        if (did !== check) {
-            throw "Invalid import";
-        }
-    }
-    else {
-        if (create.operation.signature.value !== current[0].operation.signature.value) {
-            throw "Invalid import";
+        if (imported) {
+            updated += 1;
         }
     }
 
-    for (let i = 1; i < ops.length; i++) {
-        if (i < current.length) {
-            // Verify previous update ops
-            if (ops[i].operation.signature.value !== current[i].operation.signature.value) {
-                throw "Invalid import";
-            }
-        }
-        else {
-            // Add new updates
-            const ok = await updateDID(ops[i].operation);
-
-            if (!ok) {
-                throw "Invalid import";
-            }
-        }
-    }
-
-    const after = await exportDID(did);
-    const diff = after.length - current.length;
-
-    return diff;
+    return updated;
 }
 
-export async function mergeBatch(batch) {
+export async function importDIDs(batch) {
     let verified = 0;
     let updated = 0;
     let failed = 0;
 
-    for (const ops of batch) {
+    for (const events of batch) {
+        console.time('importDID');
         try {
-            console.time('importDID');
-            const diff = await importDID(ops);
-            console.timeEnd('importDID');
+            for (const event of events) {
+                const imported = await importEvent(event);
 
-            if (diff > 0) {
-                updated += 1;
-            }
-            else {
-                verified += 1;
+                if (imported) {
+                    updated += 1;
+                }
+                else {
+                    verified += 1;
+                }
             }
         }
-        catch {
+        catch (error) {
+            console.error(error);
             failed += 1;
         }
+        console.timeEnd('importDID');
     }
 
     return {
@@ -456,4 +498,90 @@ export async function mergeBatch(batch) {
         updated: updated,
         failed: failed,
     };
+}
+
+export async function importEvent(event) {
+    const current = await exportDID(event.did);
+
+    if (current.length === 0) {
+        const ok = await importCreateEvent(event);
+
+        if (!ok) {
+            throw "Invalid operation";
+        }
+
+        return true;
+    }
+
+    const create = current[0];
+    const registry = create.operation.mdip.registry;
+    const match = current.find(item => item.operation.signature.value === event.operation.signature.value);
+
+    if (match) {
+        if (match.registry === registry) {
+            // Don't update if this op has already been validated on its native registry
+            return false;
+        }
+
+        if (event.registry === registry) {
+            // If this import is on the native registry, replace the current one
+            const index = current.indexOf(match);
+            current[index] = event;
+
+            db.setOperations(match.did, current);
+            return true;
+        }
+
+        return false;
+    }
+
+    const ok = await importUpdateEvent(event);
+
+    if (!ok) {
+        throw "Invalid operation";
+    }
+
+    return true;
+}
+
+export async function importBatch(batch) {
+    let verified = 0;
+    let updated = 0;
+    let failed = 0;
+
+    for (const event of batch) {
+        console.time('importEvent');
+        try {
+            const imported = await importEvent(event);
+
+            if (imported) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        catch (error) {
+            console.error(error);
+            failed += 1;
+        }
+        console.timeEnd('importEvent');
+    }
+
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
+}
+
+export async function getQueue(registry) {
+    const queue = db.getQueue(registry);
+    return queue;
+}
+
+export async function clearQueue(events) {
+    const registry = events[0].registry;
+    const ok = db.clearQueue(registry, events);
+    return ok;
 }

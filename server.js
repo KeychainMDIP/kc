@@ -40,6 +40,15 @@ v1router.get('/version', async (req, res) => {
     }
 });
 
+v1router.get('/reset-db', async (req, res) => {
+    try {
+        await gatekeeper.resetDb();
+        res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/did', async (req, res) => {
     try {
         const operation = req.body;
@@ -103,6 +112,17 @@ v1router.get('/export/:did', async (req, res) => {
     }
 });
 
+v1router.post('/export-dids', async (req, res) => {
+    try {
+        const dids = req.body;
+        const ops = await gatekeeper.exportDIDs(dids);
+        res.json(ops);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/import', async (req, res) => {
     try {
         const ops = req.body;
@@ -114,11 +134,43 @@ v1router.post('/import', async (req, res) => {
     }
 });
 
-v1router.post('/merge', async (req, res) => {
+v1router.post('/import-dids', async (req, res) => {
     try {
         const batch = req.body;
-        const did = await gatekeeper.mergeBatch(batch);
+        const did = await gatekeeper.importDIDs(batch);
         res.json(did);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/import-batch', async (req, res) => {
+    try {
+        const batch = req.body;
+        const did = await gatekeeper.importBatch(batch);
+        res.json(did);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/queue/:registry', async (req, res) => {
+    try {
+        const queue = await gatekeeper.getQueue(req.params.registry);
+        res.json(queue);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/queue/clear', async (req, res) => {
+    try {
+        const events = req.body;
+        const queue = await gatekeeper.clearQueue(events);
+        res.json(queue);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -167,8 +219,8 @@ gatekeeper.verifyDb().then((invalid) => {
     });
 });
 
-process.on('uncaughtException', () => {
-    console.error('Unhandled exception caught');
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
