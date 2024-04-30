@@ -905,6 +905,23 @@ export async function verifyResponse(responseDID, challengeDID) {
             continue;
         }
 
+        // Check VP against VCs specified in challenge
+        if (vp.type.length > 1 && vp.type[1].startsWith('did:')) {
+            const schema = vp.type[1];
+            const credential = challenge.credentials.find(item => item.schema === schema);
+
+            if (!credential) {
+                continue;
+            }
+
+            // Check if issuer of VP is in the trusted attestor list
+            if (credential.attestors.length > 0) {
+                if (!credential.attestors.includes(vp.issuer)) {
+                    continue;
+                }
+            }
+        }
+
         vps.push(vp);
     }
 

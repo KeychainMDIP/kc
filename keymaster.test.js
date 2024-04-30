@@ -1364,7 +1364,62 @@ describe('verifyResponse', () => {
         expect(verify).toStrictEqual(expected);
     });
 
-    it('should demonstrate full workflow', async () => {
+    it('should not verify valid response to a invalid challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Bob');
+        const responseDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Alice');
+        const verify = await keymaster.verifyResponse(responseDid, responseDid);
+
+        const expected = {
+            challenge: challengeDid,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: false,
+        };
+
+        expect(verify).toStrictEqual(expected);
+    });
+
+    it('should not verify valid response to a different challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Bob');
+        const responseDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Alice');
+        const differentChallengeDid = await keymaster.createChallenge(challenge);
+        const verify = await keymaster.verifyResponse(responseDid, differentChallengeDid);
+
+        const expected = {
+            challenge: challengeDid,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: false,
+        };
+
+        expect(verify).toStrictEqual(expected);
+    });
+
+    it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -1435,6 +1490,7 @@ describe('verifyResponse', () => {
         keymaster.useId('Victor');
 
         const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify1.match).toBe(true);
         expect(verify1.vps.length).toBe(4);
 
         // All agents rotate keys
@@ -1451,13 +1507,15 @@ describe('verifyResponse', () => {
         await keymaster.rotateKeys();
 
         const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify2.match).toBe(true);
         expect(verify2.vps.length).toBe(4);
 
         keymaster.useId('Alice');
         await keymaster.revokeCredential(vc1);
 
         keymaster.useId('Victor');
-        const verify3 = await keymaster.verifyResponse(vpDid, challengeDid);
+        const verify3 = await keymaster.verifyResponse(vpDid, challengeDid)
+        expect(verify3.match).toBe(false);
         expect(verify3.vps.length).toBe(3);
 
         keymaster.useId('Bob');
@@ -1465,6 +1523,7 @@ describe('verifyResponse', () => {
 
         keymaster.useId('Victor');
         const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify4.match).toBe(false);
         expect(verify4.vps.length).toBe(2);
     });
 });
