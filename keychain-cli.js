@@ -474,11 +474,11 @@ program
     });
 
 program
-    .command('verify-response <did>')
+    .command('verify-response <response> <challenge>')
     .description('Decrypt and validate a Verifiable Presentation')
-    .action(async (did) => {
+    .action(async (response, challenge) => {
         try {
-            const vp = await keymaster.verifyResponse(did);
+            const vp = await keymaster.verifyResponse(response, challenge);
             console.log(JSON.stringify(vp, null, 4));
         }
         catch (error) {
