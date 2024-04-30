@@ -104,6 +104,18 @@ describe('newWallet', () => {
     });
 });
 
+describe('resolveSeedBank', () => {
+
+    it('should create a deterministic seed bank ID', async () => {
+        mockFs({});
+
+        const bank1 = keymaster.resolveSeedBank();
+        const bank2 = keymaster.resolveSeedBank();
+
+        expect(bank1).toStrictEqual(bank2);
+    });
+});
+
 describe('backupWallet', () => {
 
     afterEach(() => {
@@ -120,15 +132,14 @@ describe('backupWallet', () => {
         expect(did === doc.didDocument.id).toBe(true);
     });
 
-    it('should throw an exception if no current id', async () => {
+    it('should store backup in seed bank', async () => {
         mockFs({});
 
-        try {
-            await keymaster.backupWallet();
-            throw ('Expected to throw an exception');
-        } catch (error) {
-            expect(error).toBe(`No current ID`);
-        }
+        await keymaster.createId('Bob');
+        const did = await keymaster.backupWallet();
+        const bank = await keymaster.resolveSeedBank();
+
+        expect(did === bank.didDocumentData.wallet).toBe(true);
     });
 });
 
@@ -136,6 +147,21 @@ describe('recoverWallet', () => {
 
     afterEach(() => {
         mockFs.restore();
+    });
+
+    it('should recover wallet from seed bank', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const wallet = keymaster.loadWallet();
+        const mnemonic = keymaster.decryptMnemonic();
+        await keymaster.backupWallet();
+
+        // Recover wallet from mnemonic
+        keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(wallet).toStrictEqual(recovered);
     });
 
     it('should recover wallet from backup DID', async () => {

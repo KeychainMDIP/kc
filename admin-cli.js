@@ -183,6 +183,19 @@ program
         }
     });
 
+program
+    .command('resolve-seed-bank')
+    .description('Resolves the seed bank ID')
+    .action(async () => {
+        try {
+            const doc = await keymaster.resolveSeedBank();
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     await keymaster.start(gatekeeper);
     program.parse(process.argv);

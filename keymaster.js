@@ -70,18 +70,109 @@ export function loadWallet() {
     return newWallet();
 }
 
+export async function resolveSeedBank() {
+    const keypair = hdKeyPair();
+
+    const operation = {
+        type: "create",
+        created: new Date(0).toISOString(),
+        mdip: {
+            version: 1,
+            type: "agent",
+            registry: defaultRegistry,
+        },
+        publicJwk: keypair.publicJwk,
+    };
+
+    const msgHash = cipher.hashJSON(operation);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signed = {
+        ...operation,
+        signature: {
+            signed: new Date(0).toISOString(),
+            hash: msgHash,
+            value: signature
+        }
+    }
+    const did = await gatekeeper.createDID(signed);
+    const doc = await gatekeeper.resolveDID(did);
+
+    return doc;
+}
+
+async function updateSeedBank(doc) {
+    const keypair = hdKeyPair();
+    const did = doc.didDocument.id;
+    const current = await gatekeeper.resolveDID(did);
+    const prev = cipher.hashJSON(current);
+
+    const operation = {
+        type: "update",
+        did: did,
+        doc: doc,
+        prev: prev,
+    };
+
+    const msgHash = cipher.hashJSON(operation);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signed = {
+        ...operation,
+        signature: {
+            signer: did,
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+
+    const ok = await gatekeeper.updateDID(signed);
+    return ok;
+}
+
 export async function backupWallet(registry = defaultRegistry) {
     const wallet = loadWallet();
     const keypair = hdKeyPair();
+    const seedBank = await resolveSeedBank();
     const msg = JSON.stringify(wallet);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-    const did = await createAsset({ backup: backup }, registry);
+    const operation = {
+        type: "create",
+        created: new Date().toISOString(),
+        mdip: {
+            version: 1,
+            type: "asset",
+            registry: registry,
+        },
+        controller: seedBank.didDocument.id,
+        data: { backup: backup },
+    };
+    const msgHash = cipher.hashJSON(operation);
+    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signed = {
+        ...operation,
+        signature: {
+            signer: seedBank.didDocument.id,
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+    const backupDID = await gatekeeper.createDID(signed);
 
-    return did;
+    seedBank.didDocumentData.wallet = backupDID;
+    await updateSeedBank(seedBank);
+
+    return backupDID;
 }
 
 export async function recoverWallet(did) {
     const keypair = hdKeyPair();
+
+    if (!did) {
+        const seedBank = await resolveSeedBank();
+        did = seedBank.didDocumentData.wallet;
+    }
+
     const data = await resolveAsset(did);
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
     const wallet = JSON.parse(backup);
