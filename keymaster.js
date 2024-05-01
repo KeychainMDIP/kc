@@ -754,8 +754,17 @@ export async function unpublishCredential(did) {
 }
 
 export async function createChallenge(challenge) {
-    // TBD validate challenge as list of requirements
-    // each requirement is a object containing a list of trusted attestor DIDs and a list of acceptable schema DIDs
+
+    // TBD: replace with challenge schema validation
+
+    if (!challenge?.credentials) {
+        throw "Invalid input";
+    }
+
+    if (!Array.isArray(challenge.credentials)) {
+        throw "Invalid input";
+    }
+
     return createAsset(challenge);
 }
 
@@ -858,14 +867,22 @@ export async function createResponse(did) {
     return responseDid;
 }
 
-export async function verifyResponse(did) {
-    const responseDID = lookupDID(did);
+export async function verifyResponse(responseDID, challengeDID) {
+    responseDID = lookupDID(responseDID);
+    challengeDID = lookupDID(challengeDID);
 
     if (!responseDID) {
         throw "Invalid response";
     }
 
     const response = await decryptJSON(responseDID);
+
+    if (response.challenge !== challengeDID) {
+        response.match = false;
+        return response;
+    }
+
+    const challenge = await resolveAsset(challengeDID);
     const vps = [];
 
     for (let credential of response.credentials) {
@@ -888,12 +905,30 @@ export async function verifyResponse(did) {
             continue;
         }
 
+        // Check VP against VCs specified in challenge
+        if (vp.type.length > 1 && vp.type[1].startsWith('did:')) {
+            const schema = vp.type[1];
+            const credential = challenge.credentials.find(item => item.schema === schema);
+
+            if (!credential) {
+                continue;
+            }
+
+            // Check if issuer of VP is in the trusted attestor list
+            if (credential.attestors && credential.attestors.length > 0) {
+                if (!credential.attestors.includes(vp.issuer)) {
+                    continue;
+                }
+            }
+        }
+
         vps.push(vp);
     }
 
-    // TBD ensure VPs match challenge
+    response.vps = vps;
+    response.match = vps.length === challenge.credentials.length;
 
-    return vps;
+    return response;
 }
 
 export async function exportDID(did) {

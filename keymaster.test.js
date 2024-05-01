@@ -1203,6 +1203,19 @@ describe('createChallenge', () => {
         mockFs.restore();
     });
 
+    it('should create a valid empty challenge', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const challenge = { credentials: [] };
+        const did = await keymaster.createChallenge(challenge);
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocumentData).toStrictEqual(challenge);
+    });
+
     it('should create a valid challenge', async () => {
         mockFs({});
 
@@ -1226,6 +1239,44 @@ describe('createChallenge', () => {
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual(challenge);
+    });
+
+    it('should throw an exception if challenge spec is invalid', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.createChallenge();
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Invalid input');
+        }
+
+        try {
+            await keymaster.createChallenge([]);
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Invalid input');
+        }
+
+        try {
+            await keymaster.createChallenge({ credentials: 123 });
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Invalid input');
+        }
+
+        try {
+            await keymaster.createChallenge({ mock: [] });
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Invalid input');
+        }
     });
 });
 
@@ -1285,7 +1336,168 @@ describe('verifyResponse', () => {
         mockFs.restore();
     });
 
-    it('should demonstrate full workflow', async () => {
+    it('should verify valid response to empty challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Bob');
+        const responseDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Alice');
+        const verify = await keymaster.verifyResponse(responseDid, challengeDid);
+
+        const expected = {
+            challenge: challengeDid,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: true,
+            vps: [],
+        };
+
+        expect(verify).toStrictEqual(expected);
+    });
+
+    it('should not verify valid response to a invalid challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Bob');
+        const responseDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Alice');
+        const verify = await keymaster.verifyResponse(responseDid, responseDid);
+
+        const expected = {
+            challenge: challengeDid,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: false,
+        };
+
+        expect(verify).toStrictEqual(expected);
+    });
+
+    it('should not verify valid response to a different challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.useId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Bob');
+        const responseDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Alice');
+        const differentChallengeDid = await keymaster.createChallenge(challenge);
+        const verify = await keymaster.verifyResponse(responseDid, differentChallengeDid);
+
+        const expected = {
+            challenge: challengeDid,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: false,
+        };
+
+        expect(verify).toStrictEqual(expected);
+    });
+
+    it('should verify a valid response to a single credential challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const credential1 = await keymaster.createCredential(mockSchema);
+        const bc1 = await keymaster.bindCredential(credential1, carol);
+        const vc1 = await keymaster.attestCredential(bc1);
+
+        keymaster.useId('Carol');
+
+        await keymaster.acceptCredential(vc1);
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Carol');
+        const vpDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Victor');
+
+        const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+
+        expect(verify1.match).toBe(true);
+        expect(verify1.challenge).toBe(challengeDid);
+        expect(verify1.requested).toBe(1);
+        expect(verify1.fulfilled).toBe(1);
+        expect(verify1.vps.length).toBe(1);
+    });
+
+    it('should verify a valid response to a single credential challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const credential1 = await keymaster.createCredential(mockSchema);
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Carol');
+        const vpDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Victor');
+
+        const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+
+        expect(verify1.match).toBe(false);
+        expect(verify1.challenge).toBe(challengeDid);
+        expect(verify1.requested).toBe(1);
+        expect(verify1.fulfilled).toBe(0);
+        expect(verify1.vps.length).toBe(0);
+    });
+
+    it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -1355,8 +1567,9 @@ describe('verifyResponse', () => {
 
         keymaster.useId('Victor');
 
-        const vcList = await keymaster.verifyResponse(vpDid);
-        expect(vcList.length).toBe(4);
+        const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify1.match).toBe(true);
+        expect(verify1.vps.length).toBe(4);
 
         // All agents rotate keys
         keymaster.useId('Alice');
@@ -1371,22 +1584,25 @@ describe('verifyResponse', () => {
         keymaster.useId('Victor');
         await keymaster.rotateKeys();
 
-        const vcList2 = await keymaster.verifyResponse(vpDid);
-        expect(vcList2.length).toBe(4);
+        const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify2.match).toBe(true);
+        expect(verify2.vps.length).toBe(4);
 
         keymaster.useId('Alice');
         await keymaster.revokeCredential(vc1);
 
         keymaster.useId('Victor');
-        const vcList3 = await keymaster.verifyResponse(vpDid);
-        expect(vcList3.length).toBe(3);
+        const verify3 = await keymaster.verifyResponse(vpDid, challengeDid)
+        expect(verify3.match).toBe(false);
+        expect(verify3.vps.length).toBe(3);
 
         keymaster.useId('Bob');
         await keymaster.revokeCredential(vc3);
 
         keymaster.useId('Victor');
-        const vcList4 = await keymaster.verifyResponse(vpDid);
-        expect(vcList4.length).toBe(2);
+        const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
+        expect(verify4.match).toBe(false);
+        expect(verify4.vps.length).toBe(2);
     });
 });
 
