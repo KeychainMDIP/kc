@@ -17,6 +17,7 @@ const config = {
     tessID: process.env.KC_TESS_ID || 'tesseract',
     btcHost: process.env.KC_BTC_HOST || 'localhost',
     btcPort: process.env.KC_BTC_PORT || 8332,
+    btcWallet: process.env.KC_BTC_WALLET,
     btcUser: process.env.KC_BTC_USER,
     btcPass: process.env.KC_BTC_PASS,
 };

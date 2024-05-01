@@ -15,7 +15,7 @@ const client = new BtcClient({
     password: config.btcPass,
     host: config.btcHost,
     port: config.btcPort,
-    wallet: 'beta',
+    wallet: config.btcWallet,
 });
 
 const dbName = 'data/btc-mediator.json';

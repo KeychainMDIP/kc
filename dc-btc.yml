@@ -75,6 +75,7 @@ services:
       - KC_BTC_PORT=${KC_BTC_PORT}
       - KC_BTC_USER=${KC_BTC_USER}
       - KC_BTC_PASS=${KC_BTC_PASS}
+      - KC_BTC_WALLET=${KC_BTC_WALLET}
     volumes:
       - ./data:/app/data
     depends_on:
