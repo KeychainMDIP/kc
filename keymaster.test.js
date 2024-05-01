@@ -1419,6 +1419,84 @@ describe('verifyResponse', () => {
         expect(verify).toStrictEqual(expected);
     });
 
+    it('should verify a valid response to a single credential challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const credential1 = await keymaster.createCredential(mockSchema);
+        const bc1 = await keymaster.bindCredential(credential1, carol);
+        const vc1 = await keymaster.attestCredential(bc1);
+
+        keymaster.useId('Carol');
+
+        await keymaster.acceptCredential(vc1);
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Carol');
+        const vpDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Victor');
+
+        const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+
+        expect(verify1.match).toBe(true);
+        expect(verify1.challenge).toBe(challengeDid);
+        expect(verify1.requested).toBe(1);
+        expect(verify1.fulfilled).toBe(1);
+        expect(verify1.vps.length).toBe(1);
+    });
+
+    it('should verify a valid response to a single credential challenge', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.useId('Alice');
+
+        const credential1 = await keymaster.createCredential(mockSchema);
+
+        keymaster.useId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
+        };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        keymaster.useId('Carol');
+        const vpDid = await keymaster.createResponse(challengeDid);
+
+        keymaster.useId('Victor');
+
+        const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+
+        expect(verify1.match).toBe(false);
+        expect(verify1.challenge).toBe(challengeDid);
+        expect(verify1.requested).toBe(1);
+        expect(verify1.fulfilled).toBe(0);
+        expect(verify1.vps.length).toBe(0);
+    });
+
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 

@@ -915,7 +915,7 @@ export async function verifyResponse(responseDID, challengeDID) {
             }
 
             // Check if issuer of VP is in the trusted attestor list
-            if (credential.attestors.length > 0) {
+            if (credential.attestors && credential.attestors.length > 0) {
                 if (!credential.attestors.includes(vp.issuer)) {
                     continue;
                 }
