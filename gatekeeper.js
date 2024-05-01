@@ -7,8 +7,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm', 'TESS'];
-const queueRegistries = ['TESS'];
+const validRegistries = ['local', 'hyperswarm', 'TESS', 'BTC'];
+const queueRegistries = ['TESS', 'BTC'];
 
 let db = null;
 let helia = null;
