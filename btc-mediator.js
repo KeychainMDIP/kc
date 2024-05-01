@@ -7,6 +7,7 @@ import config from './config.js';
 const REGISTRY = 'BTC';
 const FIRST = 841600;
 const NODE_ID = config.nodeID;
+const FEE_INCREMENT = 0.00002000;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -14,6 +15,7 @@ const client = new BtcClient({
     password: config.btcPass,
     host: config.btcHost,
     port: config.btcPort,
+    wallet: 'beta',
 });
 
 const dbName = 'data/btc-mediator.json';
@@ -138,7 +140,100 @@ async function importBatch() {
     }
 }
 
+export async function createOpReturnTxn(opReturnData) {
+    try {
+        const txnfee = FEE_INCREMENT;
+        const utxos = await client.listUnspent();
+        const utxo = utxos.find(utxo => utxo.amount > txnfee);
+
+        if (!utxo) {
+            return;
+        }
+
+        const amountIn = utxo.amount;
+        const amountBack = amountIn - txnfee;
+
+        // Convert the OP_RETURN data to a hex string
+        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
+
+        // Fetch a new address for the transaction output
+        const address = await client.getNewAddress();
+
+        const rawTxn = await client.createRawTransaction([{
+            txid: utxo.txid,
+            vout: utxo.vout,
+            sequence: 0xffffffff - 2  // Make this transaction RBF
+        }], {
+            data: opReturnHex,
+            [address]: amountBack.toFixed(8)
+        });
+
+        // Sign the raw transaction
+        const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+
+        console.log(JSON.stringify(signedTxn, null, 4));
+        console.log(amountBack);
+
+        // Broadcast the transaction
+        const txid = await client.sendRawTransaction(signedTxn.hex);
+
+        console.log(`Transaction broadcasted with txid: ${txid}`);
+        return txid;
+    } catch (error) {
+        console.error(`Error creating OP_RETURN transaction: ${error}`);
+    }
+}
+
+async function replaceByFee() {
+    const db = loadDb();
+
+    if (!db.pendingTxid) {
+        return false;
+    }
+
+    console.log('pendingTxid', db.pendingTxid);
+
+    const tx = await client.getRawTransaction(db.pendingTxid, 1);
+
+    if (tx.blockhash) {
+        db.pendingTxid = null;
+        writeDb(db);
+        return false;
+    }
+
+    console.log(JSON.stringify(tx, null, 4));
+
+    const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
+    const opReturnHex = tx.vout[0].scriptPubKey.hex;
+    const address = tx.vout[1].scriptPubKey.address;
+    const amountBack = tx.vout[1].value - FEE_INCREMENT;
+
+    const rawTxn = await client.createRawTransaction(inputs, {
+        data: opReturnHex.substring(4),
+        [address]: amountBack.toFixed(8)
+    });
+
+    const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+
+    console.log(JSON.stringify(signedTxn, null, 4));
+    console.log(amountBack);
+
+    const txid = await client.sendRawTransaction(signedTxn.hex);
+
+    console.log(`Transaction broadcasted with txid: ${txid}`);
+
+    db.pendingTxid = txid;
+    writeDb(db);
+
+    return true;
+}
+
 async function registerBatch() {
+
+    if (await replaceByFee()) {
+        return;
+    }
+
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(JSON.stringify(batch, null, 4));
 
@@ -162,6 +257,8 @@ async function registerBatch() {
                     did,
                     txid,
                 })
+
+                db.pendingTxid = txid;
 
                 writeDb(db);
             }
@@ -205,42 +302,7 @@ async function main() {
     await keymaster.stop();
 }
 
-export async function createOpReturnTxn(opReturnData) {
-    try {
-        const utxos = await client.listUnspent();
-        const utxo = utxos[0];
-        const amountIn = utxo.amount;
-        const txnfee = 0.00010000;
-        const amountBack = amountIn - txnfee;
-
-        // Convert the OP_RETURN data to a hex string
-        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
-
-        // Fetch a new address for the transaction output
-        const address = await client.getNewAddress();
-
-        const rawTxn = await client.createRawTransaction([{
-            txid: utxo.txid,
-            vout: utxo.vout
-        }], {
-            data: opReturnHex,
-            [address]: amountBack.toFixed(8)
-        });
-
-        // Sign the raw transaction
-        const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
-
-        console.log(JSON.stringify(signedTxn, null, 4));
-        console.log(amountBack);
-
-        // Broadcast the transaction
-        const txid = await client.sendRawTransaction(signedTxn.hex);
-
-        console.log(`Transaction broadcasted with txid: ${txid}`);
-        return txid;
-    } catch (error) {
-        console.error(`Error creating OP_RETURN transaction: ${error}`);
-    }
-}
-
 main();
+
+// await keymaster.start(gatekeeper);
+// await registerBatch();
