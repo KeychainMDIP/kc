@@ -6,8 +6,6 @@ import config from './config.js';
 
 const REGISTRY = 'BTC';
 const FIRST = 841600;
-const NODE_ID = config.nodeID;
-const FEE_INCREMENT = 0.00002000;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -93,7 +91,7 @@ async function fetchBlock(height, blockCount) {
     }
 }
 
-async function sync() {
+async function scanBlocks() {
     let start = FIRST;
     let blockCount = await client.getBlockCount();
 
@@ -141,47 +139,43 @@ async function importBatch() {
 }
 
 export async function createOpReturnTxn(opReturnData) {
-    try {
-        const txnfee = FEE_INCREMENT;
-        const utxos = await client.listUnspent();
-        const utxo = utxos.find(utxo => utxo.amount > txnfee);
+    const txnfee = config.btcFeeMin;
+    const utxos = await client.listUnspent();
+    const utxo = utxos.find(utxo => utxo.amount > txnfee);
 
-        if (!utxo) {
-            return;
-        }
-
-        const amountIn = utxo.amount;
-        const amountBack = amountIn - txnfee;
-
-        // Convert the OP_RETURN data to a hex string
-        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
-
-        // Fetch a new address for the transaction output
-        const address = await client.getNewAddress();
-
-        const rawTxn = await client.createRawTransaction([{
-            txid: utxo.txid,
-            vout: utxo.vout,
-            sequence: 0xffffffff - 2  // Make this transaction RBF
-        }], {
-            data: opReturnHex,
-            [address]: amountBack.toFixed(8)
-        });
-
-        // Sign the raw transaction
-        const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
-
-        console.log(JSON.stringify(signedTxn, null, 4));
-        console.log(amountBack);
-
-        // Broadcast the transaction
-        const txid = await client.sendRawTransaction(signedTxn.hex);
-
-        console.log(`Transaction broadcasted with txid: ${txid}`);
-        return txid;
-    } catch (error) {
-        console.error(`Error creating OP_RETURN transaction: ${error}`);
+    if (!utxo) {
+        return;
     }
+
+    const amountIn = utxo.amount;
+    const amountBack = amountIn - txnfee;
+
+    // Convert the OP_RETURN data to a hex string
+    const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
+
+    // Fetch a new address for the transaction output
+    const address = await client.getNewAddress();
+
+    const rawTxn = await client.createRawTransaction([{
+        txid: utxo.txid,
+        vout: utxo.vout,
+        sequence: 0xffffffff - 2  // Make this transaction RBF
+    }], {
+        data: opReturnHex,
+        [address]: amountBack.toFixed(8)
+    });
+
+    // Sign the raw transaction
+    const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+
+    console.log(JSON.stringify(signedTxn, null, 4));
+    console.log(amountBack);
+
+    // Broadcast the transaction
+    const txid = await client.sendRawTransaction(signedTxn.hex);
+
+    console.log(`Transaction broadcasted with txid: ${txid}`);
+    return txid;
 }
 
 async function replaceByFee() {
@@ -203,10 +197,21 @@ async function replaceByFee() {
 
     console.log(JSON.stringify(tx, null, 4));
 
+    const mempoolEntry = await client.getMempoolEntry(db.pendingTxid);
+
+    if (mempoolEntry && mempoolEntry.fee >= config.btcFeeMax) {
+        return true;
+    }
+
     const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
     const address = tx.vout[1].scriptPubKey.address;
-    const amountBack = tx.vout[1].value - FEE_INCREMENT;
+    const amountBack = tx.vout[1].value - config.btcFeeInc;
+
+    if (amountBack < 0) {
+        // TBD add additional inputs and continue if possible
+        return true;
+    }
 
     const rawTxn = await client.createRawTransaction(inputs, {
         data: opReturnHex.substring(4),
@@ -228,7 +233,27 @@ async function replaceByFee() {
     return true;
 }
 
-async function registerBatch() {
+function checkAnchorInterval() {
+    const db = loadDb();
+
+    if (!db.lastAnchorTime) {
+        db.lastAnchorTime = new Date().toISOString();
+        writeDb(db);
+        return true;
+    }
+
+    const lastAnchorTime = new Date(db.lastAnchorTime);
+    const now = new Date();
+    const elapsedMinutes = (now - lastAnchorTime) / (60 * 1000);
+
+    return (elapsedMinutes < config.btcAnchorInterval);
+}
+
+async function anchorBatch() {
+
+    if (checkAnchorInterval()) {
+        return;
+    }
 
     if (await replaceByFee()) {
         return;
@@ -239,7 +264,7 @@ async function registerBatch() {
 
     if (batch.length > 0) {
         const saveName = keymaster.getCurrentIdName();
-        keymaster.useId(NODE_ID);
+        keymaster.useId(config.nodeID);
         const did = await keymaster.createAsset(batch);
         const txid = await createOpReturnTxn(did);
 
@@ -259,6 +284,7 @@ async function registerBatch() {
                 })
 
                 db.pendingTxid = txid;
+                db.lastAnchorTime = new Date().toISOString();
 
                 writeDb(db);
             }
@@ -273,32 +299,37 @@ async function registerBatch() {
 
 async function importLoop() {
     try {
-        await sync();
+        await scanBlocks();
         await importBatch();
-        console.log('waiting 60s...');
+        console.log(`scan waiting ${config.btcScanInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in importLoop: ${error}`);
     }
-    setTimeout(importLoop, 60 * 1000);
+    setTimeout(importLoop, config.btcScanInterval * 60 * 1000);
 }
 
-async function registerLoop() {
+async function anchorLoop() {
     try {
-        await registerBatch();
-        console.log('waiting 5m...');
+        await anchorBatch();
+        console.log(`anchor loop waiting ${config.btcAnchorInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in registerLoop: ${error}`);
     }
-    setTimeout(registerLoop, 5 * 60 * 1000);
+    setTimeout(anchorLoop, config.btcAnchorInterval * 60 * 1000);
 }
 
 async function main() {
-    console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort}`);
-    console.log(`Using keymaster ID ${NODE_ID}`);
+    console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
+    console.log(`Using keymaster ID ${config.nodeID}`);
+    console.log(`Scanning blocks every ${config.btcScanInterval} minute(s)`);
+    console.log(`Anchoring operations every ${config.btcAnchorInterval} minute(s)`);
+    console.log(`Txn fee minimum: ${config.btcFeeMin} BTC, maximum: ${config.btcFeeMax} BTC, increment ${config.btcFeeInc} BTC`);
 
     await keymaster.start(gatekeeper);
+
     importLoop();
-    registerLoop();
+    anchorLoop();
+
     await keymaster.stop();
 }
 
