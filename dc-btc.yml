@@ -76,6 +76,11 @@ services:
       - KC_BTC_USER=${KC_BTC_USER}
       - KC_BTC_PASS=${KC_BTC_PASS}
       - KC_BTC_WALLET=${KC_BTC_WALLET}
+      - KC_BTC_SCAN_INTERVAL=${KC_BTC_SCAN_INTERVAL}
+      - KC_BTC_ANCHOR_INTERVAL=${KC_BTC_ANCHOR_INTERVAL}
+      - KC_BTC_FEE_MIN=${KC_BTC_FEE_MIN}
+      - KC_BTC_FEE_MAX=${KC_BTC_FEE_MAX}
+      - KC_BTC_FEE_INC=${KC_BTC_FEE_INC}
     volumes:
       - ./data:/app/data
     depends_on:
