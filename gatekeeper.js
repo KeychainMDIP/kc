@@ -261,25 +261,25 @@ async function verifyUpdate(operation, doc) {
         return verifyUpdate(operation, controllerDoc);
     }
 
-    if (doc.didDocument.verificationMethod) {
-        const jsonCopy = JSON.parse(JSON.stringify(operation));
-
-        const signature = jsonCopy.signature;
-        delete jsonCopy.signature;
-        const msgHash = cipher.hashJSON(jsonCopy);
-
-        if (signature.hash && signature.hash !== msgHash) {
-            return false;
-        }
-
-        // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-        return isValid;
+    if (!doc.didDocument.verificationMethod) {
+        return false;
     }
 
-    return false;
+    const jsonCopy = JSON.parse(JSON.stringify(operation));
+
+    const signature = jsonCopy.signature;
+    delete jsonCopy.signature;
+    const msgHash = cipher.hashJSON(jsonCopy);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        return false;
+    }
+
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+    return isValid;
 }
 
 export async function resolveDID(did, asOfTime = null, verify = false) {

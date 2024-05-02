@@ -93,7 +93,7 @@ async function createUpdateOp(keypair, did, doc) {
         ...operation,
         signature: {
             signer: did,
-            created: new Date().toISOString(),
+            signed: new Date().toISOString(),
             hash: msgHash,
             value: signature,
         }
@@ -335,6 +335,44 @@ describe('resolveDID', () => {
         } catch (error) {
             expect(error).toBe('Invalid DID');
         }
+    });
+});
+
+describe('updateDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did);
+        doc.didDocumentMetadata.updated = expect.any(String);
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(doc);
+    });
+
+    it('should return false if update doc is invalid', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        updateOp.doc.didDocumentData = 'mock';
+        const ok = await gatekeeper.updateDID(updateOp);
+
+        expect(ok).toBe(false);
     });
 });
 
