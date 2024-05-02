@@ -320,6 +320,20 @@ async function anchorLoop() {
 
 async function main() {
     console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
+
+    try {
+        const walletInfo = await client.getWalletInfo();
+        console.log(JSON.stringify(walletInfo, null, 4));
+    }
+    catch (error) {
+        console.log('Cannot connect to BTC node', error);
+        return;
+    }
+
+    if (!config.nodeID) {
+        console.log('btc-mediator must have a KC_NODE_ID configured');
+    }
+
     console.log(`Using keymaster ID ${config.nodeID}`);
     console.log(`Scanning blocks every ${config.btcScanInterval} minute(s)`);
     console.log(`Anchoring operations every ${config.btcAnchorInterval} minute(s)`);
