@@ -269,6 +269,73 @@ describe('resolveDID', () => {
 
         expect(doc).toStrictEqual(expected);
     });
+
+    it('should not resolve an invalid DID', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.resolveDID();
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID([]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID([1, 2, 3]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID({});
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID({ mock: 1 });
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('did:mdip:xxx');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('did:mdip:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
 });
 
 describe('exportDID', () => {
