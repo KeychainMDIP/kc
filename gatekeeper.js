@@ -36,7 +36,7 @@ export async function verifyDb() {
     for (const did of dids) {
         n += 1;
         try {
-            await resolveDID(did, null, true);
+            await resolveDID(did, null, false, true);
             console.log(`${n} ${did} OK`);
         }
         catch (error) {
@@ -282,7 +282,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, asOfTime = null, verify = false) {
+export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
     const ops = await db.getOperations(did);
 
     if (ops.length === 0) {
@@ -301,8 +301,12 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
         // TBD What to return if DID was created after specified time?
     }
 
-    for (const { time, operation } of ops) {
+    for (const { time, operation, registry } of ops) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
+            break;
+        }
+
+        if (confirm && mdip.registry !== registry) {
             break;
         }
 

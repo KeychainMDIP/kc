@@ -200,11 +200,11 @@ program
     });
 
 program
-    .command('resolve-did <did>')
+    .command('resolve-did <did> [confirm]')
     .description('Return document associated with DID')
-    .action(async (did) => {
+    .action(async (did, confirm) => {
         try {
-            const doc = await keymaster.resolveDID(did);
+            const doc = await keymaster.resolveDID(did, null, !!confirm);
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {

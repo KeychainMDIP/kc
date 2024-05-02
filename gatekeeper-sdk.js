@@ -57,10 +57,10 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, asof = null) {
+export async function resolveDID(did, asof = null, confirm = false) {
     try {
-        if (asof) {
-            const response = await axios.get(`${URL}/api/v1/did/${did}?asof=${asof}`);
+        if (asof || confirm) {
+            const response = await axios.get(`${URL}/api/v1/did/${did}?asof=${asof}&confirm=${confirm}`);
             return response.data;
         }
         else {

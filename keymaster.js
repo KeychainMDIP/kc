@@ -377,8 +377,8 @@ function addToHeld(did) {
     return true;
 }
 
-export async function resolveDID(did, asof) {
-    const doc = await gatekeeper.resolveDID(lookupDID(did), asof);
+export async function resolveDID(did, asof, confirm) {
+    const doc = await gatekeeper.resolveDID(lookupDID(did), asof, confirm);
     return doc;
 }
 

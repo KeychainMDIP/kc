@@ -62,7 +62,7 @@ v1router.post('/did', async (req, res) => {
 
 v1router.get('/did/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
+        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof, req.query.confirm);
         res.json(doc);
     } catch (error) {
         console.error(error);

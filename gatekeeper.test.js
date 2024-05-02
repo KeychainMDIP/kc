@@ -242,6 +242,91 @@ describe('resolveDID', () => {
         expect(doc).toStrictEqual(expected);
     });
 
+    it('should resolve a valid agent DID after an update', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: doc.didDocumentData,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                updated: expect.any(String),
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve only confirmed updates when specified', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'BTC'); // Specify BTC registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did, null, true);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(expected);
+    });
+
     it('should resolve a valid asset DID', async () => {
         mockFs({});
 
