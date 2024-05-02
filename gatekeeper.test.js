@@ -199,6 +199,78 @@ describe('createDID', () => {
     });
 });
 
+
+describe('resolveDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a valid agent DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should resolve a valid asset DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agent, keypair);
+        const did = await gatekeeper.createDID(assetOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                id: did,
+                controller: assetOp.controller,
+            },
+            didDocumentData: assetOp.data,
+            didDocumentMetadata: {
+                created: expect.any(String),
+            },
+            mdip: assetOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+});
+
 describe('exportDID', () => {
 
     afterEach(() => {
