@@ -319,6 +319,8 @@ async function anchorLoop() {
 }
 
 async function main() {
+    await keymaster.start(gatekeeper);
+
     console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
 
     try {
@@ -334,12 +336,18 @@ async function main() {
         console.log('btc-mediator must have a KC_NODE_ID configured');
     }
 
+    try {
+        await keymaster.resolveDID(config.nodeID);
+    }
+    catch (error) {
+        console.log(`Cannot resolve node ID '${config.nodeID}'`, error);
+        return;
+    }
+
     console.log(`Using keymaster ID ${config.nodeID}`);
     console.log(`Scanning blocks every ${config.btcScanInterval} minute(s)`);
     console.log(`Anchoring operations every ${config.btcAnchorInterval} minute(s)`);
     console.log(`Txn fee minimum: ${config.btcFeeMin} BTC, maximum: ${config.btcFeeMax} BTC, increment ${config.btcFeeInc} BTC`);
-
-    await keymaster.start(gatekeeper);
 
     importLoop();
     anchorLoop();
