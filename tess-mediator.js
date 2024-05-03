@@ -6,7 +6,6 @@ import config from './config.js';
 
 const REGISTRY = 'TESS';
 const FIRST = 137100;
-const TESS_ID = config.tessID;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -37,6 +36,44 @@ function loadDb() {
 
 function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
+}
+
+export async function createOpReturnTxn(opReturnData) {
+    try {
+        const utxos = await client.listUnspent();
+        const utxo = utxos[0];
+        const amountIn = utxo.amount;
+        const txnfee = 0.00010000;
+        const amountBack = amountIn - txnfee;
+
+        // Convert the OP_RETURN data to a hex string
+        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
+
+        // Fetch a new address for the transaction output
+        const address = await client.getNewAddress();
+
+        const rawTxn = await client.createRawTransaction([{
+            txid: utxo.txid,
+            vout: utxo.vout
+        }], {
+            data: opReturnHex,
+            [address]: amountBack.toFixed(8)
+        });
+
+        // Sign the raw transaction
+        const signedTxn = await client.signRawTransaction(rawTxn);
+
+        console.log(JSON.stringify(signedTxn, null, 4));
+        console.log(amountBack);
+
+        // Broadcast the transaction
+        const txid = await client.sendRawTransaction(signedTxn.hex);
+
+        console.log(`Transaction broadcasted with txid: ${txid}`);
+        return txid;
+    } catch (error) {
+        console.error(`Error creating OP_RETURN transaction: ${error}`);
+    }
 }
 
 async function fetchTransaction(height, index, timestamp, txid) {
@@ -138,13 +175,13 @@ async function importBatch() {
     }
 }
 
-async function registerBatch() {
+async function anchorBatch() {
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
         const saveName = keymaster.getCurrentIdName();
-        keymaster.useId(TESS_ID);
+        keymaster.useId(config.nodeID);
         const did = await keymaster.createAsset(batch);
         const txid = await createOpReturnTxn(did);
 
@@ -185,62 +222,58 @@ async function importLoop() {
     setTimeout(importLoop, 60 * 1000);
 }
 
-async function registerLoop() {
+async function anchorLoop() {
     try {
-        await registerBatch();
+        await anchorBatch();
         console.log('waiting 5m...');
     } catch (error) {
-        console.error(`Error in registerLoop: ${error}`);
+        console.error(`Error in anchorLoop: ${error}`);
     }
-    setTimeout(registerLoop, 5 * 60 * 1000);
+    setTimeout(anchorLoop, 5 * 60 * 1000);
+}
+
+async function waitForTess() {
+    let isReady = false;
+
+    console.log(`Connecting to TESS on ${config.tessHost} on port ${config.tessPort}`);
+
+    while (!isReady) {
+        try {
+            const walletInfo = await client.getWalletInfo();
+            console.log(JSON.stringify(walletInfo, null, 4));
+            isReady = true;
+        }
+        catch {
+            console.log('Waiting for TESS node...');
+        }
+
+        if (!isReady) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
 }
 
 async function main() {
-    console.log(`Connecting to TESS on ${config.tessHost} on port ${config.tessPort}`);
-    console.log(`Using keymaster ID ${TESS_ID}`);
-
+    await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper);
-    importLoop();
-    registerLoop();
-    await keymaster.stop();
-}
+    await waitForTess();
 
-export async function createOpReturnTxn(opReturnData) {
-    try {
-        const utxos = await client.listUnspent();
-        const utxo = utxos[0];
-        const amountIn = utxo.amount;
-        const txnfee = 0.00010000;
-        const amountBack = amountIn - txnfee;
-
-        // Convert the OP_RETURN data to a hex string
-        const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
-
-        // Fetch a new address for the transaction output
-        const address = await client.getNewAddress();
-
-        const rawTxn = await client.createRawTransaction([{
-            txid: utxo.txid,
-            vout: utxo.vout
-        }], {
-            data: opReturnHex,
-            [address]: amountBack.toFixed(8)
-        });
-
-        // Sign the raw transaction
-        const signedTxn = await client.signRawTransaction(rawTxn);
-
-        console.log(JSON.stringify(signedTxn, null, 4));
-        console.log(amountBack);
-
-        // Broadcast the transaction
-        const txid = await client.sendRawTransaction(signedTxn.hex);
-
-        console.log(`Transaction broadcasted with txid: ${txid}`);
-        return txid;
-    } catch (error) {
-        console.error(`Error creating OP_RETURN transaction: ${error}`);
+    if (!config.nodeID) {
+        console.log('tess-mediator must have a KC_NODE_ID configured');
     }
+
+    try {
+        await keymaster.resolveDID(config.nodeID);
+        console.log(`Using node ID '${config.nodeID}'`);
+    }
+    catch (error) {
+        console.log(`Cannot resolve node ID '${config.nodeID}'`, error);
+        return;
+    }
+
+    importLoop();
+    anchorLoop();
+    await keymaster.stop();
 }
 
 main();

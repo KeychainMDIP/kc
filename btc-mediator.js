@@ -339,6 +339,7 @@ async function main() {
 
     try {
         await keymaster.resolveDID(config.nodeID);
+        console.log(`Using node ID '${config.nodeID}'`);
     }
     catch (error) {
         console.log(`Cannot resolve node ID '${config.nodeID}'`, error);
