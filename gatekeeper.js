@@ -217,6 +217,7 @@ async function generateDoc(did, anchor, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
+                    "version": 1,
                 },
                 "didDocumentData": {},
                 "mdip": anchor.mdip,
@@ -235,6 +236,7 @@ async function generateDoc(did, anchor, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
+                    "version": 1,
                 },
                 "didDocumentData": anchor.data,
                 "mdip": anchor.mdip,
@@ -301,6 +303,8 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         // TBD What to return if DID was created after specified time?
     }
 
+    let version = 1;
+
     for (const { time, operation, registry } of ops) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
@@ -337,6 +341,9 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         }
 
         if (operation.type === 'update') {
+            // Increment version
+            version += 1;
+
             // Maintain mdip metadata across versions
             mdip = doc.mdip;
 
@@ -344,6 +351,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             // fetch updates from new registry and search for same operation
             doc = operation.doc;
             doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.version = version;
             doc.mdip = mdip;
         }
         else if (operation.type === 'delete') {

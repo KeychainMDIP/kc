@@ -235,6 +235,7 @@ describe('resolveDID', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
+                version: 1,
             },
             mdip: agentOp.mdip,
         };
@@ -277,6 +278,7 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
+                version: 2,
             },
             mdip: agentOp.mdip,
         };
@@ -319,6 +321,7 @@ describe('resolveDID', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
+                version: 1,
             },
             mdip: agentOp.mdip,
         };
@@ -348,6 +351,7 @@ describe('resolveDID', () => {
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
+                version: 1,
             },
             mdip: assetOp.mdip,
         };
@@ -441,12 +445,13 @@ describe('updateDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         doc.didDocumentMetadata.updated = expect.any(String);
+        doc.didDocumentMetadata.version = 2;
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
     });
 
-    it('should return false if update doc is invalid', async () => {
+    it('should return false if update operation is invalid', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
