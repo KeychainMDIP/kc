@@ -217,7 +217,6 @@ async function generateDoc(did, anchor, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
-                    "version": 1,
                 },
                 "didDocumentData": {},
                 "mdip": anchor.mdip,
@@ -236,7 +235,6 @@ async function generateDoc(did, anchor, asofTime) {
                 },
                 "didDocumentMetadata": {
                     "created": anchor.created,
-                    "version": 1,
                 },
                 "didDocumentData": anchor.data,
                 "mdip": anchor.mdip,
@@ -304,13 +302,19 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
     }
 
     let version = 1;
+    let confirmed = true;
+
+    doc.didDocumentMetadata.version = version;
+    doc.didDocumentMetadata.confirmed = confirmed;
 
     for (const { time, operation, registry } of ops) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
 
-        if (confirm && mdip.registry !== registry) {
+        confirmed = confirmed && mdip.registry === registry;
+
+        if (confirm && !confirmed) {
             break;
         }
 
@@ -352,6 +356,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             doc = operation.doc;
             doc.didDocumentMetadata.updated = time;
             doc.didDocumentMetadata.version = version;
+            doc.didDocumentMetadata.confirmed = confirmed;
             doc.mdip = mdip;
         }
         else if (operation.type === 'delete') {
@@ -359,6 +364,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             doc.didDocumentData = {};
             doc.didDocumentMetadata.deactivated = true;
             doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.confirmed = confirmed;
         }
         else {
             if (verify) {
