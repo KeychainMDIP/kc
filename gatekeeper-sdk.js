@@ -27,6 +27,30 @@ export async function resetDb() {
     }
 }
 
+export async function waitUntilReady(intervalSeconds = 1, chatty = true) {
+    let ready = false;
+
+    if (chatty) {
+        console.log(`Connecting to gatekeeper at ${URL}`);
+    }
+
+    while (!ready) {
+        ready = await isReady();
+
+        if (!ready) {
+            if (chatty) {
+                console.log('Waiting for Gatekeeper to be ready...');
+            }
+            // wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+        }
+    }
+
+    if (chatty) {
+        console.log('Gatekeeper service is ready!');
+    }
+}
+
 export async function isReady() {
     try {
         const response = await axios.get(`${URL}/api/v1/ready`);

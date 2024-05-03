@@ -319,6 +319,7 @@ async function anchorLoop() {
 }
 
 async function main() {
+    await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper);
 
     console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
