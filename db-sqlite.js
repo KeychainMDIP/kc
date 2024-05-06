@@ -15,7 +15,7 @@ export async function start(name = 'mdip') {
 
     await db.exec(`CREATE TABLE IF NOT EXISTS dids (
         id TEXT PRIMARY KEY,
-        ops TEXT
+        events TEXT
     )`);
 
     await db.exec(`CREATE TABLE IF NOT EXISTS queue (
@@ -32,43 +32,54 @@ export async function resetDb() {
     await db.run('DELETE FROM dids');
 }
 
-export async function addOperation(op) {
-    const did = op.did;
-    const ops = await getOperations(did);
+export async function addEvent(did, event) {
+    if (!did) {
+        throw "Invalid DID";
+    }
 
-    ops.push(op);
+    const events = await getEvents(did);
 
-    const id = op.did.split(':').pop();
+    events.push(event);
+
+    const id = did.split(':').pop();
     console.time("INSERT");
-    await db.run(`INSERT OR REPLACE INTO dids(id, ops) VALUES(?, ?)`, id, JSON.stringify(ops));
+    await db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
     console.timeEnd("INSERT");
 }
 
-export async function getOperations(did) {
+export async function getEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     try {
         const id = did.split(':').pop();
         console.time("SELECT");
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
         console.timeEnd("SELECT");
-        const ops = JSON.parse(row.ops);
-        return ops;
+        const events = JSON.parse(row.events);
+        return events;
     }
     catch {
         return [];
     }
 }
 
-export async function deleteOperations(did) {
+export async function deleteEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     const id = did.split(':').pop();
     await db.run('DELETE FROM dids WHERE id = ?', id);
 }
 
-export async function queueOperation(op) {
-    const ops = await getQueue(op.registry);
+export async function queueOperation(registry, op) {
+    const ops = await getQueue(registry);
 
     ops.push(op);
 
-    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, op.registry, JSON.stringify(ops));
+    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
 }
 
 export async function getQueue(registry) {

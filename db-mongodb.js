@@ -19,32 +19,44 @@ export async function resetDb() {
     await db.collection('dids').deleteMany({});
 }
 
-export async function addOperation(op) {
-    const id = op.did.split(':').pop();
+export async function addEvent(did, event) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
+    const id = did.split(':').pop();
 
     console.time('updateOne');
     await db.collection('dids').updateOne(
         { id: id },
-        { $push: { ops: op } },
+        { $push: { events: event } },
         { upsert: true }
     );
     console.timeEnd('updateOne');
 }
 
-export async function getOperations(did) {
+export async function getEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     try {
         const id = did.split(':').pop();
         console.time('findOne');
         const row = await db.collection('dids').findOne({ id: id });
         console.timeEnd('findOne');
-        return row.ops;
+        return row.events;
     }
     catch {
         return [];
     }
 }
 
-export async function deleteOperations(did) {
+export async function deleteEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     const id = did.split(':').pop();
     await db.collection('dids').deleteOne({ id: id });
 }
@@ -55,9 +67,9 @@ export async function getAllKeys() {
     return ids;
 }
 
-export async function queueOperation(op) {
+export async function queueOperation(registry, op) {
     await db.collection('queue').updateOne(
-        { id: op.registry },
+        { id: registry },
         { $push: { ops: op } },
         { upsert: true }
     );
