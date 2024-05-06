@@ -27,8 +27,9 @@ function loadDb() {
             height: 0,
             time: "",
             blockCount: 0,
-            scanned: 0,
-            pending: 0,
+            blocksScanned: 0,
+            blocksPending: 0,
+            txnsScanned: 0,
             registered: [],
             discovered: [],
         }
@@ -81,9 +82,10 @@ async function fetchBlock(height, blockCount) {
         const db = loadDb();
         db.height = height;
         db.time = timestamp;
-        db.scanned = height - FIRST + 1;
+        db.blocksScanned = height - FIRST + 1;
+        db.txnsScanned = db.txnsScanned + block.nTx;
         db.blockCount = blockCount;
-        db.pending = blockCount - height;
+        db.blocksPending = blockCount - height;
         writeDb(db);
 
     } catch (error) {
@@ -242,15 +244,15 @@ async function replaceByFee() {
 function checkAnchorInterval() {
     const db = loadDb();
 
-    if (!db.lastAnchorTime) {
-        db.lastAnchorTime = new Date().toISOString();
+    if (!db.lastExport) {
+        db.lastExport = new Date().toISOString();
         writeDb(db);
         return true;
     }
 
-    const lastAnchorTime = new Date(db.lastAnchorTime);
+    const lastExport = new Date(db.lastExport);
     const now = new Date();
-    const elapsedMinutes = (now - lastAnchorTime) / (60 * 1000);
+    const elapsedMinutes = (now - lastExport) / (60 * 1000);
 
     return (elapsedMinutes < config.btcAnchorInterval);
 }
@@ -290,7 +292,7 @@ async function anchorBatch() {
                 })
 
                 db.pendingTxid = txid;
-                db.lastAnchorTime = new Date().toISOString();
+                db.lastExport = new Date().toISOString();
 
                 writeDb(db);
             }
