@@ -5,7 +5,7 @@ import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const REGISTRY = 'BTC';
-const FIRST = 841600;
+const FIRST = 842350;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -117,16 +117,22 @@ async function importBatch() {
         if (!item.imported) {
             console.log(JSON.stringify(item, null, 4));
 
-            const batch = await keymaster.resolveAsset(item.did);
+            const queue = await keymaster.resolveAsset(item.did);
+            const batch = [];
 
-            for (let i = 0; i < batch.length; i++) {
-                if (batch[i].registry !== REGISTRY) {
-                    throw "Invalid registry";
-                }
+            for (let i = 0; i < queue.length; i++) {
+                const blockTime = new Date(item.time);
 
-                batch[i].time = item.time;
-                batch[i].ordinal = [item.height, item.index, i];
-                batch[i].txid = item.txid;
+                batch.push({
+                    registry: 'BTC',
+                    time: blockTime.toISOString(),
+                    ordinal: [blockTime.getTime(), item.index, i],
+                    operation: queue[i],
+                    blockchain: {
+                        height: item.height,
+                        txid: item.txid,
+                    }
+                });
             }
 
             console.log(JSON.stringify(batch, null, 4));
@@ -301,21 +307,21 @@ async function importLoop() {
     try {
         await scanBlocks();
         await importBatch();
-        console.log(`scan waiting ${config.btcScanInterval} minute(s)...`);
+        console.log(`import loop waiting ${config.btcScanInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in importLoop: ${error}`);
     }
     setTimeout(importLoop, config.btcScanInterval * 60 * 1000);
 }
 
-async function anchorLoop() {
+async function exportLoop() {
     try {
         await anchorBatch();
-        console.log(`anchor loop waiting ${config.btcAnchorInterval} minute(s)...`);
+        console.log(`export loop waiting ${config.btcAnchorInterval} minute(s)...`);
     } catch (error) {
-        console.error(`Error in registerLoop: ${error}`);
+        console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(anchorLoop, config.btcAnchorInterval * 60 * 1000);
+    setTimeout(exportLoop, config.btcAnchorInterval * 60 * 1000);
 }
 
 async function main() {
@@ -352,12 +358,9 @@ async function main() {
     console.log(`Txn fee minimum: ${config.btcFeeMin} BTC, maximum: ${config.btcFeeMax} BTC, increment ${config.btcFeeInc} BTC`);
 
     importLoop();
-    anchorLoop();
+    exportLoop();
 
     await keymaster.stop();
 }
 
 main();
-
-// await keymaster.start(gatekeeper);
-// await registerBatch();

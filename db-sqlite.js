@@ -99,10 +99,17 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(registry, batch) {
-    const oldQueue = await getQueue(registry);
-    const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+    try {
+        const oldQueue = await getQueue(registry);
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
 
-    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(newQueue));
+        await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(newQueue));
+        return true;
+    }
+    catch (error) {
+        console.error(error);
+        return false;
+    }
 }
 
 export async function getAllKeys() {

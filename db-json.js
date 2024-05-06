@@ -132,7 +132,12 @@ export async function clearQueue(registry, batch) {
     try {
         const db = loadDb();
         const oldQueue = db.queue[registry];
-        const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+
+        if (!oldQueue) {
+            throw `Unknown registry ${registry}`;
+        }
+
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
 
         db.queue[registry] = newQueue;
         writeDb(db);

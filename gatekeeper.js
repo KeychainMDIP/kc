@@ -265,14 +265,14 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
-    const ops = await db.getEvents(did);
+    const events = await db.getEvents(did);
 
-    if (ops.length === 0) {
+    if (events.length === 0) {
         throw "Invalid DID";
     }
 
-    const anchor = ops[0].operation;
-    let doc = await generateDoc(did, anchor);
+    const anchor = events[0];
+    let doc = await generateDoc(did, anchor.operation);
     let mdip = doc?.mdip;
 
     if (!mdip) {
@@ -284,12 +284,13 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
     }
 
     let version = 1;
-    let confirmed = true;
+    // TBD What to return if create event hasn't been confirmed?
+    let confirmed = true; //(mdip.registry === anchor.registry);
 
     doc.didDocumentMetadata.version = version;
     doc.didDocumentMetadata.confirmed = confirmed;
 
-    for (const { time, operation, registry } of ops) {
+    for (const { time, operation, registry } of events) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
@@ -301,7 +302,6 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         }
 
         if (operation.type === 'create') {
-            // Proof-of-existence in the DID's registry
             continue;
         }
 
@@ -345,7 +345,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             doc.didDocument = {};
             doc.didDocumentData = {};
             doc.didDocumentMetadata.deactivated = true;
-            doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.deleted = time;
             doc.didDocumentMetadata.confirmed = confirmed;
         }
         else {
@@ -606,7 +606,7 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(events) {
-    const registry = events[0].registry;
+    const registry = events[0].mdip.registry;
     const ok = db.clearQueue(registry, events);
     return ok;
 }

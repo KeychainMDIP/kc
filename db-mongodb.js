@@ -86,14 +86,22 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(registry, batch) {
-    const queueCollection = db.collection('queue');
-    const oldQueueDocument = await queueCollection.findOne({ id: registry });
-    const oldQueue = oldQueueDocument.ops;
-    const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+    try {
+        const queueCollection = db.collection('queue');
+        const oldQueueDocument = await queueCollection.findOne({ id: registry });
+        const oldQueue = oldQueueDocument.ops;
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
 
-    await queueCollection.updateOne(
-        { id: registry },
-        { $set: { ops: newQueue } },
-        { upsert: true }
-    );
+        await queueCollection.updateOne(
+            { id: registry },
+            { $set: { ops: newQueue } },
+            { upsert: true }
+        );
+
+        return true;
+    }
+    catch (error) {
+        console.error(error);
+        return false;
+    }
 }

@@ -5,7 +5,7 @@ import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = 137100;
+const FIRST = 138900;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -128,7 +128,7 @@ async function fetchBlock(height, blockCount) {
     }
 }
 
-async function sync() {
+async function scanBlocks() {
     let start = FIRST;
     let blockCount = await client.getBlockCount();
 
@@ -154,16 +154,22 @@ async function importBatch() {
         if (!item.imported) {
             console.log(JSON.stringify(item, null, 4));
 
-            const batch = await keymaster.resolveAsset(item.did);
+            const queue = await keymaster.resolveAsset(item.did);
+            const batch = [];
 
-            for (let i = 0; i < batch.length; i++) {
-                if (batch[i].registry !== REGISTRY) {
-                    throw "Invalid registry";
-                }
+            for (let i = 0; i < queue.length; i++) {
+                const blockTime = new Date(item.time);
 
-                batch[i].time = item.time;
-                batch[i].ordinal = [item.height, item.index, i];
-                batch[i].txid = item.txid;
+                batch.push({
+                    registry: 'TESS',
+                    time: blockTime.toISOString(),
+                    ordinal: [blockTime.getTime(), item.index, i],
+                    operation: queue[i],
+                    blockchain : {
+                        height: item.height,
+                        txid: item.txid,
+                    }
+                });
             }
 
             console.log(JSON.stringify(batch, null, 4));
@@ -213,23 +219,23 @@ async function anchorBatch() {
 
 async function importLoop() {
     try {
-        await sync();
+        await scanBlocks();
         await importBatch();
-        console.log('waiting 60s...');
+        console.log('import loop waiting 60s...');
     } catch (error) {
         console.error(`Error in importLoop: ${error}`);
     }
     setTimeout(importLoop, 60 * 1000);
 }
 
-async function anchorLoop() {
+async function exportLoop() {
     try {
         await anchorBatch();
-        console.log('waiting 5m...');
+        console.log('export loop waiting 5m...');
     } catch (error) {
         console.error(`Error in anchorLoop: ${error}`);
     }
-    setTimeout(anchorLoop, 5 * 60 * 1000);
+    setTimeout(exportLoop, 5 * 60 * 1000);
 }
 
 async function waitForTess() {
@@ -272,7 +278,7 @@ async function main() {
     }
 
     importLoop();
-    anchorLoop();
+    exportLoop();
     await keymaster.stop();
 }
 
