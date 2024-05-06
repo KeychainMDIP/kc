@@ -42,7 +42,7 @@ export async function verifyDb() {
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-            await db.deleteOperations(did);
+            await db.deleteEvents(did);
         }
     }
 
@@ -58,30 +58,6 @@ export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
     return did;
-}
-
-async function addOperation(did, registry, operation, time, ordinal = 0) {
-    const op = {
-        registry,
-        time,
-        ordinal,
-        did,
-        operation,
-    };
-
-    await db.addOperation(op);
-}
-
-async function queueOperation(did, registry, operation, time, ordinal = 0) {
-    const op = {
-        registry,
-        time,
-        ordinal,
-        did,
-        operation,
-    };
-
-    await db.queueOperation(op);
 }
 
 async function verifyCreateAgent(operation) {
@@ -163,8 +139,15 @@ export async function createDID(operation) {
         const ops = await exportDID(did);
 
         if (ops.length === 0) {
-            await addOperation(did, 'hyperswarm', operation, operation.created);
-            await queueOperation(did, operation.mdip.registry, operation, operation.created);
+            await db.addEvent({
+                did: did,
+                registry: 'hyperswarm',
+                time: operation.created,
+                ordinal: 0,
+                operation: operation
+            });
+
+            await db.queueOperation(operation.mdip.registry, operation);
         }
 
         return did;
@@ -283,7 +266,7 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
-    const ops = await db.getOperations(did);
+    const ops = await db.getEvents(did);
 
     if (ops.length === 0) {
         throw "Invalid DID";
@@ -390,10 +373,16 @@ export async function updateDID(operation) {
         const registry = doc.mdip.registry;
 
         if (queueRegistries.includes(registry)) {
-            await queueOperation(operation.did, registry, operation, operation.signature.signed);
+            await db.queueOperation(registry, operation);
         }
 
-        await addOperation(operation.did, 'hyperswarm', operation, operation.signature.signed);
+        await db.addEvent({
+            did: operation.did,
+            registry: 'hyperswarm',
+            time: operation.signature.signed,
+            ordinal: 0,
+            operation: operation
+        });
 
         return true;
     }
@@ -414,14 +403,14 @@ export async function getDIDs() {
 }
 
 export async function exportDID(did) {
-    return await db.getOperations(did);
+    return await db.getEvents(did);
 }
 
 export async function exportDIDs(dids) {
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await db.getOperations(did));
+        batch.push(await db.getEvents(did));
     }
 
     return batch;
@@ -438,7 +427,7 @@ async function importCreateEvent(event) {
                 return false;
             }
 
-            await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+            await db.addEvent(event);
             return true;
         }
 
@@ -458,7 +447,7 @@ async function importUpdateEvent(event) {
             return false;
         }
 
-        await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+        await db.addEvent(event);
         return true;
     }
     catch (error) {
@@ -519,6 +508,26 @@ export async function importDIDs(batch) {
 }
 
 export async function importEvent(event) {
+
+    if (!event.registry || !event.time || !event.operation) {
+        throw "Invalid import";
+    }
+
+    if (!event.did) {
+        try {
+            if (event.operation.type === 'create') {
+                event.did = await anchorSeed(event.operation);
+            }
+
+            if (event.operation.type === 'update') {
+                event.did = event.operation.doc.didDocument.id;
+            }
+        }
+        catch {
+            throw "Invalid operation";
+        }
+    }
+
     const current = await exportDID(event.did);
 
     if (current.length === 0) {
@@ -546,7 +555,7 @@ export async function importEvent(event) {
             const index = current.indexOf(match);
             current[index] = event;
 
-            db.setOperations(match.did, current);
+            db.setEvents(match.did, current);
             return true;
         }
 
