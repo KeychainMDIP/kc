@@ -1121,13 +1121,13 @@ describe('revokeCredential', () => {
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(true);
 
-        const userTxns = await keymaster.exportDID(userDid);
-        const ops = await keymaster.exportDID(did);
+        const userExport = await keymaster.exportDID(userDid);
+        const credentialExport = await keymaster.exportDID(did);
 
         await gatekeeper.resetDb();
 
-        await keymaster.importDID(userTxns);
-        const imported = await keymaster.importDID(ops);
+        await keymaster.importDID(userExport);
+        const imported = await keymaster.importDID(credentialExport);
 
         expect(imported).toBe(2);
     });

@@ -139,8 +139,7 @@ export async function createDID(operation) {
         const ops = await exportDID(did);
 
         if (ops.length === 0) {
-            await db.addEvent({
-                did: did,
+            await db.addEvent(did, {
                 registry: 'hyperswarm',
                 time: operation.created,
                 ordinal: 0,
@@ -376,8 +375,7 @@ export async function updateDID(operation) {
             await db.queueOperation(registry, operation);
         }
 
-        await db.addEvent({
-            did: operation.did,
+        await db.addEvent(operation.did, {
             registry: 'hyperswarm',
             time: operation.signature.signed,
             ordinal: 0,
@@ -423,11 +421,11 @@ async function importCreateEvent(event) {
         if (valid) {
             const did = await anchorSeed(event.operation);
 
-            if (did !== event.did) {
-                return false;
-            }
+            // if (did !== event.did) {
+            //     return false;
+            // }
 
-            await db.addEvent(event);
+            await db.addEvent(did, event);
             return true;
         }
 
@@ -440,14 +438,15 @@ async function importCreateEvent(event) {
 
 async function importUpdateEvent(event) {
     try {
-        const doc = await resolveDID(event.operation.did);
+        const did = event.operation.did;
+        const doc = await resolveDID(did);
         const updateValid = await verifyUpdate(event.operation, doc);
 
         if (!updateValid) {
             return false;
         }
 
-        await db.addEvent(event);
+        await db.addEvent(did, event);
         return true;
     }
     catch (error) {
@@ -513,22 +512,21 @@ export async function importEvent(event) {
         throw "Invalid import";
     }
 
-    if (!event.did) {
-        try {
-            if (event.operation.type === 'create') {
-                event.did = await anchorSeed(event.operation);
-            }
+    let did;
 
-            if (event.operation.type === 'update') {
-                event.did = event.operation.doc.didDocument.id;
-            }
+    try {
+        if (event.operation.type === 'create') {
+            did = await anchorSeed(event.operation);
         }
-        catch {
-            throw "Invalid operation";
+        else {
+            did = event.operation.did;
         }
     }
+    catch {
+        throw "Invalid operation";
+    }
 
-    const current = await exportDID(event.did);
+    const current = await exportDID(did);
 
     if (current.length === 0) {
         const ok = await importCreateEvent(event);
@@ -555,7 +553,7 @@ export async function importEvent(event) {
             const index = current.indexOf(match);
             current[index] = event;
 
-            db.setEvents(match.did, current);
+            db.setEvents(did, current);
             return true;
         }
 

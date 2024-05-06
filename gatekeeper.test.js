@@ -531,7 +531,7 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(1);
-        expect(ops[0].did).toStrictEqual(did);
+        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
@@ -548,9 +548,9 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(2);
-        expect(ops[0].did).toStrictEqual(did);
+        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
-        expect(ops[1].did).toStrictEqual(did);
+        //expect(ops[1].did).toStrictEqual(did);
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
@@ -706,26 +706,6 @@ describe('importDID', () => {
         const doc = await gatekeeper.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
-    });
-
-    it('should throw an exception on mismatched DID in export', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp1 = await createAgentOp(keypair);
-        const did1 = await gatekeeper.createDID(agentOp1);
-        const agentOp2 = await createAgentOp(keypair);
-        const did2 = await gatekeeper.createDID(agentOp2);
-        const ops = await gatekeeper.exportDID(did1);
-
-        ops[0].did = did2;
-
-        try {
-            await gatekeeper.importDID(ops);
-            throw 'Expected to throw an exception';
-        } catch (error) {
-            expect(error).toBe('Invalid operation');
-        }
     });
 
     it('should throw an exception on undefined', async () => {

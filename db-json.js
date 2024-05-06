@@ -35,9 +35,14 @@ export async function resetDb() {
     }
 }
 
-export async function addEvent(event) {
+export async function addEvent(did, event) {
     const db = loadDb();
-    const suffix = event.did.split(':').pop();
+
+    if (!did) {
+        throw "Invalid DID";
+    }
+
+    const suffix = did.split(':').pop();
 
     if (Object.prototype.hasOwnProperty.call(db.dids, suffix)) {
         db.dids[suffix].push(event);
@@ -68,6 +73,10 @@ export async function getEvents(did) {
 }
 
 export async function setEvents(did, events) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     const db = loadDb();
     const suffix = did.split(':').pop();
 
