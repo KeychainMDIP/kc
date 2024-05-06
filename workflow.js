@@ -18,12 +18,6 @@ const mockSchema = {
 };
 
 async function runWorkflow() {
-    const walletFile = 'data/wallet.json';
-    const backupFile = 'data/workflow-backup.json';
-
-    if (fs.existsSync(walletFile)) {
-        fs.renameSync(walletFile, backupFile);
-    }
 
     await db_json.start('mdip-workflow');
     await gatekeeper.start(db_json);
@@ -151,6 +145,23 @@ async function runWorkflow() {
 
     keymaster.stop();
 
+}
+
+async function main() {
+    const walletFile = 'data/wallet.json';
+    const backupFile = 'data/workflow-backup.json';
+
+    if (fs.existsSync(walletFile)) {
+        fs.renameSync(walletFile, backupFile);
+    }
+
+    try {
+        await runWorkflow();
+    }
+    catch (error) {
+        console.log(error);
+    }
+
     fs.rmSync(walletFile);
 
     if (fs.existsSync(backupFile)) {
@@ -160,4 +171,4 @@ async function runWorkflow() {
     process.exit();
 }
 
-runWorkflow();
+main();
