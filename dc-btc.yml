@@ -67,11 +67,12 @@ services:
       context: .
       dockerfile: Dockerfile.btc
     image: keychainmdip/btc-mediator
+    network_mode: host
     environment:
-      - KC_GATEKEEPER_URL=http://gatekeeper
+      - KC_GATEKEEPER_URL=http://localhost
       - KC_GATEKEEPER_PORT=4224
       - KC_NODE_ID=${KC_NODE_ID}
-      - KC_BTC_HOST=172.17.0.1
+      - KC_BTC_HOST=${KC_BTC_HOST}
       - KC_BTC_PORT=${KC_BTC_PORT}
       - KC_BTC_USER=${KC_BTC_USER}
       - KC_BTC_PASS=${KC_BTC_PASS}
