@@ -146,17 +146,25 @@ program
     });
 
 program
-    .command('import-batch <did> <registry>')
+    .command('import-batch <did> [registry]')
     .description('Import a batch')
     .action(async (did, registry) => {
         try {
-            const batch = await keymaster.resolveAsset(did);
-            const now = new Date().toISOString();
+            if (!registry) {
+                registry = 'local';
+            }
 
-            for (const i in batch) {
-                batch[i].registry = registry;
-                batch[i].time = now;
-                batch[i].ordinal = i;
+            const queue = await keymaster.resolveAsset(did);
+            const batch = [];
+            const now = new Date();
+
+            for (let i = 0; i < queue.length; i++) {
+                batch.push({
+                    registry: registry,
+                    time: now.toISOString(),
+                    ordinal: [now.getTime(), i],
+                    operation: queue[i],
+                });
             }
 
             console.log(JSON.stringify(batch, null, 4));

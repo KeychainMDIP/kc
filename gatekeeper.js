@@ -7,8 +7,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm', 'TESS'];
-const queueRegistries = ['TESS'];
+const validRegistries = ['local', 'hyperswarm', 'TESS', 'BTC'];
+const queueRegistries = ['TESS', 'BTC'];
 
 let db = null;
 let helia = null;
@@ -36,13 +36,13 @@ export async function verifyDb() {
     for (const did of dids) {
         n += 1;
         try {
-            await resolveDID(did, null, true);
+            await resolveDID(did, null, false, true);
             console.log(`${n} ${did} OK`);
         }
         catch (error) {
             console.log(`${n} ${did} ${error}`);
             invalid += 1;
-            await db.deleteOperations(did);
+            await db.deleteEvents(did);
         }
     }
 
@@ -58,30 +58,6 @@ export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
     return did;
-}
-
-async function addOperation(did, registry, operation, time, ordinal = 0) {
-    const op = {
-        registry,
-        time,
-        ordinal,
-        did,
-        operation,
-    };
-
-    await db.addOperation(op);
-}
-
-async function queueOperation(did, registry, operation, time, ordinal = 0) {
-    const op = {
-        registry,
-        time,
-        ordinal,
-        did,
-        operation,
-    };
-
-    await db.queueOperation(op);
 }
 
 async function verifyCreateAgent(operation) {
@@ -163,8 +139,14 @@ export async function createDID(operation) {
         const ops = await exportDID(did);
 
         if (ops.length === 0) {
-            await addOperation(did, 'hyperswarm', operation, operation.created);
-            await queueOperation(did, operation.mdip.registry, operation, operation.created);
+            await db.addEvent(did, {
+                registry: 'hyperswarm',
+                time: operation.created,
+                ordinal: 0,
+                operation: operation
+            });
+
+            await db.queueOperation(operation.mdip.registry, operation);
         }
 
         return did;
@@ -261,36 +243,36 @@ async function verifyUpdate(operation, doc) {
         return verifyUpdate(operation, controllerDoc);
     }
 
-    if (doc.didDocument.verificationMethod) {
-        const jsonCopy = JSON.parse(JSON.stringify(operation));
-
-        const signature = jsonCopy.signature;
-        delete jsonCopy.signature;
-        const msgHash = cipher.hashJSON(jsonCopy);
-
-        if (signature.hash && signature.hash !== msgHash) {
-            return false;
-        }
-
-        // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-        return isValid;
+    if (!doc.didDocument.verificationMethod) {
+        return false;
     }
 
-    return false;
+    const jsonCopy = JSON.parse(JSON.stringify(operation));
+
+    const signature = jsonCopy.signature;
+    delete jsonCopy.signature;
+    const msgHash = cipher.hashJSON(jsonCopy);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        return false;
+    }
+
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+
+    return isValid;
 }
 
-export async function resolveDID(did, asOfTime = null, verify = false) {
-    const ops = await db.getOperations(did);
+export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
+    const events = await db.getEvents(did);
 
-    if (ops.length === 0) {
+    if (events.length === 0) {
         throw "Invalid DID";
     }
 
-    const anchor = ops[0].operation;
-    let doc = await generateDoc(did, anchor);
+    const anchor = events[0];
+    let doc = await generateDoc(did, anchor.operation);
     let mdip = doc?.mdip;
 
     if (!mdip) {
@@ -301,13 +283,25 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
         // TBD What to return if DID was created after specified time?
     }
 
-    for (const { time, operation } of ops) {
+    let version = 1;
+    // TBD What to return if create event hasn't been confirmed?
+    let confirmed = true; //(mdip.registry === anchor.registry);
+
+    doc.didDocumentMetadata.version = version;
+    doc.didDocumentMetadata.confirmed = confirmed;
+
+    for (const { time, operation, registry } of events) {
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
 
+        confirmed = confirmed && mdip.registry === registry;
+
+        if (confirm && !confirmed) {
+            break;
+        }
+
         if (operation.type === 'create') {
-            // Proof-of-existence in the DID's registry
             continue;
         }
 
@@ -333,6 +327,9 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
         }
 
         if (operation.type === 'update') {
+            // Increment version
+            version += 1;
+
             // Maintain mdip metadata across versions
             mdip = doc.mdip;
 
@@ -340,13 +337,16 @@ export async function resolveDID(did, asOfTime = null, verify = false) {
             // fetch updates from new registry and search for same operation
             doc = operation.doc;
             doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.version = version;
+            doc.didDocumentMetadata.confirmed = confirmed;
             doc.mdip = mdip;
         }
         else if (operation.type === 'delete') {
             doc.didDocument = {};
             doc.didDocumentData = {};
             doc.didDocumentMetadata.deactivated = true;
-            doc.didDocumentMetadata.updated = time;
+            doc.didDocumentMetadata.deleted = time;
+            doc.didDocumentMetadata.confirmed = confirmed;
         }
         else {
             if (verify) {
@@ -372,10 +372,15 @@ export async function updateDID(operation) {
         const registry = doc.mdip.registry;
 
         if (queueRegistries.includes(registry)) {
-            await queueOperation(operation.did, registry, operation, operation.signature.signed);
+            await db.queueOperation(registry, operation);
         }
 
-        await addOperation(operation.did, 'hyperswarm', operation, operation.signature.signed);
+        await db.addEvent(operation.did, {
+            registry: 'hyperswarm',
+            time: operation.signature.signed,
+            ordinal: 0,
+            operation: operation
+        });
 
         return true;
     }
@@ -396,14 +401,14 @@ export async function getDIDs() {
 }
 
 export async function exportDID(did) {
-    return await db.getOperations(did);
+    return await db.getEvents(did);
 }
 
 export async function exportDIDs(dids) {
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await db.getOperations(did));
+        batch.push(await db.getEvents(did));
     }
 
     return batch;
@@ -416,11 +421,11 @@ async function importCreateEvent(event) {
         if (valid) {
             const did = await anchorSeed(event.operation);
 
-            if (did !== event.did) {
-                return false;
-            }
+            // if (did !== event.did) {
+            //     return false;
+            // }
 
-            await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+            await db.addEvent(did, event);
             return true;
         }
 
@@ -433,14 +438,15 @@ async function importCreateEvent(event) {
 
 async function importUpdateEvent(event) {
     try {
-        const doc = await resolveDID(event.operation.did);
+        const did = event.operation.did;
+        const doc = await resolveDID(did);
         const updateValid = await verifyUpdate(event.operation, doc);
 
         if (!updateValid) {
             return false;
         }
 
-        await addOperation(event.did, event.registry, event.operation, event.time, event.ordinal);
+        await db.addEvent(did, event);
         return true;
     }
     catch (error) {
@@ -501,7 +507,26 @@ export async function importDIDs(batch) {
 }
 
 export async function importEvent(event) {
-    const current = await exportDID(event.did);
+
+    if (!event.registry || !event.time || !event.operation) {
+        throw "Invalid import";
+    }
+
+    let did;
+
+    try {
+        if (event.operation.type === 'create') {
+            did = await anchorSeed(event.operation);
+        }
+        else {
+            did = event.operation.did;
+        }
+    }
+    catch {
+        throw "Invalid operation";
+    }
+
+    const current = await exportDID(did);
 
     if (current.length === 0) {
         const ok = await importCreateEvent(event);
@@ -528,7 +553,7 @@ export async function importEvent(event) {
             const index = current.indexOf(match);
             current[index] = event;
 
-            db.setOperations(match.did, current);
+            db.setEvents(did, current);
             return true;
         }
 
@@ -581,7 +606,7 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(events) {
-    const registry = events[0].registry;
+    const registry = events[0].mdip.registry;
     const ok = db.clearQueue(registry, events);
     return ok;
 }

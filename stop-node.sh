@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-docker compose -f dc-tess.yml down
+docker compose -f dc-btc.yml down

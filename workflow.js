@@ -18,12 +18,6 @@ const mockSchema = {
 };
 
 async function runWorkflow() {
-    const walletFile = 'data/wallet.json';
-    const backupFile = 'data/workflow-backup.json';
-
-    if (fs.existsSync(walletFile)) {
-        fs.renameSync(walletFile, backupFile);
-    }
 
     await db_json.start('mdip-workflow');
     await gatekeeper.start(db_json);
@@ -113,8 +107,8 @@ async function runWorkflow() {
 
     keymaster.useId('Victor');
 
-    const vcList = await keymaster.verifyResponse(vpDid);
-    console.log(`Victor verified response ${vcList.length} valid credentials`);
+    const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+    console.log(`Victor verified response ${verify1.vps.length} valid credentials`);
 
     keymaster.useId('Alice');
     await keymaster.rotateKeys();
@@ -130,26 +124,43 @@ async function runWorkflow() {
 
     console.log(`All agents rotated their keys`);
 
-    const vcList2 = await keymaster.verifyResponse(vpDid);
-    console.log(`Victor verified response ${vcList2.length} valid credentials`);
+    const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
+    console.log(`Victor verified response ${verify2.vps.length} valid credentials`);
 
     keymaster.useId('Alice');
     await keymaster.revokeCredential(vc1);
     console.log(`Alice revoked vc1`);
 
     keymaster.useId('Victor');
-    const vcList3 = await keymaster.verifyResponse(vpDid);
-    console.log(`Victor verified response ${vcList3.length} valid credentials`);
+    const verify3 = await keymaster.verifyResponse(vpDid, challengeDid);
+    console.log(`Victor verified response ${verify3.vps.length} valid credentials`);
 
     keymaster.useId('Bob');
     await keymaster.revokeCredential(vc3);
     console.log(`Bob revoked vc3`);
 
     keymaster.useId('Victor');
-    const vcList4 = await keymaster.verifyResponse(vpDid);
-    console.log(`Victor verified response ${vcList4.length} valid credentials`);
+    const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
+    console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
 
     keymaster.stop();
+
+}
+
+async function main() {
+    const walletFile = 'data/wallet.json';
+    const backupFile = 'data/workflow-backup.json';
+
+    if (fs.existsSync(walletFile)) {
+        fs.renameSync(walletFile, backupFile);
+    }
+
+    try {
+        await runWorkflow();
+    }
+    catch (error) {
+        console.log(error);
+    }
 
     fs.rmSync(walletFile);
 
@@ -160,4 +171,4 @@ async function runWorkflow() {
     process.exit();
 }
 
-runWorkflow();
+main();

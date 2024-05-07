@@ -15,11 +15,10 @@ async function importDIDs(db) {
 
         for (let j = 0; j < 10; j++) {
 
-            const op = {
+            const event = {
                 "registry": "hyperswarm",
                 "time": "2024-04-04T13:56:09.975Z",
                 "ordinal": 0,
-                "did": did,
                 "operation": {
                     "type": "create",
                     "created": new Date().toISOString(),
@@ -42,7 +41,7 @@ async function importDIDs(db) {
             };
 
             console.time('addOperation');
-            await db.addOperation(op);
+            await db.addEvent(did, event);
             console.timeEnd('addOperation');
         }
 
@@ -60,10 +59,10 @@ async function exportDIDs(db) {
 
     for (const i in ids) {
         const id = ids[i];
-        console.time('getOperations');
-        const ops = await db.getOperations(id);
-        console.timeEnd('getOperations');
-        console.log(i, id, ops);
+        console.time('getEvents');
+        const events = await db.getEvents(id);
+        console.timeEnd('getEvents');
+        console.log(i, id, events);
     }
 }
 

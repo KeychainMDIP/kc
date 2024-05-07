@@ -35,21 +35,26 @@ export async function resetDb() {
     }
 }
 
-export async function addOperation(op) {
+export async function addEvent(did, event) {
     const db = loadDb();
-    const suffix = op.did.split(':').pop();
+
+    if (!did) {
+        throw "Invalid DID";
+    }
+
+    const suffix = did.split(':').pop();
 
     if (Object.prototype.hasOwnProperty.call(db.dids, suffix)) {
-        db.dids[suffix].push(op);
+        db.dids[suffix].push(event);
     }
     else {
-        db.dids[suffix] = [op];
+        db.dids[suffix] = [event];
     }
 
     writeDb(db);
 }
 
-export async function getOperations(did) {
+export async function getEvents(did) {
     try {
         const db = loadDb();
         const suffix = did.split(':').pop();
@@ -67,15 +72,19 @@ export async function getOperations(did) {
     }
 }
 
-export async function setOperations(did, ops) {
+export async function setEvents(did, events) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     const db = loadDb();
     const suffix = did.split(':').pop();
-    
-    db.dids[suffix] = ops;
+
+    db.dids[suffix] = events;
     writeDb(db);
 }
 
-export async function deleteOperations(did) {
+export async function deleteEvents(did) {
     const db = loadDb();
     const suffix = did.split(':').pop();
 
@@ -85,18 +94,18 @@ export async function deleteOperations(did) {
     }
 }
 
-export async function queueOperation(op) {
+export async function queueOperation(registry, op) {
     const db = loadDb();
 
     if (!db.queue) {
         db.queue = {};
     }
 
-    if (Object.prototype.hasOwnProperty.call(db.queue, op.registry)) {
-        db.queue[op.registry].push(op);
+    if (Object.prototype.hasOwnProperty.call(db.queue, registry)) {
+        db.queue[registry].push(op);
     }
     else {
-        db.queue[op.registry] = [op];
+        db.queue[registry] = [op];
     }
 
     writeDb(db);
@@ -123,7 +132,12 @@ export async function clearQueue(registry, batch) {
     try {
         const db = loadDb();
         const oldQueue = db.queue[registry];
-        const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+
+        if (!oldQueue) {
+            throw `Unknown registry ${registry}`;
+        }
+
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
 
         db.queue[registry] = newQueue;
         writeDb(db);

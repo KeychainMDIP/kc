@@ -93,7 +93,7 @@ async function createUpdateOp(keypair, did, doc) {
         ...operation,
         signature: {
             signer: did,
-            created: new Date().toISOString(),
+            signed: new Date().toISOString(),
             hash: msgHash,
             value: signature,
         }
@@ -199,6 +199,322 @@ describe('createDID', () => {
     });
 });
 
+
+describe('resolveDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a valid agent DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+                version: 1,
+                confirmed: true,
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should resolve a valid agent DID after an update', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: doc.didDocumentData,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                updated: expect.any(String),
+                version: 2,
+                confirmed: true,
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve unconfirmed updates when allowed', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'BTC'); // Specify BTC registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: doc.didDocumentData,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                updated: expect.any(String),
+                version: 2,
+                confirmed: false,
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve only confirmed updates when specified', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'BTC'); // Specify BTC registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did, null, true);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+                version: 1,
+                confirmed: true,
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve a valid asset DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agent, keypair);
+        const did = await gatekeeper.createDID(assetOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                id: did,
+                controller: assetOp.controller,
+            },
+            didDocumentData: assetOp.data,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                version: 1,
+                confirmed: true,
+            },
+            mdip: assetOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should not resolve an invalid DID', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.resolveDID();
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID([]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID([1, 2, 3]);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID({});
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID({ mock: 1 });
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('did:mdip:xxx');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+
+        try {
+            await gatekeeper.resolveDID('did:mdip:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+});
+
+describe('updateDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did);
+        doc.didDocumentMetadata.updated = expect.any(String);
+        doc.didDocumentMetadata.version = 2;
+
+        expect(ok).toBe(true);
+        expect(updatedDoc).toStrictEqual(doc);
+    });
+
+    it('should return false if update operation is invalid', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        updateOp.doc.didDocumentData = 'mock';
+        const ok = await gatekeeper.updateDID(updateOp);
+
+        expect(ok).toBe(false);
+    });
+});
+
 describe('exportDID', () => {
 
     afterEach(() => {
@@ -215,7 +531,7 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(1);
-        expect(ops[0].did).toStrictEqual(did);
+        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
@@ -232,9 +548,9 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(2);
-        expect(ops[0].did).toStrictEqual(did);
+        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
-        expect(ops[1].did).toStrictEqual(did);
+        //expect(ops[1].did).toStrictEqual(did);
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
@@ -392,26 +708,6 @@ describe('importDID', () => {
         expect(doc.didDocument.id).toBe(did);
     });
 
-    it('should throw an exception on mismatched DID in export', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp1 = await createAgentOp(keypair);
-        const did1 = await gatekeeper.createDID(agentOp1);
-        const agentOp2 = await createAgentOp(keypair);
-        const did2 = await gatekeeper.createDID(agentOp2);
-        const ops = await gatekeeper.exportDID(did1);
-
-        ops[0].did = did2;
-
-        try {
-            await gatekeeper.importDID(ops);
-            throw 'Expected to throw an exception';
-        } catch (error) {
-            expect(error).toBe('Invalid operation');
-        }
-    });
-
     it('should throw an exception on undefined', async () => {
         mockFs({});
 
@@ -452,7 +748,7 @@ describe('importDID', () => {
             await gatekeeper.importDID([1, 2, 3]);
             throw 'Expected to throw an exception';
         } catch (error) {
-            expect(error).toBe('Invalid operation');
+            expect(error).toBe('Invalid import');
         }
     });
 });

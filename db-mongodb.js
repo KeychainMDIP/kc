@@ -19,32 +19,44 @@ export async function resetDb() {
     await db.collection('dids').deleteMany({});
 }
 
-export async function addOperation(op) {
-    const id = op.did.split(':').pop();
+export async function addEvent(did, event) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
+    const id = did.split(':').pop();
 
     console.time('updateOne');
     await db.collection('dids').updateOne(
         { id: id },
-        { $push: { ops: op } },
+        { $push: { events: event } },
         { upsert: true }
     );
     console.timeEnd('updateOne');
 }
 
-export async function getOperations(did) {
+export async function getEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     try {
         const id = did.split(':').pop();
         console.time('findOne');
         const row = await db.collection('dids').findOne({ id: id });
         console.timeEnd('findOne');
-        return row.ops;
+        return row.events;
     }
     catch {
         return [];
     }
 }
 
-export async function deleteOperations(did) {
+export async function deleteEvents(did) {
+    if (!did) {
+        throw "Invalid DID";
+    }
+
     const id = did.split(':').pop();
     await db.collection('dids').deleteOne({ id: id });
 }
@@ -55,9 +67,9 @@ export async function getAllKeys() {
     return ids;
 }
 
-export async function queueOperation(op) {
+export async function queueOperation(registry, op) {
     await db.collection('queue').updateOne(
-        { id: op.registry },
+        { id: registry },
         { $push: { ops: op } },
         { upsert: true }
     );
@@ -74,14 +86,22 @@ export async function getQueue(registry) {
 }
 
 export async function clearQueue(registry, batch) {
-    const queueCollection = db.collection('queue');
-    const oldQueueDocument = await queueCollection.findOne({ id: registry });
-    const oldQueue = oldQueueDocument.ops;
-    const newQueue = oldQueue.filter(item => !batch.some(op => op.operation.signature.value === item.operation.signature.value));
+    try {
+        const queueCollection = db.collection('queue');
+        const oldQueueDocument = await queueCollection.findOne({ id: registry });
+        const oldQueue = oldQueueDocument.ops;
+        const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
 
-    await queueCollection.updateOne(
-        { id: registry },
-        { $set: { ops: newQueue } },
-        { upsert: true }
-    );
+        await queueCollection.updateOne(
+            { id: registry },
+            { $set: { ops: newQueue } },
+            { upsert: true }
+        );
+
+        return true;
+    }
+    catch (error) {
+        console.error(error);
+        return false;
+    }
 }
