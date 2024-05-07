@@ -260,9 +260,9 @@ async function waitForTess() {
 }
 
 async function main() {
+    await waitForTess();
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper);
-    await waitForTess();
 
     if (!config.nodeID) {
         console.log('tess-mediator must have a KC_NODE_ID configured');

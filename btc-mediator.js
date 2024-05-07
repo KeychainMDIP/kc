@@ -327,9 +327,6 @@ async function exportLoop() {
 }
 
 async function main() {
-    await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper);
-
     console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
 
     try {
@@ -340,6 +337,9 @@ async function main() {
         console.log('Cannot connect to BTC node', error);
         return;
     }
+
+    await gatekeeper.waitUntilReady();
+    await keymaster.start(gatekeeper);
 
     if (!config.nodeID) {
         console.log('btc-mediator must have a KC_NODE_ID configured');
