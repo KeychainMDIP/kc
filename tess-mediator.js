@@ -158,16 +158,16 @@ async function importBatch() {
             const batch = [];
 
             for (let i = 0; i < queue.length; i++) {
-                const blockTime = new Date(item.time);
-
                 batch.push({
                     registry: 'TESS',
-                    time: blockTime.toISOString(),
-                    ordinal: [blockTime.getTime(), item.index, i],
+                    time: item.time,
+                    ordinal: [item.height, item.index, i],
                     operation: queue[i],
                     blockchain : {
                         height: item.height,
+                        index: item.index,
                         txid: item.txid,
+                        batch: item.did,
                     }
                 });
             }
