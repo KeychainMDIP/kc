@@ -241,7 +241,7 @@ async function replaceByFee() {
     return true;
 }
 
-function checkAnchorInterval() {
+function checkExportInterval() {
     const db = loadDb();
 
     if (!db.lastExport) {
@@ -254,12 +254,12 @@ function checkAnchorInterval() {
     const now = new Date();
     const elapsedMinutes = (now - lastExport) / (60 * 1000);
 
-    return (elapsedMinutes < config.btcAnchorInterval);
+    return (elapsedMinutes < config.btcExportInterval);
 }
 
 async function anchorBatch() {
 
-    if (checkAnchorInterval()) {
+    if (checkExportInterval()) {
         return;
     }
 
@@ -309,21 +309,21 @@ async function importLoop() {
     try {
         await scanBlocks();
         await importBatch();
-        console.log(`import loop waiting ${config.btcScanInterval} minute(s)...`);
+        console.log(`import loop waiting ${config.btcImportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in importLoop: ${error}`);
     }
-    setTimeout(importLoop, config.btcScanInterval * 60 * 1000);
+    setTimeout(importLoop, config.btcImportInterval * 60 * 1000);
 }
 
 async function exportLoop() {
     try {
         await anchorBatch();
-        console.log(`export loop waiting ${config.btcAnchorInterval} minute(s)...`);
+        console.log(`export loop waiting ${config.btcExportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, config.btcAnchorInterval * 60 * 1000);
+    setTimeout(exportLoop, config.btcExportInterval * 60 * 1000);
 }
 
 async function main() {
@@ -355,8 +355,8 @@ async function main() {
     }
 
     console.log(`Using keymaster ID ${config.nodeID}`);
-    console.log(`Scanning blocks every ${config.btcScanInterval} minute(s)`);
-    console.log(`Anchoring operations every ${config.btcAnchorInterval} minute(s)`);
+    console.log(`Importing operations every ${config.btcImportInterval} minute(s)`);
+    console.log(`Exporting operations every ${config.btcExportInterval} minute(s)`);
     console.log(`Txn fee minimum: ${config.btcFeeMin} BTC, maximum: ${config.btcFeeMax} BTC, increment ${config.btcFeeInc} BTC`);
 
     importLoop();
