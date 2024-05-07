@@ -5,7 +5,7 @@ import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = 138900;
+const FIRST = 139080;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -163,7 +163,7 @@ async function importBatch() {
                     time: item.time,
                     ordinal: [item.height, item.index, i],
                     operation: queue[i],
-                    blockchain : {
+                    blockchain: {
                         height: item.height,
                         index: item.index,
                         txid: item.txid,
