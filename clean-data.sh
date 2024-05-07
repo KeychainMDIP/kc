@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-git stash
-rm -rfv data
-git reset --hard
-git stash pop
+rm data/mdip*.*
+rm data/*-mediator.json
+rm data/wallet.json
+rm -rfv data/db
