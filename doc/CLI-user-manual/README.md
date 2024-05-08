@@ -28,6 +28,10 @@ The Keychain project is provided as a set of Docker containers managed with dock
   sh node-start.sh
   ```
 
+  > [!NOTE]
+  >
+  > The first time you spin up an MDIP node it may take several minutes. MDIP can register DIDs on several blockchain ledgers, which requires an import of their current state.
+
 ## Components of an MDIP node
 
 Inspecting the `dc-bts.yml` file reveals several containers that house individual components of your MDIP node.
