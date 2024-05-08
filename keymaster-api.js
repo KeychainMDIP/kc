@@ -53,7 +53,7 @@ v1router.post('/ids', async (req, res) => {
     }
 });
 
-v1router.get('/ids/current', async (req, res) => {
+v1router.get('/current-id', async (req, res) => {
     try {
         const current = keymaster.getCurrentIdName();
         res.json(current);
@@ -62,9 +62,57 @@ v1router.get('/ids/current', async (req, res) => {
     }
 });
 
+v1router.post('/current-id', async (req, res) => {
+    try {
+        const { name } = req.body;
+        keymaster.useId(name);
+        res.json("OK");
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/challenge', async (req, res) => {
+    try {
+        const did = await keymaster.createChallenge();
+        res.json(did);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/challenge', async (req, res) => {
+    try {
+        const did = await keymaster.createChallenge(req.body);
+        res.json(did);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/response', async (req, res) => {
+    try {
+        const { challenge } = req.body;
+        const did = await keymaster.createResponse(challenge);
+        res.json(did);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/response/verify', async (req, res) => {
+    try {
+        const { response, challenge } = req.body;
+        const verify = await keymaster.verifyResponse(response, challenge);
+        res.json(verify);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
-app.use((req, res, next) => {
+app.use((req, res) => {
     if (!req.path.startsWith('/api')) {
         res.sendFile(path.join(__dirname, 'keymaster-app/build', 'index.html'));
     } else {

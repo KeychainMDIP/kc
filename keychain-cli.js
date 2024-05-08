@@ -318,8 +318,7 @@ program
     .description('Create challenge (optionally from a file)')
     .action(async (file, name) => {
         try {
-            const defaultChallenge = { credentials: [] };
-            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : defaultChallenge;
+            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : null;
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {

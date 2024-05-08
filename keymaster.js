@@ -755,6 +755,10 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challenge) {
 
+    if (!challenge) {
+        challenge = { credentials: [] };
+    }
+
     // TBD: replace with challenge schema validation
 
     if (!challenge?.credentials) {
@@ -876,13 +880,13 @@ export async function verifyResponse(responseDID, challengeDID) {
     }
 
     const response = await decryptJSON(responseDID);
+    const challenge = await resolveAsset(challengeDID);
 
     if (response.challenge !== challengeDID) {
         response.match = false;
         return response;
     }
 
-    const challenge = await resolveAsset(challengeDID);
     const vps = [];
 
     for (let credential of response.credentials) {
