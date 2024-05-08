@@ -7,7 +7,9 @@ The CLI is a Command Line Interface to the Keychain implementation of the MultiD
 
 ## Install Keychain & MDIP
 
-The Keychain project is provided as a set of Docker containers managed with docker compose. This process will clone the repository and run the scripts to build and run the containers.
+The Keychain project is provided as a set individual processes that make up the components of an MDIP node. These components can optionally be built into Docker containers managed with docker compose, which is what this page will cover.
+
+This process will clone the repository and run the scripts to build and run the Docker containers.
 
 #### Prerequisites
 
@@ -45,7 +47,7 @@ Before following these steps, ensure that the system in question has:
     docker compose up
     ```
 
-    This may take a few minutes while it builds and deploys the docker images. When the `hyperswarm-1` and `gatekeeper-1` containers begin logging, you can proceed.
+    This may take a few minutes while it builds and deploys the docker images, and syncs network data. When the `hyperswarm-1` and `gatekeeper-1` containers begin logging, you can proceed.
 
 1. In a separate terminal, create an ID for your node. Replace `<NODE-NAME>` with a preferred name to identify this ID in your wallet:
 
@@ -62,10 +64,6 @@ Before following these steps, ensure that the system in question has:
     ```sh
     sh node-start.sh
     ```
-
-    > [!NOTE]
-    >
-    > The first time you spin up an MDIP node it may take several minutes. MDIP can register DIDs on several blockchain ledgers, which requires an import of their current state.
 
 ## Components of an MDIP node
 
