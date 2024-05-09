@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Paper, MenuItem, Select, TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Tab, Tabs, Grid } from '@mui/material';
+import { Box, Button, Grid, MenuItem, Select, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import axios from 'axios';
-import './App.css';
+//import './App.css';
 
 function App() {
 
     const [currentId, setCurrentId] = useState('');
+    const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const [tab, setTab] = useState(null);
-    const [documents, setDocuments] = useState(null);
+    const [docs, setDocs] = useState(null);
+    const [docsString, setDocsString] = useState(null);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
@@ -23,19 +25,64 @@ function App() {
                 const getIdList = await axios.get(`/api/v1/ids`);
                 setIdList(getIdList.data);
 
+                const getDocs = await axios.get(`/api/v1/resolve-id`);
+                const docs = getDocs.data;
+                setDocs(docs);
+                setCurrentDID(docs.didDocument.id);
+                setDocsString(JSON.stringify(docs, null, 4));
+
                 setTab('ids');
             } catch (error) {
-                console.log(error);
+                alert(error);
             }
         };
 
         fetchData();
     }, []);
 
+    async function handleUseId() {
+        try {
+            await axios.post(`/api/v1/current-id`, { name: selectedId });
+            setCurrentId(selectedId);
+
+            const getDocs = await axios.get(`/api/v1/resolve-id`);
+            const docs = getDocs.data;
+            setDocs(docs);
+            setCurrentDID(docs.didDocument.id);
+            setDocsString(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            alert(error);
+        }
+    }
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(currentDID);
+    };
+
     return (
         <div className="App">
             <header className="App-header">
-                current ID: {currentId}
+
+                <h1>Keymaster Web UI Demo</h1>
+
+                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                    <Grid item>
+                        <Typography style={{ fontSize: '1.5em' }}>
+                            ID:
+                        </Typography>
+                    </Grid>
+                    <Grid item>
+                        <Typography style={{ fontSize: '1.5em', fontWeight: 'bold' }}>
+                            {currentId}
+                        </Typography>
+                    </Grid>
+                    <Grid item>
+                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                            {currentDID}
+                        </Typography>
+                    </Grid>
+                </Grid>
+
                 <Box>
                     <Tabs
                         value={tab}
@@ -45,7 +92,7 @@ function App() {
                         variant="scrollable"
                         scrollButtons="auto"
                     >
-                        <Tab key="ids" value="ids" label={'IDs'} />
+                        <Tab key="ids" value="ids" label={'Identity'} />
                         <Tab key="docs" value="docs" label={'Documents'} />
                         <Tab key="challenge" value="challenge" label={'Challenge'} />
                         <Tab key="response" value="response" label={'Response'} />
@@ -66,15 +113,18 @@ function App() {
                                     </MenuItem>
                                 ))}
                             </Select>
+
+                            <Button variant="contained" color="primary" onClick={handleUseId}>
+                                Use ID
+                            </Button>
                         </Box>
                     }
                     {tab === 'docs' &&
                         <Box>
-                            DID Documents
                             <textarea
-                                value={documents}
+                                value={docsString}
                                 readOnly
-                                style={{ width: '600px', height: '400px', overflow: 'auto' }}
+                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
                             />
                         </Box>
                     }

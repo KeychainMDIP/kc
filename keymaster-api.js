@@ -77,6 +77,15 @@ v1router.post('/current-id', async (req, res) => {
     }
 });
 
+v1router.get('/resolve-id', async (req, res) => {
+    try {
+        const doc = await keymaster.resolveId();
+        res.json(doc);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/challenge', async (req, res) => {
     try {
         const did = await keymaster.createChallenge();
