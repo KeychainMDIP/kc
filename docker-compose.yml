@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile.keymaster
     image: keychainmdip/keymaster
-    command: "echo disable for dev"
+    #command: "echo disable for dev"
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper
       - KC_GATEKEEPER_PORT=4224
