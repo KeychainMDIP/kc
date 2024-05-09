@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+COMPOSE_FILE="docker-compose.yml"
+DOCKER_OPTIONS=""
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+
+    case $key in
+        -r|--registry)
+        RUNTIME="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        -d)
+        DOCKER_OPTIONS="$DOCKER_OPTIONS -d"
+        shift # past argument
+        ;;
+        *)    # unknown option
+        shift # past argument
+        ;;
+    esac
+done
+
+if [ "$RUNTIME" = "BTC" ]; then
+    COMPOSE_FILE="dc-btc.yml"
+elif [ "$RUNTIME" = "TESS" ]; then
+    COMPOSE_FILE="dc-tess.yml"
+fi
+
+echo "$COMPOSE_FILE" > last-compose-file.txt
+
+docker compose -f $COMPOSE_FILE build
+docker compose -f $COMPOSE_FILE up $DOCKER_OPTIONS
