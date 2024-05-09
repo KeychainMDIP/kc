@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Default to docker-compose.yml or the last used compose file if it exists
+if [ -f last-compose-file.txt ]; then
+    COMPOSE_FILE=$(cat last-compose-file.txt)
+else
+    COMPOSE_FILE="docker-compose.yml"
+fi
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+
+    case $key in
+        -r|--runtime)
+        RUNTIME="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        *)    # unknown option
+        shift # past argument
+        ;;
+    esac
+done
+
+if [ "$RUNTIME" = "BTC" ]; then
+    COMPOSE_FILE="dc-btc.yml"
+elif [ "$RUNTIME" = "TESS" ]; then
+    COMPOSE_FILE="dc-tess.yml"
+fi
+
+docker compose -f $COMPOSE_FILE down
