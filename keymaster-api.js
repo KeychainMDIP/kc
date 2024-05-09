@@ -46,6 +46,11 @@ v1router.get('/ids', async (req, res) => {
 v1router.post('/ids', async (req, res) => {
     try {
         const { name, registry } = req.body;
+
+        if (!name) {
+            throw "No name provided";
+        }
+
         const did = await keymaster.createId(name, registry);
         res.json(did);
     } catch (error) {
@@ -121,15 +126,31 @@ app.use((req, res) => {
     }
 });
 
+process.on('uncaughtException', (error) => {
+    //console.error('Unhandled exception caught');
+    console.error('Unhandled exception caught', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    //console.error('Unhandled rejection caught');
+});
+
 const port = 4226;
 
 app.listen(port, async () => {
     await keymaster.start(gatekeeper);
     await gatekeeper.waitUntilReady();
     console.log(`keymaster server running on port ${port}`);
-    const currentId = keymaster.getCurrentIdName();
-    const doc = await keymaster.resolveId();
 
-    console.log(`current ID: ${currentId}`);
-    console.log(JSON.stringify(doc, null, 4));
+    try {
+        const currentId = keymaster.getCurrentIdName();
+        const doc = await keymaster.resolveId();
+
+        console.log(`current ID: ${currentId}`);
+        console.log(JSON.stringify(doc, null, 4));
+    }
+    catch (error) {
+        console.log(error);
+    }
 });
