@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Select, Tab, Tabs, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
+import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import axios from 'axios';
 //import './App.css';
 
@@ -14,6 +15,7 @@ function App() {
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
+    const [accessGranted, setAccessGranted] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -53,6 +55,46 @@ function App() {
         } catch (error) {
             alert(error);
         }
+    }
+
+    async function newChallenge() {
+        try {
+            const getChallenge = await axios.get(`/api/v1/challenge`);
+            setChallenge(getChallenge.data);
+        } catch (error) {
+            alert(error);
+        }
+    }
+
+    async function createResponse() {
+        try {
+            const getResponse = await axios.post(`/api/v1/response`, { challenge: challenge });
+            setResponse(getResponse.data);
+        } catch (error) {
+            alert(error);
+        }
+    }
+
+    async function verifyResponse() {
+        try {
+            const getVerify = await axios.post(`/api/v1/verify-response`, { response: response, challenge: challenge });
+            const verify = getVerify.data;
+            if (verify.match) {
+                alert("Response is VALID");
+                setAccessGranted(true);
+            }
+            else {
+                alert("Response is NOT VALID");
+                setAccessGranted(false);
+            }
+        } catch (error) {
+            alert(error);
+        }
+    }
+
+    async function clearResponse() {
+        setResponse('');
+        setAccessGranted(false);
     }
 
     const handleCopy = () => {
@@ -95,7 +137,9 @@ function App() {
                         <Tab key="ids" value="ids" label={'Identity'} />
                         <Tab key="docs" value="docs" label={'Documents'} />
                         <Tab key="challenge" value="challenge" label={'Challenge'} />
-                        <Tab key="response" value="response" label={'Response'} />
+                        {accessGranted &&
+                            <Tab key="access" value="access" label={'Access'} />
+                        }
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
@@ -129,13 +173,70 @@ function App() {
                         </Box>
                     }
                     {tab === 'challenge' &&
-                        <Box>
-                            Challenge
-                        </Box>
+                        <Table style={{ width: '800px' }}>
+                            <TableBody>
+                                <TableRow>
+                                    <TableCell style={{ width: '10%' }}>Challenge</TableCell>
+                                    <TableCell style={{ width: '80%' }}>
+                                        <TextField
+                                            label=""
+                                            value={challenge}
+                                            onChange={(e) =>
+                                                setChallenge(e.target.value)
+                                            }
+                                            fullWidth
+                                            margin="normal"
+                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                        />
+                                    </TableCell>
+                                    <TableCell style={{ width: '10%' }}>
+                                        <Button variant="contained" color="primary" onClick={newChallenge}>
+                                            New
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell style={{ width: '10%' }}>Response</TableCell>
+                                    <TableCell style={{ width: '80%' }}>
+                                        <TextField
+                                            label=""
+                                            value={response}
+                                            onChange={(e) =>
+                                                setResponse(e.target.value)
+                                            }
+                                            fullWidth
+                                            margin="normal"
+                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                        />
+                                    </TableCell>
+                                    <TableCell style={{ width: '10%' }}>
+                                        {response ? (
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={verifyResponse}>
+                                                        Verify
+                                                    </Button>
+
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={clearResponse}>
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        ) : (
+                                            <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
+                                                Create
+                                            </Button>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
                     }
-                    {tab === 'response' &&
+                    {tab === 'access' &&
                         <Box>
-                            Response
+                            Special Access
                         </Box>
                     }
                 </Box>
