@@ -15,7 +15,7 @@ $ npm install
 
 Start the services in separate terminals:
 ```
-node server.js
+node gatekeeper-api.js
 node hyperswarm-mediator.js
 ```
 

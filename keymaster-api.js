@@ -121,9 +121,15 @@ app.use((req, res) => {
     }
 });
 
-const port = 7007;
+const port = 4226;
 
 app.listen(port, async () => {
     await keymaster.start(gatekeeper);
+    await gatekeeper.waitUntilReady();
     console.log(`keymaster server running on port ${port}`);
+    const currentId = keymaster.getCurrentIdName();
+    const doc = await keymaster.resolveId();
+
+    console.log(`current ID: ${currentId}`);
+    console.log(JSON.stringify(doc, null, 4));
 });
