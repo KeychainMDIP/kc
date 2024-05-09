@@ -67,7 +67,7 @@ Before following these steps, ensure that the system in question has:
 
 ## Components of an MDIP node
 
-Inspecting the `dc-bts.yml` file reveals several containers that house individual components of your MDIP node.
+Inspecting the `dc-btc.yml` file reveals several containers that house individual components of your MDIP node.
 
 ### Gatekeeper
 
