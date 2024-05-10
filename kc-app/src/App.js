@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import axios from 'axios';
-//import './App.css';
+import './App.css';
 
 function App() {
 
@@ -273,7 +273,7 @@ function App() {
                                     <TableCell style={{ width: '10%' }}>Challenge</TableCell>
                                     <TableCell style={{ width: '80%' }}>
                                         <TextField
-                                            label="Challenge"
+                                            label=""
                                             value={challenge}
                                             onChange={(e) =>
                                                 setChallenge(e.target.value)
@@ -293,7 +293,7 @@ function App() {
                                     <TableCell style={{ width: '10%' }}>Response</TableCell>
                                     <TableCell style={{ width: '80%' }}>
                                         <TextField
-                                            label="Response"
+                                            label=""
                                             value={response}
                                             onChange={(e) =>
                                                 setResponse(e.target.value)
