@@ -225,7 +225,7 @@ function App() {
                                 </Grid>
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={recoverId}>
-                                        Restore...
+                                        Recover...
                                     </Button>
                                 </Grid>
                             </Grid>
