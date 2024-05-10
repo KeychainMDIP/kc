@@ -6,16 +6,18 @@ import axios from 'axios';
 
 function App() {
 
+    const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
-    const [tab, setTab] = useState(null);
     const [docs, setDocs] = useState(null);
     const [docsString, setDocsString] = useState(null);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
+    const [newName, setNewName] = useState(null);
+    const [registry, setRegistry] = useState('');
 
     useEffect(() => {
         const fetchData = async () => {
@@ -33,6 +35,7 @@ function App() {
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 
+                setRegistry('hyperswarm');
                 setTab('ids');
             } catch (error) {
                 alert(error);
@@ -41,6 +44,25 @@ function App() {
 
         fetchData();
     }, []);
+
+    async function refreshAll() {
+        try {
+            const getCurrentId = await axios.get(`/api/v1/current-id`);
+            setCurrentId(getCurrentId.data);
+            setSelectedId(getCurrentId.data);
+
+            const getIdList = await axios.get(`/api/v1/ids`);
+            setIdList(getIdList.data);
+
+            const getDocs = await axios.get(`/api/v1/resolve-id`);
+            const docs = getDocs.data;
+            setDocs(docs);
+            setCurrentDID(docs.didDocument.id);
+            setDocsString(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            alert(error);
+        }
+    }
 
     async function handleUseId() {
         try {
@@ -97,6 +119,15 @@ function App() {
         setAccessGranted(false);
     }
 
+    async function createId() {
+        try {
+            await axios.post(`/api/v1/ids`, { name: newName, registry: registry });
+            refreshAll();
+        } catch (error) {
+            alert(error);
+        }
+    }
+
     const handleCopy = () => {
         navigator.clipboard.writeText(currentDID);
     };
@@ -136,6 +167,7 @@ function App() {
                     >
                         <Tab key="ids" value="ids" label={'Identity'} />
                         <Tab key="docs" value="docs" label={'Documents'} />
+                        <Tab key="create" value="create" label={'Create ID'} />
                         <Tab key="challenge" value="challenge" label={'Challenge'} />
                         {accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
@@ -144,24 +176,27 @@ function App() {
                 </Box>
                 <Box style={{ width: '90vw' }}>
                     {tab === 'ids' &&
-                        <Box>
-                            <Select
-                                style={{ width: '300px' }}
-                                value={selectedId}
-                                fullWidth
-                                onChange={(event) => setSelectedId(event.target.value)}
-                            >
-                                {idList.map((idname, index) => (
-                                    <MenuItem value={idname} key={index}>
-                                        {idname}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-
-                            <Button variant="contained" color="primary" onClick={handleUseId}>
-                                Use ID
-                            </Button>
-                        </Box>
+                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                            <Grid item>
+                                <Select
+                                    style={{ width: '300px' }}
+                                    value={selectedId}
+                                    fullWidth
+                                    onChange={(event) => setSelectedId(event.target.value)}
+                                >
+                                    {idList.map((idname, index) => (
+                                        <MenuItem value={idname} key={index}>
+                                            {idname}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </Grid>
+                            <Grid item>
+                                <Button variant="contained" color="primary" onClick={handleUseId}>
+                                    Use ID
+                                </Button>
+                            </Grid>
+                        </Grid>
                     }
                     {tab === 'docs' &&
                         <Box>
@@ -172,6 +207,57 @@ function App() {
                             />
                         </Box>
                     }
+                    {tab === 'create' &&
+                        <Table style={{ width: '800px' }}>
+                            <TableBody>
+                                <TableRow>
+                                    <TableCell style={{ width: '100%' }}>
+                                        <TextField
+                                            label="Name"
+                                            style={{ width: '300px' }}
+                                            value={newName}
+                                            onChange={(e) =>
+                                                setNewName(e.target.value)
+                                            }
+                                            fullWidth
+                                            margin="normal"
+                                            inputProps={{ maxLength: 30 }}
+                                        />
+                                    </TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell style={{ width: '100%' }}>
+                                        <Select
+                                            style={{ width: '300px' }}
+                                            value={registry}
+                                            fullWidth
+                                            onChange={(event) => setRegistry(event.target.value)}
+                                        >
+                                            <MenuItem value={'local'} key={0}>
+                                                local
+                                            </MenuItem>
+                                            <MenuItem value={'hyperswarm'} key={1}>
+                                                hyperswarm
+                                            </MenuItem>
+                                            <MenuItem value={'TESS'} key={2}>
+                                                TESS
+                                            </MenuItem>
+                                            <MenuItem value={'BTC'} key={3}>
+                                                BTC
+                                            </MenuItem>
+                                        </Select>
+                                    </TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell style={{ width: '100%' }}>
+                                        <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
+                                            Create
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    }
                     {tab === 'challenge' &&
                         <Table style={{ width: '800px' }}>
                             <TableBody>
@@ -179,7 +265,7 @@ function App() {
                                     <TableCell style={{ width: '10%' }}>Challenge</TableCell>
                                     <TableCell style={{ width: '80%' }}>
                                         <TextField
-                                            label=""
+                                            label="Challenge"
                                             value={challenge}
                                             onChange={(e) =>
                                                 setChallenge(e.target.value)
@@ -199,7 +285,7 @@ function App() {
                                     <TableCell style={{ width: '10%' }}>Response</TableCell>
                                     <TableCell style={{ width: '80%' }}>
                                         <TextField
-                                            label=""
+                                            label="Response"
                                             value={response}
                                             onChange={(e) =>
                                                 setResponse(e.target.value)
