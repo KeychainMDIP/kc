@@ -45,16 +45,50 @@ function App() {
                 setTab('create');
             }
         } catch (error) {
-            alert(error);
+            window.alert(error);
         }
     }
 
-    async function handleUseId() {
+    async function useId() {
         try {
             await axios.post(`/api/v1/current-id`, { name: selectedId });
             refreshAll();
         } catch (error) {
-            alert(error);
+            window.alert(error);
+        }
+    }
+
+    async function removeId() {
+        try {
+            if (window.confirm(`Are you sure you want to remove ${selectedId}`)) {
+                await axios.post(`/api/v1/remove-id`, { name: selectedId });
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function backupId() {
+        try {
+            const getResponse = await axios.post(`/api/v1/backup-id`, { name: selectedId });
+            refreshAll();
+            window.alert(getResponse.data);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function recoverId() {
+        try {
+            const did = window.prompt("Please enter the DID:");
+            if (did) {
+                const getResponse = await axios.post(`/api/v1/recover-id`, { did: did });
+                refreshAll();
+                window.alert(getResponse.data);
+            }
+        } catch (error) {
+            window.alert(error);
         }
     }
 
@@ -63,7 +97,7 @@ function App() {
             const getChallenge = await axios.get(`/api/v1/challenge`);
             setChallenge(getChallenge.data);
         } catch (error) {
-            alert(error);
+            window.alert(error);
         }
     }
 
@@ -72,7 +106,7 @@ function App() {
             const getResponse = await axios.post(`/api/v1/response`, { challenge: challenge });
             setResponse(getResponse.data);
         } catch (error) {
-            alert(error);
+            window.alert(error);
         }
     }
 
@@ -81,15 +115,15 @@ function App() {
             const getVerify = await axios.post(`/api/v1/verify-response`, { response: response, challenge: challenge });
             const verify = getVerify.data;
             if (verify.match) {
-                alert("Response is VALID");
+                window.alert("Response is VALID");
                 setAccessGranted(true);
             }
             else {
-                alert("Response is NOT VALID");
+                window.alert("Response is NOT VALID");
                 setAccessGranted(false);
             }
         } catch (error) {
-            alert(error);
+            window.alert(error);
         }
     }
 
@@ -103,7 +137,7 @@ function App() {
             await axios.post(`/api/v1/ids`, { name: newName, registry: registry });
             refreshAll();
         } catch (error) {
-            alert(error);
+            window.alert(error);
         }
     }
 
@@ -155,27 +189,47 @@ function App() {
                 </Box>
                 <Box style={{ width: '90vw' }}>
                     {tab === 'ids' &&
-                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                            <Grid item>
-                                <Select
-                                    style={{ width: '300px' }}
-                                    value={selectedId}
-                                    fullWidth
-                                    onChange={(event) => setSelectedId(event.target.value)}
-                                >
-                                    {idList.map((idname, index) => (
-                                        <MenuItem value={idname} key={index}>
-                                            {idname}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
+                        <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={selectedId}
+                                        fullWidth
+                                        onChange={(event) => setSelectedId(event.target.value)}
+                                    >
+                                        {idList.map((idname, index) => (
+                                            <MenuItem value={idname} key={index}>
+                                                {idname}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={useId}>
+                                        Use ID
+                                    </Button>
+                                </Grid>
                             </Grid>
-                            <Grid item>
-                                <Button variant="contained" color="primary" onClick={handleUseId}>
-                                    Use ID
-                                </Button>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={removeId}>
+                                        Remove...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={backupId}>
+                                        Backup
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={recoverId}>
+                                        Restore...
+                                    </Button>
+                                </Grid>
                             </Grid>
-                        </Grid>
+                        </Box>
                     }
                     {tab === 'docs' &&
                         <Box>

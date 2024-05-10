@@ -86,6 +86,36 @@ v1router.get('/resolve-id', async (req, res) => {
     }
 });
 
+v1router.post('/remove-id', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const response = keymaster.removeId(name);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/backup-id', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const response = await keymaster.backupId(name);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/recover-id', async (req, res) => {
+    try {
+        const { did } = req.body;
+        const response = await keymaster.recoverId(did);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/challenge', async (req, res) => {
     try {
         const did = await keymaster.createChallenge();

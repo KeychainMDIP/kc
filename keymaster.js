@@ -446,14 +446,18 @@ export async function createId(name, registry = defaultRegistry) {
 
 export function removeId(name) {
     const wallet = loadWallet();
-    if (Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
+    let ids = Object.keys(wallet.ids);
+
+    if (ids.includes(name)) {
         delete wallet.ids[name];
 
         if (wallet.current === name) {
-            wallet.current = '';
+            ids = Object.keys(wallet.ids);
+            wallet.current = ids.length > 0 ? ids[0] : '';
         }
 
         saveWallet(wallet);
+        return true;
     }
     else {
         throw `No ID named ${name}`;
