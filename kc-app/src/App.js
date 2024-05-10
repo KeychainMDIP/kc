@@ -22,21 +22,29 @@ function App() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const getCurrentId = await axios.get(`/api/v1/current-id`);
-                setCurrentId(getCurrentId.data);
-                setSelectedId(getCurrentId.data);
-
-                const getIdList = await axios.get(`/api/v1/ids`);
-                setIdList(getIdList.data);
-
-                const getDocs = await axios.get(`/api/v1/resolve-id`);
-                const docs = getDocs.data;
-                setDocs(docs);
-                setCurrentDID(docs.didDocument.id);
-                setDocsString(JSON.stringify(docs, null, 4));
-
                 setRegistry('hyperswarm');
-                setTab('ids');
+
+                const getCurrentId = await axios.get(`/api/v1/current-id`);
+                const currentId = getCurrentId.data;
+
+                if (currentId) {
+                    setCurrentId(currentId);
+                    setSelectedId(currentId);
+
+                    const getIdList = await axios.get(`/api/v1/ids`);
+                    setIdList(getIdList.data);
+
+                    const getDocs = await axios.get(`/api/v1/resolve-id`);
+                    const docs = getDocs.data;
+                    setDocs(docs);
+                    setCurrentDID(docs.didDocument.id);
+                    setDocsString(JSON.stringify(docs, null, 4));
+
+                    setTab('ids');
+                }
+                else {
+                    setTab('create');
+                }
             } catch (error) {
                 alert(error);
             }
