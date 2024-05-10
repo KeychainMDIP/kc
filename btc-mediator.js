@@ -5,7 +5,7 @@ import * as keymaster from './keymaster.js';
 import config from './config.js';
 
 const REGISTRY = 'BTC';
-const FIRST = 842350;
+const FIRST = 842880;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -349,9 +349,15 @@ async function main() {
         await keymaster.resolveDID(config.nodeID);
         console.log(`Using node ID '${config.nodeID}'`);
     }
-    catch (error) {
-        console.log(`Cannot resolve node ID '${config.nodeID}'`, error);
-        return;
+    catch {
+        try {
+            await keymaster.createId(config.nodeID);
+            console.log(`Created node ID '${config.nodeID}'`);
+        }
+        catch (error) {
+            console.log(`Cannot create node ID '${config.nodeID}'`, error);
+            return;
+        }
     }
 
     console.log(`Using keymaster ID ${config.nodeID}`);
