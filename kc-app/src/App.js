@@ -10,63 +10,40 @@ function App() {
     const [currentId, setCurrentId] = useState('');
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
-    const [docs, setDocs] = useState(null);
     const [docsString, setDocsString] = useState(null);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState(null);
-    const [registry, setRegistry] = useState('');
+    const [registry, setRegistry] = useState('hyperswarm');
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setRegistry('hyperswarm');
-
-                const getCurrentId = await axios.get(`/api/v1/current-id`);
-                const currentId = getCurrentId.data;
-
-                if (currentId) {
-                    setCurrentId(currentId);
-                    setSelectedId(currentId);
-
-                    const getIdList = await axios.get(`/api/v1/ids`);
-                    setIdList(getIdList.data);
-
-                    const getDocs = await axios.get(`/api/v1/resolve-id`);
-                    const docs = getDocs.data;
-                    setDocs(docs);
-                    setCurrentDID(docs.didDocument.id);
-                    setDocsString(JSON.stringify(docs, null, 4));
-
-                    setTab('ids');
-                }
-                else {
-                    setTab('create');
-                }
-            } catch (error) {
-                alert(error);
-            }
-        };
-
-        fetchData();
+        refreshAll();
     }, []);
 
     async function refreshAll() {
         try {
             const getCurrentId = await axios.get(`/api/v1/current-id`);
-            setCurrentId(getCurrentId.data);
-            setSelectedId(getCurrentId.data);
+            const currentId = getCurrentId.data;
 
-            const getIdList = await axios.get(`/api/v1/ids`);
-            setIdList(getIdList.data);
+            if (currentId) {
+                setCurrentId(currentId);
+                setSelectedId(currentId);
 
-            const getDocs = await axios.get(`/api/v1/resolve-id`);
-            const docs = getDocs.data;
-            setDocs(docs);
-            setCurrentDID(docs.didDocument.id);
-            setDocsString(JSON.stringify(docs, null, 4));
+                const getIdList = await axios.get(`/api/v1/ids`);
+                setIdList(getIdList.data);
+
+                const getDocs = await axios.get(`/api/v1/resolve-id`);
+                const docs = getDocs.data;
+                setCurrentDID(docs.didDocument.id);
+                setDocsString(JSON.stringify(docs, null, 4));
+
+                setTab('ids');
+            }
+            else {
+                setTab('create');
+            }
         } catch (error) {
             alert(error);
         }
@@ -75,13 +52,7 @@ function App() {
     async function handleUseId() {
         try {
             await axios.post(`/api/v1/current-id`, { name: selectedId });
-            setCurrentId(selectedId);
-
-            const getDocs = await axios.get(`/api/v1/resolve-id`);
-            const docs = getDocs.data;
-            setDocs(docs);
-            setCurrentDID(docs.didDocument.id);
-            setDocsString(JSON.stringify(docs, null, 4));
+            refreshAll();
         } catch (error) {
             alert(error);
         }
