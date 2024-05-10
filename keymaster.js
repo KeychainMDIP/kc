@@ -446,14 +446,18 @@ export async function createId(name, registry = defaultRegistry) {
 
 export function removeId(name) {
     const wallet = loadWallet();
-    if (Object.prototype.hasOwnProperty.call(wallet.ids, name)) {
+    let ids = Object.keys(wallet.ids);
+
+    if (ids.includes(name)) {
         delete wallet.ids[name];
 
         if (wallet.current === name) {
-            wallet.current = '';
+            ids = Object.keys(wallet.ids);
+            wallet.current = ids.length > 0 ? ids[0] : '';
         }
 
         saveWallet(wallet);
+        return true;
     }
     else {
         throw `No ID named ${name}`;
@@ -755,6 +759,10 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challenge) {
 
+    if (!challenge) {
+        challenge = { credentials: [] };
+    }
+
     // TBD: replace with challenge schema validation
 
     if (!challenge?.credentials) {
@@ -876,13 +884,13 @@ export async function verifyResponse(responseDID, challengeDID) {
     }
 
     const response = await decryptJSON(responseDID);
+    const challenge = await resolveAsset(challengeDID);
 
     if (response.challenge !== challengeDID) {
         response.match = false;
         return response;
     }
 
-    const challenge = await resolveAsset(challengeDID);
     const vps = [];
 
     for (let credential of response.credentials) {

@@ -1207,13 +1207,13 @@ describe('createChallenge', () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
-        const challenge = { credentials: [] };
-        const did = await keymaster.createChallenge(challenge);
+        const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentData).toStrictEqual(challenge);
+        const expected = { credentials: [] };
+        expect(doc.didDocumentData).toStrictEqual(expected);
     });
 
     it('should create a valid challenge', async () => {
@@ -1245,14 +1245,6 @@ describe('createChallenge', () => {
         mockFs({});
 
         await keymaster.createId('Alice');
-
-        try {
-            await keymaster.createChallenge();
-            throw ('Expected to throw an exception');
-        }
-        catch (error) {
-            expect(error).toBe('Invalid input');
-        }
 
         try {
             await keymaster.createChallenge([]);

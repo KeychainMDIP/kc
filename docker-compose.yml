@@ -13,6 +13,22 @@ services:
     ports:
       - "4224:4224"
 
+  keymaster:
+    build:
+      context: .
+      dockerfile: Dockerfile.keymaster
+    image: keychainmdip/keymaster
+    #command: "echo disable for dev"
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper
+      - KC_GATEKEEPER_PORT=4224
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "4226:4226"
+    depends_on:
+      - gatekeeper
+
   hyperswarm:
     build:
       context: .

@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "server.js",
+  "main": "gatekeeper-api.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node gatekeeper-api.js",
     "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose",
     "lint": "eslint ."
   },

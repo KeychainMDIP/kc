@@ -10,8 +10,16 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Copy the client build to the kc-app directory
+COPY kc-app/src ./kc-app/src
+COPY kc-app/public ./kc-app/public
+COPY kc-app/package*.json ./kc-app/
+
+# Build client
+RUN cd kc-app && npm ci && npm run build
+
 # Copy app
 COPY *.js ./
 
 # Run...
-CMD ["node", "gatekeeper-api.js"]
+CMD ["node", "keymaster-api.js"]
