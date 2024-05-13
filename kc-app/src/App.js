@@ -275,9 +275,6 @@ function App() {
                                             <MenuItem value={'TESS'} key={2}>
                                                 TESS
                                             </MenuItem>
-                                            <MenuItem value={'BTC'} key={3}>
-                                                BTC
-                                            </MenuItem>
                                         </Select>
                                     </TableCell>
                                 </TableRow>
