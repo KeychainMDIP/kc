@@ -374,4 +374,4 @@ async function main() {
 
 //main();
 
-console.log('BTC support disable until further notice');
+console.log('BTC support disabled until further notice');
