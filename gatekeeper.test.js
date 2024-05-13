@@ -294,7 +294,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'BTC'); // Specify BTC registry for this agent
+        const agentOp = await createAgentOp(keypair, 1, 'local'); // Specify local registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -339,7 +339,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'BTC'); // Specify BTC registry for this agent
+        const agentOp = await createAgentOp(keypair, 1, 'local'); // Specify local registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };

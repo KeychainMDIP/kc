@@ -371,4 +371,6 @@ async function main() {
     await keymaster.stop();
 }
 
-main();
+//main();
+
+console.log('BTC support disable until further notice');
