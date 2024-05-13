@@ -58,7 +58,7 @@ v1router.post('/ids', async (req, res) => {
     }
 });
 
-v1router.get('/current-id', async (req, res) => {
+v1router.get('/id/current', async (req, res) => {
     try {
         const current = keymaster.getCurrentIdName();
         res.json(current);
@@ -67,7 +67,7 @@ v1router.get('/current-id', async (req, res) => {
     }
 });
 
-v1router.post('/current-id', async (req, res) => {
+v1router.post('/id/current', async (req, res) => {
     try {
         const { name } = req.body;
         keymaster.useId(name);
@@ -77,7 +77,7 @@ v1router.post('/current-id', async (req, res) => {
     }
 });
 
-v1router.get('/resolve-id', async (req, res) => {
+v1router.get('/id/resolve', async (req, res) => {
     try {
         const doc = await keymaster.resolveId();
         res.json(doc);
@@ -86,7 +86,7 @@ v1router.get('/resolve-id', async (req, res) => {
     }
 });
 
-v1router.post('/remove-id', async (req, res) => {
+v1router.post('/id/remove', async (req, res) => {
     try {
         const { name } = req.body;
         const response = keymaster.removeId(name);
@@ -96,7 +96,7 @@ v1router.post('/remove-id', async (req, res) => {
     }
 });
 
-v1router.post('/backup-id', async (req, res) => {
+v1router.post('/id/backup', async (req, res) => {
     try {
         const { name } = req.body;
         const response = await keymaster.backupId(name);
@@ -106,7 +106,7 @@ v1router.post('/backup-id', async (req, res) => {
     }
 });
 
-v1router.post('/recover-id', async (req, res) => {
+v1router.post('/id/recover', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
@@ -144,7 +144,7 @@ v1router.post('/response', async (req, res) => {
     }
 });
 
-v1router.post('/verify-response', async (req, res) => {
+v1router.post('/response/verify', async (req, res) => {
     try {
         const { response, challenge } = req.body;
         const verify = await keymaster.verifyResponse(response, challenge);

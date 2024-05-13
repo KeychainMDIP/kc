@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import axios from 'axios';
+import * as keymaster from './keymaster-sdk.js';
 import './App.css';
 
 function App() {
@@ -24,18 +25,16 @@ function App() {
 
     async function refreshAll() {
         try {
-            const getCurrentId = await axios.get(`/api/v1/current-id`);
-            const currentId = getCurrentId.data;
+            const currentId = await keymaster.getCurrentIdName();
 
             if (currentId) {
                 setCurrentId(currentId);
                 setSelectedId(currentId);
 
-                const getIdList = await axios.get(`/api/v1/ids`);
-                setIdList(getIdList.data);
+                const idList = await keymaster.listIds();
+                setIdList(idList);
 
-                const getDocs = await axios.get(`/api/v1/resolve-id`);
-                const docs = getDocs.data;
+                const docs = await keymaster.resolveId();
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 
@@ -51,7 +50,7 @@ function App() {
 
     async function useId() {
         try {
-            await axios.post(`/api/v1/current-id`, { name: selectedId });
+            await keymaster.useId(selectedId);
             refreshAll();
         } catch (error) {
             window.alert(error);
@@ -61,7 +60,7 @@ function App() {
     async function removeId() {
         try {
             if (window.confirm(`Are you sure you want to remove ${selectedId}`)) {
-                await axios.post(`/api/v1/remove-id`, { name: selectedId });
+                await keymaster.removeId(selectedId);
                 refreshAll();
             }
         } catch (error) {
@@ -71,9 +70,9 @@ function App() {
 
     async function backupId() {
         try {
-            const getResponse = await axios.post(`/api/v1/backup-id`, { name: selectedId });
+            await keymaster.backupId();
             refreshAll();
-            window.alert(getResponse.data);
+            window.alert(`current ID backed up :(`);
         } catch (error) {
             window.alert(error);
         }
@@ -83,9 +82,9 @@ function App() {
         try {
             const did = window.prompt("Please enter the DID:");
             if (did) {
-                const getResponse = await axios.post(`/api/v1/recover-id`, { did: did });
+                const response = await keymaster.recoverId(did);
                 refreshAll();
-                window.alert(getResponse.data);
+                window.alert(response);
             }
         } catch (error) {
             window.alert(error);
@@ -112,7 +111,7 @@ function App() {
 
     async function verifyResponse() {
         try {
-            const getVerify = await axios.post(`/api/v1/verify-response`, { response: response, challenge: challenge });
+            const getVerify = await axios.post(`/api/v1/response/verify`, { response: response, challenge: challenge });
             const verify = getVerify.data;
             if (verify.match) {
                 window.alert("Response is VALID");
