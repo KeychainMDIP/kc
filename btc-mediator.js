@@ -326,6 +326,7 @@ async function exportLoop() {
     setTimeout(exportLoop, config.btcExportInterval * 60 * 1000);
 }
 
+// eslint-disable-next-line no-unused-vars
 async function main() {
     console.log(`Connecting to BTC on ${config.btcHost} on port ${config.btcPort} using wallet '${config.btcWallet}'`);
 
