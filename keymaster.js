@@ -643,12 +643,6 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     };
 
     const signed = await addSignature(operation, name);
-    const valid = await verifySignature(signed);
-
-    if (!valid) {
-        throw "Invalid signature WTF";
-    }
-
     const did = await gatekeeper.createDID(signed);
 
     addToOwned(did);
