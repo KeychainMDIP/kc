@@ -156,7 +156,7 @@ program
     .description('List IDs and show current ID')
     .action(async () => {
         try {
-            const current = keymaster.getCurrentIdName();
+            const current = keymaster.getCurrentId();
             const ids = keymaster.listIds();
 
             for (let id of ids) {
@@ -178,7 +178,7 @@ program
     .description('Set the current ID')
     .action(async (name) => {
         try {
-            keymaster.useId(name);
+            keymaster.setCurrentId(name);
             console.log('OK');
         }
         catch (error) {

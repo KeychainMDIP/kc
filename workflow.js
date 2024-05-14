@@ -33,7 +33,7 @@ async function runWorkflow() {
     console.log(`Created Carol  ${carol}`);
     console.log(`Created Victor ${victor}`);
 
-    keymaster.useId('Alice');
+    keymaster.setCurrentId('Alice');
 
     const credential1 = await keymaster.createCredential(mockSchema);
     const credential2 = await keymaster.createCredential(mockSchema);
@@ -50,7 +50,7 @@ async function runWorkflow() {
     console.log(`Alice attested vc1 for Carol ${vc1}`);
     console.log(`Alice attested vc2 for Carol ${vc2}`);
 
-    keymaster.useId('Bob');
+    keymaster.setCurrentId('Bob');
 
     const credential3 = await keymaster.createCredential(mockSchema);
     const credential4 = await keymaster.createCredential(mockSchema);
@@ -67,7 +67,7 @@ async function runWorkflow() {
     console.log(`Bob attested vc3 for Carol ${vc3}`);
     console.log(`Bob attested vc4 for Carol ${vc4}`);
 
-    keymaster.useId('Carol');
+    keymaster.setCurrentId('Carol');
 
     await keymaster.acceptCredential(vc1);
     await keymaster.acceptCredential(vc2);
@@ -76,7 +76,7 @@ async function runWorkflow() {
 
     console.log(`Carol accepted all 4 VCs`);
 
-    keymaster.useId('Victor');
+    keymaster.setCurrentId('Victor');
 
     const mockChallenge = {
         credentials: [
@@ -101,25 +101,25 @@ async function runWorkflow() {
     const challengeDid = await keymaster.createChallenge(mockChallenge);
     console.log(`Victor created challenge ${challengeDid}`);
 
-    keymaster.useId('Carol');
+    keymaster.setCurrentId('Carol');
     const vpDid = await keymaster.createResponse(challengeDid);
     console.log(`Carol created response for Victor ${vpDid}`);
 
-    keymaster.useId('Victor');
+    keymaster.setCurrentId('Victor');
 
     const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
     console.log(`Victor verified response ${verify1.vps.length} valid credentials`);
 
-    keymaster.useId('Alice');
+    keymaster.setCurrentId('Alice');
     await keymaster.rotateKeys();
 
-    keymaster.useId('Bob');
+    keymaster.setCurrentId('Bob');
     await keymaster.rotateKeys();
 
-    keymaster.useId('Carol');
+    keymaster.setCurrentId('Carol');
     await keymaster.rotateKeys();
 
-    keymaster.useId('Victor');
+    keymaster.setCurrentId('Victor');
     await keymaster.rotateKeys();
 
     console.log(`All agents rotated their keys`);
@@ -127,19 +127,19 @@ async function runWorkflow() {
     const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
     console.log(`Victor verified response ${verify2.vps.length} valid credentials`);
 
-    keymaster.useId('Alice');
+    keymaster.setCurrentId('Alice');
     await keymaster.revokeCredential(vc1);
     console.log(`Alice revoked vc1`);
 
-    keymaster.useId('Victor');
+    keymaster.setCurrentId('Victor');
     const verify3 = await keymaster.verifyResponse(vpDid, challengeDid);
     console.log(`Victor verified response ${verify3.vps.length} valid credentials`);
 
-    keymaster.useId('Bob');
+    keymaster.setCurrentId('Bob');
     await keymaster.revokeCredential(vc3);
     console.log(`Bob revoked vc3`);
 
-    keymaster.useId('Victor');
+    keymaster.setCurrentId('Victor');
     const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
     console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
 

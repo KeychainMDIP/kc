@@ -265,7 +265,7 @@ describe('removeId', () => {
     });
 });
 
-describe('useId', () => {
+describe('setCurrentId', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -280,10 +280,27 @@ describe('useId', () => {
         const name2 = 'Alice';
         await keymaster.createId(name2);
 
-        keymaster.useId(name1);
+        keymaster.setCurrentId(name1);
 
         const wallet = keymaster.loadWallet();
         expect(wallet.current).toBe(name1);
+    });
+
+    it('should not switch to an invalid ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        await keymaster.createId(name1);
+
+        const name2 = 'Alice';
+
+        try {
+            keymaster.setCurrentId(name2);
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe(`No ID named ${name2}`);
+        }
     });
 });
 
@@ -425,27 +442,27 @@ describe('rotateKeys', () => {
         const secrets = [];
         const msg = "Hi Bob!";
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         for (let i = 0; i < 3; i++) {
-            keymaster.useId('Alice');
+            keymaster.setCurrentId('Alice');
 
             const did = await keymaster.encrypt(msg, bob);
             secrets.push(did);
 
             await keymaster.rotateKeys();
 
-            keymaster.useId('Bob');
+            keymaster.setCurrentId('Bob');
             await keymaster.rotateKeys();
         }
 
         for (let secret of secrets) {
-            keymaster.useId('Alice');
+            keymaster.setCurrentId('Alice');
 
             const decipher1 = await keymaster.decrypt(secret);
             expect(decipher1).toBe(msg);
 
-            keymaster.useId('Bob');
+            keymaster.setCurrentId('Bob');
 
             const decipher2 = await keymaster.decrypt(secret);
             expect(decipher2).toBe(msg);
@@ -761,12 +778,12 @@ describe('decrypt', () => {
         const name2 = 'Bob';
         const did = await keymaster.createId(name2);
 
-        keymaster.useId(name1);
+        keymaster.setCurrentId(name1);
 
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encrypt(msg, did);
 
-        keymaster.useId(name2);
+        keymaster.setCurrentId(name2);
         const decipher = await keymaster.decrypt(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -781,12 +798,12 @@ describe('decrypt', () => {
         const name2 = 'Bob';
         const did = await keymaster.createId(name2);
 
-        keymaster.useId(name1);
+        keymaster.setCurrentId(name1);
 
         const msg = generateRandomString(1024);
         const encryptDid = await keymaster.encrypt(msg, did);
 
-        keymaster.useId(name2);
+        keymaster.setCurrentId(name2);
         const decipher = await keymaster.decrypt(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -993,7 +1010,7 @@ describe('bindCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
 
-        keymaster.useId('Alice')
+        keymaster.setCurrentId('Alice')
         const vc = await keymaster.bindCredential(credentialDid, bob);
 
         expect(vc.issuer).toBe(alice);
@@ -1035,12 +1052,12 @@ describe('attestCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         try {
             await keymaster.attestCredential(boundCredential);
@@ -1099,13 +1116,13 @@ describe('revokeCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(false);
@@ -1145,13 +1162,13 @@ describe('acceptCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(true);
@@ -1168,13 +1185,13 @@ describe('acceptCredential', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Carol');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.attestCredential(boundCredential);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
 
         const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(false);
@@ -1186,11 +1203,11 @@ describe('acceptCredential', () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(credentialDid);
         expect(ok).toBe(false);
@@ -1222,7 +1239,7 @@ describe('createChallenge', () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const challenge = {
@@ -1285,13 +1302,13 @@ describe('createResponse', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Victor');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const vcDid = await keymaster.attestCredential(boundCredential);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(vcDid);
         expect(ok).toBe(true);
@@ -1300,7 +1317,7 @@ describe('createResponse', () => {
         expect(wallet.ids['Alice'].owned.includes(vcDid));
         expect(wallet.ids['Bob'].held.includes(vcDid));
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const challenge = {
             credentials: [
@@ -1312,7 +1329,7 @@ describe('createResponse', () => {
         };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         const vpDid = await keymaster.createResponse(challengeDid);
         const data = await keymaster.decryptJSON(vpDid);
 
@@ -1334,14 +1351,14 @@ describe('verifyResponse', () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const challenge = { credentials: [] };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         const responseDid = await keymaster.createResponse(challengeDid);
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const verify = await keymaster.verifyResponse(responseDid, challengeDid);
 
         const expected = {
@@ -1362,14 +1379,14 @@ describe('verifyResponse', () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const challenge = { credentials: [] };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         const responseDid = await keymaster.createResponse(challengeDid);
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const verify = await keymaster.verifyResponse(responseDid, responseDid);
 
         const expected = {
@@ -1389,14 +1406,14 @@ describe('verifyResponse', () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const challenge = { credentials: [] };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         const responseDid = await keymaster.createResponse(challengeDid);
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         const differentChallengeDid = await keymaster.createChallenge(challenge);
         const verify = await keymaster.verifyResponse(responseDid, differentChallengeDid);
 
@@ -1418,17 +1435,17 @@ describe('verifyResponse', () => {
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credential1 = await keymaster.createCredential(mockSchema);
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const vc1 = await keymaster.attestCredential(bc1);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
 
         await keymaster.acceptCredential(vc1);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const challenge = {
             credentials: [
@@ -1439,10 +1456,10 @@ describe('verifyResponse', () => {
         };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
         const vpDid = await keymaster.createResponse(challengeDid);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
 
@@ -1460,11 +1477,11 @@ describe('verifyResponse', () => {
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credential1 = await keymaster.createCredential(mockSchema);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const challenge = {
             credentials: [
@@ -1475,10 +1492,10 @@ describe('verifyResponse', () => {
         };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
         const vpDid = await keymaster.createResponse(challengeDid);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
 
@@ -1497,7 +1514,7 @@ describe('verifyResponse', () => {
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
 
         const credential1 = await keymaster.createCredential(mockSchema);
         const credential2 = await keymaster.createCredential(mockSchema);
@@ -1508,7 +1525,7 @@ describe('verifyResponse', () => {
         const vc1 = await keymaster.attestCredential(bc1);
         const vc2 = await keymaster.attestCredential(bc2);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
 
         const credential3 = await keymaster.createCredential(mockSchema);
         const credential4 = await keymaster.createCredential(mockSchema);
@@ -1519,14 +1536,14 @@ describe('verifyResponse', () => {
         const vc3 = await keymaster.attestCredential(bc3);
         const vc4 = await keymaster.attestCredential(bc4);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
 
         await keymaster.acceptCredential(vc1);
         await keymaster.acceptCredential(vc2);
         await keymaster.acceptCredential(vc3);
         await keymaster.acceptCredential(vc4);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const challenge = {
             credentials: [
@@ -1550,48 +1567,48 @@ describe('verifyResponse', () => {
         };
         const challengeDid = await keymaster.createChallenge(challenge);
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
         const vpDid = await keymaster.createResponse(challengeDid);
         const data = await keymaster.decryptJSON(vpDid);
 
         expect(data.challenge).toBe(challengeDid);
         expect(data.credentials.length).toBe(4);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
         expect(verify1.match).toBe(true);
         expect(verify1.vps.length).toBe(4);
 
         // All agents rotate keys
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         await keymaster.rotateKeys();
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         await keymaster.rotateKeys();
 
-        keymaster.useId('Carol');
+        keymaster.setCurrentId('Carol');
         await keymaster.rotateKeys();
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
         await keymaster.rotateKeys();
 
         const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
         expect(verify2.match).toBe(true);
         expect(verify2.vps.length).toBe(4);
 
-        keymaster.useId('Alice');
+        keymaster.setCurrentId('Alice');
         await keymaster.revokeCredential(vc1);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
         const verify3 = await keymaster.verifyResponse(vpDid, challengeDid)
         expect(verify3.match).toBe(false);
         expect(verify3.vps.length).toBe(3);
 
-        keymaster.useId('Bob');
+        keymaster.setCurrentId('Bob');
         await keymaster.revokeCredential(vc3);
 
-        keymaster.useId('Victor');
+        keymaster.setCurrentId('Victor');
         const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
         expect(verify4.match).toBe(false);
         expect(verify4.vps.length).toBe(2);

@@ -8,7 +8,7 @@ function throwError(error) {
     throw error.message;
 }
 
-export async function getCurrentIdName() {
+export async function getCurrentId() {
     try {
         const getCurrentId = await axios.get(`/api/v1/id/current`);
         return getCurrentId.data;
@@ -18,7 +18,7 @@ export async function getCurrentIdName() {
     }
 }
 
-export async function useId(name) {
+export async function setCurrentId(name) {
     try {
         const response = await axios.post(`/api/v1/id/current`, { name: name });
         return response.data;

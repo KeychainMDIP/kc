@@ -60,7 +60,7 @@ v1router.post('/ids', async (req, res) => {
 
 v1router.get('/id/current', async (req, res) => {
     try {
-        const current = keymaster.getCurrentIdName();
+        const current = keymaster.getCurrentId();
         res.json(current);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -70,7 +70,7 @@ v1router.get('/id/current', async (req, res) => {
 v1router.post('/id/current', async (req, res) => {
     try {
         const { name } = req.body;
-        keymaster.useId(name);
+        keymaster.setCurrentId(name);
         res.json("OK");
     } catch (error) {
         res.status(500).send(error.toString());
@@ -183,7 +183,7 @@ app.listen(port, async () => {
     console.log(`keymaster server running on port ${port}`);
 
     try {
-        const currentId = keymaster.getCurrentIdName();
+        const currentId = keymaster.getCurrentId();
         const doc = await keymaster.resolveId();
 
         console.log(`current ID: ${currentId}`);
