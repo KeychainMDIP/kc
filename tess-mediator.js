@@ -85,7 +85,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
             const hexString = asm.slice(10);
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
-            if (textString.startsWith('did:mdip:')) {
+            if (textString.startsWith('did:test:')) {
                 const db = loadDb();
                 db.discovered.push({
                     height: height,
