@@ -1730,11 +1730,11 @@ describe('unpublishCredential', () => {
         await keymaster.createId('Bob');
 
         try {
-            await keymaster.unpublishCredential('did:mdip:mock');
+            await keymaster.unpublishCredential('did:test:mock');
             throw 'Expected to throw an exception';
         }
         catch (error) {
-            expect(error).toBe('Error: credential did:mdip:mock not found in manifest');
+            expect(error).toBe('Error: credential did:test:mock not found in manifest');
         }
     });
 

@@ -192,7 +192,7 @@ app.get('/explore/:did', async (req, res) => {
         htdoc = htdoc.replace(/"id"/g, '"<b>id</b>"');
         htdoc = htdoc.replace(/"credential"/g, '"<b>credential</b>"');
         htdoc = htdoc.replace(/"vault"/g, '"<b>vault</b>"');
-        htdoc = htdoc.replace(/"(did:mdip:.*)"/g, '"<a href="/explore/$1">$1</a>"');
+        htdoc = htdoc.replace(/"(did:test:.*)"/g, '"<a href="/explore/$1">$1</a>"');
         htdoc = hthead + '<tr><td><hr><pre>' + htdoc + '</pre><hr></td></tr>';
         var now = new Date();
         htdoc = htdoc + '</table>' + now + '</body></html>';

@@ -30,7 +30,7 @@ describe('anchorSeed', () => {
         };
         const did = await gatekeeper.anchorSeed(mockTxn);
 
-        expect(did.startsWith('did:mdip:'));
+        expect(did.startsWith('did:test:'));
     });
 
     it('should create same DID from same operation with date included', async () => {
@@ -143,7 +143,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentOp);
 
-        expect(did.startsWith('did:mdip:'));
+        expect(did.startsWith('did:test:'));
     });
 
     it('should create DID for local registry', async () => {
@@ -154,7 +154,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentOp);
 
-        expect(did.startsWith('did:mdip:'));
+        expect(did.startsWith('did:test:'));
     });
 
     it('should throw exception on invalid version', async () => {
@@ -195,7 +195,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(assetOp);
 
-        expect(did.startsWith('did:mdip:'));
+        expect(did.startsWith('did:test:'));
     });
 });
 
@@ -461,14 +461,14 @@ describe('resolveDID', () => {
         }
 
         try {
-            await gatekeeper.resolveDID('did:mdip:xxx');
+            await gatekeeper.resolveDID('did:test:xxx');
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid DID');
         }
 
         try {
-            await gatekeeper.resolveDID('did:mdip:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
+            await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid DID');
