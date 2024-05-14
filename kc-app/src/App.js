@@ -70,9 +70,14 @@ function App() {
 
     async function backupId() {
         try {
-            await keymaster.backupId();
-            refreshAll();
-            window.alert(`current ID backed up :(`);
+            const ok = await keymaster.backupId(selectedId);
+
+            if (ok) {
+                window.alert(`${selectedId} backup succeeded`);
+            }
+            else {
+                window.alert(`${selectedId} backup failed`);
+            }
         } catch (error) {
             window.alert(error);
         }
@@ -173,10 +178,16 @@ function App() {
                         variant="scrollable"
                         scrollButtons="auto"
                     >
-                        <Tab key="ids" value="ids" label={'Identity'} />
-                        <Tab key="docs" value="docs" label={'Documents'} />
+                        {currentId &&
+                            <Tab key="ids" value="ids" label={'Identity'} />
+                        }
+                        {currentId &&
+                            <Tab key="docs" value="docs" label={'Documents'} />
+                        }
                         <Tab key="create" value="create" label={'Create ID'} />
-                        <Tab key="challenge" value="challenge" label={'Challenge'} />
+                        {currentId &&
+                            <Tab key="challenge" value="challenge" label={'Challenge'} />
+                        }
                         {accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
                         }

@@ -333,11 +333,26 @@ describe('backupId', () => {
         const name = 'Bob';
         await keymaster.createId(name);
 
-        await keymaster.backupId();
+        const ok = await keymaster.backupId();
 
         const doc = await keymaster.resolveId();
         const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
 
+        expect(ok).toBe(true);
+        expect(vault.didDocumentData.backup.length > 0).toBe(true);
+    });
+
+    it('should backup a non-current ID', async () => {
+        mockFs({});
+
+        const aliceDid = await keymaster.createId('Alice');
+        await keymaster.createId('Bob'); // Bob will be current ID
+        const ok = await keymaster.backupId('Alice');
+
+        const doc = await keymaster.resolveDID(aliceDid);
+        const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
+
+        expect(ok).toBe(true);
         expect(vault.didDocumentData.backup.length > 0).toBe(true);
     });
 });
@@ -634,6 +649,22 @@ describe('createAsset', () => {
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = [1, 2, 3];
         const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument.id).toBe(dataDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocumentData).toStrictEqual(mockAnchor);
+    });
+
+    it('should create DID for a different valid ID', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockAnchor = "mockAnchor";
+
+        await keymaster.createId('Alice');
+
+        const dataDid = await keymaster.createAsset(mockAnchor, 'hyperswarm', 'Bob');
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);

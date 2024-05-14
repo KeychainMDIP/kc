@@ -220,9 +220,9 @@ function hdKeyPair() {
     return keypair;
 }
 
-function currentKeyPair() {
+function fetchKeyPair(name = null) {
     const wallet = loadWallet();
-    const id = fetchId();
+    const id = fetchId(name);
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
@@ -233,7 +233,7 @@ function currentKeyPair() {
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
-    const keypair = currentKeyPair();
+    const keypair = fetchKeyPair();
     const doc = await resolveDID(did);
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
@@ -290,9 +290,10 @@ export async function decryptJSON(did) {
     return JSON.parse(plaintext);
 }
 
-export async function addSignature(obj) {
-    const id = fetchId();
-    const keypair = currentKeyPair(id);
+export async function addSignature(obj, name = null) {
+    // Fetches current ID if name is missing
+    const id = fetchId(name);
+    const keypair = fetchKeyPair(name);
 
     try {
         const msgHash = cipher.hashJSON(obj);
@@ -340,7 +341,7 @@ export async function verifySignature(obj) {
     }
 }
 
-async function updateDID(did, doc) {
+async function updateDID(did, doc, name = null) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -351,7 +352,8 @@ async function updateDID(did, doc) {
         prev: prev,
     };
 
-    const signed = await addSignature(operation);
+    // Will sign with current ID if name is missing
+    const signed = await addSignature(operation, name);
     return gatekeeper.updateDID(signed);
 }
 
@@ -485,22 +487,23 @@ export async function resolveId() {
     return resolveDID(id.did);
 }
 
-export async function backupId() {
-    const id = fetchId();
+export async function backupId(name = null) {
+    // Backs up current ID if name is missing
+    const id = fetchId(name);
     const wallet = loadWallet();
     const keypair = hdKeyPair();
     const data = {
-        name: wallet.current,
+        name: name || wallet.current,
         id: id,
     };
     const msg = JSON.stringify(data);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const doc = await resolveDID(id.did);
     const registry = doc.mdip.registry;
-    const vaultDid = await createAsset({ backup: backup }, registry);
+    const vaultDid = await createAsset({ backup: backup }, registry, name);
 
     doc.didDocumentData.vault = vaultDid;
-    const ok = await updateDID(id.did, doc);
+    const ok = await updateDID(id.did, doc, name);
 
     return ok;
 }
@@ -612,7 +615,7 @@ export function lookupDID(name) {
     throw "Unknown DID";
 }
 
-export async function createAsset(data, registry = defaultRegistry) {
+export async function createAsset(data, registry = defaultRegistry, name = null) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -625,7 +628,7 @@ export async function createAsset(data, registry = defaultRegistry) {
         throw 'Invalid input';
     }
 
-    const id = fetchId();
+    const id = fetchId(name);
 
     const operation = {
         type: "create",
@@ -639,7 +642,13 @@ export async function createAsset(data, registry = defaultRegistry) {
         data: data,
     };
 
-    const signed = await addSignature(operation);
+    const signed = await addSignature(operation, name);
+    const valid = await verifySignature(signed);
+
+    if (!valid) {
+        throw "Invalid signature WTF";
+    }
+
     const did = await gatekeeper.createDID(signed);
 
     addToOwned(did);

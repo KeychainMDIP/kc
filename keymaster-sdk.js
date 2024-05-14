@@ -50,8 +50,8 @@ export async function resolveId() {
 
 export async function removeId(name) {
     try {
-        const getDocs = await axios.post(`/api/v1/id/remove`, { name: name });
-        return getDocs.data;
+        const getResponse = await axios.post(`/api/v1/id/remove`, { name: name });
+        return getResponse.data;
     }
     catch (error) {
         throwError(error);
@@ -60,8 +60,8 @@ export async function removeId(name) {
 
 export async function backupId(name) {
     try {
-        const getDocs = await axios.post(`/api/v1/id/backup`, { name: name });
-        return getDocs.data;
+        const getResponse = await axios.post(`/api/v1/id/backup`, { name: name });
+        return getResponse.data;
     }
     catch (error) {
         throwError(error);
@@ -70,8 +70,8 @@ export async function backupId(name) {
 
 export async function recoverId(did) {
     try {
-        const getDocs = await axios.post(`/api/v1/id/recover`, { did: did });
-        return getDocs.data;
+        const getResponse = await axios.post(`/api/v1/id/recover`, { did: did });
+        return getResponse.data;
     }
     catch (error) {
         throwError(error);
