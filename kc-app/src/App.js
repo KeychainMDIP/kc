@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import axios from 'axios';
+import * as keymaster from './keymaster-sdk.js';
 import './App.css';
 
 function App() {
@@ -24,18 +25,16 @@ function App() {
 
     async function refreshAll() {
         try {
-            const getCurrentId = await axios.get(`/api/v1/current-id`);
-            const currentId = getCurrentId.data;
+            const currentId = await keymaster.getCurrentId();
 
             if (currentId) {
                 setCurrentId(currentId);
                 setSelectedId(currentId);
 
-                const getIdList = await axios.get(`/api/v1/ids`);
-                setIdList(getIdList.data);
+                const idList = await keymaster.listIds();
+                setIdList(idList);
 
-                const getDocs = await axios.get(`/api/v1/resolve-id`);
-                const docs = getDocs.data;
+                const docs = await keymaster.resolveId();
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 
@@ -51,7 +50,7 @@ function App() {
 
     async function useId() {
         try {
-            await axios.post(`/api/v1/current-id`, { name: selectedId });
+            await keymaster.setCurrentId(selectedId);
             refreshAll();
         } catch (error) {
             window.alert(error);
@@ -60,8 +59,8 @@ function App() {
 
     async function removeId() {
         try {
-            if (window.confirm(`Are you sure you want to remove ${selectedId}`)) {
-                await axios.post(`/api/v1/remove-id`, { name: selectedId });
+            if (window.confirm(`Are you sure you want to remove ${selectedId}?`)) {
+                await keymaster.removeId(selectedId);
                 refreshAll();
             }
         } catch (error) {
@@ -71,9 +70,14 @@ function App() {
 
     async function backupId() {
         try {
-            const getResponse = await axios.post(`/api/v1/backup-id`, { name: selectedId });
-            refreshAll();
-            window.alert(getResponse.data);
+            const ok = await keymaster.backupId(selectedId);
+
+            if (ok) {
+                window.alert(`${selectedId} backup succeeded`);
+            }
+            else {
+                window.alert(`${selectedId} backup failed`);
+            }
         } catch (error) {
             window.alert(error);
         }
@@ -83,9 +87,9 @@ function App() {
         try {
             const did = window.prompt("Please enter the DID:");
             if (did) {
-                const getResponse = await axios.post(`/api/v1/recover-id`, { did: did });
+                const response = await keymaster.recoverId(did);
                 refreshAll();
-                window.alert(getResponse.data);
+                window.alert(response);
             }
         } catch (error) {
             window.alert(error);
@@ -112,7 +116,7 @@ function App() {
 
     async function verifyResponse() {
         try {
-            const getVerify = await axios.post(`/api/v1/verify-response`, { response: response, challenge: challenge });
+            const getVerify = await axios.post(`/api/v1/response/verify`, { response: response, challenge: challenge });
             const verify = getVerify.data;
             if (verify.match) {
                 window.alert("Response is VALID");
@@ -141,15 +145,11 @@ function App() {
         }
     }
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(currentDID);
-    };
-
     return (
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster Web UI Demo</h1>
+                <h1>Keymaster Web Wallet</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>
@@ -178,10 +178,16 @@ function App() {
                         variant="scrollable"
                         scrollButtons="auto"
                     >
-                        <Tab key="ids" value="ids" label={'Identity'} />
-                        <Tab key="docs" value="docs" label={'Documents'} />
+                        {currentId &&
+                            <Tab key="ids" value="ids" label={'Identity'} />
+                        }
+                        {currentId &&
+                            <Tab key="docs" value="docs" label={'Documents'} />
+                        }
                         <Tab key="create" value="create" label={'Create ID'} />
-                        <Tab key="challenge" value="challenge" label={'Challenge'} />
+                        {currentId &&
+                            <Tab key="challenge" value="challenge" label={'Challenge'} />
+                        }
                         {accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
                         }

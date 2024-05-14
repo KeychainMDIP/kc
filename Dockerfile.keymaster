@@ -11,12 +11,13 @@ COPY package*.json ./
 RUN npm ci
 
 # Copy the client build to the kc-app directory
-COPY kc-app/src ./kc-app/src
-COPY kc-app/public ./kc-app/public
 COPY kc-app/package*.json ./kc-app/
+RUN cd kc-app && npm ci
 
-# Build client
-RUN cd kc-app && npm ci && npm run build
+COPY kc-app/public ./kc-app/public/
+COPY kc-app/src ./kc-app/src/
+COPY keymaster-sdk.js ./kc-app/src/
+RUN cd kc-app && npm run build
 
 # Copy app
 COPY *.js ./

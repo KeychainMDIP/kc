@@ -58,26 +58,26 @@ v1router.post('/ids', async (req, res) => {
     }
 });
 
-v1router.get('/current-id', async (req, res) => {
+v1router.get('/id/current', async (req, res) => {
     try {
-        const current = keymaster.getCurrentIdName();
+        const current = keymaster.getCurrentId();
         res.json(current);
     } catch (error) {
         res.status(500).send(error.toString());
     }
 });
 
-v1router.post('/current-id', async (req, res) => {
+v1router.post('/id/current', async (req, res) => {
     try {
         const { name } = req.body;
-        keymaster.useId(name);
+        keymaster.setCurrentId(name);
         res.json("OK");
     } catch (error) {
         res.status(500).send(error.toString());
     }
 });
 
-v1router.get('/resolve-id', async (req, res) => {
+v1router.get('/id/resolve', async (req, res) => {
     try {
         const doc = await keymaster.resolveId();
         res.json(doc);
@@ -86,7 +86,7 @@ v1router.get('/resolve-id', async (req, res) => {
     }
 });
 
-v1router.post('/remove-id', async (req, res) => {
+v1router.post('/id/remove', async (req, res) => {
     try {
         const { name } = req.body;
         const response = keymaster.removeId(name);
@@ -96,7 +96,7 @@ v1router.post('/remove-id', async (req, res) => {
     }
 });
 
-v1router.post('/backup-id', async (req, res) => {
+v1router.post('/id/backup', async (req, res) => {
     try {
         const { name } = req.body;
         const response = await keymaster.backupId(name);
@@ -106,7 +106,7 @@ v1router.post('/backup-id', async (req, res) => {
     }
 });
 
-v1router.post('/recover-id', async (req, res) => {
+v1router.post('/id/recover', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
@@ -144,7 +144,7 @@ v1router.post('/response', async (req, res) => {
     }
 });
 
-v1router.post('/verify-response', async (req, res) => {
+v1router.post('/response/verify', async (req, res) => {
     try {
         const { response, challenge } = req.body;
         const verify = await keymaster.verifyResponse(response, challenge);
@@ -183,7 +183,7 @@ app.listen(port, async () => {
     console.log(`keymaster server running on port ${port}`);
 
     try {
-        const currentId = keymaster.getCurrentIdName();
+        const currentId = keymaster.getCurrentId();
         const doc = await keymaster.resolveId();
 
         console.log(`current ID: ${currentId}`);
