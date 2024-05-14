@@ -25,7 +25,7 @@ function App() {
 
     async function refreshAll() {
         try {
-            const currentId = await keymaster.getCurrentIdName();
+            const currentId = await keymaster.getCurrentId();
 
             if (currentId) {
                 setCurrentId(currentId);
@@ -50,7 +50,7 @@ function App() {
 
     async function useId() {
         try {
-            await keymaster.useId(selectedId);
+            await keymaster.setCurrentId(selectedId);
             refreshAll();
         } catch (error) {
             window.alert(error);
@@ -59,7 +59,7 @@ function App() {
 
     async function removeId() {
         try {
-            if (window.confirm(`Are you sure you want to remove ${selectedId}`)) {
+            if (window.confirm(`Are you sure you want to remove ${selectedId}?`)) {
                 await keymaster.removeId(selectedId);
                 refreshAll();
             }
@@ -140,15 +140,11 @@ function App() {
         }
     }
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(currentDID);
-    };
-
     return (
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster Web UI Demo</h1>
+                <h1>Keymaster Web Wallet</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>
