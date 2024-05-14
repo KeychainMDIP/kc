@@ -747,7 +747,7 @@ export async function unpublishCredential(did) {
     const credential = lookupDID(did);
     const manifest = doc.didDocumentData.manifest;
 
-    if (credential && manifest && Object.prototype.hasOwnProperty.call(manifest, credential)) {
+    if (credential && manifest && Object.keys(manifest).includes(credential)) {
         delete manifest[credential];
         await updateDID(id.did, doc);
 

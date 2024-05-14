@@ -44,7 +44,7 @@ export async function addEvent(did, event) {
 
     const suffix = did.split(':').pop();
 
-    if (Object.prototype.hasOwnProperty.call(db.dids, suffix)) {
+    if (Object.keys(db.dids).includes(suffix)) {
         db.dids[suffix].push(event);
     }
     else {
@@ -101,7 +101,7 @@ export async function queueOperation(registry, op) {
         db.queue = {};
     }
 
-    if (Object.prototype.hasOwnProperty.call(db.queue, registry)) {
+    if (Object.keys(db.queue).includes(registry)) {
         db.queue[registry].push(op);
     }
     else {
