@@ -10,7 +10,7 @@ function throwError(error) {
 
 export async function getCurrentId() {
     try {
-        const getCurrentId = await axios.get(`/api/v1/id/current`);
+        const getCurrentId = await axios.get(`/api/v1/current-id`);
         return getCurrentId.data;
     }
     catch (error) {
@@ -20,7 +20,7 @@ export async function getCurrentId() {
 
 export async function setCurrentId(name) {
     try {
-        const response = await axios.post(`/api/v1/id/current`, { name: name });
+        const response = await axios.put(`/api/v1/current-id`, { name: name });
         return response.data;
     }
     catch (error) {
@@ -38,9 +38,9 @@ export async function listIds() {
     }
 }
 
-export async function resolveId() {
+export async function resolveId(id) {
     try {
-        const getDocs = await axios.get(`/api/v1/id/resolve`);
+        const getDocs = await axios.get(`/api/v1/ids/${id}`);
         return getDocs.data;
     }
     catch (error) {
@@ -48,9 +48,9 @@ export async function resolveId() {
     }
 }
 
-export async function removeId(name) {
+export async function removeId(id) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/remove`, { name: name });
+        const getResponse = await axios.delete(`/api/v1/ids/${id}`);
         return getResponse.data;
     }
     catch (error) {
@@ -58,9 +58,9 @@ export async function removeId(name) {
     }
 }
 
-export async function backupId(name) {
+export async function backupId(id) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/backup`, { name: name });
+        const getResponse = await axios.post(`/api/v1/ids/${id}/backup`);
         return getResponse.data;
     }
     catch (error) {
@@ -70,7 +70,7 @@ export async function backupId(name) {
 
 export async function recoverId(did) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/recover`, { did: did });
+        const getResponse = await axios.post(`/api/v1/recover-id`, { did: did });
         return getResponse.data;
     }
     catch (error) {

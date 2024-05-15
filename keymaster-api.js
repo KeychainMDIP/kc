@@ -46,19 +46,14 @@ v1router.get('/ids', async (req, res) => {
 v1router.post('/ids', async (req, res) => {
     try {
         const { name, registry } = req.body;
-
-        if (!name) {
-            throw "No name provided";
-        }
-
         const did = await keymaster.createId(name, registry);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.get('/id/current', async (req, res) => {
+v1router.get('/current-id', async (req, res) => {
     try {
         const current = keymaster.getCurrentId();
         res.json(current);
@@ -67,52 +62,50 @@ v1router.get('/id/current', async (req, res) => {
     }
 });
 
-v1router.post('/id/current', async (req, res) => {
+v1router.put('/current-id', async (req, res) => {
     try {
         const { name } = req.body;
         keymaster.setCurrentId(name);
         res.json("OK");
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.get('/id/resolve', async (req, res) => {
+v1router.get('/ids/:id', async (req, res) => {
     try {
-        const doc = await keymaster.resolveId();
+        const doc = await keymaster.resolveId(req.params.id);
         res.json(doc);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(404).send(error.toString());
     }
 });
 
-v1router.post('/id/remove', async (req, res) => {
+v1router.delete('/ids/:id', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = keymaster.removeId(name);
+        const response = keymaster.removeId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.post('/id/backup', async (req, res) => {
+v1router.post('/ids/:id/backup', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = await keymaster.backupId(name);
+        const response = await keymaster.backupId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.post('/id/recover', async (req, res) => {
+v1router.post('/recover-id', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
@@ -130,7 +123,7 @@ v1router.post('/challenge', async (req, res) => {
         const did = await keymaster.createChallenge(req.body);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
@@ -140,7 +133,7 @@ v1router.post('/response', async (req, res) => {
         const did = await keymaster.createResponse(challenge);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
@@ -150,7 +143,7 @@ v1router.post('/response/verify', async (req, res) => {
         const verify = await keymaster.verifyResponse(response, challenge);
         res.json(verify);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 

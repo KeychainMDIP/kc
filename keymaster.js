@@ -197,16 +197,27 @@ export function setCurrentId(name) {
         saveWallet(wallet);
     }
     else {
-        throw `No ID named ${name}`;
+        throw `Unknown ID`;
     }
 }
 
 function fetchId(name) {
     const wallet = loadWallet();
-    const id = wallet.ids[name || wallet.current];
+    let id = null;
 
-    if (!id) {
-        throw "No current ID";
+    if (name) {
+        id = wallet.ids[name];
+
+        if (!id) {
+            throw "Unknown ID";
+        }
+    }
+    else {
+        id = wallet.ids[wallet.current];
+
+        if (!id) {
+            throw "No current ID";
+        }
     }
 
     return id;
@@ -482,8 +493,8 @@ export function removeId(name) {
     }
 }
 
-export async function resolveId() {
-    const id = fetchId();
+export async function resolveId(name) {
+    const id = fetchId(name);
     return resolveDID(id.did);
 }
 

@@ -34,7 +34,7 @@ function App() {
                 const idList = await keymaster.listIds();
                 setIdList(idList);
 
-                const docs = await keymaster.resolveId();
+                const docs = await keymaster.resolveId(currentId);
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 

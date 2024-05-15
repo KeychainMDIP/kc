@@ -289,17 +289,14 @@ describe('setCurrentId', () => {
     it('should not switch to an invalid ID', async () => {
         mockFs({});
 
-        const name1 = 'Bob';
-        await keymaster.createId(name1);
-
-        const name2 = 'Alice';
+        await keymaster.createId('Bob');
 
         try {
-            keymaster.setCurrentId(name2);
+            keymaster.setCurrentId('Alice');
             throw "Expected to throw an exception";
         }
         catch (error) {
-            expect(error).toBe(`No ID named ${name2}`);
+            expect(error).toBe(`Unknown ID`);
         }
     });
 });
