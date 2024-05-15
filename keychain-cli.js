@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster.js';
+import * as keymaster from './keymaster-lib.js';
 
 program
     .version('1.0.0')

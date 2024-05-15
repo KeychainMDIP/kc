@@ -1,6 +1,6 @@
 import express from 'express';
 import morgan from 'morgan';
-import * as gatekeeper from './gatekeeper.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 import config from './config.js';
 import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';

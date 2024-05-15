@@ -3,7 +3,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster.js';
+import * as keymaster from './keymaster-lib.js';
 
 const app = express();
 const v1router = express.Router();
