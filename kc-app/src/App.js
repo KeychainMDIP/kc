@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
-import axios from 'axios';
 import * as keymaster from './keymaster-sdk.js';
 import './App.css';
 
@@ -57,6 +56,15 @@ function App() {
         }
     }
 
+    async function createId() {
+        try {
+            await keymaster.createId(newName, registry);
+            refreshAll();
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     async function removeId() {
         try {
             if (window.confirm(`Are you sure you want to remove ${selectedId}?`)) {
@@ -98,8 +106,8 @@ function App() {
 
     async function newChallenge() {
         try {
-            const getChallenge = await axios.get(`/api/v1/challenge`);
-            setChallenge(getChallenge.data);
+            const challenge = await keymaster.createChallenge();
+            setChallenge(challenge);
         } catch (error) {
             window.alert(error);
         }
@@ -107,8 +115,8 @@ function App() {
 
     async function createResponse() {
         try {
-            const getResponse = await axios.post(`/api/v1/response`, { challenge: challenge });
-            setResponse(getResponse.data);
+            const response = await keymaster.createResponse(challenge);
+            setResponse(response);
         } catch (error) {
             window.alert(error);
         }
@@ -116,8 +124,8 @@ function App() {
 
     async function verifyResponse() {
         try {
-            const getVerify = await axios.post(`/api/v1/response/verify`, { response: response, challenge: challenge });
-            const verify = getVerify.data;
+            const verify = await keymaster.verifyResponse(response, challenge);
+
             if (verify.match) {
                 window.alert("Response is VALID");
                 setAccessGranted(true);
@@ -134,15 +142,6 @@ function App() {
     async function clearResponse() {
         setResponse('');
         setAccessGranted(false);
-    }
-
-    async function createId() {
-        try {
-            await axios.post(`/api/v1/ids`, { name: newName, registry: registry });
-            refreshAll();
-        } catch (error) {
-            window.alert(error);
-        }
     }
 
     return (
