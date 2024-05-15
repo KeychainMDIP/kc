@@ -1,6 +1,11 @@
 version: "3"
 services:
 
+  mongodb:
+    image: mongo:latest
+    volumes:
+      - ./data/db:/data/db
+
   gatekeeper:
     build:
       context: .
@@ -8,17 +13,19 @@ services:
     image: keychainmdip/gatekeeper
     environment:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
+      - KC_MONGODB_URL=mongodb://mongodb:27017
     volumes:
       - ./data:/app/data
     ports:
       - "4224:4224"
+    depends_on:
+      - mongodb
 
   keymaster:
     build:
       context: .
       dockerfile: Dockerfile.keymaster
     image: keychainmdip/keymaster
-    #command: "echo disable for dev"
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper
       - KC_GATEKEEPER_PORT=4224
