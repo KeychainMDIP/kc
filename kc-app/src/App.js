@@ -17,6 +17,10 @@ function App() {
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState(null);
     const [registry, setRegistry] = useState('hyperswarm');
+    const [nameList, setNameList] = useState(null);
+    const [aliasName, setAliasName] = useState(null);
+    const [aliasDID, setAliasDID] = useState(null);
+    const [aliasDocs, setAliasDocs] = useState(null);
 
     useEffect(() => {
         refreshAll();
@@ -36,6 +40,9 @@ function App() {
                 const docs = await keymaster.resolveId(currentId);
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
+
+                const nameList = await keymaster.listNames();
+                setNameList(nameList);
 
                 setTab('ids');
             }
@@ -144,6 +151,43 @@ function App() {
         setAccessGranted(false);
     }
 
+    async function refreshNames() {
+        const nameList = await keymaster.listNames();
+        setNameList(nameList);
+        setAliasName('');
+        setAliasDID('');
+        setAliasDocs('');
+    }
+
+    async function addName() {
+        try {
+            await keymaster.addName(aliasName, aliasDID);
+            refreshNames();
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function removeName(name) {
+        try {
+            if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+                await keymaster.removeName(name);
+                refreshNames();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveName(name) {
+        try {
+            const docs = await keymaster.resolveDID(name);
+            setAliasDocs(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -182,6 +226,9 @@ function App() {
                         }
                         {currentId &&
                             <Tab key="docs" value="docs" label={'Documents'} />
+                        }
+                        {currentId &&
+                            <Tab key="names" value="names" label={'Names'} />
                         }
                         <Tab key="create" value="create" label={'Create ID'} />
                         {currentId &&
@@ -240,6 +287,72 @@ function App() {
                         <Box>
                             <textarea
                                 value={docsString}
+                                readOnly
+                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                            />
+                        </Box>
+                    }
+                    {tab === 'names' &&
+                        <Box>
+                            <Table style={{ width: '800px' }}>
+                                <TableBody>
+                                    {Object.entries(nameList).map(([name, did], index) => (
+                                        <TableRow key={index}>
+                                            <TableCell>{name}</TableCell>
+                                            <TableCell>
+                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                    {did}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
+                                                    Resolve
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={() => removeName(name)}>
+                                                    Remove
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                    <TableRow>
+                                        <TableCell style={{ width: '100%' }}>
+                                            <TextField
+                                                label="Name"
+                                                style={{ width: '200px' }}
+                                                value={aliasName}
+                                                onChange={(e) =>
+                                                    setAliasName(e.target.value)
+                                                }
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 20 }}
+                                            />
+                                        </TableCell>
+                                        <TableCell style={{ width: '100%' }}>
+                                            <TextField
+                                                label="DID"
+                                                style={{ width: '500px' }}
+                                                value={aliasDID}
+                                                onChange={(e) =>
+                                                    setAliasDID(e.target.value)
+                                                }
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 80 }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
+                                                Add
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                            <textarea
+                                value={aliasDocs}
                                 readOnly
                                 style={{ width: '800px', height: '600px', overflow: 'auto' }}
                             />
