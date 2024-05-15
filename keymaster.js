@@ -569,6 +569,12 @@ export async function rotateKeys() {
     }
 }
 
+export function listNames() {
+    const wallet = loadWallet();
+
+    return wallet.names;
+}
+
 export function addName(name, did) {
     const wallet = loadWallet();
 

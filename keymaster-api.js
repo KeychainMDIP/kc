@@ -34,25 +34,6 @@ v1router.get('/wallet', async (req, res) => {
     }
 });
 
-v1router.get('/ids', async (req, res) => {
-    try {
-        const ids = keymaster.listIds();
-        res.json(ids);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.post('/ids', async (req, res) => {
-    try {
-        const { name, registry } = req.body;
-        const did = await keymaster.createId(name, registry);
-        res.json(did);
-    } catch (error) {
-        res.status(400).send(error.toString());
-    }
-});
-
 v1router.get('/current-id', async (req, res) => {
     try {
         const current = keymaster.getCurrentId();
@@ -67,6 +48,25 @@ v1router.put('/current-id', async (req, res) => {
         const { name } = req.body;
         keymaster.setCurrentId(name);
         res.json("OK");
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/ids', async (req, res) => {
+    try {
+        const ids = keymaster.listIds();
+        res.json(ids);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/ids', async (req, res) => {
+    try {
+        const { name, registry } = req.body;
+        const did = await keymaster.createId(name, registry);
+        res.json(did);
     } catch (error) {
         res.status(400).send(error.toString());
     }
@@ -103,6 +103,43 @@ v1router.post('/recover-id', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/names', async (req, res) => {
+    try {
+        const names = keymaster.listNames();
+        res.json(names);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/names', async (req, res) => {
+    try {
+        const { name, did } = req.body;
+        const response = keymaster.addName(name, did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/names/:name', async (req, res) => {
+    try {
+        const doc = await keymaster.resolveDID(req.params.name);
+        res.json(doc);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.delete('/names/:name', async (req, res) => {
+    try {
+        const response = keymaster.removeName(req.params.name);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
