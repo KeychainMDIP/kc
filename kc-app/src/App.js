@@ -8,6 +8,7 @@ function App() {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
+    const [saveId, setSaveId] = useState('');
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
@@ -44,7 +45,7 @@ function App() {
                 const nameList = await keymaster.listNames();
                 setNameList(nameList);
 
-                setTab('ids');
+                setTab('identity');
             }
             else {
                 setTab('create');
@@ -61,6 +62,17 @@ function App() {
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    async function showCreate() {
+        setSaveId(currentId);
+        setCurrentId('');
+        setTab('create');
+    }
+
+    async function cancelCreate() {
+        setCurrentId(saveId);
+        setTab('identity');
     }
 
     async function createId() {
@@ -231,22 +243,24 @@ function App() {
                         scrollButtons="auto"
                     >
                         {currentId &&
-                            <Tab key="ids" value="ids" label={'Identity'} />
+                            <Tab key="identity" value="identity" label={'Identity'} />
                         }
                         {currentId &&
                             <Tab key="names" value="names" label={'Names'} />
                         }
-                        <Tab key="create" value="create" label={'Create ID'} />
                         {currentId &&
                             <Tab key="challenge" value="challenge" label={'Challenge'} />
                         }
-                        {accessGranted &&
+                        {currentId && accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
+                        }
+                        {!currentId &&
+                            <Tab key="create" value="create" label={'Create ID'} />
                         }
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
-                    {tab === 'ids' &&
+                    {tab === 'identity' &&
                         <Box>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
@@ -274,6 +288,11 @@ function App() {
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={resolveId}>
                                         Resolve
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={showCreate}>
+                                        Create...
                                     </Button>
                                 </Grid>
                                 <Grid item>
@@ -374,52 +393,53 @@ function App() {
                         </Box>
                     }
                     {tab === 'create' &&
-                        <Table style={{ width: '800px' }}>
-                            <TableBody>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <TextField
-                                            label="Name"
-                                            style={{ width: '300px' }}
-                                            value={newName}
-                                            onChange={(e) =>
-                                                setNewName(e.target.value)
-                                            }
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 30 }}
-                                        />
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <Select
-                                            style={{ width: '300px' }}
-                                            value={registry}
-                                            fullWidth
-                                            onChange={(event) => setRegistry(event.target.value)}
-                                        >
-                                            <MenuItem value={'local'} key={0}>
-                                                local
-                                            </MenuItem>
-                                            <MenuItem value={'hyperswarm'} key={1}>
-                                                hyperswarm
-                                            </MenuItem>
-                                            <MenuItem value={'TESS'} key={2}>
-                                                TESS
-                                            </MenuItem>
-                                        </Select>
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
-                                            Create
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
+                        <Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Name"
+                                        style={{ width: '300px' }}
+                                        value={newName}
+                                        onChange={(e) =>
+                                            setNewName(e.target.value)
+                                        }
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={registry}
+                                        fullWidth
+                                        onChange={(event) => setRegistry(event.target.value)}
+                                    >
+                                        <MenuItem value={'local'} key={0}>
+                                            local
+                                        </MenuItem>
+                                        <MenuItem value={'hyperswarm'} key={1}>
+                                            hyperswarm
+                                        </MenuItem>
+                                        <MenuItem value={'TESS'} key={2}>
+                                            TESS
+                                        </MenuItem>
+                                    </Select>
+                                </Grid>
+                            </Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
+                                        Create
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={cancelCreate} disabled={!saveId}>
+                                        Cancel
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </Grid>
                     }
                     {tab === 'challenge' &&
                         <Table style={{ width: '800px' }}>
