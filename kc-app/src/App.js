@@ -354,6 +354,11 @@ function App() {
                                             />
                                         </TableCell>
                                         <TableCell>
+                                            <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
+                                                Resolve
+                                            </Button>
+                                        </TableCell>
+                                        <TableCell>
                                             <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
                                                 Add
                                             </Button>
