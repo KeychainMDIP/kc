@@ -72,6 +72,15 @@ function App() {
         }
     }
 
+    async function resolveId() {
+        try {
+            const docs = await keymaster.resolveId(selectedId);
+            setDocsString(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     async function removeId() {
         try {
             if (window.confirm(`Are you sure you want to remove ${selectedId}?`)) {
@@ -225,9 +234,6 @@ function App() {
                             <Tab key="ids" value="ids" label={'Identity'} />
                         }
                         {currentId &&
-                            <Tab key="docs" value="docs" label={'Documents'} />
-                        }
-                        {currentId &&
                             <Tab key="names" value="names" label={'Names'} />
                         }
                         <Tab key="create" value="create" label={'Create ID'} />
@@ -266,6 +272,11 @@ function App() {
                             <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
+                                    <Button variant="contained" color="primary" onClick={resolveId}>
+                                        Resolve
+                                    </Button>
+                                </Grid>
+                                <Grid item>
                                     <Button variant="contained" color="primary" onClick={removeId}>
                                         Remove...
                                     </Button>
@@ -281,15 +292,14 @@ function App() {
                                     </Button>
                                 </Grid>
                             </Grid>
-                        </Box>
-                    }
-                    {tab === 'docs' &&
-                        <Box>
-                            <textarea
-                                value={docsString}
-                                readOnly
-                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                            />
+                            <p />
+                            <Box>
+                                <textarea
+                                    value={docsString}
+                                    readOnly
+                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                />
+                            </Box>
                         </Box>
                     }
                     {tab === 'names' &&
