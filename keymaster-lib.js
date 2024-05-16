@@ -980,6 +980,10 @@ export async function createGroup(name) {
     return createAsset(group);
 }
 
+export async function getGroup(name) {
+    return resolveAsset(name);
+}
+
 export async function groupAdd(group, member) {
     const didGroup = lookupDID(group);
     const doc = await resolveDID(didGroup);

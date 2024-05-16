@@ -193,6 +193,55 @@ v1router.post('/verify-response', async (req, res) => {
     }
 });
 
+v1router.post('/groups', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const response = await keymaster.createGroup(name);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/groups/:name', async (req, res) => {
+    try {
+        const group = await keymaster.getGroup(req.params.name);
+        res.json(group);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/add', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupAdd(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/remove', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupRemove(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/test', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupTest(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

@@ -167,3 +167,53 @@ export async function verifyResponse(responseDID, challengeDID) {
         throwError(error);
     }
 }
+
+export async function createGroup(group) {
+    try {
+        const response = await axios.post(`/api/v1/groups`, { name: group });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function getGroup(group) {
+    try {
+        const response = await axios.get(`/api/v1/groups/${group}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupAdd(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/add`, { member: member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupRemove(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/remove`, { member: member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupTest(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/test`, { member: member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
