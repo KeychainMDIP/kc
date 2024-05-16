@@ -177,6 +177,16 @@ v1router.post('/queue/clear', async (req, res) => {
     }
 });
 
+v1router.get('/registries', async (req, res) => {
+    try {
+        const registries = await gatekeeper.listRegistries();
+        res.json(registries);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 app.get('/explore/:did', async (req, res) => {
     try {
         const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);

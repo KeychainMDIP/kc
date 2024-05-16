@@ -8,6 +8,16 @@ function throwError(error) {
     throw error.message;
 }
 
+export async function listRegistries() {
+    try {
+        const response = await axios.get(`/api/v1/registries`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function getCurrentId() {
     try {
         const response = await axios.get(`/api/v1/current-id`);

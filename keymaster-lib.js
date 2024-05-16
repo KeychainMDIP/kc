@@ -15,6 +15,10 @@ export async function stop() {
     await gatekeeper.stop();
 }
 
+export async function listRegistries() {
+    return gatekeeper.listRegistries();
+}
+
 function saveWallet(wallet) {
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });

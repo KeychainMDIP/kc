@@ -22,6 +22,7 @@ function App() {
     const [aliasName, setAliasName] = useState(null);
     const [aliasDID, setAliasDID] = useState(null);
     const [aliasDocs, setAliasDocs] = useState(null);
+    const [registries, setRegistries] = useState(null);
 
     useEffect(() => {
         refreshAll();
@@ -44,6 +45,9 @@ function App() {
 
                 const nameList = await keymaster.listNames();
                 setNameList(nameList);
+
+                const registries = await keymaster.listRegistries();
+                setRegistries(registries);
 
                 setTab('identity');
             }
@@ -415,15 +419,11 @@ function App() {
                                         fullWidth
                                         onChange={(event) => setRegistry(event.target.value)}
                                     >
-                                        <MenuItem value={'local'} key={0}>
-                                            local
-                                        </MenuItem>
-                                        <MenuItem value={'hyperswarm'} key={1}>
-                                            hyperswarm
-                                        </MenuItem>
-                                        <MenuItem value={'TESS'} key={2}>
-                                            TESS
-                                        </MenuItem>
+                                        {registries.map((registry, index) => (
+                                            <MenuItem value={registry} key={index}>
+                                                {registry}
+                                            </MenuItem>
+                                        ))}
                                     </Select>
                                 </Grid>
                             </Grid>

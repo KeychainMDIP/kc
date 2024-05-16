@@ -25,6 +25,15 @@ v1router.get('/ready', async (req, res) => {
     }
 });
 
+v1router.get('/registries', async (req, res) => {
+    try {
+        const registries = await keymaster.listRegistries();
+        res.json(registries);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/wallet', async (req, res) => {
     try {
         const wallet = keymaster.loadWallet();
