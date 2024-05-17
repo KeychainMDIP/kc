@@ -204,6 +204,11 @@ function App() {
         }
 
         setGroupList(groupList);
+
+        if (!groupList.includes(selectedGroupName)) {
+            setSelectedGroupName('');
+            setSelectedGroup(null);
+        }
     }
 
     async function addName() {
@@ -244,17 +249,22 @@ function App() {
 
             const groupDID = await keymaster.createGroup(groupName);
             await keymaster.addName(groupName, groupDID);
+
             setGroupName('');
             refreshNames();
+            setSelectedGroupName(groupName);
+            refreshGroup(groupName);
         } catch (error) {
             window.alert(error);
         }
     }
 
-    async function refreshGroup() {
+    async function refreshGroup(groupName) {
         try {
-            const group = await keymaster.getGroup(selectedGroupName);
+            const group = await keymaster.getGroup(groupName);
             setSelectedGroup(group);
+            setMemberDID('');
+            setMemberDocs('');
         } catch (error) {
             window.alert(error);
         }
@@ -272,8 +282,7 @@ function App() {
     async function addMember(did) {
         try {
             await keymaster.groupAdd(selectedGroupName, did);
-            refreshGroup();
-            setMemberDID('');
+            refreshGroup(selectedGroupName);
         } catch (error) {
             window.alert(error);
         }
@@ -283,7 +292,7 @@ function App() {
         try {
             if (window.confirm(`Remove member from ${selectedGroupName}?`)) {
                 await keymaster.groupRemove(selectedGroupName, did);
-                refreshGroup();
+                refreshGroup(selectedGroupName);
             }
         } catch (error) {
             window.alert(error);
@@ -513,7 +522,7 @@ function App() {
                                         </Select>
                                     </Grid>
                                     <Grid item>
-                                        <Button variant="contained" color="primary" onClick={refreshGroup} disabled={!selectedGroupName}>
+                                        <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
                                             Edit Group
                                         </Button>
                                     </Grid>
@@ -525,6 +534,7 @@ function App() {
                                         <TableBody>
                                             <TableRow>
                                                 <TableCell style={{ width: '100%' }}>
+                                                    Editing: {selectedGroup.name}
                                                 </TableCell>
                                                 <TableCell style={{ width: '100%' }}>
                                                     <TextField
