@@ -14,6 +14,10 @@ let db = null;
 let helia = null;
 let ipfs = null;
 
+export async function listRegistries() {
+    return validRegistries;
+}
+
 export async function start(injectedDb) {
     if (!ipfs) {
         helia = await createHelia();

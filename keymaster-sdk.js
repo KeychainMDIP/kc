@@ -8,10 +8,20 @@ function throwError(error) {
     throw error.message;
 }
 
+export async function listRegistries() {
+    try {
+        const response = await axios.get(`/api/v1/registries`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function getCurrentId() {
     try {
-        const getCurrentId = await axios.get(`/api/v1/id/current`);
-        return getCurrentId.data;
+        const response = await axios.get(`/api/v1/current-id`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
@@ -20,7 +30,7 @@ export async function getCurrentId() {
 
 export async function setCurrentId(name) {
     try {
-        const response = await axios.post(`/api/v1/id/current`, { name: name });
+        const response = await axios.put(`/api/v1/current-id`, { name: name });
         return response.data;
     }
     catch (error) {
@@ -30,38 +40,48 @@ export async function setCurrentId(name) {
 
 export async function listIds() {
     try {
-        const getIds = await axios.get(`/api/v1/ids`);
-        return getIds.data;
+        const response = await axios.get(`/api/v1/ids`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
     }
 }
 
-export async function resolveId() {
+export async function resolveId(id) {
     try {
-        const getDocs = await axios.get(`/api/v1/id/resolve`);
-        return getDocs.data;
+        const response = await axios.get(`/api/v1/ids/${id}`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
     }
 }
 
-export async function removeId(name) {
+export async function createId(name, registry) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/remove`, { name: name });
-        return getResponse.data;
+        const response = await axios.post(`/api/v1/ids`, { name: name, registry: registry });
+        return response.data;
     }
     catch (error) {
         throwError(error);
     }
 }
 
-export async function backupId(name) {
+export async function removeId(id) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/backup`, { name: name });
-        return getResponse.data;
+        const response = await axios.delete(`/api/v1/ids/${id}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function backupId(id) {
+    try {
+        const response = await axios.post(`/api/v1/ids/${id}/backup`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
@@ -70,8 +90,128 @@ export async function backupId(name) {
 
 export async function recoverId(did) {
     try {
-        const getResponse = await axios.post(`/api/v1/id/recover`, { did: did });
-        return getResponse.data;
+        const response = await axios.post(`/api/v1/recover-id`, { did: did });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function listNames() {
+    try {
+        const response = await axios.get(`/api/v1/names`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function addName(name, did) {
+    try {
+        const response = await axios.post(`/api/v1/names`, { name: name, did: did });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function removeName(name) {
+    try {
+        const response = await axios.delete(`/api/v1/names/${name}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function resolveDID(name) {
+    try {
+        const response = await axios.get(`/api/v1/names/${name}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createChallenge() {
+    try {
+        const response = await axios.get(`/api/v1/challenge`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createResponse(challengeDID) {
+    try {
+        const response = await axios.post(`/api/v1/response`, { challenge: challengeDID });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function verifyResponse(responseDID, challengeDID) {
+    try {
+        const response = await axios.post(`/api/v1/verify-response`, { response: responseDID, challenge: challengeDID });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createGroup(group) {
+    try {
+        const response = await axios.post(`/api/v1/groups`, { name: group });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function getGroup(group) {
+    try {
+        const response = await axios.get(`/api/v1/groups/${group}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupAdd(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/add`, { member: member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupRemove(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/remove`, { member: member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function groupTest(group, member) {
+    try {
+        const response = await axios.post(`/api/v1/groups/${group}/test`, { member: member });
+        return response.data;
     }
     catch (error) {
         throwError(error);

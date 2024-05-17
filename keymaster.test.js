@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
-import * as keymaster from './keymaster.js';
-import * as gatekeeper from './gatekeeper.js';
+import * as keymaster from './keymaster-lib.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 import * as cipher from './cipher.js';
 import * as db_json from './db-json.js';
 
@@ -289,17 +289,14 @@ describe('setCurrentId', () => {
     it('should not switch to an invalid ID', async () => {
         mockFs({});
 
-        const name1 = 'Bob';
-        await keymaster.createId(name1);
-
-        const name2 = 'Alice';
+        await keymaster.createId('Bob');
 
         try {
-            keymaster.setCurrentId(name2);
+            keymaster.setCurrentId('Alice');
             throw "Expected to throw an exception";
         }
         catch (error) {
-            expect(error).toBe(`No ID named ${name2}`);
+            expect(error).toBe(`Unknown ID`);
         }
     });
 });

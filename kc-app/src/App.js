@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
-import axios from 'axios';
 import * as keymaster from './keymaster-sdk.js';
 import './App.css';
 
@@ -9,6 +8,7 @@ function App() {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
+    const [saveId, setSaveId] = useState('');
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
@@ -18,6 +18,17 @@ function App() {
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState(null);
     const [registry, setRegistry] = useState('hyperswarm');
+    const [nameList, setNameList] = useState(null);
+    const [aliasName, setAliasName] = useState(null);
+    const [aliasDID, setAliasDID] = useState(null);
+    const [aliasDocs, setAliasDocs] = useState(null);
+    const [registries, setRegistries] = useState(null);
+    const [groupName, setGroupName] = useState(null);
+    const [groupList, setGroupList] = useState(null);
+    const [selectedGroupName, setSelectedGroupName] = useState(null);
+    const [selectedGroup, setSelectedGroup] = useState(null);
+    const [memberDID, setMemberDID] = useState(null);
+    const [memberDocs, setMemberDocs] = useState(null);
 
     useEffect(() => {
         refreshAll();
@@ -34,11 +45,16 @@ function App() {
                 const idList = await keymaster.listIds();
                 setIdList(idList);
 
-                const docs = await keymaster.resolveId();
+                const docs = await keymaster.resolveId(currentId);
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 
-                setTab('ids');
+                const registries = await keymaster.listRegistries();
+                setRegistries(registries);
+
+                refreshNames();
+
+                setTab('identity');
             }
             else {
                 setTab('create');
@@ -52,6 +68,35 @@ function App() {
         try {
             await keymaster.setCurrentId(selectedId);
             refreshAll();
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function showCreate() {
+        setSaveId(currentId);
+        setCurrentId('');
+        setTab('create');
+    }
+
+    async function cancelCreate() {
+        setCurrentId(saveId);
+        setTab('identity');
+    }
+
+    async function createId() {
+        try {
+            await keymaster.createId(newName, registry);
+            refreshAll();
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveId() {
+        try {
+            const docs = await keymaster.resolveId(selectedId);
+            setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
             window.alert(error);
         }
@@ -98,8 +143,8 @@ function App() {
 
     async function newChallenge() {
         try {
-            const getChallenge = await axios.get(`/api/v1/challenge`);
-            setChallenge(getChallenge.data);
+            const challenge = await keymaster.createChallenge();
+            setChallenge(challenge);
         } catch (error) {
             window.alert(error);
         }
@@ -107,8 +152,8 @@ function App() {
 
     async function createResponse() {
         try {
-            const getResponse = await axios.post(`/api/v1/response`, { challenge: challenge });
-            setResponse(getResponse.data);
+            const response = await keymaster.createResponse(challenge);
+            setResponse(response);
         } catch (error) {
             window.alert(error);
         }
@@ -116,8 +161,8 @@ function App() {
 
     async function verifyResponse() {
         try {
-            const getVerify = await axios.post(`/api/v1/response/verify`, { response: response, challenge: challenge });
-            const verify = getVerify.data;
+            const verify = await keymaster.verifyResponse(response, challenge);
+
             if (verify.match) {
                 window.alert("Response is VALID");
                 setAccessGranted(true);
@@ -136,10 +181,119 @@ function App() {
         setAccessGranted(false);
     }
 
-    async function createId() {
+    async function refreshNames() {
+        const nameList = await keymaster.listNames();
+        setNameList(nameList);
+        setAliasName('');
+        setAliasDID('');
+        setAliasDocs('');
+
+        const groupList = [];
+
+        for (const name of Object.keys(nameList)) {
+            try {
+                const isGroup = await keymaster.groupTest(name);
+
+                if (isGroup) {
+                    groupList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setGroupList(groupList);
+
+        if (!groupList.includes(selectedGroupName)) {
+            setSelectedGroupName('');
+            setSelectedGroup(null);
+        }
+    }
+
+    async function addName() {
         try {
-            await axios.post(`/api/v1/ids`, { name: newName, registry: registry });
-            refreshAll();
+            await keymaster.addName(aliasName, aliasDID);
+            refreshNames();
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function removeName(name) {
+        try {
+            if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+                await keymaster.removeName(name);
+                refreshNames();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveName(name) {
+        try {
+            const docs = await keymaster.resolveDID(name);
+            setAliasDocs(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function createGroup() {
+        try {
+            if (Object.keys(nameList).includes(groupName)) {
+                alert(`${groupName} already in use`);
+                return;
+            }
+
+            const groupDID = await keymaster.createGroup(groupName);
+            await keymaster.addName(groupName, groupDID);
+
+            setGroupName('');
+            refreshNames();
+            setSelectedGroupName(groupName);
+            refreshGroup(groupName);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function refreshGroup(groupName) {
+        try {
+            const group = await keymaster.getGroup(groupName);
+            setSelectedGroup(group);
+            setMemberDID('');
+            setMemberDocs('');
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveMember(did) {
+        try {
+            const docs = await keymaster.resolveDID(did);
+            setMemberDocs(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function addMember(did) {
+        try {
+            await keymaster.groupAdd(selectedGroupName, did);
+            refreshGroup(selectedGroupName);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function removeMember(did) {
+        try {
+            if (window.confirm(`Remove member from ${selectedGroupName}?`)) {
+                await keymaster.groupRemove(selectedGroupName, did);
+                refreshGroup(selectedGroupName);
+            }
         } catch (error) {
             window.alert(error);
         }
@@ -179,22 +333,27 @@ function App() {
                         scrollButtons="auto"
                     >
                         {currentId &&
-                            <Tab key="ids" value="ids" label={'Identity'} />
+                            <Tab key="identity" value="identity" label={'Identity'} />
                         }
                         {currentId &&
-                            <Tab key="docs" value="docs" label={'Documents'} />
+                            <Tab key="names" value="names" label={'Names'} />
                         }
-                        <Tab key="create" value="create" label={'Create ID'} />
                         {currentId &&
-                            <Tab key="challenge" value="challenge" label={'Challenge'} />
+                            <Tab key="groups" value="groups" label={'Groups'} />
                         }
-                        {accessGranted &&
+                        {currentId &&
+                            <Tab key="auth" value="auth" label={'Auth'} />
+                        }
+                        {currentId && accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
+                        }
+                        {!currentId &&
+                            <Tab key="create" value="create" label={'Create ID'} />
                         }
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
-                    {tab === 'ids' &&
+                    {tab === 'identity' &&
                         <Box>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
@@ -220,6 +379,16 @@ function App() {
                             <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
+                                    <Button variant="contained" color="primary" onClick={resolveId}>
+                                        Resolve
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={showCreate}>
+                                        Create...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
                                     <Button variant="contained" color="primary" onClick={removeId}>
                                         Remove...
                                     </Button>
@@ -235,66 +404,236 @@ function App() {
                                     </Button>
                                 </Grid>
                             </Grid>
+                            <p />
+                            <Box>
+                                <textarea
+                                    value={docsString}
+                                    readOnly
+                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                />
+                            </Box>
                         </Box>
                     }
-                    {tab === 'docs' &&
+                    {tab === 'names' &&
                         <Box>
+                            <Table style={{ width: '800px' }}>
+                                <TableBody>
+                                    {Object.entries(nameList).map(([name, did], index) => (
+                                        <TableRow key={index}>
+                                            <TableCell>{name}</TableCell>
+                                            <TableCell>
+                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                    {did}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
+                                                    Resolve
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={() => removeName(name)}>
+                                                    Remove
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                    <TableRow>
+                                        <TableCell style={{ width: '100%' }}>
+                                            <TextField
+                                                label="Name"
+                                                style={{ width: '200px' }}
+                                                value={aliasName}
+                                                onChange={(e) =>
+                                                    setAliasName(e.target.value)
+                                                }
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 20 }}
+                                            />
+                                        </TableCell>
+                                        <TableCell style={{ width: '100%' }}>
+                                            <TextField
+                                                label="DID"
+                                                style={{ width: '500px' }}
+                                                value={aliasDID}
+                                                onChange={(e) =>
+                                                    setAliasDID(e.target.value)
+                                                }
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 80 }}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
+                                                Resolve
+                                            </Button>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
+                                                Add
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
                             <textarea
-                                value={docsString}
+                                value={aliasDocs}
                                 readOnly
                                 style={{ width: '800px', height: '600px', overflow: 'auto' }}
                             />
                         </Box>
                     }
-                    {tab === 'create' &&
-                        <Table style={{ width: '800px' }}>
-                            <TableBody>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <TextField
-                                            label="Name"
-                                            style={{ width: '300px' }}
-                                            value={newName}
-                                            onChange={(e) =>
-                                                setNewName(e.target.value)
-                                            }
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 30 }}
-                                        />
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
+                    {tab === 'groups' &&
+                        <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Group Name"
+                                        style={{ width: '300px' }}
+                                        value={groupName}
+                                        onChange={(e) => setGroupName(e.target.value)}
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName}>
+                                        Create Group
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            {groupList &&
+                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid item>
                                         <Select
                                             style={{ width: '300px' }}
-                                            value={registry}
+                                            value={selectedGroupName}
                                             fullWidth
-                                            onChange={(event) => setRegistry(event.target.value)}
+                                            onChange={(event) => setSelectedGroupName(event.target.value)}
                                         >
-                                            <MenuItem value={'local'} key={0}>
-                                                local
-                                            </MenuItem>
-                                            <MenuItem value={'hyperswarm'} key={1}>
-                                                hyperswarm
-                                            </MenuItem>
-                                            <MenuItem value={'TESS'} key={2}>
-                                                TESS
-                                            </MenuItem>
+                                            {groupList.map((name, index) => (
+                                                <MenuItem value={name} key={index}>
+                                                    {name}
+                                                </MenuItem>
+                                            ))}
                                         </Select>
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
-                                            Create
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
+                                            Edit Group
                                         </Button>
-                                    </TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
+                                    </Grid>
+                                    <Grid item>
+                                        {selectedGroup && `Editing: ${selectedGroup.name}`}
+                                    </Grid>
+                                </Grid>
+                            }
+                            {selectedGroup &&
+                                <Box>
+                                    <Table style={{ width: '800px' }}>
+                                        <TableBody>
+                                            <TableRow>
+                                                <TableCell style={{ width: '100%' }}>
+                                                    <TextField
+                                                        label="DID"
+                                                        style={{ width: '500px' }}
+                                                        value={memberDID}
+                                                        onChange={(e) => setMemberDID(e.target.value)}
+                                                        fullWidth
+                                                        margin="normal"
+                                                        inputProps={{ maxLength: 80 }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
+                                                        Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID}>
+                                                        Add
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                            {selectedGroup.members.map((did, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell>
+                                                        <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                            {did}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)}>
+                                                            Remove
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                    <textarea
+                                        value={memberDocs}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                        </Box>
                     }
-                    {tab === 'challenge' &&
+                    {tab === 'create' &&
+                        <Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Name"
+                                        style={{ width: '300px' }}
+                                        value={newName}
+                                        onChange={(e) =>
+                                            setNewName(e.target.value)
+                                        }
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={registry}
+                                        fullWidth
+                                        onChange={(event) => setRegistry(event.target.value)}
+                                    >
+                                        {registries.map((registry, index) => (
+                                            <MenuItem value={registry} key={index}>
+                                                {registry}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                            </Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
+                                        Create
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={cancelCreate} disabled={!saveId}>
+                                        Cancel
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    }
+                    {tab === 'auth' &&
                         <Table style={{ width: '800px' }}>
                             <TableBody>
                                 <TableRow>
@@ -363,7 +702,7 @@ function App() {
                     }
                 </Box>
             </header>
-        </div>
+        </div >
     );
 }
 

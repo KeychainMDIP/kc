@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster.js';
+import * as keymaster from './keymaster-lib.js';
 
 program
     .version('1.0.0')
@@ -516,10 +516,10 @@ program
     .description('Lists names of DIDs')
     .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const names = await keymaster.listNames();
 
-            if (wallet.names) {
-                console.log(JSON.stringify(wallet.names, null, 4));
+            if (names) {
+                console.log(JSON.stringify(names, null, 4));
             }
             else {
                 console.log("No names defined");

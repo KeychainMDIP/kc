@@ -15,6 +15,10 @@ export async function stop() {
     await gatekeeper.stop();
 }
 
+export async function listRegistries() {
+    return gatekeeper.listRegistries();
+}
+
 function saveWallet(wallet) {
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });
@@ -197,16 +201,27 @@ export function setCurrentId(name) {
         saveWallet(wallet);
     }
     else {
-        throw `No ID named ${name}`;
+        throw `Unknown ID`;
     }
 }
 
 function fetchId(name) {
     const wallet = loadWallet();
-    const id = wallet.ids[name || wallet.current];
+    let id = null;
 
-    if (!id) {
-        throw "No current ID";
+    if (name) {
+        id = wallet.ids[name];
+
+        if (!id) {
+            throw "Unknown ID";
+        }
+    }
+    else {
+        id = wallet.ids[wallet.current];
+
+        if (!id) {
+            throw "No current ID";
+        }
     }
 
     return id;
@@ -482,8 +497,8 @@ export function removeId(name) {
     }
 }
 
-export async function resolveId() {
-    const id = fetchId();
+export async function resolveId(name) {
+    const id = fetchId(name);
     return resolveDID(id.did);
 }
 
@@ -556,6 +571,12 @@ export async function rotateKeys() {
     else {
         throw 'cannot rotate keys';
     }
+}
+
+export function listNames() {
+    const wallet = loadWallet();
+
+    return wallet.names;
 }
 
 export function addName(name, did) {
@@ -957,6 +978,10 @@ export async function createGroup(name) {
     };
 
     return createAsset(group);
+}
+
+export async function getGroup(name) {
+    return resolveAsset(name);
 }
 
 export async function groupAdd(group, member) {

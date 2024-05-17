@@ -3,7 +3,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster.js';
+import * as keymaster from './keymaster-lib.js';
 
 const app = express();
 const v1router = express.Router();
@@ -25,12 +25,40 @@ v1router.get('/ready', async (req, res) => {
     }
 });
 
+v1router.get('/registries', async (req, res) => {
+    try {
+        const registries = await keymaster.listRegistries();
+        res.json(registries);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/wallet', async (req, res) => {
     try {
         const wallet = keymaster.loadWallet();
         res.json(wallet);
     } catch (error) {
         res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/current-id', async (req, res) => {
+    try {
+        const current = keymaster.getCurrentId();
+        res.json(current);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.put('/current-id', async (req, res) => {
+    try {
+        const { name } = req.body;
+        keymaster.setCurrentId(name);
+        res.json("OK");
+    } catch (error) {
+        res.status(400).send(error.toString());
     }
 });
 
@@ -46,73 +74,84 @@ v1router.get('/ids', async (req, res) => {
 v1router.post('/ids', async (req, res) => {
     try {
         const { name, registry } = req.body;
-
-        if (!name) {
-            throw "No name provided";
-        }
-
         const did = await keymaster.createId(name, registry);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.get('/id/current', async (req, res) => {
+v1router.get('/ids/:id', async (req, res) => {
     try {
-        const current = keymaster.getCurrentId();
-        res.json(current);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.post('/id/current', async (req, res) => {
-    try {
-        const { name } = req.body;
-        keymaster.setCurrentId(name);
-        res.json("OK");
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.get('/id/resolve', async (req, res) => {
-    try {
-        const doc = await keymaster.resolveId();
+        const doc = await keymaster.resolveId(req.params.id);
         res.json(doc);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(404).send(error.toString());
     }
 });
 
-v1router.post('/id/remove', async (req, res) => {
+v1router.delete('/ids/:id', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = keymaster.removeId(name);
+        const response = keymaster.removeId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.post('/id/backup', async (req, res) => {
+v1router.post('/ids/:id/backup', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = await keymaster.backupId(name);
+        const response = await keymaster.backupId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.post('/id/recover', async (req, res) => {
+v1router.post('/recover-id', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
         res.json(response);
     } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/names', async (req, res) => {
+    try {
+        const names = keymaster.listNames();
+        res.json(names);
+    } catch (error) {
         res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/names', async (req, res) => {
+    try {
+        const { name, did } = req.body;
+        const response = keymaster.addName(name, did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/names/:name', async (req, res) => {
+    try {
+        const doc = await keymaster.resolveDID(req.params.name);
+        res.json(doc);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.delete('/names/:name', async (req, res) => {
+    try {
+        const response = keymaster.removeName(req.params.name);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
     }
 });
 
@@ -130,7 +169,7 @@ v1router.post('/challenge', async (req, res) => {
         const did = await keymaster.createChallenge(req.body);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
@@ -140,17 +179,66 @@ v1router.post('/response', async (req, res) => {
         const did = await keymaster.createResponse(challenge);
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
     }
 });
 
-v1router.post('/response/verify', async (req, res) => {
+v1router.post('/verify-response', async (req, res) => {
     try {
         const { response, challenge } = req.body;
         const verify = await keymaster.verifyResponse(response, challenge);
         res.json(verify);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.post('/groups', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const response = await keymaster.createGroup(name);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/groups/:name', async (req, res) => {
+    try {
+        const group = await keymaster.getGroup(req.params.name);
+        res.json(group);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/add', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupAdd(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/remove', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupRemove(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groups/:name/test', async (req, res) => {
+    try {
+        const { member } = req.body;
+        const response = await keymaster.groupTest(req.params.name, member);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
     }
 });
 

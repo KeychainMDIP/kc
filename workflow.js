@@ -1,6 +1,6 @@
 import fs from 'fs';
-import * as keymaster from './keymaster.js';
-import * as gatekeeper from './gatekeeper.js';
+import * as keymaster from './keymaster-lib.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
 
 const mockSchema = {

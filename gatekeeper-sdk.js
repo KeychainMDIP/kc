@@ -17,6 +17,16 @@ export async function start() {
 export async function stop() {
 }
 
+export async function listRegistries() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/registries`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function resetDb() {
     try {
         const response = await axios.get(`${URL}/api/v1/reset-db`);

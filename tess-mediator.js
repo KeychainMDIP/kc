@@ -1,7 +1,7 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster.js';
+import * as keymaster from './keymaster-lib.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';

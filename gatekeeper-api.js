@@ -1,6 +1,6 @@
 import express from 'express';
 import morgan from 'morgan';
-import * as gatekeeper from './gatekeeper.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 import config from './config.js';
 import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
@@ -171,6 +171,16 @@ v1router.post('/queue/clear', async (req, res) => {
         const events = req.body;
         const queue = await gatekeeper.clearQueue(events);
         res.json(queue);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/registries', async (req, res) => {
+    try {
+        const registries = await gatekeeper.listRegistries();
+        res.json(registries);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());

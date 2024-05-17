@@ -1,6 +1,6 @@
 import mockFs from 'mock-fs';
 import * as cipher from './cipher.js';
-import * as gatekeeper from './gatekeeper.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
 
 beforeEach(async () => {
