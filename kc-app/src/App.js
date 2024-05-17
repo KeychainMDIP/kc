@@ -526,6 +526,9 @@ function App() {
                                             Edit Group
                                         </Button>
                                     </Grid>
+                                    <Grid item>
+                                        {selectedGroup && `Editing: ${selectedGroup.name}`}
+                                    </Grid>
                                 </Grid>
                             }
                             {selectedGroup &&
@@ -533,9 +536,6 @@ function App() {
                                     <Table style={{ width: '800px' }}>
                                         <TableBody>
                                             <TableRow>
-                                                <TableCell style={{ width: '100%' }}>
-                                                    Editing: {selectedGroup.name}
-                                                </TableCell>
                                                 <TableCell style={{ width: '100%' }}>
                                                     <TextField
                                                         label="DID"
@@ -560,7 +560,6 @@ function App() {
                                             </TableRow>
                                             {selectedGroup.members.map((did, index) => (
                                                 <TableRow key={index}>
-                                                    <TableCell>{index}</TableCell>
                                                     <TableCell>
                                                         <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
                                                             {did}
