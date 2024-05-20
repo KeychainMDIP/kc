@@ -7,6 +7,7 @@ const config = {
     gatekeeperPort: process.env.KC_GATEKEEPER_PORT ? parseInt(process.env.KC_GATEKEEPER_PORT) : 4224,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost',
     gatekeeperDb: process.env.KC_GATEKEEPER_DB || 'json',
+    keymasterPort: process.env.KC_KEYMASTER_PORT ? parseInt(process.env.KC_KEYMASTER_PORT) : 4226,
     nodeName: process.env.KC_NODE_NAME || 'anon',
     nodeID: process.env.KC_NODE_ID,
     mongodbUrl: process.env.KC_MONGODB_URL || 'mongodb://localhost:27017',

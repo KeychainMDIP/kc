@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
-
+import config from './config.js';
 const app = express();
 const v1router = express.Router();
 
@@ -263,7 +263,7 @@ process.on('unhandledRejection', (reason, promise) => {
     //console.error('Unhandled rejection caught');
 });
 
-const port = 4226;
+const port = config.keymasterPort;
 
 app.listen(port, async () => {
     await keymaster.start(gatekeeper);
