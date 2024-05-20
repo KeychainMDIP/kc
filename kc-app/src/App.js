@@ -49,18 +49,15 @@ function App() {
                 setCurrentDID(docs.didDocument.id);
                 setDocsString(JSON.stringify(docs, null, 4));
 
-                const registries = await keymaster.listRegistries();
-                setRegistries(registries);
-
                 refreshNames();
 
                 setTab('identity');
             }
             else {
-                const registries = await keymaster.listRegistries();
-                setRegistries(registries);
                 setTab('create');
             }
+            const registries = await keymaster.listRegistries();
+            setRegistries(registries);
         } catch (error) {
             window.alert(error);
         }
