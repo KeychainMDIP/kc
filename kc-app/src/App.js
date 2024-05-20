@@ -57,6 +57,8 @@ function App() {
                 setTab('identity');
             }
             else {
+                const registries = await keymaster.listRegistries();
+                setRegistries(registries);
                 setTab('create');
             }
         } catch (error) {
