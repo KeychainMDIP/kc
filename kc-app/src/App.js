@@ -37,6 +37,8 @@ function App() {
     async function refreshAll() {
         try {
             const currentId = await keymaster.getCurrentId();
+    	    const registries = await keymaster.listRegistries();
+            setRegistries(registries);
 
             if (currentId) {
                 setCurrentId(currentId);
@@ -55,9 +57,7 @@ function App() {
             }
             else {
                 setTab('create');
-            }
-            const registries = await keymaster.listRegistries();
-            setRegistries(registries);
+	    }
         } catch (error) {
             window.alert(error);
         }
