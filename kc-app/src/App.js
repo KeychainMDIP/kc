@@ -32,7 +32,9 @@ function App() {
 
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState(null);
+    const [schemaString, setSchemaString] = useState(null);
     const [selectedSchemaName, setSelectedSchemaName] = useState(null);
+    const [editedSchemaName, setEditedSchemaName] = useState(null);
     const [selectedSchema, setSelectedSchema] = useState(null);
 
     const [credentialList, setCredentialList] = useState(null);
@@ -340,19 +342,25 @@ function App() {
             setSchemaName('');
             refreshNames();
             setSelectedSchemaName(schemaName);
-            refreshSchema(schemaName);
+            editSchema(schemaName);
         } catch (error) {
             window.alert(error);
         }
     }
 
-    async function refreshSchema(schemaName) {
+    async function editSchema(schemaName) {
         try {
             const schema = await keymaster.getSchema(schemaName);
             setSelectedSchema(schema);
+            setEditedSchemaName(schemaName);
+            setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    async function saveSchema() {
+        window.alert(schemaString);
     }
 
     return (
@@ -687,14 +695,32 @@ function App() {
                                         </Select>
                                     </Grid>
                                     <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => refreshSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
+                                        <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
                                             Edit Schema
                                         </Button>
                                     </Grid>
-                                    <Grid item>
-                                        {selectedSchema && `Editing: ${selectedSchemaName}`}
-                                    </Grid>
                                 </Grid>
+                            }
+                            {selectedSchema &&
+                                <Box>
+                                    <Grid container direction="column" spacing={1}>
+                                        <Grid item>
+                                            <p>{`Editing: "${editedSchemaName}"`}</p>
+                                        </Grid>
+                                        <Grid item>
+                                            <textarea
+                                                value={schemaString}
+                                                onChange={(e) => setSchemaString(e.target.value)}
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
+                                                Save Schema
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                </Box>
                             }
                         </Box>
                     }
