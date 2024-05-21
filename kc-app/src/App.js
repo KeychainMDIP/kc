@@ -30,6 +30,13 @@ function App() {
     const [memberDID, setMemberDID] = useState(null);
     const [memberDocs, setMemberDocs] = useState(null);
 
+    const [schemaList, setSchemaList] = useState(null);
+    const [schemaName, setSchemaName] = useState(null);
+    const [selectedSchemaName, setSelectedSchemaName] = useState(null);
+    const [selectedSchema, setSelectedSchema] = useState(null);
+
+    const [credentialList, setCredentialList] = useState(null);
+
     useEffect(() => {
         refreshAll();
     }, []);
@@ -208,6 +215,28 @@ function App() {
             setSelectedGroupName('');
             setSelectedGroup(null);
         }
+
+        const schemaList = [];
+
+        for (const name of Object.keys(nameList)) {
+            try {
+                const isSchema = await keymaster.testSchema(name);
+
+                if (isSchema) {
+                    schemaList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setSchemaList(schemaList);
+
+        if (!schemaList.includes(selectedSchemaName)) {
+            setSelectedSchemaName('');
+            setSelectedSchema(null);
+        }
     }
 
     async function addName() {
@@ -298,6 +327,34 @@ function App() {
         }
     }
 
+    async function createSchema() {
+        try {
+            if (Object.keys(nameList).includes(schemaName)) {
+                alert(`${schemaName} already in use`);
+                return;
+            }
+
+            const schemaDID = await keymaster.createSchema();
+            await keymaster.addName(schemaName, schemaDID);
+
+            setSchemaName('');
+            refreshNames();
+            setSelectedSchemaName(schemaName);
+            refreshSchema(schemaName);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function refreshSchema(schemaName) {
+        try {
+            const schema = await keymaster.getSchema(schemaName);
+            setSelectedSchema(schema);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -339,6 +396,12 @@ function App() {
                         }
                         {currentId &&
                             <Tab key="groups" value="groups" label={'Groups'} />
+                        }
+                        {currentId &&
+                            <Tab key="schemas" value="schemas" label={'Schemas'} />
+                        }
+                        {currentId &&
+                            <Tab key="credentials" value="credentials" label={'Credentials'} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} />
@@ -585,6 +648,59 @@ function App() {
                                     />
                                 </Box>
                             }
+                        </Box>
+                    }
+                    {tab === 'schemas' &&
+                        <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Schema Name"
+                                        style={{ width: '300px' }}
+                                        value={schemaName}
+                                        onChange={(e) => setSchemaName(e.target.value)}
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
+                                        Create Schema
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            {schemaList &&
+                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid item>
+                                        <Select
+                                            style={{ width: '300px' }}
+                                            value={selectedSchemaName}
+                                            fullWidth
+                                            onChange={(event) => setSelectedSchemaName(event.target.value)}
+                                        >
+                                            {schemaList.map((name, index) => (
+                                                <MenuItem value={name} key={index}>
+                                                    {name}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => refreshSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
+                                            Edit Schema
+                                        </Button>
+                                    </Grid>
+                                    <Grid item>
+                                        {selectedSchema && `Editing: ${selectedSchemaName}`}
+                                    </Grid>
+                                </Grid>
+                            }
+                        </Box>
+                    }
+                    {tab === 'credentials' &&
+                        <Box>
+                            Credentials
                         </Box>
                     }
                     {tab === 'create' &&

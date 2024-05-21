@@ -190,7 +190,7 @@ export async function getGroup(group) {
 
 export async function groupAdd(group, member) {
     try {
-        const response = await axios.post(`/api/v1/groups/${group}/add`, { member: member });
+        const response = await axios.post(`/api/v1/groups/${group}/add`, { member });
         return response.data;
     }
     catch (error) {
@@ -200,7 +200,7 @@ export async function groupAdd(group, member) {
 
 export async function groupRemove(group, member) {
     try {
-        const response = await axios.post(`/api/v1/groups/${group}/remove`, { member: member });
+        const response = await axios.post(`/api/v1/groups/${group}/remove`, { member });
         return response.data;
     }
     catch (error) {
@@ -210,7 +210,37 @@ export async function groupRemove(group, member) {
 
 export async function groupTest(group, member) {
     try {
-        const response = await axios.post(`/api/v1/groups/${group}/test`, { member: member });
+        const response = await axios.post(`/api/v1/groups/${group}/test`, { member });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createSchema(schema) {
+    try {
+        const response = await axios.post(`/api/v1/schemas`, { schema });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function getSchema(schema) {
+    try {
+        const response = await axios.get(`/api/v1/schemas/${schema}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function testSchema(schema) {
+    try {
+        const response = await axios.post(`/api/v1/schemas/${schema}/test`);
         return response.data;
     }
     catch (error) {

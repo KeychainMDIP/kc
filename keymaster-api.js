@@ -242,6 +242,34 @@ v1router.post('/groups/:name/test', async (req, res) => {
     }
 });
 
+v1router.post('/schemas', async (req, res) => {
+    try {
+        const { schema } = req.body;
+        const response = await keymaster.createSchema(schema);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/schemas/:name', async (req, res) => {
+    try {
+        const schema = await keymaster.getSchema(req.params.name);
+        res.json(schema);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/schemas/:name/test', async (req, res) => {
+    try {
+        const response = await keymaster.testSchema(req.params.name);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

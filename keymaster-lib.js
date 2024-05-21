@@ -1090,8 +1090,25 @@ export async function groupTest(group, member) {
     return isMember;
 }
 
+export const defaultSchema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "propertyName": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "propertyName"
+    ]
+};
+
 export async function createSchema(schema) {
     try {
+        if (!schema) {
+            schema = defaultSchema;
+        }
+
         // Validate schema
         JSONSchemaFaker.generate(schema);
     }
@@ -1102,12 +1119,35 @@ export async function createSchema(schema) {
     return createAsset(schema);
 }
 
-export async function createTemplate(did) {
-    const didSchema = lookupDID(did);
-    const schema = await resolveAsset(didSchema);
+export async function getSchema(schemaId) {
+    return resolveAsset(schemaId);
+}
+
+// TBD add optional 2nd parameter that will validate JSON against the schema
+export async function testSchema(schemaId) {
+    const schema = await getSchema(schemaId);
+
+    if (!Object.keys(schema).includes('$schema')) {
+        return false;
+    }
+
+    try {
+        // Validate schema
+        JSONSchemaFaker.generate(schema);
+    }
+    catch {
+        return false;
+    }
+
+    return true;
+}
+
+export async function createTemplate(schemaId) {
+    const schemaDID = lookupDID(schemaId);
+    const schema = await resolveAsset(schemaDID);
     const template = JSONSchemaFaker.generate(schema);
 
-    template['$schema'] = didSchema;
+    template['$schema'] = schemaDID;
 
     return template;
 }

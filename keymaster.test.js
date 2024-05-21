@@ -2749,3 +2749,44 @@ describe('unpublishPoll', () => {
         expect(pollData.results).toBe(undefined);
     });
 });
+
+describe('createSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a default schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocumentData).toStrictEqual(keymaster.defaultSchema);
+    });
+
+    it('should create a simple schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema(mockSchema);
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocumentData).toStrictEqual(mockSchema);
+    });
+});
