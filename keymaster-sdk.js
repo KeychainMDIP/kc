@@ -257,3 +257,13 @@ export async function testSchema(id) {
         throwError(error);
     }
 }
+
+export async function testAgent(id) {
+    try {
+        const response = await axios.post(`/api/v1/agents/${id}/test`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}

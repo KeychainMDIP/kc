@@ -670,6 +670,11 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     return did;
 }
 
+export async function testAgent(id) {
+    const doc = await resolveDID(id);
+    return doc?.mdip?.type === 'agent';
+}
+
 export async function createCredential(schema) {
     // TBD validate schema
     return createAsset(schema);

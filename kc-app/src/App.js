@@ -16,6 +16,7 @@ function App() {
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
+
     const [newName, setNewName] = useState(null);
     const [registry, setRegistry] = useState('hyperswarm');
     const [nameList, setNameList] = useState(null);
@@ -23,6 +24,7 @@ function App() {
     const [aliasDID, setAliasDID] = useState(null);
     const [aliasDocs, setAliasDocs] = useState(null);
     const [registries, setRegistries] = useState(null);
+
     const [groupName, setGroupName] = useState(null);
     const [groupList, setGroupList] = useState(null);
     const [selectedGroupName, setSelectedGroupName] = useState(null);
@@ -37,7 +39,12 @@ function App() {
     const [editedSchemaName, setEditedSchemaName] = useState(null);
     const [selectedSchema, setSelectedSchema] = useState(null);
 
-    const [credentialList, setCredentialList] = useState(null);
+    const [agentList, setAgentList] = useState(null);
+    const [credentialDID, setCredentialDID] = useState('');
+    const [credentialHolder, setCredentialHolder] = useState(null);
+    const [credentialSchema, setCredentialSchema] = useState(null);
+    const [credentialString, setCredentialString] = useState(null);
+    const [credentialRegistry, setCredentialRegistry] = useState(null);
 
     useEffect(() => {
         refreshAll();
@@ -191,6 +198,8 @@ function App() {
 
     async function refreshNames() {
         const nameList = await keymaster.listNames();
+        const names = Object.keys(nameList);
+
         setNameList(nameList);
         setAliasName('');
         setAliasDID('');
@@ -198,7 +207,7 @@ function App() {
 
         const groupList = [];
 
-        for (const name of Object.keys(nameList)) {
+        for (const name of names) {
             try {
                 const isGroup = await keymaster.groupTest(name);
 
@@ -220,7 +229,7 @@ function App() {
 
         const schemaList = [];
 
-        for (const name of Object.keys(nameList)) {
+        for (const name of names) {
             try {
                 const isSchema = await keymaster.testSchema(name);
 
@@ -238,6 +247,33 @@ function App() {
         if (!schemaList.includes(selectedSchemaName)) {
             setSelectedSchemaName('');
             setSelectedSchema(null);
+        }
+
+        if (!schemaList.includes(credentialSchema)) {
+            setCredentialSchema('');
+            setCredentialString('');
+        }
+
+        const agentList = await keymaster.listIds();
+
+        for (const name of names) {
+            try {
+                const isAgent = await keymaster.testAgent(name);
+
+                if (isAgent) {
+                    agentList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setAgentList(agentList);
+
+        if (!agentList.includes(credentialHolder)) {
+            setCredentialHolder('');
+            setCredentialString('');
         }
     }
 
@@ -366,6 +402,10 @@ function App() {
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    async function bindCredential() {
+
     }
 
     return (
@@ -731,7 +771,41 @@ function App() {
                     }
                     {tab === 'credentials' &&
                         <Box>
-                            Credentials
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={credentialHolder}
+                                        fullWidth
+                                        onChange={(event) => setCredentialHolder(event.target.value)}
+                                    >
+                                        {agentList.map((name, index) => (
+                                            <MenuItem value={name} key={index}>
+                                                {name}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={credentialSchema}
+                                        fullWidth
+                                        onChange={(event) => setCredentialSchema(event.target.value)}
+                                    >
+                                        {schemaList.map((name, index) => (
+                                            <MenuItem value={name} key={index}>
+                                                {name}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialHolder || !credentialSchema}>
+                                        Bind Credential
+                                    </Button>
+                                </Grid>
+                            </Grid>
                         </Box>
                     }
                     {tab === 'create' &&

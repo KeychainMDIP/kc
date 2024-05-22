@@ -280,6 +280,15 @@ v1router.post('/schemas/:id/test', async (req, res) => {
     }
 });
 
+v1router.post('/agents/:id/test', async (req, res) => {
+    try {
+        const response = await keymaster.testAgent(req.params.id);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
