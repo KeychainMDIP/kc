@@ -2789,4 +2789,109 @@ describe('createSchema', () => {
 
         expect(doc.didDocumentData).toStrictEqual(mockSchema);
     });
+
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.createSchema({ mock: 'not a schema' });
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid schema`);
+        }
+    });
+});
+
+describe('getSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema(mockSchema);
+        const schema = await keymaster.getSchema(did);
+
+        expect(schema).toStrictEqual(mockSchema);
+    });
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.getSchema('bogus');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
+    });
+});
+
+describe('setSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update the schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        const ok = await keymaster.setSchema(did, mockSchema);
+        const newSchema = await keymaster.getSchema(did);
+
+        expect(ok).toBe(true);
+        expect(newSchema).toStrictEqual(mockSchema);
+    });
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+
+        try {
+            await keymaster.setSchema(did, { mock: 'not a schema' });
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid schema`);
+        }
+    });
 });

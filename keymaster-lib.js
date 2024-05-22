@@ -1103,37 +1103,51 @@ export const defaultSchema = {
     ]
 };
 
-export async function createSchema(schema) {
+function validateSchema(schema) {
     try {
-        if (!schema) {
-            schema = defaultSchema;
+        if (!Object.keys(schema).includes('$schema')) {
+            throw "Invalid schema";
         }
 
-        // Validate schema
+        // Attempt to instantiate the schema
         JSONSchemaFaker.generate(schema);
     }
     catch {
         throw "Invalid schema";
     }
 
+    return true;
+}
+
+export async function createSchema(schema) {
+    if (!schema) {
+        schema = defaultSchema;
+    }
+
+    validateSchema(schema);
+
     return createAsset(schema);
 }
 
-export async function getSchema(schemaId) {
-    return resolveAsset(schemaId);
+export async function getSchema(id) {
+    return resolveAsset(id);
+}
+
+export async function setSchema(id, newSchema) {
+    validateSchema(newSchema);
+
+    const doc = await resolveDID(id);
+    const did = doc.didDocument.id;
+    doc.didDocumentData = newSchema;
+
+    return updateDID(did, doc);
 }
 
 // TBD add optional 2nd parameter that will validate JSON against the schema
-export async function testSchema(schemaId) {
-    const schema = await getSchema(schemaId);
-
-    if (!Object.keys(schema).includes('$schema')) {
-        return false;
-    }
-
+export async function testSchema(id) {
     try {
-        // Validate schema
-        JSONSchemaFaker.generate(schema);
+        const schema = await getSchema(id);
+        validateSchema(schema);
     }
     catch {
         return false;

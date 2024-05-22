@@ -360,7 +360,12 @@ function App() {
     }
 
     async function saveSchema() {
-        window.alert(schemaString);
+        try {
+            await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
+            await editSchema(editedSchemaName);
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     return (

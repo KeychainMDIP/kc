@@ -228,9 +228,9 @@ export async function createSchema(schema) {
     }
 }
 
-export async function getSchema(schema) {
+export async function getSchema(id) {
     try {
-        const response = await axios.get(`/api/v1/schemas/${schema}`);
+        const response = await axios.get(`/api/v1/schemas/${id}`);
         return response.data;
     }
     catch (error) {
@@ -238,9 +238,19 @@ export async function getSchema(schema) {
     }
 }
 
-export async function testSchema(schema) {
+export async function setSchema(id, schema) {
     try {
-        const response = await axios.post(`/api/v1/schemas/${schema}/test`);
+        const response = await axios.put(`/api/v1/schemas/${id}`, { schema });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function testSchema(id) {
+    try {
+        const response = await axios.post(`/api/v1/schemas/${id}/test`);
         return response.data;
     }
     catch (error) {

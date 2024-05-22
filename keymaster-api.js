@@ -252,18 +252,28 @@ v1router.post('/schemas', async (req, res) => {
     }
 });
 
-v1router.get('/schemas/:name', async (req, res) => {
+v1router.get('/schemas/:id', async (req, res) => {
     try {
-        const schema = await keymaster.getSchema(req.params.name);
+        const schema = await keymaster.getSchema(req.params.id);
         res.json(schema);
     } catch (error) {
         res.status(404).send(error.toString());
     }
 });
 
-v1router.post('/schemas/:name/test', async (req, res) => {
+v1router.put('/schemas/:id', async (req, res) => {
     try {
-        const response = await keymaster.testSchema(req.params.name);
+        const { schema } = req.body;
+        const response = await keymaster.setSchema(req.params.id, schema);
+        res.json(response.data);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/schemas/:id/test', async (req, res) => {
+    try {
+        const response = await keymaster.testSchema(req.params.id);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
