@@ -287,3 +287,45 @@ export async function issueCredential(credential) {
         throwError(error);
     }
 }
+
+export async function listCredentials() {
+    try {
+        const response = await axios.get(`/api/v1/credentials`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function acceptCredential(did) {
+    try {
+        const response = await axios.post(`/api/v1/credentials`, { did });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function getCredential(did) {
+    try {
+        const response = await axios.get(`/api/v1/credentials/${did}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function removeCredential(did) {
+    try {
+        const response = await axios.delete(`/api/v1/credentials/${did}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+

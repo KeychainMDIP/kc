@@ -40,11 +40,16 @@ function App() {
     const [selectedSchema, setSelectedSchema] = useState(null);
 
     const [agentList, setAgentList] = useState(null);
+    const [credentialTab, setCredentialTab] = useState('');
     const [credentialDID, setCredentialDID] = useState('');
     const [credentialSubject, setCredentialHolder] = useState(null);
     const [credentialSchema, setCredentialSchema] = useState(null);
     const [credentialString, setCredentialString] = useState(null);
     const [credentialRegistry, setCredentialRegistry] = useState(null);
+
+    const [heldList, setHeldList] = useState(null);
+    const [heldDID, setHeldDID] = useState('');
+    const [heldString, setHeldString] = useState('');
 
     useEffect(() => {
         refreshAll();
@@ -66,8 +71,10 @@ function App() {
                 setDocsString(JSON.stringify(docs, null, 4));
 
                 refreshNames();
+                refreshHeld();
 
                 setTab('identity');
+                setCredentialTab('held');
             }
             else {
                 setTab('create');
@@ -422,6 +429,60 @@ function App() {
         }
     }
 
+    async function refreshHeld() {
+        try {
+            const heldList = await keymaster.listCredentials();
+            setHeldList(heldList);
+            setHeldString('');
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function acceptCredential() {
+        try {
+            const ok = await keymaster.acceptCredential(heldDID);
+            if (ok) {
+                refreshHeld();
+                setHeldDID('');
+            }
+            else {
+                window.alert("Credential not accepted");
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function removeCredential(did) {
+        try {
+            if (window.confirm(`Are you sure you want to remove ${did}?`)) {
+                await keymaster.removeCredential(did);
+                refreshHeld();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveCredential(did) {
+        try {
+            const doc = await keymaster.resolveDID(did);
+            setHeldString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function decryptCredential(did) {
+        try {
+            const doc = await keymaster.getCredential(did);
+            setHeldString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -459,7 +520,7 @@ function App() {
                             <Tab key="identity" value="identity" label={'Identity'} />
                         }
                         {currentId &&
-                            <Tab key="names" value="names" label={'Names'} />
+                            <Tab key="names" value="names" label={'DIDs'} />
                         }
                         {currentId &&
                             <Tab key="groups" value="groups" label={'Groups'} />
@@ -785,67 +846,151 @@ function App() {
                     }
                     {tab === 'credentials' &&
                         <Box>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Select
-                                        style={{ width: '300px' }}
-                                        value={credentialSubject}
-                                        fullWidth
-                                        onChange={(event) => setCredentialHolder(event.target.value)}
-                                    >
-                                        {agentList.map((name, index) => (
-                                            <MenuItem value={name} key={index}>
-                                                {name}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </Grid>
-                                <Grid item>
-                                    <Select
-                                        style={{ width: '300px' }}
-                                        value={credentialSchema}
-                                        fullWidth
-                                        onChange={(event) => setCredentialSchema(event.target.value)}
-                                    >
-                                        {schemaList.map((name, index) => (
-                                            <MenuItem value={name} key={index}>
-                                                {name}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialSubject || !credentialSchema}>
-                                        Bind Credential
-                                    </Button>
-                                </Grid>
-                            </Grid>
-                            {credentialString &&
+                            <Box>
+                                <Tabs
+                                    value={credentialTab}
+                                    onChange={(event, newTab) => setCredentialTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="held" value="held" label={'Held'} />
+                                    <Tab key="issue" value="issue" label={'Issue'} />
+                                </Tabs>
+                            </Box>
+                            {credentialTab === 'held' &&
                                 <Box>
-                                    <Grid container direction="column" spacing={1}>
+                                    <Table style={{ width: '800px' }}>
+                                        <TableBody>
+                                            {heldList.map((did, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell>
+                                                        <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                            {did}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => removeCredential(did)}>
+                                                            Remove
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            <TableRow>
+                                                <TableCell style={{ width: '100%' }}>
+                                                    <TextField
+                                                        label="Credential DID"
+                                                        style={{ width: '500px' }}
+                                                        value={heldDID}
+                                                        onChange={(e) =>
+                                                            setHeldDID(e.target.value)
+                                                        }
+                                                        fullWidth
+                                                        margin="normal"
+                                                        inputProps={{ maxLength: 80 }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
+                                                        Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
+                                                        Decrypt
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
+                                                        Accept
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                    <textarea
+                                        value={heldString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                            {credentialTab === 'issue' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSubject}
+                                                fullWidth
+                                                onChange={(event) => setCredentialHolder(event.target.value)}
+                                            >
+                                                {agentList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
                                         </Grid>
                                         <Grid item>
-                                            <textarea
-                                                value={credentialString}
-                                                onChange={(e) => setCredentialString(e.target.value)}
-                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                            />
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSchema}
+                                                fullWidth
+                                                onChange={(event) => setCredentialSchema(event.target.value)}
+                                            >
+                                                {schemaList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
-                                                Issue Credential
+                                            <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialSubject || !credentialSchema}>
+                                                Bind Credential
                                             </Button>
                                         </Grid>
                                     </Grid>
-                                </Box>
-                            }
-                            {credentialDID &&
-                                <Box>
-                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                        {credentialDID}
-                                    </Typography>
+                                    {credentialString &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
+                                                </Grid>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={credentialString}
+                                                        onChange={(e) => setCredentialString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                        Issue Credential
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    }
+                                    {credentialDID &&
+                                        <Box>
+                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                {credentialDID}
+                                            </Typography>
+                                        </Box>
+                                    }
                                 </Box>
                             }
                         </Box>

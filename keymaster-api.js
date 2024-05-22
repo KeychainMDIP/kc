@@ -309,6 +309,43 @@ v1router.post('/issue-credential', async (req, res) => {
     }
 });
 
+v1router.get('/credentials', async (req, res) => {
+    try {
+        const response = await keymaster.listCredentials();
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.post('/credentials', async (req, res) => {
+    try {
+        const { did } = req.body;
+        const response = await keymaster.acceptCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/credentials/:did', async (req, res) => {
+    try {
+        const response = await keymaster.getCredential(req.params.did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.delete('/credentials/:did', async (req, res) => {
+    try {
+        const response = await keymaster.removeCredential(req.params.did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

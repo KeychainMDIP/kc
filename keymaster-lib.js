@@ -410,6 +410,20 @@ function addToHeld(did) {
     return true;
 }
 
+function removeFromHeld(did) {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    const held = new Set(id.held);
+
+    if (held.delete(did)) {
+        id.held = Array.from(held);
+        saveWallet(wallet);
+        return true;
+    }
+
+    return false;
+}
+
 export async function resolveDID(did, asof, confirm) {
     const doc = await gatekeeper.resolveDID(lookupDID(did), asof, confirm);
     return doc;
@@ -737,6 +751,20 @@ export async function acceptCredential(did) {
     catch (error) {
         return false;
     }
+}
+
+export async function getCredential(did) {
+    return decryptJSON(lookupDID(did));
+}
+
+export async function removeCredential(did) {
+    return removeFromHeld(lookupDID(did));
+}
+
+export async function listCredentials() {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    return id.held || [];
 }
 
 export async function publishCredential(did, reveal = false) {
