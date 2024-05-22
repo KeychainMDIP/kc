@@ -267,3 +267,23 @@ export async function testAgent(id) {
         throwError(error);
     }
 }
+
+export async function bindCredential(schema, subject) {
+    try {
+        const response = await axios.post(`/api/v1/bind-credential`, { schema, subject });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function issueCredential(credential) {
+    try {
+        const response = await axios.post(`/api/v1/issue-credential`, { credential });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}

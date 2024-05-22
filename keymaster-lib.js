@@ -680,9 +680,9 @@ export async function createCredential(schema) {
     return createAsset(schema);
 }
 
-export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
+export async function bindCredential(schemaId, subjectId, validUntil = null) {
     const id = fetchId();
-    const type = lookupDID(credentialDid);
+    const type = lookupDID(schemaId);
     const schema = await resolveAsset(type);
     const credential = JSONSchemaFaker.generate(schema);
 
@@ -696,7 +696,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
         validFrom: new Date().toISOString(),
         validUntil: validUntil,
         credentialSubject: {
-            id: lookupDID(subjectDid),
+            id: lookupDID(subjectId),
         },
         credential: credential,
     };
@@ -704,7 +704,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc, registry = defaultRegistry) {
+export async function issueCredential(vc, registry = defaultRegistry) {
     const id = fetchId();
 
     if (vc.issuer !== id.did) {

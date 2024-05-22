@@ -41,7 +41,7 @@ function App() {
 
     const [agentList, setAgentList] = useState(null);
     const [credentialDID, setCredentialDID] = useState('');
-    const [credentialHolder, setCredentialHolder] = useState(null);
+    const [credentialSubject, setCredentialHolder] = useState(null);
     const [credentialSchema, setCredentialSchema] = useState(null);
     const [credentialString, setCredentialString] = useState(null);
     const [credentialRegistry, setCredentialRegistry] = useState(null);
@@ -271,7 +271,7 @@ function App() {
 
         setAgentList(agentList);
 
-        if (!agentList.includes(credentialHolder)) {
+        if (!agentList.includes(credentialSubject)) {
             setCredentialHolder('');
             setCredentialString('');
         }
@@ -405,7 +405,21 @@ function App() {
     }
 
     async function bindCredential() {
+        try {
+            const credentialBound = await keymaster.bindCredential(credentialSchema, credentialSubject);
+            setCredentialString(JSON.stringify(credentialBound, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
 
+    async function issueCredential() {
+        try {
+            const did = await keymaster.issueCredential(JSON.parse(credentialString));
+            setCredentialDID(did);
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     return (
@@ -775,7 +789,7 @@ function App() {
                                 <Grid item>
                                     <Select
                                         style={{ width: '300px' }}
-                                        value={credentialHolder}
+                                        value={credentialSubject}
                                         fullWidth
                                         onChange={(event) => setCredentialHolder(event.target.value)}
                                     >
@@ -801,11 +815,39 @@ function App() {
                                     </Select>
                                 </Grid>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialHolder || !credentialSchema}>
+                                    <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialSubject || !credentialSchema}>
                                         Bind Credential
                                     </Button>
                                 </Grid>
                             </Grid>
+                            {credentialString &&
+                                <Box>
+                                    <Grid container direction="column" spacing={1}>
+                                        <Grid item>
+                                            <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
+                                        </Grid>
+                                        <Grid item>
+                                            <textarea
+                                                value={credentialString}
+                                                onChange={(e) => setCredentialString(e.target.value)}
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                Issue Credential
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                </Box>
+                            }
+                            {credentialDID &&
+                                <Box>
+                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                        {credentialDID}
+                                    </Typography>
+                                </Box>
+                            }
                         </Box>
                     }
                     {tab === 'create' &&

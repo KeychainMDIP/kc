@@ -371,7 +371,7 @@ program
     .action(async (file, registry, name) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.attestCredential(vc, registry);
+            const did = await keymaster.issueCredential(vc, registry);
 
             if (name) {
                 keymaster.addName(name, did);

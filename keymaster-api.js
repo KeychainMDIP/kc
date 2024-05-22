@@ -289,6 +289,26 @@ v1router.post('/agents/:id/test', async (req, res) => {
     }
 });
 
+v1router.post('/bind-credential', async (req, res) => {
+    try {
+        const { schema, subject } = req.body;
+        const response = await keymaster.bindCredential(schema, subject);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.post('/issue-credential', async (req, res) => {
+    try {
+        const { credential } = req.body;
+        const response = await keymaster.issueCredential(credential);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
