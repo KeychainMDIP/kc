@@ -33,19 +33,19 @@ function App() {
     const [memberDocs, setMemberDocs] = useState(null);
 
     const [schemaList, setSchemaList] = useState(null);
-    const [schemaName, setSchemaName] = useState(null);
-    const [schemaString, setSchemaString] = useState(null);
-    const [selectedSchemaName, setSelectedSchemaName] = useState(null);
-    const [editedSchemaName, setEditedSchemaName] = useState(null);
-    const [selectedSchema, setSelectedSchema] = useState(null);
+    const [schemaName, setSchemaName] = useState('');
+    const [schemaString, setSchemaString] = useState('');
+    const [selectedSchemaName, setSelectedSchemaName] = useState('');
+    const [editedSchemaName, setEditedSchemaName] = useState('');
+    const [selectedSchema, setSelectedSchema] = useState('');
 
     const [agentList, setAgentList] = useState(null);
     const [credentialTab, setCredentialTab] = useState('');
     const [credentialDID, setCredentialDID] = useState('');
-    const [credentialSubject, setCredentialHolder] = useState(null);
-    const [credentialSchema, setCredentialSchema] = useState(null);
-    const [credentialString, setCredentialString] = useState(null);
-    const [credentialRegistry, setCredentialRegistry] = useState(null);
+    const [credentialSubject, setCredentialSubject] = useState('');
+    const [credentialSchema, setCredentialSchema] = useState('');
+    const [credentialString, setCredentialString] = useState('');
+    const [credentialRegistry, setCredentialRegistry] = useState(null); // TBD
 
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
@@ -279,7 +279,7 @@ function App() {
         setAgentList(agentList);
 
         if (!agentList.includes(credentialSubject)) {
-            setCredentialHolder('');
+            setCredentialSubject('');
             setCredentialString('');
         }
     }
@@ -806,8 +806,12 @@ function App() {
                                             style={{ width: '300px' }}
                                             value={selectedSchemaName}
                                             fullWidth
+                                            displayEmpty
                                             onChange={(event) => setSelectedSchemaName(event.target.value)}
                                         >
+                                            <MenuItem value="" disabled>
+                                                Select schema
+                                            </MenuItem>
                                             {schemaList.map((name, index) => (
                                                 <MenuItem value={name} key={index}>
                                                     {name}
@@ -935,8 +939,12 @@ function App() {
                                                 style={{ width: '300px' }}
                                                 value={credentialSubject}
                                                 fullWidth
-                                                onChange={(event) => setCredentialHolder(event.target.value)}
+                                                displayEmpty
+                                                onChange={(event) => setCredentialSubject(event.target.value)}
                                             >
+                                                <MenuItem value="" disabled>
+                                                    Select subject
+                                                </MenuItem>
                                                 {agentList.map((name, index) => (
                                                     <MenuItem value={name} key={index}>
                                                         {name}
@@ -949,8 +957,12 @@ function App() {
                                                 style={{ width: '300px' }}
                                                 value={credentialSchema}
                                                 fullWidth
+                                                displayEmpty
                                                 onChange={(event) => setCredentialSchema(event.target.value)}
                                             >
+                                                <MenuItem value="" disabled>
+                                                    Select schema
+                                                </MenuItem>
                                                 {schemaList.map((name, index) => (
                                                     <MenuItem value={name} key={index}>
                                                         {name}
