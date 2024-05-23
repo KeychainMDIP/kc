@@ -411,10 +411,11 @@ function App() {
         }
     }
 
-    async function bindCredential() {
+    async function editCredential() {
         try {
             const credentialBound = await keymaster.bindCredential(credentialSchema, credentialSubject);
             setCredentialString(JSON.stringify(credentialBound, null, 4));
+            setCredentialDID('');
         } catch (error) {
             window.alert(error);
         }
@@ -958,8 +959,8 @@ function App() {
                                             </Select>
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={bindCredential} disabled={!credentialSubject || !credentialSchema}>
-                                                Bind Credential
+                                            <Button variant="contained" color="primary" onClick={editCredential} disabled={!credentialSubject || !credentialSchema}>
+                                                Edit Credential
                                             </Button>
                                         </Grid>
                                     </Grid>
@@ -976,19 +977,21 @@ function App() {
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                                     />
                                                 </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
-                                                        Issue Credential
-                                                    </Button>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                            Issue Credential
+                                                        </Button>
+                                                    </Grid>
+                                                    {credentialDID &&
+                                                        <Grid item>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {credentialDID}
+                                                            </Typography>
+                                                        </Grid>
+                                                    }
                                                 </Grid>
                                             </Grid>
-                                        </Box>
-                                    }
-                                    {credentialDID &&
-                                        <Box>
-                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                {credentialDID}
-                                            </Typography>
                                         </Box>
                                     }
                                 </Box>
