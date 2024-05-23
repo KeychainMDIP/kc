@@ -67,7 +67,7 @@ When presented with a challenge, a user can prepare a Verifiable Presentation of
 
     > [!NOTE]
     >If you're testing as both Alice and Bob from a single wallet, you can skip this step.
-    
+
 1. Then the user can create a repsonse:
 
     ```sh
@@ -75,7 +75,7 @@ When presented with a challenge, a user can prepare a Verifiable Presentation of
     did:mdip:test:z3v8AuadZ56m4x2UTpeY3HhSFvFQnrCUyASBYA77vqrqQr9SR99
     ```
 
-The command above mapped the Challenge with previously received VCs and found one matching the request for Bob's twitter account attestation. The resulting DID document contains a Verifiable Presentation revealing the twitter account VC data encrypted to the requesting party (Alice).
+The command above mapped the Challenge with previously received VCs and found one matching the request for Bob's twitter account credential. The resulting DID document contains a Verifiable Presentation revealing the twitter account VC data encrypted to the requesting party (Alice).
 
 ## Verifying a VP Response
 

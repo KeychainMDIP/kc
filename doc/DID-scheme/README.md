@@ -311,4 +311,4 @@ function resolveDid(did, asOfTime=now):
 
 For security reasons, MDIP provides no support for storing private keys. We recommend that MDIP clients use BIP-39 to generate a master seed phrase consisting of at least 12 words, and that users safely store the recovery phrase.
 
-If a user loses a device that contains their wallet, they should be able to install the wallet software on a new device, initialize it with their seed phrase and recover their DID along with all their attestations. This implies that a "vault" of the attestations should be stored with the agent DID document, though it should be encrypted with the DID's current private key for privacy.
+If a user loses a device that contains their wallet, they should be able to install the wallet software on a new device, initialize it with their seed phrase and recover their DID along with all their credentials. This implies that a "vault" of the credentials should be stored with the agent DID document, though it should be encrypted with the DID's current private key for privacy.

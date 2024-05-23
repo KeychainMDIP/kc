@@ -16,19 +16,40 @@ function App() {
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
-    const [newName, setNewName] = useState(null);
+
+    const [newName, setNewName] = useState('');
     const [registry, setRegistry] = useState('hyperswarm');
     const [nameList, setNameList] = useState(null);
-    const [aliasName, setAliasName] = useState(null);
-    const [aliasDID, setAliasDID] = useState(null);
-    const [aliasDocs, setAliasDocs] = useState(null);
+    const [aliasName, setAliasName] = useState('');
+    const [aliasDID, setAliasDID] = useState('');
+    const [aliasDocs, setAliasDocs] = useState('');
     const [registries, setRegistries] = useState(null);
-    const [groupName, setGroupName] = useState(null);
+
     const [groupList, setGroupList] = useState(null);
-    const [selectedGroupName, setSelectedGroupName] = useState(null);
-    const [selectedGroup, setSelectedGroup] = useState(null);
-    const [memberDID, setMemberDID] = useState(null);
-    const [memberDocs, setMemberDocs] = useState(null);
+    const [groupName, setGroupName] = useState('');
+    const [selectedGroupName, setSelectedGroupName] = useState('');
+    const [selectedGroup, setSelectedGroup] = useState('');
+    const [memberDID, setMemberDID] = useState('');
+    const [memberDocs, setMemberDocs] = useState('');
+
+    const [schemaList, setSchemaList] = useState(null);
+    const [schemaName, setSchemaName] = useState('');
+    const [schemaString, setSchemaString] = useState('');
+    const [selectedSchemaName, setSelectedSchemaName] = useState('');
+    const [editedSchemaName, setEditedSchemaName] = useState('');
+    const [selectedSchema, setSelectedSchema] = useState('');
+
+    const [agentList, setAgentList] = useState(null);
+    const [credentialTab, setCredentialTab] = useState('');
+    const [credentialDID, setCredentialDID] = useState('');
+    const [credentialSubject, setCredentialSubject] = useState('');
+    const [credentialSchema, setCredentialSchema] = useState('');
+    const [credentialString, setCredentialString] = useState('');
+    const [credentialRegistry, setCredentialRegistry] = useState(null); // TBD
+
+    const [heldList, setHeldList] = useState(null);
+    const [heldDID, setHeldDID] = useState('');
+    const [heldString, setHeldString] = useState('');
 
     useEffect(() => {
         refreshAll();
@@ -52,8 +73,10 @@ function App() {
                 setDocsString(JSON.stringify(docs, null, 4));
 
                 refreshNames();
+                refreshHeld();
 
                 setTab('identity');
+                setCredentialTab('held');
             }
             else {
                 setTab('create');
@@ -182,6 +205,8 @@ function App() {
 
     async function refreshNames() {
         const nameList = await keymaster.listNames();
+        const names = Object.keys(nameList);
+
         setNameList(nameList);
         setAliasName('');
         setAliasDID('');
@@ -189,7 +214,7 @@ function App() {
 
         const groupList = [];
 
-        for (const name of Object.keys(nameList)) {
+        for (const name of names) {
             try {
                 const isGroup = await keymaster.groupTest(name);
 
@@ -207,6 +232,55 @@ function App() {
         if (!groupList.includes(selectedGroupName)) {
             setSelectedGroupName('');
             setSelectedGroup(null);
+        }
+
+        const schemaList = [];
+
+        for (const name of names) {
+            try {
+                const isSchema = await keymaster.testSchema(name);
+
+                if (isSchema) {
+                    schemaList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setSchemaList(schemaList);
+
+        if (!schemaList.includes(selectedSchemaName)) {
+            setSelectedSchemaName('');
+            setSelectedSchema(null);
+        }
+
+        if (!schemaList.includes(credentialSchema)) {
+            setCredentialSchema('');
+            setCredentialString('');
+        }
+
+        const agentList = await keymaster.listIds();
+
+        for (const name of names) {
+            try {
+                const isAgent = await keymaster.testAgent(name);
+
+                if (isAgent) {
+                    agentList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setAgentList(agentList);
+
+        if (!agentList.includes(credentialSubject)) {
+            setCredentialSubject('');
+            setCredentialString('');
         }
     }
 
@@ -298,11 +372,123 @@ function App() {
         }
     }
 
+    async function createSchema() {
+        try {
+            if (Object.keys(nameList).includes(schemaName)) {
+                alert(`${schemaName} already in use`);
+                return;
+            }
+
+            const schemaDID = await keymaster.createSchema();
+            await keymaster.addName(schemaName, schemaDID);
+
+            setSchemaName('');
+            refreshNames();
+            setSelectedSchemaName(schemaName);
+            editSchema(schemaName);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function editSchema(schemaName) {
+        try {
+            const schema = await keymaster.getSchema(schemaName);
+            setSelectedSchema(schema);
+            setEditedSchemaName(schemaName);
+            setSchemaString(JSON.stringify(schema, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function saveSchema() {
+        try {
+            await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
+            await editSchema(editedSchemaName);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function editCredential() {
+        try {
+            const credentialBound = await keymaster.bindCredential(credentialSchema, credentialSubject);
+            setCredentialString(JSON.stringify(credentialBound, null, 4));
+            setCredentialDID('');
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function issueCredential() {
+        try {
+            const did = await keymaster.issueCredential(JSON.parse(credentialString));
+            setCredentialDID(did);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function refreshHeld() {
+        try {
+            const heldList = await keymaster.listCredentials();
+            setHeldList(heldList);
+            setHeldString('');
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function acceptCredential() {
+        try {
+            const ok = await keymaster.acceptCredential(heldDID);
+            if (ok) {
+                refreshHeld();
+                setHeldDID('');
+            }
+            else {
+                window.alert("Credential not accepted");
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function removeCredential(did) {
+        try {
+            if (window.confirm(`Are you sure you want to remove ${did}?`)) {
+                await keymaster.removeCredential(did);
+                refreshHeld();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveCredential(did) {
+        try {
+            const doc = await keymaster.resolveDID(did);
+            setHeldString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function decryptCredential(did) {
+        try {
+            const doc = await keymaster.getCredential(did);
+            setHeldString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster Web Wallet</h1>
+                <h1>Keymaster API Demo</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>
@@ -332,13 +518,19 @@ function App() {
                         scrollButtons="auto"
                     >
                         {currentId &&
-                            <Tab key="identity" value="identity" label={'Identity'} />
+                            <Tab key="identity" value="identity" label={'Identities'} />
                         }
                         {currentId &&
-                            <Tab key="names" value="names" label={'Names'} />
+                            <Tab key="names" value="names" label={'DIDs'} />
                         }
                         {currentId &&
                             <Tab key="groups" value="groups" label={'Groups'} />
+                        }
+                        {currentId &&
+                            <Tab key="schemas" value="schemas" label={'Schemas'} />
+                        }
+                        {currentId &&
+                            <Tab key="credentials" value="credentials" label={'Credentials'} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} />
@@ -443,9 +635,7 @@ function App() {
                                                 label="Name"
                                                 style={{ width: '200px' }}
                                                 value={aliasName}
-                                                onChange={(e) =>
-                                                    setAliasName(e.target.value)
-                                                }
+                                                onChange={(e) => setAliasName(e.target.value.trim())}
                                                 fullWidth
                                                 margin="normal"
                                                 inputProps={{ maxLength: 20 }}
@@ -456,9 +646,7 @@ function App() {
                                                 label="DID"
                                                 style={{ width: '500px' }}
                                                 value={aliasDID}
-                                                onChange={(e) =>
-                                                    setAliasDID(e.target.value)
-                                                }
+                                                onChange={(e) => setAliasDID(e.target.value.trim())}
                                                 fullWidth
                                                 margin="normal"
                                                 inputProps={{ maxLength: 80 }}
@@ -492,7 +680,7 @@ function App() {
                                         label="Group Name"
                                         style={{ width: '300px' }}
                                         value={groupName}
-                                        onChange={(e) => setGroupName(e.target.value)}
+                                        onChange={(e) => setGroupName(e.target.value.trim())}
                                         fullWidth
                                         margin="normal"
                                         inputProps={{ maxLength: 30 }}
@@ -511,8 +699,12 @@ function App() {
                                             style={{ width: '300px' }}
                                             value={selectedGroupName}
                                             fullWidth
+                                            displayEmpty
                                             onChange={(event) => setSelectedGroupName(event.target.value)}
                                         >
+                                            <MenuItem value="" disabled>
+                                                Select group
+                                            </MenuItem>
                                             {groupList.map((name, index) => (
                                                 <MenuItem value={name} key={index}>
                                                     {name}
@@ -540,7 +732,7 @@ function App() {
                                                         label="DID"
                                                         style={{ width: '500px' }}
                                                         value={memberDID}
-                                                        onChange={(e) => setMemberDID(e.target.value)}
+                                                        onChange={(e) => setMemberDID(e.target.value.trim())}
                                                         fullWidth
                                                         margin="normal"
                                                         inputProps={{ maxLength: 80 }}
@@ -587,6 +779,235 @@ function App() {
                             }
                         </Box>
                     }
+                    {tab === 'schemas' &&
+                        <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Schema Name"
+                                        style={{ width: '300px' }}
+                                        value={schemaName}
+                                        onChange={(e) => setSchemaName(e.target.value.trim())}
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
+                                        Create Schema
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            {schemaList &&
+                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid item>
+                                        <Select
+                                            style={{ width: '300px' }}
+                                            value={selectedSchemaName}
+                                            fullWidth
+                                            displayEmpty
+                                            onChange={(event) => setSelectedSchemaName(event.target.value)}
+                                        >
+                                            <MenuItem value="" disabled>
+                                                Select schema
+                                            </MenuItem>
+                                            {schemaList.map((name, index) => (
+                                                <MenuItem value={name} key={index}>
+                                                    {name}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
+                                            Edit Schema
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                            }
+                            {selectedSchema &&
+                                <Box>
+                                    <Grid container direction="column" spacing={1}>
+                                        <Grid item>
+                                            <p>{`Editing: "${editedSchemaName}"`}</p>
+                                        </Grid>
+                                        <Grid item>
+                                            <textarea
+                                                value={schemaString}
+                                                onChange={(e) => setSchemaString(e.target.value)}
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
+                                                Save Schema
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                </Box>
+                            }
+                        </Box>
+                    }
+                    {tab === 'credentials' &&
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={credentialTab}
+                                    onChange={(event, newTab) => setCredentialTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="held" value="held" label={'Held'} />
+                                    <Tab key="issue" value="issue" label={'Issue'} />
+                                </Tabs>
+                            </Box>
+                            {credentialTab === 'held' &&
+                                <Box>
+                                    <Table style={{ width: '800px' }}>
+                                        <TableBody>
+                                            {heldList.map((did, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell>
+                                                        <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                            {did}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => removeCredential(did)}>
+                                                            Remove
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            <TableRow>
+                                                <TableCell style={{ width: '100%' }}>
+                                                    <TextField
+                                                        label="Credential DID"
+                                                        style={{ width: '500px' }}
+                                                        value={heldDID}
+                                                        onChange={(e) => setHeldDID(e.target.value.trim())}
+                                                        fullWidth
+                                                        margin="normal"
+                                                        inputProps={{ maxLength: 80 }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
+                                                        Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
+                                                        Decrypt
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
+                                                        Accept
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                    <textarea
+                                        value={heldString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                            {credentialTab === 'issue' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSubject}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setCredentialSubject(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select subject
+                                                </MenuItem>
+                                                {agentList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSchema}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setCredentialSchema(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select schema
+                                                </MenuItem>
+                                                {schemaList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={editCredential} disabled={!credentialSubject || !credentialSchema}>
+                                                Edit Credential
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                    {credentialString &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
+                                                </Grid>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={credentialString}
+                                                        onChange={(e) => setCredentialString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                            Issue Credential
+                                                        </Button>
+                                                    </Grid>
+                                                    {credentialDID &&
+                                                        <Grid item>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {credentialDID}
+                                                            </Typography>
+                                                        </Grid>
+                                                    }
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                        </Box>
+                    }
                     {tab === 'create' &&
                         <Grid>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -595,9 +1016,7 @@ function App() {
                                         label="Name"
                                         style={{ width: '300px' }}
                                         value={newName}
-                                        onChange={(e) =>
-                                            setNewName(e.target.value)
-                                        }
+                                        onChange={(e) => setNewName(e.target.value.trim())}
                                         fullWidth
                                         margin="normal"
                                         inputProps={{ maxLength: 30 }}
@@ -641,9 +1060,7 @@ function App() {
                                         <TextField
                                             label=""
                                             value={challenge}
-                                            onChange={(e) =>
-                                                setChallenge(e.target.value)
-                                            }
+                                            onChange={(e) => setChallenge(e.target.value.trim())}
                                             fullWidth
                                             margin="normal"
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
@@ -661,9 +1078,7 @@ function App() {
                                         <TextField
                                             label=""
                                             value={response}
-                                            onChange={(e) =>
-                                                setResponse(e.target.value)
-                                            }
+                                            onChange={(e) => setResponse(e.target.value.trim())}
                                             fullWidth
                                             margin="normal"
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}

@@ -4,9 +4,9 @@ sidebar_label: DID Manifest
 slug: manifests
 ---
 
-### 
+###
 
-The DID Manifest is a public data container that is returned with the DID document data. Users can chose to publish or reveal any attestation they receive. All information in the manifest is publicly viewable.
+The DID Manifest is a public data container that is returned with the DID document data. Users can chose to publish or reveal any credential they receive. All information in the manifest is publicly viewable.
 
 Example of `didDocumentData` with a manifest :
 
@@ -42,7 +42,7 @@ Example of `didDocumentData` with a manifest :
 
 ### Publishing a Verifiable Credential
 
-Publishing a VC to a DID Manifest will make it known that the DID holder has received a particular Verifiable Credential without revealing the credential's values. In this example, we know that Bob has a social-media attestation, but we do not know the details:
+Publishing a VC to a DID Manifest will make it known that the DID holder has received a particular Verifiable Credential without revealing the credential's values. In this example, we know that Bob has a social-media credential, but we do not know the details:
 
 ```sh
 $ kc add-name bob-twitter did:mdip:test:z3v8Auaf3eZEUqJEu8xu1uUwxK3ZTLLXsfg9U7p6awPzyuD1AAT

@@ -44,11 +44,11 @@ async function runWorkflow() {
     const bc1 = await keymaster.bindCredential(credential1, carol);
     const bc2 = await keymaster.bindCredential(credential2, carol);
 
-    const vc1 = await keymaster.attestCredential(bc1);
-    const vc2 = await keymaster.attestCredential(bc2);
+    const vc1 = await keymaster.issueCredential(bc1);
+    const vc2 = await keymaster.issueCredential(bc2);
 
-    console.log(`Alice attested vc1 for Carol ${vc1}`);
-    console.log(`Alice attested vc2 for Carol ${vc2}`);
+    console.log(`Alice issued vc1 for Carol ${vc1}`);
+    console.log(`Alice issued vc2 for Carol ${vc2}`);
 
     keymaster.setCurrentId('Bob');
 
@@ -61,11 +61,11 @@ async function runWorkflow() {
     const bc3 = await keymaster.bindCredential(credential3, carol);
     const bc4 = await keymaster.bindCredential(credential4, carol);
 
-    const vc3 = await keymaster.attestCredential(bc3);
-    const vc4 = await keymaster.attestCredential(bc4);
+    const vc3 = await keymaster.issueCredential(bc3);
+    const vc4 = await keymaster.issueCredential(bc4);
 
-    console.log(`Bob attested vc3 for Carol ${vc3}`);
-    console.log(`Bob attested vc4 for Carol ${vc4}`);
+    console.log(`Bob issued vc3 for Carol ${vc3}`);
+    console.log(`Bob issued vc4 for Carol ${vc4}`);
 
     keymaster.setCurrentId('Carol');
 
@@ -82,19 +82,19 @@ async function runWorkflow() {
         credentials: [
             {
                 schema: credential1,
-                attestors: [alice]
+                issuers: [alice]
             },
             {
                 schema: credential2,
-                attestors: [alice]
+                issuers: [alice]
             },
             {
                 schema: credential3,
-                attestors: [bob]
+                issuers: [bob]
             },
             {
                 schema: credential4,
-                attestors: [bob]
+                issuers: [bob]
             },
         ]
     };

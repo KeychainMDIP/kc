@@ -410,6 +410,20 @@ function addToHeld(did) {
     return true;
 }
 
+function removeFromHeld(did) {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    const held = new Set(id.held);
+
+    if (held.delete(did)) {
+        id.held = Array.from(held);
+        saveWallet(wallet);
+        return true;
+    }
+
+    return false;
+}
+
 export async function resolveDID(did, asof, confirm) {
     const doc = await gatekeeper.resolveDID(lookupDID(did), asof, confirm);
     return doc;
@@ -670,14 +684,19 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     return did;
 }
 
+export async function testAgent(id) {
+    const doc = await resolveDID(id);
+    return doc?.mdip?.type === 'agent';
+}
+
 export async function createCredential(schema) {
     // TBD validate schema
     return createAsset(schema);
 }
 
-export async function bindCredential(credentialDid, subjectDid, validUntil = null) {
+export async function bindCredential(schemaId, subjectId, validUntil = null) {
     const id = fetchId();
-    const type = lookupDID(credentialDid);
+    const type = lookupDID(schemaId);
     const schema = await resolveAsset(type);
     const credential = JSONSchemaFaker.generate(schema);
 
@@ -691,7 +710,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
         validFrom: new Date().toISOString(),
         validUntil: validUntil,
         credentialSubject: {
-            id: lookupDID(subjectDid),
+            id: lookupDID(subjectId),
         },
         credential: credential,
     };
@@ -699,7 +718,7 @@ export async function bindCredential(credentialDid, subjectDid, validUntil = nul
     return vc;
 }
 
-export async function attestCredential(vc, registry = defaultRegistry) {
+export async function issueCredential(vc, registry = defaultRegistry) {
     const id = fetchId();
 
     if (vc.issuer !== id.did) {
@@ -732,6 +751,20 @@ export async function acceptCredential(did) {
     catch (error) {
         return false;
     }
+}
+
+export async function getCredential(did) {
+    return decryptJSON(lookupDID(did));
+}
+
+export async function removeCredential(did) {
+    return removeFromHeld(lookupDID(did));
+}
+
+export async function listCredentials() {
+    const wallet = loadWallet();
+    const id = wallet.ids[wallet.current];
+    return id.held || [];
 }
 
 export async function publishCredential(did, reveal = false) {
@@ -823,8 +856,8 @@ async function findMatchingCredential(credential) {
                 continue;
             }
 
-            if (credential.attestors) {
-                if (!credential.attestors.includes(doc.issuer)) {
+            if (credential.issuers) {
+                if (!credential.issuers.includes(doc.issuer)) {
                     // Attestor not trusted by Verifier
                     continue;
                 }
@@ -946,9 +979,9 @@ export async function verifyResponse(responseDID, challengeDID) {
                 continue;
             }
 
-            // Check if issuer of VP is in the trusted attestor list
-            if (credential.attestors && credential.attestors.length > 0) {
-                if (!credential.attestors.includes(vp.issuer)) {
+            // Check if issuer of VP is in the trusted issuer list
+            if (credential.issuers && credential.issuers.length > 0) {
+                if (!credential.issuers.includes(vp.issuer)) {
                     continue;
                 }
             }
@@ -1090,24 +1123,78 @@ export async function groupTest(group, member) {
     return isMember;
 }
 
-export async function createSchema(schema) {
+export const defaultSchema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "propertyName": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "propertyName"
+    ]
+};
+
+function validateSchema(schema) {
     try {
-        // Validate schema
+        if (!Object.keys(schema).includes('$schema')) {
+            throw "Invalid schema";
+        }
+
+        // Attempt to instantiate the schema
         JSONSchemaFaker.generate(schema);
     }
     catch {
         throw "Invalid schema";
     }
 
+    return true;
+}
+
+export async function createSchema(schema) {
+    if (!schema) {
+        schema = defaultSchema;
+    }
+
+    validateSchema(schema);
+
     return createAsset(schema);
 }
 
-export async function createTemplate(did) {
-    const didSchema = lookupDID(did);
-    const schema = await resolveAsset(didSchema);
+export async function getSchema(id) {
+    return resolveAsset(id);
+}
+
+export async function setSchema(id, newSchema) {
+    validateSchema(newSchema);
+
+    const doc = await resolveDID(id);
+    const did = doc.didDocument.id;
+    doc.didDocumentData = newSchema;
+
+    return updateDID(did, doc);
+}
+
+// TBD add optional 2nd parameter that will validate JSON against the schema
+export async function testSchema(id) {
+    try {
+        const schema = await getSchema(id);
+        validateSchema(schema);
+    }
+    catch {
+        return false;
+    }
+
+    return true;
+}
+
+export async function createTemplate(schemaId) {
+    const schemaDID = lookupDID(schemaId);
+    const schema = await resolveAsset(schemaDID);
     const template = JSONSchemaFaker.generate(schema);
 
-    template['$schema'] = didSchema;
+    template['$schema'] = schemaDID;
 
     return template;
 }

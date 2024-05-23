@@ -1047,20 +1047,20 @@ describe('bindCredential', () => {
     });
 });
 
-describe('attestCredential', () => {
+describe('issueCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should attest a bound credential when user is issuer', async () => {
+    it('should issue a bound credential when user is issuer', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
 
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         const vc = await keymaster.decryptJSON(did);
         expect(vc.issuer).toBe(userDid);
@@ -1088,8 +1088,8 @@ describe('attestCredential', () => {
         keymaster.setCurrentId('Bob');
 
         try {
-            await keymaster.attestCredential(boundCredential);
-            throw ('Expected attestCredential to throw an exception');
+            await keymaster.issueCredential(boundCredential);
+            throw ('Expected issueCredential to throw an exception');
         }
         catch (error) {
             expect(error).toBe('Invalid VC');
@@ -1109,7 +1109,7 @@ describe('revokeCredential', () => {
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(true);
@@ -1125,7 +1125,7 @@ describe('revokeCredential', () => {
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         const ok1 = await keymaster.revokeCredential(did);
         expect(ok1).toBe(true);
@@ -1148,7 +1148,7 @@ describe('revokeCredential', () => {
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
 
@@ -1162,7 +1162,7 @@ describe('revokeCredential', () => {
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
         const ok = await keymaster.revokeCredential(did);
         expect(ok).toBe(true);
 
@@ -1194,7 +1194,7 @@ describe('acceptCredential', () => {
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
 
@@ -1217,7 +1217,7 @@ describe('acceptCredential', () => {
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Carol');
 
@@ -1274,7 +1274,7 @@ describe('createChallenge', () => {
             credentials: [
                 {
                     schema: credentialDid,
-                    attestors: [alice, bob]
+                    issuers: [alice, bob]
                 }
             ]
         };
@@ -1334,7 +1334,7 @@ describe('createResponse', () => {
 
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const vcDid = await keymaster.attestCredential(boundCredential);
+        const vcDid = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
 
@@ -1351,7 +1351,7 @@ describe('createResponse', () => {
             credentials: [
                 {
                     schema: credentialDid,
-                    attestors: [alice]
+                    issuers: [alice]
                 }
             ]
         };
@@ -1467,7 +1467,7 @@ describe('verifyResponse', () => {
 
         const credential1 = await keymaster.createCredential(mockSchema);
         const bc1 = await keymaster.bindCredential(credential1, carol);
-        const vc1 = await keymaster.attestCredential(bc1);
+        const vc1 = await keymaster.issueCredential(bc1);
 
         keymaster.setCurrentId('Carol');
 
@@ -1550,8 +1550,8 @@ describe('verifyResponse', () => {
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const bc2 = await keymaster.bindCredential(credential2, carol);
 
-        const vc1 = await keymaster.attestCredential(bc1);
-        const vc2 = await keymaster.attestCredential(bc2);
+        const vc1 = await keymaster.issueCredential(bc1);
+        const vc2 = await keymaster.issueCredential(bc2);
 
         keymaster.setCurrentId('Bob');
 
@@ -1561,8 +1561,8 @@ describe('verifyResponse', () => {
         const bc3 = await keymaster.bindCredential(credential3, carol);
         const bc4 = await keymaster.bindCredential(credential4, carol);
 
-        const vc3 = await keymaster.attestCredential(bc3);
-        const vc4 = await keymaster.attestCredential(bc4);
+        const vc3 = await keymaster.issueCredential(bc3);
+        const vc4 = await keymaster.issueCredential(bc4);
 
         keymaster.setCurrentId('Carol');
 
@@ -1577,19 +1577,19 @@ describe('verifyResponse', () => {
             credentials: [
                 {
                     schema: credential1,
-                    attestors: [alice]
+                    issuers: [alice]
                 },
                 {
                     schema: credential2,
-                    attestors: [alice]
+                    issuers: [alice]
                 },
                 {
                     schema: credential3,
-                    attestors: [bob]
+                    issuers: [bob]
                 },
                 {
                     schema: credential4,
-                    attestors: [bob]
+                    issuers: [bob]
                 },
             ]
         };
@@ -1655,7 +1655,7 @@ describe('publishCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         await keymaster.publishCredential(did, true);
 
@@ -1672,7 +1672,7 @@ describe('publishCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         await keymaster.publishCredential(did, false);
 
@@ -1698,7 +1698,7 @@ describe('unpublishCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
         await keymaster.publishCredential(did, true);
 
         await keymaster.unpublishCredential(did);
@@ -1741,7 +1741,7 @@ describe('unpublishCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
-        const did = await keymaster.attestCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential);
 
         try {
             await keymaster.unpublishCredential(did);
@@ -2747,5 +2747,151 @@ describe('unpublishPoll', () => {
 
         expect(ok).toBe(true);
         expect(pollData.results).toBe(undefined);
+    });
+});
+
+describe('createSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create a default schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocumentData).toStrictEqual(keymaster.defaultSchema);
+    });
+
+    it('should create a simple schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema(mockSchema);
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocumentData).toStrictEqual(mockSchema);
+    });
+
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.createSchema({ mock: 'not a schema' });
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid schema`);
+        }
+    });
+});
+
+describe('getSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema(mockSchema);
+        const schema = await keymaster.getSchema(did);
+
+        expect(schema).toStrictEqual(mockSchema);
+    });
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.getSchema('bogus');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
+    });
+});
+
+describe('setSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update the schema', async () => {
+        mockFs({});
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                }
+            },
+            "required": [
+                "email"
+            ]
+        };
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        const ok = await keymaster.setSchema(did, mockSchema);
+        const newSchema = await keymaster.getSchema(did);
+
+        expect(ok).toBe(true);
+        expect(newSchema).toStrictEqual(mockSchema);
+    });
+
+    it('should throw an exception on invalid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+
+        try {
+            await keymaster.setSchema(did, { mock: 'not a schema' });
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid schema`);
+        }
     });
 });
