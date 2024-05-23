@@ -17,20 +17,20 @@ function App() {
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
 
-    const [newName, setNewName] = useState(null);
+    const [newName, setNewName] = useState('');
     const [registry, setRegistry] = useState('hyperswarm');
     const [nameList, setNameList] = useState(null);
-    const [aliasName, setAliasName] = useState(null);
-    const [aliasDID, setAliasDID] = useState(null);
-    const [aliasDocs, setAliasDocs] = useState(null);
+    const [aliasName, setAliasName] = useState('');
+    const [aliasDID, setAliasDID] = useState('');
+    const [aliasDocs, setAliasDocs] = useState('');
     const [registries, setRegistries] = useState(null);
 
-    const [groupName, setGroupName] = useState(null);
     const [groupList, setGroupList] = useState(null);
-    const [selectedGroupName, setSelectedGroupName] = useState(null);
-    const [selectedGroup, setSelectedGroup] = useState(null);
-    const [memberDID, setMemberDID] = useState(null);
-    const [memberDocs, setMemberDocs] = useState(null);
+    const [groupName, setGroupName] = useState('');
+    const [selectedGroupName, setSelectedGroupName] = useState('');
+    const [selectedGroup, setSelectedGroup] = useState('');
+    const [memberDID, setMemberDID] = useState('');
+    const [memberDocs, setMemberDocs] = useState('');
 
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
@@ -488,7 +488,7 @@ function App() {
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster Web Wallet</h1>
+                <h1>Keymaster API Demo</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>
@@ -518,7 +518,7 @@ function App() {
                         scrollButtons="auto"
                     >
                         {currentId &&
-                            <Tab key="identity" value="identity" label={'Identity'} />
+                            <Tab key="identity" value="identity" label={'Identities'} />
                         }
                         {currentId &&
                             <Tab key="names" value="names" label={'DIDs'} />
@@ -703,8 +703,12 @@ function App() {
                                             style={{ width: '300px' }}
                                             value={selectedGroupName}
                                             fullWidth
+                                            displayEmpty
                                             onChange={(event) => setSelectedGroupName(event.target.value)}
                                         >
+                                            <MenuItem value="" disabled>
+                                                Select group
+                                            </MenuItem>
                                             {groupList.map((name, index) => (
                                                 <MenuItem value={name} key={index}>
                                                     {name}
