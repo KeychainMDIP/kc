@@ -635,9 +635,7 @@ function App() {
                                                 label="Name"
                                                 style={{ width: '200px' }}
                                                 value={aliasName}
-                                                onChange={(e) =>
-                                                    setAliasName(e.target.value)
-                                                }
+                                                onChange={(e) => setAliasName(e.target.value.trim())}
                                                 fullWidth
                                                 margin="normal"
                                                 inputProps={{ maxLength: 20 }}
@@ -648,9 +646,7 @@ function App() {
                                                 label="DID"
                                                 style={{ width: '500px' }}
                                                 value={aliasDID}
-                                                onChange={(e) =>
-                                                    setAliasDID(e.target.value)
-                                                }
+                                                onChange={(e) => setAliasDID(e.target.value.trim())}
                                                 fullWidth
                                                 margin="normal"
                                                 inputProps={{ maxLength: 80 }}
@@ -684,7 +680,7 @@ function App() {
                                         label="Group Name"
                                         style={{ width: '300px' }}
                                         value={groupName}
-                                        onChange={(e) => setGroupName(e.target.value)}
+                                        onChange={(e) => setGroupName(e.target.value.trim())}
                                         fullWidth
                                         margin="normal"
                                         inputProps={{ maxLength: 30 }}
@@ -736,7 +732,7 @@ function App() {
                                                         label="DID"
                                                         style={{ width: '500px' }}
                                                         value={memberDID}
-                                                        onChange={(e) => setMemberDID(e.target.value)}
+                                                        onChange={(e) => setMemberDID(e.target.value.trim())}
                                                         fullWidth
                                                         margin="normal"
                                                         inputProps={{ maxLength: 80 }}
@@ -791,7 +787,7 @@ function App() {
                                         label="Schema Name"
                                         style={{ width: '300px' }}
                                         value={schemaName}
-                                        onChange={(e) => setSchemaName(e.target.value)}
+                                        onChange={(e) => setSchemaName(e.target.value.trim())}
                                         fullWidth
                                         margin="normal"
                                         inputProps={{ maxLength: 30 }}
@@ -902,9 +898,7 @@ function App() {
                                                         label="Credential DID"
                                                         style={{ width: '500px' }}
                                                         value={heldDID}
-                                                        onChange={(e) =>
-                                                            setHeldDID(e.target.value)
-                                                        }
+                                                        onChange={(e) => setHeldDID(e.target.value.trim())}
                                                         fullWidth
                                                         margin="normal"
                                                         inputProps={{ maxLength: 80 }}
@@ -1022,9 +1016,7 @@ function App() {
                                         label="Name"
                                         style={{ width: '300px' }}
                                         value={newName}
-                                        onChange={(e) =>
-                                            setNewName(e.target.value)
-                                        }
+                                        onChange={(e) => setNewName(e.target.value.trim())}
                                         fullWidth
                                         margin="normal"
                                         inputProps={{ maxLength: 30 }}
@@ -1068,9 +1060,7 @@ function App() {
                                         <TextField
                                             label=""
                                             value={challenge}
-                                            onChange={(e) =>
-                                                setChallenge(e.target.value)
-                                            }
+                                            onChange={(e) => setChallenge(e.target.value.trim())}
                                             fullWidth
                                             margin="normal"
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
@@ -1088,9 +1078,7 @@ function App() {
                                         <TextField
                                             label=""
                                             value={response}
-                                            onChange={(e) =>
-                                                setResponse(e.target.value)
-                                            }
+                                            onChange={(e) => setResponse(e.target.value.trim())}
                                             fullWidth
                                             margin="normal"
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
