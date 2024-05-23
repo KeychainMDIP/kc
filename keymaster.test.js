@@ -1053,7 +1053,7 @@ describe('issueCredential', () => {
         mockFs.restore();
     });
 
-    it('should attest a bound credential when user is issuer', async () => {
+    it('should issue a bound credential when user is issuer', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
@@ -1274,7 +1274,7 @@ describe('createChallenge', () => {
             credentials: [
                 {
                     schema: credentialDid,
-                    attestors: [alice, bob]
+                    issuers: [alice, bob]
                 }
             ]
         };
@@ -1351,7 +1351,7 @@ describe('createResponse', () => {
             credentials: [
                 {
                     schema: credentialDid,
-                    attestors: [alice]
+                    issuers: [alice]
                 }
             ]
         };
@@ -1577,19 +1577,19 @@ describe('verifyResponse', () => {
             credentials: [
                 {
                     schema: credential1,
-                    attestors: [alice]
+                    issuers: [alice]
                 },
                 {
                     schema: credential2,
-                    attestors: [alice]
+                    issuers: [alice]
                 },
                 {
                     schema: credential3,
-                    attestors: [bob]
+                    issuers: [bob]
                 },
                 {
                     schema: credential4,
-                    attestors: [bob]
+                    issuers: [bob]
                 },
             ]
         };

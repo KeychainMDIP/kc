@@ -366,7 +366,7 @@ program
     });
 
 program
-    .command('attest-credential <file> [registry] [name]')
+    .command('issue-credential <file> [registry] [name]')
     .description('Sign and encrypt a bound credential file')
     .action(async (file, registry, name) => {
         try {

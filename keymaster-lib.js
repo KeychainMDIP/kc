@@ -856,8 +856,8 @@ async function findMatchingCredential(credential) {
                 continue;
             }
 
-            if (credential.attestors) {
-                if (!credential.attestors.includes(doc.issuer)) {
+            if (credential.issuers) {
+                if (!credential.issuers.includes(doc.issuer)) {
                     // Attestor not trusted by Verifier
                     continue;
                 }
@@ -979,9 +979,9 @@ export async function verifyResponse(responseDID, challengeDID) {
                 continue;
             }
 
-            // Check if issuer of VP is in the trusted attestor list
-            if (credential.attestors && credential.attestors.length > 0) {
-                if (!credential.attestors.includes(vp.issuer)) {
+            // Check if issuer of VP is in the trusted issuer list
+            if (credential.issuers && credential.issuers.length > 0) {
+                if (!credential.issuers.includes(vp.issuer)) {
                     continue;
                 }
             }

@@ -30,7 +30,7 @@ The basic workflow involves three actors: Alice (the Issuer), Bob (the Holder), 
 
 1. The Issuer (Alice) creates a Credential. The Credential is like a type or a class; it describes the Credential, and specifies a schema. Each Verified Credential is an instance of a Credential.
 1. The Issuer binds a Credential to a Holder
-1. The Issuer attest a Credential, creating a Verifiable Credential (VC),  by signing and encrypting a Bound Credential.
+1. The Issuer issues a Credential, creating a Verifiable Credential (VC),  by signing and encrypting a Bound Credential.
 1. The Holder (Bob) accepts the VC (adding it to their wallet for future use).
 1. The Verifier (Carol) creates a Challenge. A Challenge is a list of Credentials and trusted Issuers.
 1. The Holder creates a Response to the Challenge. A Response contains a list of Verified Presentations that correspond to the Credentials and trusted Issuers listed in the Challenge. If the User's wallet contains the right Verified Credentials, then it will be possible to create a valid Response to the Challenge. The Response is encrypted for the Verifier.
@@ -190,7 +190,7 @@ $ cat bob-twitter.json
 The credential, bound and populated with the subject's information, must now be signed by the issuer and encrypted to the subject's keys:
 
 ```sh
-$ kc attest-credential bob-twitter.json
+$ kc issue-credential bob-twitter.json
 did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2
 ```
 
@@ -278,7 +278,7 @@ $ kc show-wallet
 
 ## Revoking a credential
 
-The issuer of a credential can revoke their attestation at any time. This will blank out the VC's credential content data and set the `didDocumentMetadata.deactivated` property to true.
+The issuer of a credential can revoke their credential at any time. This will blank out the VC's credential content data and set the `didDocumentMetadata.deactivated` property to true.
 
 ```sh
 $ kc revoke-credential did:mdip:test:z3v8AuaZAWJuERtD5CwDu2mNpLHjJ6imdNGTwdZpfKY6FK5ASk2

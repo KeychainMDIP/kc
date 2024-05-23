@@ -43,7 +43,7 @@ Options:
 Commands:
   accept-credential <did> [name]              Save verifiable credential for current ID
   add-name <name> <did>                       Adds a name for a DID
-  attest-credential <file> [registry] [name]  Sign and encrypt a bound credential file
+  issue-credential <file> [registry] [name]  Sign and encrypt a bound credential file
   backup-id                                   Backup the current ID to its registry
   backup-wallet                               Backup wallet to encrypted DID
   bind-credential <file> <did>                Create bound credential for a user

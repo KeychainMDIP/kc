@@ -12,7 +12,7 @@ The Keychain-MDIP CLI is a user-facing tool used to interact with the MDIP sub-s
 The Keychain CLI brings together functionality from three important sub-components:
 
 1. Decentralized Identity (DID) registration and management as defined by W3C DID Core.
-1. Verifiable Credential (VC) attestation and management as defined by W3C VC Data Model.
+1. Verifiable Credential (VC) credential and management as defined by W3C VC Data Model.
 1. Crypto keys and wallet management.
 
 All the CLI commands are self-documented using the `--help` flag, or by running `kc` with no flags:
@@ -33,7 +33,7 @@ Options:
 Commands:
   accept-credential <did> [name]              Save verifiable credential for current ID
   add-name <name> <did>                       Adds a name for a DID
-  attest-credential <file> [registry] [name]  Sign and encrypt a bound credential file
+  issue-credential <file> [registry] [name]  Sign and encrypt a bound credential file
   backup-id                                   Backup the current ID to its registry
   backup-wallet                               Backup wallet to encrypted DID
   bind-credential <file> <did>                Create bound credential for a user
