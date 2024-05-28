@@ -10,6 +10,7 @@ import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
+const REGISTRY = 'hyperswarm';
 const protocol = '/MDIP/v22.05.28';
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
@@ -40,6 +41,7 @@ function isEmpty(obj) {
     return Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
+// eslint-disable-next-line no-unused-vars
 async function shareDb() {
     if (merging) {
         return;
@@ -67,6 +69,7 @@ async function shareDb() {
 
         const msg = {
             hash: hash.toString(),
+            type: 'batch',
             data: batch,
             relays: [],
             node: config.nodeName,
@@ -104,7 +107,7 @@ async function importDIDs(batch) {
 
         for (const events of batch) {
             for (const event of events) {
-                event.registry = 'hyperswarm';
+                event.registry = REGISTRY;
             }
         }
 
@@ -117,7 +120,7 @@ async function importDIDs(batch) {
     }
 }
 
-async function mergeDb(batch) {
+async function mergeBatch(batch) {
 
     if (!batch) {
         return;
@@ -138,6 +141,28 @@ async function mergeDb(batch) {
     await importDIDs(chunk);
 
     merging = false;
+}
+
+// eslint-disable-next-line no-unused-vars
+async function mergeQueue(queue) {
+
+    const batch = [];
+    const now = new Date();
+
+    for (let i = 0; i < queue.length; i++) {
+        batch.push({
+            registry: REGISTRY,
+            time: now.toISOString(),
+            ordinal: [now.getTime(), i],
+            operation: queue[i],
+        });
+    }
+
+    console.log(JSON.stringify(batch, null, 4));
+    console.time('importBatch');
+    const { verified, updated, failed } = await gatekeeper.importBatch(batch);
+    console.timeEnd('importBatch');
+    console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
 }
 
 let queue = asyncLib.queue(async function (task, callback) {
@@ -165,7 +190,7 @@ let queue = asyncLib.queue(async function (task, callback) {
                 logConnection(msg.relays[0]);
                 relayDb(msg);
                 console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
-                await mergeDb(batch);
+                await mergeBatch(batch);
             }
         }
         else {
@@ -180,6 +205,37 @@ let queue = asyncLib.queue(async function (task, callback) {
 
 async function receiveMsg(name, json) {
     queue.push({ name, json });
+}
+
+async function flushQueue() {
+    const queue = await gatekeeper.getQueue(REGISTRY);
+    console.log(JSON.stringify(queue, null, 4));
+
+    if (queue.length > 0) {
+        const hash = cipher.hashJSON(queue);
+        const msg = {
+            hash: hash.toString(),
+            type: 'queue',
+            data: queue,
+            relays: [],
+            node: config.nodeName,
+        };
+
+        await relayDb(msg);
+    }
+    else {
+        console.log('empty queue');
+    }
+}
+
+async function exportLoop() {
+    try {
+        await flushQueue();
+        console.log('export loop waiting 30s...');
+    } catch (error) {
+        console.error(`Error in anchorLoop: ${error}`);
+    }
+    setTimeout(exportLoop, 30 * 1000);
 }
 
 function logConnection(name) {
@@ -214,18 +270,19 @@ async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
 
-    setInterval(async () => {
-        try {
-            const ready = await gatekeeper.isReady();
+    // setInterval(async () => {
+    //     try {
+    //         const ready = await gatekeeper.isReady();
 
-            if (ready) {
-                shareDb();
-            }
-        }
-        catch (error) {
-            console.error(`Error: ${error}`);
-        }
-    }, 30000);
+    //         if (ready) {
+    //             shareDb();
+    //         }
+    //     }
+    //     catch (error) {
+    //         console.error(`Error: ${error}`);
+    //     }
+    // }, 30000);
+    exportLoop();
 }
 
 async function main() {

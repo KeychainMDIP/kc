@@ -50,7 +50,7 @@ describe('anchorSeed', () => {
     });
 });
 
-async function createAgentOp(keypair, version = 1, registry = 'hyperswarm') {
+async function createAgentOp(keypair, version = 1, registry = 'local') {
     const operation = {
         type: "create",
         created: new Date().toISOString(),
@@ -294,7 +294,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'local'); // Specify local registry for this agent
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -339,7 +339,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'local'); // Specify local registry for this agent
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -576,9 +576,9 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        const imported = await gatekeeper.importDID(ops);
+        const { verified } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(0);
+        expect(verified).toBe(1);
     });
 
     it('should import a valid asset DID export', async () => {
@@ -591,9 +591,9 @@ describe('importDID', () => {
         const assetDID = await gatekeeper.createDID(assetOp);
         const ops = await gatekeeper.exportDID(assetDID);
 
-        const imported = await gatekeeper.importDID(ops);
+        const { verified } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(0);
+        expect(verified).toBe(1);
     });
 
     it('should report 0 ops imported when DID exists', async () => {
@@ -607,9 +607,11 @@ describe('importDID', () => {
         await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
-        const imported = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(0);
+        expect(updated).toBe(0);
+        expect(verified).toBe(2);
+        expect(failed).toBe(0);
     });
 
     it('should update events when DID is imported from its native registry', async () => {
@@ -625,9 +627,11 @@ describe('importDID', () => {
 
         ops[0].registry = 'TESS';
         ops[1].registry = 'TESS';
-        const imported = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(2);
+        expect(updated).toBe(2);
+        expect(verified).toBe(0);
+        expect(failed).toBe(0);
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
@@ -646,9 +650,11 @@ describe('importDID', () => {
 
         ops[0].registry = 'hyperswarm';
         ops[1].registry = 'hyperswarm';
-        const imported = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(0);
+        expect(updated).toBe(0);
+        expect(verified).toBe(2);
+        expect(failed).toBe(0);
     });
 
     it('should report 2 ops imported when DID deleted first', async () => {
@@ -664,9 +670,11 @@ describe('importDID', () => {
 
         await gatekeeper.resetDb();
 
-        const imported = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(2);
+        expect(updated).toBe(2);
+        expect(verified).toBe(0);
+        expect(failed).toBe(0);
     });
 
     it('should report N+1 ops imported for N updates', async () => {
@@ -687,9 +695,11 @@ describe('importDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         await gatekeeper.resetDb();
-        const imported = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importDID(ops);
 
-        expect(imported).toBe(N + 1);
+        expect(updated).toBe(N+1);
+        expect(verified).toBe(0);
+        expect(failed).toBe(0);
     });
 
     it('should resolve an imported DID', async () => {
@@ -741,14 +751,13 @@ describe('importDID', () => {
         }
     });
 
-    it('should throw an exception on an array on non-transactions', async () => {
+    it('should report an error on non-transactions', async () => {
         mockFs({});
 
-        try {
-            await gatekeeper.importDID([1, 2, 3]);
-            throw 'Expected to throw an exception';
-        } catch (error) {
-            expect(error).toBe('Invalid import');
-        }
+        const { updated, verified, failed } = await gatekeeper.importDID([1, 2, 3]);
+
+        expect(updated).toBe(0);
+        expect(verified).toBe(0);
+        expect(failed).toBe(3);
     });
 });
