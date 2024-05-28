@@ -24,12 +24,12 @@ const messagesSeen = {};
 let merging = false;
 
 // Keep track of all connections
-const conns = [];
+const connections = [];
 swarm.on('connection', conn => {
     const name = b4a.toString(conn.remotePublicKey, 'hex');
     console.log('* got a connection from:', shortName(name), '*');
-    conns.push(conn);
-    conn.once('close', () => conns.splice(conns.indexOf(conn), 1));
+    connections.push(conn);
+    conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
     conn.on('data', data => receiveMsg(name, data));
 });
 
@@ -75,19 +75,19 @@ async function shareDb() {
             node: config.nodeName,
         };
 
-        await relayDb(msg);
+        await relayMsg(msg);
     }
     catch (error) {
         console.log(error);
     }
 }
 
-async function relayDb(msg) {
+async function relayMsg(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`* publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* publishing ${msg.type}: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
-    for (const conn of conns) {
+    for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
 
         if (!msg.relays.includes(name)) {
@@ -100,23 +100,21 @@ async function relayDb(msg) {
     }
 }
 
-async function importDIDs(batch) {
+async function importBatch(batch) {
     try {
-        console.log(`importDIDs: merging ${batch.length} DIDs...`);
-        console.time('importDIDs');
+        console.log(`importBatch: merging ${batch.length} events...`);
+        console.time('importBatch');
 
-        for (const events of batch) {
-            for (const event of events) {
-                event.registry = REGISTRY;
-            }
+        for (const event of batch) {
+            event.registry = REGISTRY;
         }
 
-        const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
-        console.timeEnd('importDIDs');
+        const { verified, updated, failed } = await gatekeeper.importBatch(batch);
+        console.timeEnd('importBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
     catch (error) {
-        console.error(`importDIDs error: ${error}`);
+        console.error(`importBatch error: ${error}`);
     }
 }
 
@@ -133,42 +131,19 @@ async function mergeBatch(batch) {
         chunk.push(events);
 
         if (chunk.length >= 100) {
-            await importDIDs(chunk);
+            await importBatch(chunk);
             chunk = [];
         }
     }
 
-    await importDIDs(chunk);
+    await importBatch(chunk);
 
     merging = false;
 }
 
-// eslint-disable-next-line no-unused-vars
-async function mergeQueue(queue) {
-
-    const batch = [];
-    const now = new Date();
-
-    for (let i = 0; i < queue.length; i++) {
-        batch.push({
-            registry: REGISTRY,
-            time: now.toISOString(),
-            ordinal: [now.getTime(), i],
-            operation: queue[i],
-        });
-    }
-
-    console.log(JSON.stringify(batch, null, 4));
-    console.time('importBatch');
-    const { verified, updated, failed } = await gatekeeper.importBatch(batch);
-    console.timeEnd('importBatch');
-    console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
-}
-
 let queue = asyncLib.queue(async function (task, callback) {
-    const { name, json } = task;
+    const { name, msg } = task;
     try {
-        const msg = JSON.parse(json);
         const batch = msg.data;
 
         // Have to sort before the hash
@@ -188,7 +163,7 @@ let queue = asyncLib.queue(async function (task, callback) {
 
                 msg.relays.push(name);
                 logConnection(msg.relays[0]);
-                relayDb(msg);
+                relayMsg(msg);
                 console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
                 await mergeBatch(batch);
             }
@@ -204,7 +179,15 @@ let queue = asyncLib.queue(async function (task, callback) {
 }, 1); // concurrency is 1
 
 async function receiveMsg(name, json) {
-    queue.push({ name, json });
+    const msg = JSON.parse(json);
+
+    if (msg.type === 'batch') {
+        queue.push({ name, msg });
+    }
+
+    if (msg.type === 'sync') {
+        shareDb();
+    }
 }
 
 async function flushQueue() {
@@ -212,16 +195,29 @@ async function flushQueue() {
     console.log(JSON.stringify(queue, null, 4));
 
     if (queue.length > 0) {
-        const hash = cipher.hashJSON(queue);
+        const batch = [];
+        const now = new Date();
+
+        for (let i = 0; i < queue.length; i++) {
+            batch.push({
+                registry: REGISTRY,
+                time: now.toISOString(),
+                ordinal: [now.getTime(), i],
+                operation: queue[i],
+            });
+        }
+
+        const hash = cipher.hashJSON(batch);
         const msg = {
             hash: hash.toString(),
-            type: 'queue',
-            data: queue,
+            data: batch,
             relays: [],
             node: config.nodeName,
         };
 
-        await relayDb(msg);
+        await relayMsg(msg);
+        await importBatch(batch);
+        await gatekeeper.clearQueue(queue);
     }
     else {
         console.log('empty queue');
@@ -231,18 +227,18 @@ async function flushQueue() {
 async function exportLoop() {
     try {
         await flushQueue();
-        console.log('export loop waiting 30s...');
+        console.log('export loop waiting 10s...');
     } catch (error) {
         console.error(`Error in anchorLoop: ${error}`);
     }
-    setTimeout(exportLoop, 30 * 1000);
+    setTimeout(exportLoop, 10 * 1000);
 }
 
 function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
-    console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
+    console.log(`--- ${connections.length} nodes connected, ${detected} nodes detected`);
 }
 
 process.on('uncaughtException', (error) => {
@@ -270,18 +266,16 @@ async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
 
-    // setInterval(async () => {
-    //     try {
-    //         const ready = await gatekeeper.isReady();
+    const msg = {
+        type: 'sync',
+        time: new Date().toISOString(),
+        relays: [],
+        node: config.nodeName,
+    };
 
-    //         if (ready) {
-    //             shareDb();
-    //         }
-    //     }
-    //     catch (error) {
-    //         console.error(`Error: ${error}`);
-    //     }
-    // }, 30000);
+    msg.hash = cipher.hashJSON(msg);
+    await relayMsg(msg);
+
     exportLoop();
 }
 
