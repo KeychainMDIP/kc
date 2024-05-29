@@ -186,13 +186,24 @@ async function receiveMsg(name, json) {
 
     if (msg.type === 'batch') {
         queue.push({ name, msg });
+        return;
     }
 
     if (msg.type === 'sync') {
         shareDb();
         msg.relays.push(name);
         relayMsg(msg);
+        return;
     }
+
+    if (msg.type === 'ping') {
+        console.log(`received ping from: ${shortName(name)} (${msg.node || 'anon'})`);
+        msg.relays.push(name);
+        relayMsg(msg);
+        return;
+    }
+
+    console.log(`received unknown message type ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
 }
 
 async function flushQueue() {
@@ -232,11 +243,32 @@ async function flushQueue() {
 async function exportLoop() {
     try {
         await flushQueue();
-        console.log('export loop waiting 10s...');
+        console.log('export loop waiting 13s...');
     } catch (error) {
-        console.error(`Error in anchorLoop: ${error}`);
+        console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, 10 * 1000);
+    setTimeout(exportLoop, 13 * 1000);
+}
+
+async function pingConnections() {
+    const msg = {
+        type: 'ping',
+        time: new Date().toISOString(),
+        relays: [],
+        node: config.nodeName,
+    };
+
+    await relayMsg(msg);
+}
+
+async function pingLoop() {
+    try {
+        await pingConnections();
+        console.log('ping loop waiting 7s...');
+    } catch (error) {
+        console.error(`Error in pingLoop: ${error}`);
+    }
+    setTimeout(pingLoop, 7 * 1000);
 }
 
 function logConnection(name) {
@@ -271,6 +303,7 @@ async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
     exportLoop();
+    pingLoop();
 }
 
 async function main() {
