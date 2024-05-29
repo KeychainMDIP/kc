@@ -37,6 +37,9 @@ swarm.on('connection', conn => {
 async function syncWith(name, conn) {
     console.log(`received connection from: ${shortName(name)}`);
 
+    const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
+    console.log(`${connections.length} connections: ${names}`);
+
     const msg = {
         type: 'sync',
         time: new Date().toISOString(),
@@ -111,6 +114,15 @@ async function relayMsg(msg) {
 
 async function importBatch(batch) {
     try {
+        const hash = cipher.hashJSON(batch);
+
+        if (batchesSeen[hash]) {
+            console.log(`importBatch: already seen ${shortName(hash)}...`);
+            return;
+        }
+
+        batchesSeen[hash] = true;
+
         console.log(`importBatch: merging ${batch.length} events...`);
         console.time('importBatch');
 
@@ -153,32 +165,23 @@ async function mergeBatch(batch) {
 let queue = asyncLib.queue(async function (task, callback) {
     const { name, msg, relay } = task;
     try {
-        const batch = msg.data;
-        const hash = cipher.hashJSON(batch);
-        const seen = batchesSeen[hash];
+        const ready = await gatekeeper.isReady();
 
-        if (!seen) {
-            const ready = await gatekeeper.isReady();
+        if (ready) {
+            const batch = msg.data;
 
-            if (ready) {
-                batchesSeen[hash] = true;
-
-                if (batch.length === 0) {
-                    return;
-                }
-
-                if (relay) {
-                    msg.relays.push(name);
-                    logConnection(msg.relays[0]);
-                    relayMsg(msg);
-                }
-
-                console.log(`* merging new db:   ${shortName(hash)} (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
-                await mergeBatch(batch);
+            if (batch.length === 0) {
+                return;
             }
-        }
-        else {
-            console.log(`* received old db:  ${shortName(hash)} (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+
+            if (relay) {
+                msg.relays.push(name);
+                logConnection(msg.relays[0]);
+                relayMsg(msg);
+            }
+
+            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            await mergeBatch(batch);
         }
     }
     catch (error) {
