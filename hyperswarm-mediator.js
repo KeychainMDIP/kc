@@ -20,7 +20,7 @@ goodbye(() => {
 });
 
 const nodes = {};
-const messagesSeen = {};
+const batchesSeen = {};
 let merging = false;
 
 // Keep track of all connections
@@ -30,11 +30,13 @@ swarm.on('connection', conn => {
     console.log('* got a connection from:', shortName(name), '*');
     connections.push(conn);
     conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
-    conn.on('data', data => receiveMsg(name, data));
-    syncWith(conn);
+    conn.on('data', data => receiveMsg(conn, name, data));
+    syncWith(name, conn);
 });
 
-async function syncWith(conn) {
+async function syncWith(name, conn) {
+    console.log(`received connection from: ${shortName(name)}`);
+
     const msg = {
         type: 'sync',
         time: new Date().toISOString(),
@@ -50,7 +52,7 @@ function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
 
-async function shareDb() {
+async function shareDb(conn) {
     if (merging) {
         return;
     }
@@ -80,7 +82,8 @@ async function shareDb() {
             node: config.nodeName,
         };
 
-        await relayMsg(msg);
+        const json = JSON.stringify(msg);
+        conn.write(json);
     }
     catch (error) {
         console.log(error);
@@ -151,14 +154,14 @@ let queue = asyncLib.queue(async function (task, callback) {
     const { name, msg, relay } = task;
     try {
         const batch = msg.data;
-        const hash = cipher.hashJSON(msg);
-        const seen = messagesSeen[hash];
+        const hash = cipher.hashJSON(batch);
+        const seen = batchesSeen[hash];
 
         if (!seen) {
             const ready = await gatekeeper.isReady();
 
             if (ready) {
-                messagesSeen[hash] = true;
+                batchesSeen[hash] = true;
 
                 if (batch.length === 0) {
                     return;
@@ -170,12 +173,12 @@ let queue = asyncLib.queue(async function (task, callback) {
                     relayMsg(msg);
                 }
 
-                console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+                console.log(`* merging new db:   ${shortName(hash)} (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
                 await mergeBatch(batch);
             }
         }
         else {
-            console.log(`* received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            console.log(`* received old db:  ${shortName(hash)} (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
         }
     }
     catch (error) {
@@ -184,8 +187,10 @@ let queue = asyncLib.queue(async function (task, callback) {
     callback();
 }, 1); // concurrency is 1
 
-async function receiveMsg(name, json) {
+async function receiveMsg(conn, name, json) {
     const msg = JSON.parse(json);
+
+    console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
 
     if (msg.type === 'batch') {
         queue.push({ name, msg, relay: false });
@@ -198,16 +203,15 @@ async function receiveMsg(name, json) {
     }
 
     if (msg.type === 'sync') {
-        shareDb();
+        shareDb(conn);
         return;
     }
 
     if (msg.type === 'ping') {
-        console.log(`received ping from: ${shortName(name)} (${msg.node || 'anon'})`);
         return;
     }
 
-    console.log(`received unknown message type ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
+    console.log(`unknown message type`);
 }
 
 async function flushQueue() {
