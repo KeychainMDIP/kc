@@ -37,11 +37,10 @@ function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
 
-function isEmpty(obj) {
-    return Object.keys(obj).length === 0 && obj.constructor === Object;
-}
+// function isEmpty(obj) {
+//     return Object.keys(obj).length === 0 && obj.constructor === Object;
+// }
 
-// eslint-disable-next-line no-unused-vars
 async function shareDb() {
     if (merging) {
         return;
@@ -53,22 +52,23 @@ async function shareDb() {
         console.timeEnd('getDIDs');
 
         console.time('exportDIDs');
-        const batch = await gatekeeper.exportDIDs(didList);
+        let batch = await gatekeeper.exportDIDs(didList);
         console.timeEnd('exportDIDs');
         console.log(`${batch.length} DIDs fetched`);
 
-        if (isEmpty(batch)) {
+        // if (isEmpty(batch)) {
+        //     return;
+        // }
+
+        batch = batch.flat();
+
+        if (batch.length === 0) {
             return;
         }
 
-        // Have to sort before the hash
-        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
-        const hash = cipher.hashJSON(batch);
-
-        messagesSeen[hash] = true;
+        batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 
         const msg = {
-            hash: hash.toString(),
             type: 'batch',
             data: batch,
             relays: [],
@@ -84,8 +84,9 @@ async function shareDb() {
 
 async function relayMsg(msg) {
     const json = JSON.stringify(msg);
+    const hash = cipher.hashJSON(msg);
 
-    console.log(`* publishing ${msg.type}: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* publishing ${msg.type}: ${shortName(hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -147,8 +148,8 @@ let queue = asyncLib.queue(async function (task, callback) {
         const batch = msg.data;
 
         // Have to sort before the hash
-        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
-        const hash = cipher.hashJSON(batch);
+        //batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
+        const hash = cipher.hashJSON(msg);
         const seen = messagesSeen[hash];
 
         if (!seen) {
@@ -157,7 +158,7 @@ let queue = asyncLib.queue(async function (task, callback) {
             if (ready) {
                 messagesSeen[hash] = true;
 
-                if (isEmpty(batch)) {
+                if (batch.length === 0) {
                     return;
                 }
 
@@ -187,6 +188,8 @@ async function receiveMsg(name, json) {
 
     if (msg.type === 'sync') {
         shareDb();
+        msg.relays.push(name);
+        relayMsg(msg);
     }
 }
 
@@ -273,7 +276,6 @@ async function start() {
         node: config.nodeName,
     };
 
-    msg.hash = cipher.hashJSON(msg);
     await relayMsg(msg);
 
     exportLoop();
