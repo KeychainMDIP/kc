@@ -198,8 +198,6 @@ async function receiveMsg(name, json) {
 
     if (msg.type === 'ping') {
         console.log(`received ping from: ${shortName(name)} (${msg.node || 'anon'})`);
-        msg.relays.push(name);
-        relayMsg(msg);
         return;
     }
 
