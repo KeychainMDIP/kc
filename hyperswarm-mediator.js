@@ -148,7 +148,7 @@ async function mergeBatch(batch) {
 }
 
 let queue = asyncLib.queue(async function (task, callback) {
-    const { name, msg } = task;
+    const { name, msg, relay } = task;
     try {
         const batch = msg.data;
         const hash = cipher.hashJSON(msg);
@@ -164,9 +164,12 @@ let queue = asyncLib.queue(async function (task, callback) {
                     return;
                 }
 
-                msg.relays.push(name);
-                logConnection(msg.relays[0]);
-                relayMsg(msg);
+                if (relay) {
+                    msg.relays.push(name);
+                    logConnection(msg.relays[0]);
+                    relayMsg(msg);
+                }
+
                 console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
                 await mergeBatch(batch);
             }
@@ -185,14 +188,17 @@ async function receiveMsg(name, json) {
     const msg = JSON.parse(json);
 
     if (msg.type === 'batch') {
-        queue.push({ name, msg });
+        queue.push({ name, msg, relay: false });
+        return;
+    }
+
+    if (msg.type === 'queue') {
+        queue.push({ name, msg, relay: true });
         return;
     }
 
     if (msg.type === 'sync') {
         shareDb();
-        msg.relays.push(name);
-        relayMsg(msg);
         return;
     }
 
@@ -221,9 +227,8 @@ async function flushQueue() {
             });
         }
 
-        const hash = cipher.hashJSON(batch);
         const msg = {
-            hash: hash.toString(),
+            type: 'queue',
             data: batch,
             relays: [],
             node: config.nodeName,
@@ -241,11 +246,11 @@ async function flushQueue() {
 async function exportLoop() {
     try {
         await flushQueue();
-        console.log('export loop waiting 13s...');
+        console.log('export loop waiting 10s...');
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, 13 * 1000);
+    setTimeout(exportLoop, 10 * 1000);
 }
 
 async function pingConnections() {
@@ -262,11 +267,11 @@ async function pingConnections() {
 async function pingLoop() {
     try {
         await pingConnections();
-        console.log('ping loop waiting 7s...');
+        console.log('ping loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
     }
-    setTimeout(pingLoop, 7 * 1000);
+    setTimeout(pingLoop, 60 * 1000);
 }
 
 function logConnection(name) {
