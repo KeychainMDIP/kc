@@ -85,6 +85,10 @@ async function shareDb(conn) {
 
         batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 
+        for (const event of batch) {
+            event.registry = REGISTRY;
+        }
+
         writeBatch(config.nodeName, batch);
 
         const msg = {
@@ -133,10 +137,6 @@ async function importBatch(batch) {
 
         console.log(`importBatch: merging ${batch.length} events...`);
         console.time('importBatch');
-
-        for (const event of batch) {
-            event.registry = REGISTRY;
-        }
 
         const { verified, updated, failed } = await gatekeeper.importBatch(batch);
         console.timeEnd('importBatch');
