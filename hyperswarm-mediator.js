@@ -4,6 +4,8 @@ import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
@@ -55,6 +57,11 @@ function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
 
+function writeBatch(name, batch) {
+    fs.writeFileSync(`${name}-batch.json`, JSON.stringify(batch, null, 4));
+    fs.writeFileSync(`${name}-hash.json`, cipher.hashJSON(batch));
+}
+
 async function shareDb(conn) {
     if (merging) {
         return;
@@ -78,6 +85,8 @@ async function shareDb(conn) {
 
         batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 
+        writeBatch(config.nodeName, batch);
+
         const msg = {
             type: 'batch',
             data: batch,
@@ -95,9 +104,8 @@ async function shareDb(conn) {
 
 async function relayMsg(msg) {
     const json = JSON.stringify(msg);
-    const hash = cipher.hashJSON(msg);
 
-    console.log(`* sending ${msg.type}: ${shortName(hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* sending ${msg.type} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -180,8 +188,11 @@ let queue = asyncLib.queue(async function (task, callback) {
                 relayMsg(msg);
             }
 
+            writeBatch(msg.node, batch);
+
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
             await mergeBatch(batch);
+
         }
     }
     catch (error) {
