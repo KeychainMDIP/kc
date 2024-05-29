@@ -31,15 +31,24 @@ swarm.on('connection', conn => {
     connections.push(conn);
     conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
     conn.on('data', data => receiveMsg(name, data));
+    syncWith(conn);
 });
+
+async function syncWith(conn) {
+    const msg = {
+        type: 'sync',
+        time: new Date().toISOString(),
+        relays: [],
+        node: config.nodeName,
+    };
+
+    const json = JSON.stringify(msg);
+    conn.write(json);
+}
 
 function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
-
-// function isEmpty(obj) {
-//     return Object.keys(obj).length === 0 && obj.constructor === Object;
-// }
 
 async function shareDb() {
     if (merging) {
@@ -55,10 +64,6 @@ async function shareDb() {
         let batch = await gatekeeper.exportDIDs(didList);
         console.timeEnd('exportDIDs');
         console.log(`${batch.length} DIDs fetched`);
-
-        // if (isEmpty(batch)) {
-        //     return;
-        // }
 
         batch = batch.flat();
 
@@ -86,7 +91,7 @@ async function relayMsg(msg) {
     const json = JSON.stringify(msg);
     const hash = cipher.hashJSON(msg);
 
-    console.log(`* publishing ${msg.type}: ${shortName(hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* sending ${msg.type}: ${shortName(hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -146,9 +151,6 @@ let queue = asyncLib.queue(async function (task, callback) {
     const { name, msg } = task;
     try {
         const batch = msg.data;
-
-        // Have to sort before the hash
-        //batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
         const hash = cipher.hashJSON(msg);
         const seen = messagesSeen[hash];
 
@@ -268,16 +270,6 @@ const topic = b4a.from(networkID, 'hex');
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
-
-    const msg = {
-        type: 'sync',
-        time: new Date().toISOString(),
-        relays: [],
-        node: config.nodeName,
-    };
-
-    await relayMsg(msg);
-
     exportLoop();
 }
 
