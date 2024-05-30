@@ -59,6 +59,17 @@ jobs:
             ${{ env.REGISTRY }}/keychainmdip/gatekeeper:release
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Build and push keymaster image
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: Dockerfile.keymaster
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/keychainmdip/keymaster:${{ steps.calver.outputs.version }}
+            ${{ env.REGISTRY }}/keychainmdip/keymaster:release
+          labels: ${{ steps.meta.outputs.labels }}
+
       - name: Build and push hyperswarm mediator image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
