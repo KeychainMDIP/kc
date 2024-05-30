@@ -4,7 +4,6 @@ import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
-import fs from 'fs';
 
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
