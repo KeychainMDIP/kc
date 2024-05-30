@@ -457,16 +457,6 @@ async function importUpdateEvent(event) {
     }
 }
 
-// TBD deprecate
-export async function importDID(batch) {
-    return importBatch(batch);
-}
-
-// TBD deprecate
-export async function importDIDs(batch) {
-    return importBatch(batch);
-}
-
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {

@@ -52,17 +52,17 @@ program
                 chunk.push(events);
 
                 if (chunk.length >= 10) {
-                    console.time('importDIDs');
-                    const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
-                    console.timeEnd('importDIDs');
+                    console.time('importBatch');
+                    const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
+                    console.timeEnd('importBatch');
                     console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
                     chunk = [];
                 }
             }
 
-            console.time('importDIDs');
-            const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
-            console.timeEnd('importDIDs');
+            console.time('importBatch');
+            const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
+            console.timeEnd('importBatch');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
         }
         catch (error) {

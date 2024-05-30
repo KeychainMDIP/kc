@@ -147,29 +147,9 @@ export async function exportDID(did) {
     }
 }
 
-export async function importDID(ops) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/import/`, ops);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
 export async function exportDIDs(dids) {
     try {
         const response = await axios.post(`${URL}/api/v1/export-dids`, dids);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function importDIDs(batch) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/import-dids/`, batch);
         return response.data;
     }
     catch (error) {

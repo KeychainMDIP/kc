@@ -491,11 +491,11 @@ describe('rotateKeys', () => {
             await keymaster.rotateKeys();
         }
 
-        const ops = await keymaster.exportDID(alice);
+        const events = await keymaster.exportDID(alice);
 
         await gatekeeper.resetDb();
 
-        const { updated } = await keymaster.importDID(ops);
+        const { updated } = await keymaster.importDID(events);
 
         expect(updated).toBe(rotations + 1);
     });

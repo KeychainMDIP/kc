@@ -562,7 +562,7 @@ describe('exportDID', () => {
     });
 });
 
-describe('importDID', () => {
+describe('importBatch', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -576,7 +576,7 @@ describe('importDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        const { verified } = await gatekeeper.importDID(ops);
+        const { verified } = await gatekeeper.importBatch(ops);
 
         expect(verified).toBe(1);
     });
@@ -591,7 +591,7 @@ describe('importDID', () => {
         const assetDID = await gatekeeper.createDID(assetOp);
         const ops = await gatekeeper.exportDID(assetDID);
 
-        const { verified } = await gatekeeper.importDID(ops);
+        const { verified } = await gatekeeper.importBatch(ops);
 
         expect(verified).toBe(1);
     });
@@ -607,7 +607,7 @@ describe('importDID', () => {
         await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
-        const { updated, verified, failed } = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
         expect(updated).toBe(0);
         expect(verified).toBe(2);
@@ -627,7 +627,7 @@ describe('importDID', () => {
 
         ops[0].registry = 'TESS';
         ops[1].registry = 'TESS';
-        const { updated, verified, failed } = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
         expect(updated).toBe(2);
         expect(verified).toBe(0);
@@ -646,11 +646,11 @@ describe('importDID', () => {
         const ops = await gatekeeper.exportDID(did);
         ops[0].registry = 'TESS';
         ops[1].registry = 'TESS';
-        await gatekeeper.importDID(ops);
+        await gatekeeper.importBatch(ops);
 
         ops[0].registry = 'hyperswarm';
         ops[1].registry = 'hyperswarm';
-        const { updated, verified, failed } = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
         expect(updated).toBe(0);
         expect(verified).toBe(2);
@@ -670,7 +670,7 @@ describe('importDID', () => {
 
         await gatekeeper.resetDb();
 
-        const { updated, verified, failed } = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
         expect(updated).toBe(2);
         expect(verified).toBe(0);
@@ -695,9 +695,9 @@ describe('importDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         await gatekeeper.resetDb();
-        const { updated, verified, failed } = await gatekeeper.importDID(ops);
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
-        expect(updated).toBe(N+1);
+        expect(updated).toBe(N + 1);
         expect(verified).toBe(0);
         expect(failed).toBe(0);
     });
@@ -712,7 +712,7 @@ describe('importDID', () => {
 
         await gatekeeper.resetDb();
 
-        await gatekeeper.importDID(ops);
+        await gatekeeper.importBatch(ops);
         const doc = await gatekeeper.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
@@ -722,7 +722,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            await gatekeeper.importDID();
+            await gatekeeper.importBatch();
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -733,7 +733,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            await gatekeeper.importDID('mock');
+            await gatekeeper.importBatch('mock');
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -744,7 +744,7 @@ describe('importDID', () => {
         mockFs({});
 
         try {
-            await gatekeeper.importDID([]);
+            await gatekeeper.importBatch([]);
             throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('Invalid import');
@@ -754,7 +754,7 @@ describe('importDID', () => {
     it('should report an error on non-transactions', async () => {
         mockFs({});
 
-        const { updated, verified, failed } = await gatekeeper.importDID([1, 2, 3]);
+        const { updated, verified, failed } = await gatekeeper.importBatch([1, 2, 3]);
 
         expect(updated).toBe(0);
         expect(verified).toBe(0);

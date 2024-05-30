@@ -550,7 +550,7 @@ program
         try {
             const contents = fs.readFileSync(file).toString();
             const ops = JSON.parse(contents);
-            const did = await keymaster.importDID(ops);
+            const did = await keymaster.importBatch(ops);
             console.log(did);
         }
         catch (error) {
