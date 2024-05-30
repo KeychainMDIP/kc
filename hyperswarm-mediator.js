@@ -62,33 +62,56 @@ function writeBatch(name, batch) {
     fs.writeFileSync(`${name}-hash.json`, cipher.hashJSON(batch));
 }
 
+async function createBatch() {
+    console.time('getDIDs');
+    const didList = await gatekeeper.getDIDs();
+    console.timeEnd('getDIDs');
+
+    console.time('exportDIDs');
+    let batch = await gatekeeper.exportDIDs(didList);
+    console.timeEnd('exportDIDs');
+    console.log(`${batch.length} DIDs fetched`);
+
+    batch = batch.flat();
+
+    if (batch.length === 0) {
+        return;
+    }
+
+    batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
+
+    for (const event of batch) {
+        event.registry = REGISTRY;
+    }
+
+    return batch;
+}
+
+async function initializeBatchesSeen() {
+    const batch = await createBatch();
+
+    let chunk = [];
+    for (const events of batch) {
+        chunk.push(events);
+
+        if (chunk.length >= 100) {
+            const hash = cipher.hashJSON(chunk);
+            batchesSeen[hash] = true;
+            chunk = [];
+
+            console.log(`batch in db: ${shortName(hash)}`);
+        }
+    }
+}
+
 async function shareDb(conn) {
+    // TBD deprecate merging here
     if (merging) {
         return;
     }
 
     try {
-        console.time('getDIDs');
-        const didList = await gatekeeper.getDIDs();
-        console.timeEnd('getDIDs');
-
-        console.time('exportDIDs');
-        let batch = await gatekeeper.exportDIDs(didList);
-        console.timeEnd('exportDIDs');
-        console.log(`${batch.length} DIDs fetched`);
-
-        batch = batch.flat();
-
-        if (batch.length === 0) {
-            return;
-        }
-
-        batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
-
-        for (const event of batch) {
-            event.registry = REGISTRY;
-        }
-
+        const batch = await createBatch();
         writeBatch(config.nodeName, batch);
 
         const msg = {
@@ -342,6 +365,7 @@ async function start() {
 
 async function main() {
     await gatekeeper.waitUntilReady();
+    await initializeBatchesSeen();
 
     const discovery = swarm.join(topic, { client: true, server: true });
 
