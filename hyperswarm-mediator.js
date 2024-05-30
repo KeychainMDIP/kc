@@ -23,7 +23,6 @@ goodbye(() => {
 
 const nodes = {};
 const batchesSeen = {};
-let merging = false;
 
 // Keep track of all connections
 const connections = [];
@@ -55,11 +54,6 @@ async function syncWith(name, conn) {
 
 function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
-}
-
-function writeBatch(name, batch) {
-    fs.writeFileSync(`${name}-batch.json`, JSON.stringify(batch, null, 4));
-    fs.writeFileSync(`${name}-hash.json`, cipher.hashJSON(batch));
 }
 
 async function createBatch() {
@@ -105,14 +99,8 @@ async function initializeBatchesSeen() {
 }
 
 async function shareDb(conn) {
-    // TBD deprecate merging here
-    if (merging) {
-        return;
-    }
-
     try {
         const batch = await createBatch();
-        writeBatch(config.nodeName, batch);
 
         const msg = {
             type: 'batch',
@@ -176,8 +164,6 @@ async function mergeBatch(batch) {
         return;
     }
 
-    merging = true;
-
     let chunk = [];
     for (const events of batch) {
         chunk.push(events);
@@ -189,8 +175,6 @@ async function mergeBatch(batch) {
     }
 
     await importBatch(chunk);
-
-    merging = false;
 }
 
 let importQueue = asyncLib.queue(async function (task, callback) {
@@ -204,9 +188,6 @@ let importQueue = asyncLib.queue(async function (task, callback) {
             if (batch.length === 0) {
                 return;
             }
-
-            // TBD temp debug
-            writeBatch(msg.node, batch);
 
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
             await mergeBatch(batch);
