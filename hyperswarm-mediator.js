@@ -170,8 +170,8 @@ async function mergeBatch(batch) {
     merging = false;
 }
 
-let queue = asyncLib.queue(async function (task, callback) {
-    const { name, msg, relay } = task;
+let importQueue = asyncLib.queue(async function (task, callback) {
+    const { name, msg } = task;
     try {
         const ready = await gatekeeper.isReady();
 
@@ -182,21 +182,31 @@ let queue = asyncLib.queue(async function (task, callback) {
                 return;
             }
 
-            if (relay) {
-                msg.relays.push(name);
-                logConnection(msg.relays[0]);
-                relayMsg(msg);
-            }
-
+            // TBD temp debug
             writeBatch(msg.node, batch);
 
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
             await mergeBatch(batch);
-
         }
     }
     catch (error) {
-        console.log('receiveMsg error:', error);
+        console.log('mergeBatch error:', error);
+    }
+    callback();
+}, 1); // concurrency is 1
+
+let exportQueue = asyncLib.queue(async function (task, callback) {
+    const { name, msg, conn } = task;
+    try {
+        const ready = await gatekeeper.isReady();
+
+        if (ready) {
+            console.log(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            await shareDb(conn);
+        }
+    }
+    catch (error) {
+        console.log('shareDb error:', error);
     }
     callback();
 }, 1); // concurrency is 1
@@ -207,17 +217,20 @@ async function receiveMsg(conn, name, json) {
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
 
     if (msg.type === 'batch') {
-        queue.push({ name, msg, relay: false });
+        importQueue.push({ name, msg });
         return;
     }
 
     if (msg.type === 'queue') {
-        queue.push({ name, msg, relay: true });
+        importQueue.push({ name, msg });
+        msg.relays.push(name);
+        logConnection(msg.relays[0]);
+        relayMsg(msg);
         return;
     }
 
     if (msg.type === 'sync') {
-        shareDb(conn);
+        exportQueue.push({ name, msg, conn });
         return;
     }
 
