@@ -316,6 +316,8 @@ async function collectGarbage() {
     const expired = [];
 
     for (const did of didList) {
+        console.log(`gc check: ${did}`);
+
         const doc = await gatekeeper.resolveDID(did);
         const now = new Date();
         const created = new Date(doc.didDocumentMetadata.created);
