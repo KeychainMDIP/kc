@@ -155,10 +155,10 @@ v1router.get('/queue/:registry', async (req, res) => {
     }
 });
 
-v1router.post('/queue/clear', async (req, res) => {
+v1router.post('/queue/:registry/clear', async (req, res) => {
     try {
         const events = req.body;
-        const queue = await gatekeeper.clearQueue(events);
+        const queue = await gatekeeper.clearQueue(req.params.registry, events);
         res.json(queue);
     } catch (error) {
         console.error(error);

@@ -192,7 +192,7 @@ async function anchorBatch() {
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
-            const ok = await gatekeeper.clearQueue(batch);
+            const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
             if (ok) {
                 const db = loadDb();

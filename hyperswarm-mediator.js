@@ -275,7 +275,7 @@ async function flushQueue() {
 
         await relayMsg(msg);
         await importBatch(batch);
-        await gatekeeper.clearQueue(queue);
+        await gatekeeper.clearQueue(REGISTRY, queue);
     }
     else {
         console.log('empty queue');

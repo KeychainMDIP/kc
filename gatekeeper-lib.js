@@ -151,6 +151,10 @@ export async function createDID(operation) {
             });
 
             await db.queueOperation(operation.mdip.registry, operation);
+
+            if (operation.mdip.registry !== 'hyperswarm') {
+                await db.queueOperation('hyperswarm', operation);
+            }
         }
 
         return did;
@@ -384,6 +388,10 @@ export async function updateDID(operation) {
 
         await db.queueOperation(registry, operation);
 
+        if (registry !== 'hyperswarm') {
+            await db.queueOperation('hyperswarm', operation);
+        }
+
         return true;
     }
     catch (error) {
@@ -566,8 +574,7 @@ export async function getQueue(registry) {
     return queue;
 }
 
-export async function clearQueue(events) {
-    const registry = events[0].mdip.registry;
+export async function clearQueue(registry, events) {
     const ok = db.clearQueue(registry, events);
     return ok;
 }

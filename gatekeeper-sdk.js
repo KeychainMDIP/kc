@@ -187,9 +187,9 @@ export async function getQueue(registry) {
     }
 }
 
-export async function clearQueue(events) {
+export async function clearQueue(registry, events) {
     try {
-        const response = await axios.post(`${URL}/api/v1/queue/clear`, events);
+        const response = await axios.post(`${URL}/api/v1/queue/${registry}/clear`, events);
         return response.data;
     }
     catch (error) {
