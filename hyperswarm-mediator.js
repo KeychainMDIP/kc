@@ -12,7 +12,9 @@ import config from './config.js';
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const protocol = '/MDIP/v22.05.28';
+const BATCH_SIZE = 100;
+const PROTOCOL = '/MDIP/v22.05.28';
+
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
@@ -80,6 +82,12 @@ async function createBatch() {
     return batch;
 }
 
+function cacheBatch(batch) {
+    const hash = cipher.hashJSON(batch);
+    batchesSeen[hash] = true;
+    console.log(`batch in db: ${shortName(hash)}`);
+}
+
 async function initializeBatchesSeen() {
     const batch = await createBatch();
 
@@ -87,14 +95,13 @@ async function initializeBatchesSeen() {
     for (const events of batch) {
         chunk.push(events);
 
-        if (chunk.length >= 100) {
-            const hash = cipher.hashJSON(chunk);
-            batchesSeen[hash] = true;
+        if (chunk.length >= BATCH_SIZE) {
+            cacheBatch(chunk);
             chunk = [];
-
-            console.log(`batch in db: ${shortName(hash)}`);
         }
     }
+
+    cacheBatch(chunk);
 }
 
 async function shareDb(conn) {
@@ -167,7 +174,7 @@ async function mergeBatch(batch) {
     for (const events of batch) {
         chunk.push(events);
 
-        if (chunk.length >= 100) {
+        if (chunk.length >= BATCH_SIZE) {
             await importBatch(chunk);
             chunk = [];
         }
@@ -270,7 +277,7 @@ async function flushQueue() {
 
         await relayMsg(msg);
         await importBatch(batch);
-        await gatekeeper.clearQueue(queue);
+        await gatekeeper.clearQueue(REGISTRY, queue);
     }
     else {
         console.log('empty queue');
@@ -287,25 +294,54 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
-async function pingConnections() {
-    const msg = {
-        type: 'ping',
-        time: new Date().toISOString(),
-        relays: [],
-        node: config.nodeName,
-    };
-
-    await relayMsg(msg);
-}
-
 async function pingLoop() {
     try {
-        await pingConnections();
+        const msg = {
+            type: 'ping',
+            time: new Date().toISOString(),
+            relays: [],
+            node: config.nodeName,
+        };
+
+        await relayMsg(msg);
         console.log('ping loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
     }
     setTimeout(pingLoop, 60 * 1000);
+}
+
+async function collectGarbage() {
+    const didList = await gatekeeper.getDIDs();
+    const expired = [];
+
+    for (const did of didList) {
+        console.log(`gc check: ${did}`);
+
+        const doc = await gatekeeper.resolveDID(did);
+        const now = new Date();
+        const created = new Date(doc.didDocumentMetadata.created);
+        const ageInHours = (now - created) / 1000 / 60 / 60;
+
+        if (doc.mdip.registry === REGISTRY && doc.mdip.type === 'asset' && ageInHours > 24) {
+            expired.push(did);
+        }
+    }
+
+    if (expired.length > 0) {
+        console.log(`garbage collecting ${expired.length} DIDs...`);
+        await gatekeeper.removeDIDs(expired);
+    }
+}
+
+async function gcLoop() {
+    try {
+        await collectGarbage();
+        console.log('garbage collection loop waiting 10m...');
+    } catch (error) {
+        console.error(`Error in gcLoop: ${error}`);
+    }
+    setTimeout(gcLoop, 10 * 60 * 1000);
 }
 
 function logConnection(name) {
@@ -332,15 +368,16 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(protocol);
+const hash = sha256(PROTOCOL);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
+    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
     exportLoop();
     pingLoop();
+    gcLoop();
 }
 
 async function main() {

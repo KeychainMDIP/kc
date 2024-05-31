@@ -157,6 +157,16 @@ export async function exportDIDs(dids) {
     }
 }
 
+export async function removeDIDs(dids) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/remove-dids`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function importBatch(batch) {
     try {
         const response = await axios.post(`${URL}/api/v1/import-batch/`, batch);
@@ -177,9 +187,9 @@ export async function getQueue(registry) {
     }
 }
 
-export async function clearQueue(events) {
+export async function clearQueue(registry, events) {
     try {
-        const response = await axios.post(`${URL}/api/v1/queue/clear`, events);
+        const response = await axios.post(`${URL}/api/v1/queue/${registry}/clear`, events);
         return response.data;
     }
     catch (error) {

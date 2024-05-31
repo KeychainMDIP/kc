@@ -123,6 +123,17 @@ v1router.post('/export-dids', async (req, res) => {
     }
 });
 
+v1router.post('/remove-dids', async (req, res) => {
+    try {
+        const dids = req.body;
+        const response = await gatekeeper.removeDIDs(dids);
+        res.json(response);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/import-batch', async (req, res) => {
     try {
         const batch = req.body;
@@ -144,10 +155,10 @@ v1router.get('/queue/:registry', async (req, res) => {
     }
 });
 
-v1router.post('/queue/clear', async (req, res) => {
+v1router.post('/queue/:registry/clear', async (req, res) => {
     try {
         const events = req.body;
-        const queue = await gatekeeper.clearQueue(events);
+        const queue = await gatekeeper.clearQueue(req.params.registry, events);
         res.json(queue);
     } catch (error) {
         console.error(error);

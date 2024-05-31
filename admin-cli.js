@@ -125,13 +125,13 @@ program
     });
 
 program
-    .command('clear-queue <batch>')
+    .command('clear-queue <registry> <batch>')
     .description('Clear a registry queue')
-    .action(async (batch) => {
+    .action(async (registry, batch) => {
         try {
             const events = await keymaster.resolveAsset(batch);
             console.log(JSON.stringify(events, null, 4));
-            const ok = await gatekeeper.clearQueue(events);
+            const ok = await gatekeeper.clearQueue(registry, events);
 
             if (ok) {
                 console.log("Batch cleared");
