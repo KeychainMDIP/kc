@@ -12,7 +12,9 @@ import config from './config.js';
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const protocol = '/MDIP/v22.05.28';
+const BATCH_SIZE = 100;
+const PROTOCOL = '/MDIP/v22.05.28';
+
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
@@ -93,7 +95,7 @@ async function initializeBatchesSeen() {
     for (const events of batch) {
         chunk.push(events);
 
-        if (chunk.length >= 100) {
+        if (chunk.length >= BATCH_SIZE) {
             cacheBatch(chunk);
             chunk = [];
         }
@@ -172,7 +174,7 @@ async function mergeBatch(batch) {
     for (const events of batch) {
         chunk.push(events);
 
-        if (chunk.length >= 100) {
+        if (chunk.length >= BATCH_SIZE) {
             await importBatch(chunk);
             chunk = [];
         }
@@ -364,13 +366,13 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(protocol);
+const hash = sha256(PROTOCOL);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
+    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
     exportLoop();
     pingLoop();
     gcLoop();
