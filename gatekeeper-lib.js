@@ -8,7 +8,7 @@ import config from './config.js';
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm', 'TESS'];
-const queueRegistries = ['TESS'];
+//const queueRegistries = ['TESS'];
 
 let db = null;
 let helia = null;
@@ -144,7 +144,7 @@ export async function createDID(operation) {
 
         if (ops.length === 0) {
             await db.addEvent(did, {
-                registry: 'hyperswarm',
+                registry: 'local',
                 time: operation.created,
                 ordinal: 0,
                 operation: operation
@@ -375,16 +375,14 @@ export async function updateDID(operation) {
 
         const registry = doc.mdip.registry;
 
-        if (queueRegistries.includes(registry)) {
-            await db.queueOperation(registry, operation);
-        }
-
         await db.addEvent(operation.did, {
-            registry: 'hyperswarm',
+            registry: 'local',
             time: operation.signature.signed,
             ordinal: 0,
             operation: operation
         });
+
+        await db.queueOperation(registry, operation);
 
         return true;
     }
@@ -459,57 +457,6 @@ async function importUpdateEvent(event) {
     }
 }
 
-export async function importDID(events) {
-    if (!events || !Array.isArray(events) || events.length < 1) {
-        throw "Invalid import";
-    }
-
-    let updated = 0;
-
-    for (const event of events) {
-        const imported = await importEvent(event);
-
-        if (imported) {
-            updated += 1;
-        }
-    }
-
-    return updated;
-}
-
-export async function importDIDs(batch) {
-    let verified = 0;
-    let updated = 0;
-    let failed = 0;
-
-    for (const events of batch) {
-        console.time('importDID');
-        try {
-            for (const event of events) {
-                const imported = await importEvent(event);
-
-                if (imported) {
-                    updated += 1;
-                }
-                else {
-                    verified += 1;
-                }
-            }
-        }
-        catch (error) {
-            console.error(error);
-            failed += 1;
-        }
-        console.timeEnd('importDID');
-    }
-
-    return {
-        verified: verified,
-        updated: updated,
-        failed: failed,
-    };
-}
-
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
@@ -574,12 +521,16 @@ export async function importEvent(event) {
 }
 
 export async function importBatch(batch) {
+    if (!batch || !Array.isArray(batch) || batch.length < 1) {
+        throw "Invalid import";
+    }
+
     let verified = 0;
     let updated = 0;
     let failed = 0;
 
     for (const event of batch) {
-        console.time('importEvent');
+        //console.time('importEvent');
         try {
             const imported = await importEvent(event);
 
@@ -591,10 +542,10 @@ export async function importBatch(batch) {
             }
         }
         catch (error) {
-            console.error(error);
+            //console.error(error);
             failed += 1;
         }
-        console.timeEnd('importEvent');
+        //console.timeEnd('importEvent');
     }
 
     return {

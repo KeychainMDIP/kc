@@ -123,28 +123,6 @@ v1router.post('/export-dids', async (req, res) => {
     }
 });
 
-v1router.post('/import', async (req, res) => {
-    try {
-        const ops = req.body;
-        const did = await gatekeeper.importDID(ops);
-        res.json(did);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.post('/import-dids', async (req, res) => {
-    try {
-        const batch = req.body;
-        const did = await gatekeeper.importDIDs(batch);
-        res.json(did);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
 v1router.post('/import-batch', async (req, res) => {
     try {
         const batch = req.body;

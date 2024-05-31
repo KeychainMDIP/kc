@@ -4,13 +4,15 @@ import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
+
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as cipher from './cipher.js';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
-const protocol = '/MDIP/v22.05.14';
+const REGISTRY = 'hyperswarm';
+const protocol = '/MDIP/v22.05.28';
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
@@ -19,72 +21,107 @@ goodbye(() => {
 });
 
 const nodes = {};
-const messagesSeen = {};
-let merging = false;
+const batchesSeen = {};
 
 // Keep track of all connections
-const conns = [];
+const connections = [];
 swarm.on('connection', conn => {
     const name = b4a.toString(conn.remotePublicKey, 'hex');
     console.log('* got a connection from:', shortName(name), '*');
-    conns.push(conn);
-    conn.once('close', () => conns.splice(conns.indexOf(conn), 1));
-    conn.on('data', data => receiveMsg(name, data));
+    connections.push(conn);
+    conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
+    conn.on('data', data => receiveMsg(conn, name, data));
+    syncWith(name, conn);
 });
+
+async function syncWith(name, conn) {
+    console.log(`received connection from: ${shortName(name)}`);
+
+    const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
+    console.log(`${connections.length} connections: ${names}`);
+
+    const msg = {
+        type: 'sync',
+        time: new Date().toISOString(),
+        relays: [],
+        node: config.nodeName,
+    };
+
+    const json = JSON.stringify(msg);
+    conn.write(json);
+}
 
 function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
 
-function isEmpty(obj) {
-    return Object.keys(obj).length === 0 && obj.constructor === Object;
-}
+async function createBatch() {
+    console.time('getDIDs');
+    const didList = await gatekeeper.getDIDs();
+    console.timeEnd('getDIDs');
 
-async function shareDb() {
-    if (merging) {
+    console.time('exportDIDs');
+    let batch = await gatekeeper.exportDIDs(didList);
+    console.timeEnd('exportDIDs');
+    console.log(`${batch.length} DIDs fetched`);
+
+    batch = batch.flat();
+
+    if (batch.length === 0) {
         return;
     }
 
-    try {
-        console.time('getDIDs');
-        const didList = await gatekeeper.getDIDs();
-        console.timeEnd('getDIDs');
+    batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 
-        console.time('exportDIDs');
-        const batch = await gatekeeper.exportDIDs(didList);
-        console.timeEnd('exportDIDs');
-        console.log(`${batch.length} DIDs fetched`);
+    for (const event of batch) {
+        event.registry = REGISTRY;
+    }
 
-        if (isEmpty(batch)) {
-            return;
+    return batch;
+}
+
+async function initializeBatchesSeen() {
+    const batch = await createBatch();
+
+    let chunk = [];
+    for (const events of batch) {
+        chunk.push(events);
+
+        if (chunk.length >= 100) {
+            const hash = cipher.hashJSON(chunk);
+            batchesSeen[hash] = true;
+            chunk = [];
+
+            console.log(`batch in db: ${shortName(hash)}`);
         }
+    }
+}
 
-        // Have to sort before the hash
-        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
-        const hash = cipher.hashJSON(batch);
-
-        messagesSeen[hash] = true;
+async function shareDb(conn) {
+    try {
+        const batch = await createBatch();
 
         const msg = {
-            hash: hash.toString(),
+            type: 'batch',
             data: batch,
             relays: [],
             node: config.nodeName,
         };
 
-        await relayDb(msg);
+        const json = JSON.stringify(msg);
+        conn.write(json);
     }
     catch (error) {
         console.log(error);
     }
 }
 
-async function relayDb(msg) {
+async function relayMsg(msg) {
     const json = JSON.stringify(msg);
 
-    console.log(`* publishing my db: ${shortName(msg.hash)} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* sending ${msg.type} from: ${shortName(peerName)} (${config.nodeName}) *`);
 
-    for (const conn of conns) {
+    for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
 
         if (!msg.relays.includes(name)) {
@@ -97,96 +134,185 @@ async function relayDb(msg) {
     }
 }
 
-async function importDIDs(batch) {
+async function importBatch(batch) {
     try {
-        console.log(`importDIDs: merging ${batch.length} DIDs...`);
-        console.time('importDIDs');
+        const hash = cipher.hashJSON(batch);
 
-        for (const events of batch) {
-            for (const event of events) {
-                event.registry = 'hyperswarm';
-            }
+        if (batchesSeen[hash]) {
+            console.log(`importBatch: already seen ${shortName(hash)}...`);
+            return;
         }
 
-        const { verified, updated, failed } = await gatekeeper.importDIDs(batch);
-        console.timeEnd('importDIDs');
+        batchesSeen[hash] = true;
+
+        console.log(`importBatch: merging ${batch.length} events...`);
+        console.time('importBatch');
+
+        const { verified, updated, failed } = await gatekeeper.importBatch(batch);
+        console.timeEnd('importBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
     }
     catch (error) {
-        console.error(`importDIDs error: ${error}`);
+        console.error(`importBatch error: ${error}`);
     }
 }
 
-async function mergeDb(batch) {
+async function mergeBatch(batch) {
 
     if (!batch) {
         return;
     }
-
-    merging = true;
 
     let chunk = [];
     for (const events of batch) {
         chunk.push(events);
 
         if (chunk.length >= 100) {
-            await importDIDs(chunk);
+            await importBatch(chunk);
             chunk = [];
         }
     }
 
-    await importDIDs(chunk);
-
-    merging = false;
+    await importBatch(chunk);
 }
 
-let queue = asyncLib.queue(async function (task, callback) {
-    const { name, json } = task;
+let importQueue = asyncLib.queue(async function (task, callback) {
+    const { name, msg } = task;
     try {
-        const msg = JSON.parse(json);
-        const batch = msg.data;
+        const ready = await gatekeeper.isReady();
 
-        // Have to sort before the hash
-        batch.sort((a, b) => new Date(a[0].operation.signature.signed) - new Date(b[0].operation.signature.signed));
-        const hash = cipher.hashJSON(batch);
-        const seen = messagesSeen[hash];
+        if (ready) {
+            const batch = msg.data;
 
-        if (!seen) {
-            const ready = await gatekeeper.isReady();
-
-            if (ready) {
-                messagesSeen[hash] = true;
-
-                if (isEmpty(batch)) {
-                    return;
-                }
-
-                msg.relays.push(name);
-                logConnection(msg.relays[0]);
-                relayDb(msg);
-                console.log(`* merging new db:   ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
-                await mergeDb(batch);
+            if (batch.length === 0) {
+                return;
             }
-        }
-        else {
-            console.log(`* received old db:  ${shortName(hash)} from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+
+            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            await mergeBatch(batch);
         }
     }
     catch (error) {
-        console.log('receiveMsg error:', error);
+        console.log('mergeBatch error:', error);
     }
     callback();
 }, 1); // concurrency is 1
 
-async function receiveMsg(name, json) {
-    queue.push({ name, json });
+let exportQueue = asyncLib.queue(async function (task, callback) {
+    const { name, msg, conn } = task;
+    try {
+        const ready = await gatekeeper.isReady();
+
+        if (ready) {
+            console.log(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            await shareDb(conn);
+        }
+    }
+    catch (error) {
+        console.log('shareDb error:', error);
+    }
+    callback();
+}, 1); // concurrency is 1
+
+async function receiveMsg(conn, name, json) {
+    const msg = JSON.parse(json);
+
+    console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
+
+    if (msg.type === 'batch') {
+        importQueue.push({ name, msg });
+        return;
+    }
+
+    if (msg.type === 'queue') {
+        importQueue.push({ name, msg });
+        msg.relays.push(name);
+        logConnection(msg.relays[0]);
+        relayMsg(msg);
+        return;
+    }
+
+    if (msg.type === 'sync') {
+        exportQueue.push({ name, msg, conn });
+        return;
+    }
+
+    if (msg.type === 'ping') {
+        return;
+    }
+
+    console.log(`unknown message type`);
+}
+
+async function flushQueue() {
+    const queue = await gatekeeper.getQueue(REGISTRY);
+    console.log(JSON.stringify(queue, null, 4));
+
+    if (queue.length > 0) {
+        const batch = [];
+        const now = new Date();
+
+        for (let i = 0; i < queue.length; i++) {
+            batch.push({
+                registry: REGISTRY,
+                time: now.toISOString(),
+                ordinal: [now.getTime(), i],
+                operation: queue[i],
+            });
+        }
+
+        const msg = {
+            type: 'queue',
+            data: batch,
+            relays: [],
+            node: config.nodeName,
+        };
+
+        await relayMsg(msg);
+        await importBatch(batch);
+        await gatekeeper.clearQueue(queue);
+    }
+    else {
+        console.log('empty queue');
+    }
+}
+
+async function exportLoop() {
+    try {
+        await flushQueue();
+        console.log('export loop waiting 10s...');
+    } catch (error) {
+        console.error(`Error in exportLoop: ${error}`);
+    }
+    setTimeout(exportLoop, 10 * 1000);
+}
+
+async function pingConnections() {
+    const msg = {
+        type: 'ping',
+        time: new Date().toISOString(),
+        relays: [],
+        node: config.nodeName,
+    };
+
+    await relayMsg(msg);
+}
+
+async function pingLoop() {
+    try {
+        await pingConnections();
+        console.log('ping loop waiting 60s...');
+    } catch (error) {
+        console.error(`Error in pingLoop: ${error}`);
+    }
+    setTimeout(pingLoop, 60 * 1000);
 }
 
 function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
-    console.log(`--- ${conns.length} nodes connected, ${detected} nodes detected`);
+    console.log(`--- ${connections.length} nodes connected, ${detected} nodes detected`);
 }
 
 process.on('uncaughtException', (error) => {
@@ -212,24 +338,14 @@ const topic = b4a.from(networkID, 'hex');
 
 async function start() {
     console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log('joined topic:', shortName(b4a.toString(topic, 'hex')));
-
-    setInterval(async () => {
-        try {
-            const ready = await gatekeeper.isReady();
-
-            if (ready) {
-                shareDb();
-            }
-        }
-        catch (error) {
-            console.error(`Error: ${error}`);
-        }
-    }, 30000);
+    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
+    exportLoop();
+    pingLoop();
 }
 
 async function main() {
     await gatekeeper.waitUntilReady();
+    await initializeBatchesSeen();
 
     const discovery = swarm.join(topic, { client: true, server: true });
 

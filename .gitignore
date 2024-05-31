@@ -2,5 +2,6 @@ node_modules/
 tmp/
 ipfs/
 .env
+*.json
 last-compose-file.txt
 custodials

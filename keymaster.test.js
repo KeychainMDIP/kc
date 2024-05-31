@@ -491,13 +491,13 @@ describe('rotateKeys', () => {
             await keymaster.rotateKeys();
         }
 
-        const ops = await keymaster.exportDID(alice);
+        const events = await keymaster.exportDID(alice);
 
         await gatekeeper.resetDb();
 
-        const imported = await keymaster.importDID(ops);
+        const { updated } = await keymaster.importDID(events);
 
-        expect(imported).toBe(rotations + 1);
+        expect(updated).toBe(rotations + 1);
     });
 });
 
@@ -1172,9 +1172,9 @@ describe('revokeCredential', () => {
         await gatekeeper.resetDb();
 
         await keymaster.importDID(userExport);
-        const imported = await keymaster.importDID(credentialExport);
+        const { updated } = await keymaster.importDID(credentialExport);
 
-        expect(imported).toBe(2);
+        expect(updated).toBe(2);
     });
 });
 

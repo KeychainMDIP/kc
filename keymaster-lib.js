@@ -1000,8 +1000,8 @@ export async function exportDID(did) {
     return gatekeeper.exportDID(lookupDID(did));
 }
 
-export async function importDID(ops) {
-    return gatekeeper.importDID(ops);
+export async function importDID(events) {
+    return gatekeeper.importBatch(events);
 }
 
 export async function createGroup(name) {
