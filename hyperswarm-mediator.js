@@ -68,11 +68,6 @@ async function createBatch() {
     console.log(`${batch.length} DIDs fetched`);
 
     batch = batch.flat();
-
-    if (batch.length === 0) {
-        return;
-    }
-
     batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 
     for (const event of batch) {
