@@ -80,6 +80,12 @@ async function createBatch() {
     return batch;
 }
 
+function cacheBatch(batch) {
+    const hash = cipher.hashJSON(batch);
+    batchesSeen[hash] = true;
+    console.log(`batch in db: ${shortName(hash)}`);
+}
+
 async function initializeBatchesSeen() {
     const batch = await createBatch();
 
@@ -88,13 +94,12 @@ async function initializeBatchesSeen() {
         chunk.push(events);
 
         if (chunk.length >= 100) {
-            const hash = cipher.hashJSON(chunk);
-            batchesSeen[hash] = true;
+            cacheBatch(chunk);
             chunk = [];
-
-            console.log(`batch in db: ${shortName(hash)}`);
         }
     }
+
+    cacheBatch(chunk);
 }
 
 async function shareDb(conn) {
@@ -308,6 +313,37 @@ async function pingLoop() {
     setTimeout(pingLoop, 60 * 1000);
 }
 
+async function collectGarbage() {
+    const didList = await gatekeeper.getDIDs();
+    const expired = [];
+
+    for (const did of didList) {
+        const doc = await gatekeeper.resolveDID(did);
+        const now = new Date();
+        const created = new Date(doc.didDocumentMetadata.created);
+        const ageInHours = (now - created) / 1000 / 60 / 60;
+
+        if (doc.mdip.registry === REGISTRY && doc.mdip.type === 'asset' && ageInHours > 24) {
+            expired.push(did);
+        }
+    }
+
+    if (expired.length > 0) {
+        console.log(`garbage collecting ${expired.length} DIDs...`);
+        await gatekeeper.removeDIDs(expired);
+    }
+}
+
+async function gcLoop() {
+    try {
+        await collectGarbage();
+        console.log('garbage collection loop waiting 10m...');
+    } catch (error) {
+        console.error(`Error in gcLoop: ${error}`);
+    }
+    setTimeout(gcLoop, 10 * 60 * 1000);
+}
+
 function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
@@ -341,6 +377,7 @@ async function start() {
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${protocol}`);
     exportLoop();
     pingLoop();
+    gcLoop();
 }
 
 async function main() {

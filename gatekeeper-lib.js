@@ -416,6 +416,12 @@ export async function exportDIDs(dids) {
     return batch;
 }
 
+export async function removeDIDs(dids) {
+    for (const did of dids) {
+        await db.deleteEvents(did);
+    }
+}
+
 async function importCreateEvent(event) {
     try {
         const valid = await verifyCreate(event.operation);

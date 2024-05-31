@@ -157,6 +157,16 @@ export async function exportDIDs(dids) {
     }
 }
 
+export async function removeDIDs(dids) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/remove-dids`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function importBatch(batch) {
     try {
         const response = await axios.post(`${URL}/api/v1/import-batch/`, batch);
