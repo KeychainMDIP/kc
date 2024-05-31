@@ -292,20 +292,16 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
-async function pingConnections() {
-    const msg = {
-        type: 'ping',
-        time: new Date().toISOString(),
-        relays: [],
-        node: config.nodeName,
-    };
-
-    await relayMsg(msg);
-}
-
 async function pingLoop() {
     try {
-        await pingConnections();
+        const msg = {
+            type: 'ping',
+            time: new Date().toISOString(),
+            relays: [],
+            node: config.nodeName,
+        };
+
+        await relayMsg(msg);
         console.log('ping loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
