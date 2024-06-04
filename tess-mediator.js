@@ -5,7 +5,7 @@ import * as keymaster from './keymaster-lib.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = 139520;
+const FIRST = 142849;
 
 const client = new BtcClient({
     network: 'mainnet',
