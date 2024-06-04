@@ -5,7 +5,8 @@ import * as cipher from './cipher.js';
 let gatekeeper = null;
 const dataFolder = 'data';
 const walletName = `${dataFolder}/wallet.json`;
-const defaultRegistry = 'hyperswarm';
+const defaultRegistry = 'TESS';
+const ephemeralRegistry = 'hyperswarm';
 
 export async function start(gk) {
     gatekeeper = gk;
@@ -830,7 +831,7 @@ export async function createChallenge(challenge) {
         throw "Invalid input";
     }
 
-    return createAsset(challenge);
+    return createAsset(challenge, ephemeralRegistry);
 }
 
 async function findMatchingCredential(credential) {
@@ -927,7 +928,7 @@ export async function createResponse(did) {
         match: match,
     };
 
-    const responseDid = await encryptJSON(response, requestor);
+    const responseDid = await encryptJSON(response, requestor, ephemeralRegistry);
 
     return responseDid;
 }
@@ -1260,7 +1261,6 @@ export async function createPoll(poll) {
         throw "Invalid poll deadline";
     }
 
-    // TBD validate poll
     return createAsset(poll);
 }
 
