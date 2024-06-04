@@ -150,11 +150,9 @@ export async function createDID(operation) {
                 operation: operation
             });
 
-            await db.queueOperation(operation.mdip.registry, operation);
-
-            if (operation.mdip.registry !== 'hyperswarm') {
-                await db.queueOperation('hyperswarm', operation);
-            }
+            // Create events are distributed only by hyperswarm
+            // The DID's registry specifies where to look for *update* events
+            await db.queueOperation('hyperswarm', operation);
         }
 
         return did;
