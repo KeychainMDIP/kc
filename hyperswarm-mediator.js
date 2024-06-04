@@ -310,8 +310,10 @@ async function collectGarbage() {
     const didList = await gatekeeper.getDIDs();
     const expired = [];
 
-    for (const did of didList) {
-        console.log(`gc check: ${did}`);
+    for (let i = 0; i < didList.length; i++) {
+        const did = didList[i];
+
+        console.log(`gc check: ${i} ${did}`);
 
         const doc = await gatekeeper.resolveDID(did);
         const now = new Date();
