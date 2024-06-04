@@ -5,7 +5,7 @@ import * as keymaster from './keymaster-lib.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = 142849;
+const FIRST = 142865;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -36,6 +36,14 @@ function loadDb() {
 
 function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
+}
+
+function checkDb() {
+    const db = loadDb();
+
+    if (db.height > 0 && (db.height - db.scanned) < FIRST) {
+        fs.rmSync(dbName);
+    }
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -260,6 +268,8 @@ async function waitForTess() {
 }
 
 async function main() {
+    checkDb();
+    
     await waitForTess();
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper);
