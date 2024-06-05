@@ -24,6 +24,7 @@ function loadDb() {
     else {
         return {
             height: 0,
+            first: FIRST,
             time: "",
             blockCount: 0,
             scanned: 0,
@@ -41,7 +42,7 @@ function writeDb(db) {
 function checkDb() {
     const db = loadDb();
 
-    if (db.height > 0 && (db.height - db.scanned) < FIRST) {
+    if (!db.first || db.first < FIRST) {
         fs.rmSync(dbName);
     }
 }
@@ -190,6 +191,20 @@ async function importBatch() {
 }
 
 async function anchorBatch() {
+    try {
+        const walletInfo = await client.getWalletInfo();
+        console.log(JSON.stringify(walletInfo, null, 4));
+
+        if (walletInfo.balance < 1) {
+            console.log('TESS wallet has insufficient funds');
+            return;
+        }
+    }
+    catch {
+        console.log('TESS node not accessible');
+        return;
+    }
+
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(JSON.stringify(batch, null, 4));
 
@@ -269,7 +284,7 @@ async function waitForTess() {
 
 async function main() {
     checkDb();
-    
+
     await waitForTess();
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper);
