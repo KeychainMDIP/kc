@@ -102,14 +102,14 @@ async function createUpdateOp(keypair, did, doc) {
     return signed;
 }
 
-async function createAssetOp(agent, keypair) {
+async function createAssetOp(agent, keypair, registry = 'local') {
     const dataAnchor = {
         type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
-            registry: "hyperswarm",
+            registry: registry,
         },
         controller: agent,
         data: "mockData",

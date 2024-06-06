@@ -88,6 +88,11 @@ async function verifyCreateAsset(operation) {
     }
 
     const doc = await resolveDID(operation.signature.signer, operation.signature.signed);
+
+    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+        throw "Invalid operation";
+    }
+
     const operationCopy = JSON.parse(JSON.stringify(operation));
     delete operationCopy.signature;
     const msgHash = cipher.hashJSON(operationCopy);
@@ -142,6 +147,7 @@ export async function createDID(operation) {
         const did = await anchorSeed(operation);
         const ops = await exportDID(did);
 
+        // Check to see if we already have this DID in the db
         if (ops.length === 0) {
             await db.addEvent(did, {
                 registry: 'local',
@@ -151,8 +157,11 @@ export async function createDID(operation) {
             });
 
             // Create events are distributed only by hyperswarm
-            // The DID's registry specifies where to look for *update* events
-            await db.queueOperation('hyperswarm', operation);
+            // (because the DID's registry specifies where to look for *update* events)
+            // Don't distribute local DIDs
+            if (operation.mdip.registry !== 'local') {
+                await db.queueOperation('hyperswarm', operation);
+            }
         }
 
         return did;
@@ -383,6 +392,10 @@ export async function updateDID(operation) {
             ordinal: 0,
             operation: operation
         });
+
+        if (registry === 'local') {
+            return true;
+        }
 
         await db.queueOperation(registry, operation);
 
