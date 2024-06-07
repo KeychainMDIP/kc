@@ -369,7 +369,7 @@ export async function verifySignature(obj) {
     }
 }
 
-async function updateDID(did, doc) {
+export async function updateDID(did, doc) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -385,7 +385,7 @@ async function updateDID(did, doc) {
     return gatekeeper.updateDID(signed);
 }
 
-async function revokeDID(did) {
+export async function revokeDID(did) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
