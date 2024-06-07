@@ -1900,6 +1900,26 @@ describe('groupAdd', () => {
         expect(data).toStrictEqual(expectedGroup);
     });
 
+    it('should not increment version when adding a member a 2nd time', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        const dox1 = await keymaster.resolveDID(groupDid);
+        const version1 = dox1.didDocumentMetadata.version;
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        const dox2 = await keymaster.resolveDID(groupDid);
+        const version2 = dox2.didDocumentMetadata.version;
+
+        expect(version2).toBe(version1);
+    });
+
     it('should add multiple members to the group', async () => {
         mockFs({});
 
@@ -2125,6 +2145,24 @@ describe('groupRemove', () => {
         };
 
         expect(data).toStrictEqual(expectedGroup);
+    });
+
+    it('should not increment version when removing a non-existent member', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dox1 = await keymaster.resolveDID(groupDid);
+        const version1 = dox1.didDocumentMetadata.version;
+
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        await keymaster.groupRemove(groupDid, dataDid);
+        const dox2 = await keymaster.resolveDID(groupDid);
+        const version2 = dox2.didDocumentMetadata.version;
+
+        expect(version2).toBe(version1);
     });
 
     it('should not remove a non-DID from the group', async () => {
