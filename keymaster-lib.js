@@ -1018,64 +1018,87 @@ export async function getGroup(name) {
     return resolveAsset(name);
 }
 
-export async function groupAdd(group, member) {
-    const didGroup = lookupDID(group);
-    const doc = await resolveDID(didGroup);
+export async function groupAdd(groupId, memberId) {
+    const groupDID = lookupDID(groupId);
+    const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
 
-    if (!data.members) {
+    if (!data.members || !Array.isArray(data.members)) {
         throw "Invalid group";
     }
 
-    const didMember = lookupDID(member);
+    const memberDID = lookupDID(memberId);
 
-    if (didMember === didGroup) {
+    try {
+        // test for valid member DID
+        await resolveDID(memberDID);
+    }
+    catch {
+        throw "Invalid DID";
+    }
+
+    // If already a member, return immediately
+    if (data.members.includes(memberDID)) {
+        return data;
+    }
+
+    // Can't add a group to itself
+    if (memberDID === groupDID) {
         throw "Invalid member";
     }
 
-    const isMember = await groupTest(member, group);
+    // Can't add a mutual membership relation
+    const isMember = await groupTest(memberId, groupId);
 
     if (isMember) {
         throw "Invalid member";
     }
 
-    // test for valid member DID
-    await resolveDID(didMember);
-
     const members = new Set(data.members);
-    members.add(didMember);
+    members.add(memberDID);
     data.members = Array.from(members);
 
-    const ok = await updateDID(didGroup, doc);
+    const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw `Error: can't update ${group}`
+        throw `Error: can't update ${groupId}`
     }
 
     return data;
 }
 
-export async function groupRemove(group, member) {
-    const didGroup = lookupDID(group);
-    const doc = await resolveDID(didGroup);
+export async function groupRemove(groupId, memberId) {
+    const groupDID = lookupDID(groupId);
+    const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
 
     if (!data.members) {
         throw "Invalid group";
     }
 
-    const didMember = lookupDID(member);
-    // test for valid member DID
-    await resolveDID(didMember);
+    const memberDID = lookupDID(memberId);
+
+    try {
+        // test for valid member DID
+        await resolveDID(memberDID);
+    }
+    catch {
+        throw "Invalid DID";
+    }
+
+    // If not already a member, return immediately
+    if (!data.members.includes(memberDID)) {
+        return data;
+    }
 
     const members = new Set(data.members);
-    members.delete(didMember);
+    members.delete(memberDID);
     data.members = Array.from(members);
 
-    const ok = await updateDID(didGroup, doc);
+    const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw `Error: can't update ${group}`
+        throw `Error: can't update ${groupId}`
     }
 
     return data;
