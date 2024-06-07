@@ -1,3 +1,5 @@
+[![unit-test](https://github.com/KeychainMDIP/kc/actions/workflows/unit-test.yml/badge.svg)](https://github.com/KeychainMDIP/kc/actions/workflows/unit-test.yml)
+
 # kc
 
 kc is the reference implementation of the Multi Dimensional Identity Protocol ([MDIP](doc/DID-scheme/README.md)).
