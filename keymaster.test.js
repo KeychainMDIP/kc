@@ -1138,7 +1138,7 @@ describe('revokeCredential', () => {
         expect(ok2).toBe(false);
     });
 
-    it('should return false if user does not control verifiable credential', async () => {
+    it('should throw exception if user does not control verifiable credential', async () => {
         mockFs({});
 
         await keymaster.createId('Alice');
@@ -1151,9 +1151,16 @@ describe('revokeCredential', () => {
         const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
+        keymaster.removeId('Alice');
 
-        const ok = await keymaster.revokeCredential(did);
-        expect(ok).toBe(false);
+        try {
+            await keymaster.revokeCredential(did);
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Unknown ID');
+        }
+
     });
 
     it('should import a revoked credential', async () => {
