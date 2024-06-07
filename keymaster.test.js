@@ -730,6 +730,111 @@ describe('createAsset', () => {
     });
 });
 
+describe('updateDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update an asset DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        const ok = await keymaster.updateDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+    });
+
+    it('should update an asset DID when current ID is not owner ID', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+
+        keymaster.setCurrentId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        keymaster.setCurrentId('Alice');
+
+        const ok = await keymaster.updateDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocument.controller).toBe(bob);
+        expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+    });
+});
+
+describe('revokeDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should revoke an asset DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        const ok = await keymaster.revokeDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocument).toStrictEqual({});
+        expect(doc2.didDocumentData).toStrictEqual({});
+        expect(doc2.didDocumentMetadata.deactivated).toBe(true);
+    });
+
+    it('should revoke an asset DID when current ID is not owner ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+
+        keymaster.setCurrentId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        keymaster.setCurrentId('Alice');
+
+        const ok = await keymaster.revokeDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocument).toStrictEqual({});
+        expect(doc2.didDocumentData).toStrictEqual({});
+        expect(doc2.didDocumentMetadata.deactivated).toBe(true);
+    });
+});
+
 function generateRandomString(length) {
     let result = '';
     let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -1138,7 +1243,7 @@ describe('revokeCredential', () => {
         expect(ok2).toBe(false);
     });
 
-    it('should return false if user does not control verifiable credential', async () => {
+    it('should throw exception if user does not control verifiable credential', async () => {
         mockFs({});
 
         await keymaster.createId('Alice');
@@ -1151,9 +1256,16 @@ describe('revokeCredential', () => {
         const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
+        keymaster.removeId('Alice');
 
-        const ok = await keymaster.revokeCredential(did);
-        expect(ok).toBe(false);
+        try {
+            await keymaster.revokeCredential(did);
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Unknown ID');
+        }
+
     });
 
     it('should import a revoked credential', async () => {

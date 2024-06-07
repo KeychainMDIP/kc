@@ -206,26 +206,38 @@ export function setCurrentId(name) {
     }
 }
 
-function fetchId(name) {
+function fetchId(id) {
     const wallet = loadWallet();
-    let id = null;
+    let idInfo = null;
 
-    if (name) {
-        id = wallet.ids[name];
+    if (id) {
+        if (id.startsWith('did')) {
+            for (const name of Object.keys(wallet.ids)) {
+                const info = wallet.ids[name];
 
-        if (!id) {
-            throw "Unknown ID";
+                if (info.did === id) {
+                    idInfo = info;
+                    break;
+                }
+            }
+        }
+        else {
+            idInfo = wallet.ids[id];
         }
     }
     else {
-        id = wallet.ids[wallet.current];
+        idInfo = wallet.ids[wallet.current];
 
-        if (!id) {
+        if (!idInfo) {
             throw "No current ID";
         }
     }
 
-    return id;
+    if (!idInfo) {
+        throw "Unknown ID";
+    }
+
+    return idInfo;
 }
 
 function hdKeyPair() {
@@ -306,10 +318,10 @@ export async function decryptJSON(did) {
     return JSON.parse(plaintext);
 }
 
-export async function addSignature(obj, name = null) {
+export async function addSignature(obj, controller = null) {
     // Fetches current ID if name is missing
-    const id = fetchId(name);
-    const keypair = fetchKeyPair(name);
+    const id = fetchId(controller);
+    const keypair = fetchKeyPair(controller);
 
     try {
         const msgHash = cipher.hashJSON(obj);
@@ -357,7 +369,7 @@ export async function verifySignature(obj) {
     }
 }
 
-async function updateDID(did, doc, name = null) {
+export async function updateDID(did, doc) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -368,12 +380,12 @@ async function updateDID(did, doc, name = null) {
         prev: prev,
     };
 
-    // Will sign with current ID if name is missing
-    const signed = await addSignature(operation, name);
+    const controller = current.didDocument.controller || current.didDocument.id;
+    const signed = await addSignature(operation, controller);
     return gatekeeper.updateDID(signed);
 }
 
-async function revokeDID(did) {
+export async function revokeDID(did) {
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -383,7 +395,8 @@ async function revokeDID(did) {
         prev: prev,
     };
 
-    const signed = await addSignature(operation);
+    const controller = current.didDocument.controller || current.didDocument.id;
+    const signed = await addSignature(operation, controller);
     return gatekeeper.deleteDID(signed);
 }
 
@@ -533,7 +546,7 @@ export async function backupId(name = null) {
     const vaultDid = await createAsset({ backup: backup }, registry, name);
 
     doc.didDocumentData.vault = vaultDid;
-    const ok = await updateDID(id.did, doc, name);
+    const ok = await updateDID(id.did, doc);
 
     return ok;
 }
@@ -681,6 +694,7 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     const signed = await addSignature(operation, name);
     const did = await gatekeeper.createDID(signed);
 
+    // TBD skip if registry is hyperswarm?
     addToOwned(did);
     return did;
 }
