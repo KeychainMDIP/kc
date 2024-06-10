@@ -1,6 +1,8 @@
 
 // import { webcrypto } from 'node:crypto';
 // if (!globalThis.crypto) globalThis.crypto = webcrypto;
+import { Buffer } from 'buffer';
+global.Buffer = Buffer;
 
 import * as bip39 from 'bip39';
 import HDKey from 'browser-hdkey';
@@ -11,6 +13,7 @@ import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
+
 
 export function generateMnemonic() {
     return bip39.generateMnemonic();

@@ -2,7 +2,7 @@ import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper-sdk.js';
 
-const walletName = '`mdip-keymaster';
+const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
@@ -17,7 +17,7 @@ export async function listRegistries() {
 }
 
 function saveWallet(wallet) {
-    window.localStorage.setItem(walletName, wallet);
+    window.localStorage.setItem(walletName, JSON.stringify(wallet));
 }
 
 export function loadWallet() {
