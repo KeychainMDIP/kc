@@ -4,6 +4,7 @@ export default {
     moduleFileExtensions: ['js', 'mjs'],
     testPathIgnorePatterns: [
         "/node_modules/",
-        "/kc-app/"
+        "/kc-app/",
+        "/keymaster-app/"
     ],
 };
