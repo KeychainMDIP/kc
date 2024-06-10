@@ -1,0 +1,40 @@
+{
+  "name": "browser-hdkey",
+  "version": "0.1.7",
+  "description": "Bitcoin BIP32 hierarchical deterministic keys",
+  "main": "lib/hdkey.js",
+  "types": "lib/hdkey.d.ts",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/cryptocoinjs/hdkey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "bitcoin",
+    "bip32",
+    "bip",
+    "key",
+    "hierarchical",
+    "deterministic",
+    "crypto"
+  ],
+  "bugs": {
+    "url": "https://github.com/cryptocoinjs/hdkey/issues"
+  },
+  "homepage": "https://github.com/cryptocoinjs/hdkey",
+  "files": [
+    "./lib/hdkey.d.ts",
+    "./lib/hdkey.js"
+  ],
+  "dependencies": {
+    "@noble/hashes": "^1.3.3",
+    "bells-secp256k1": "^0.1.0",
+    "bs58check": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/bs58check": "^2.1.2",
+    "@types/secp256k1": "^4.0.6"
+  }
+}

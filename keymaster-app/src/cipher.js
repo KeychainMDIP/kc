@@ -1,11 +1,9 @@
-
-// import { webcrypto } from 'node:crypto';
-// if (!globalThis.crypto) globalThis.crypto = webcrypto;
 import { Buffer } from 'buffer';
 global.Buffer = Buffer;
 
 import * as bip39 from 'bip39';
-import HDKey from 'browser-hdkey';
+//import HDKey from 'browser-hdkey';
+import HDKey from './browser-hdkey/lib/hdkey.js';
 
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';

@@ -58,7 +58,7 @@ function App() {
     async function refreshAll() {
         try {
             const currentId = await keymaster.getCurrentId();
-    	    const registries = await keymaster.listRegistries();
+            const registries = await keymaster.listRegistries();
             setRegistries(registries);
 
             if (currentId) {
@@ -80,7 +80,7 @@ function App() {
             }
             else {
                 setTab('create');
-	    }
+            }
         } catch (error) {
             window.alert(error);
         }
@@ -488,7 +488,7 @@ function App() {
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster API Demo</h1>
+                <h1>Keymaster Browser Wallet Demo</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>

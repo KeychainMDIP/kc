@@ -10,6 +10,15 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Copy the client build to the keymaster-app directory
+COPY keymaster-app/package*.json ./keymaster-app/
+COPY keymaster-app/.eslintignore ./keymaster-app/
+RUN cd keymaster-app && npm ci
+
+COPY keymaster-app/public ./keymaster-app/public/
+COPY keymaster-app/src ./keymaster-app/src/
+RUN cd keymaster-app && npm run build
+
 # Copy app
 COPY *.js ./
 
