@@ -6,8 +6,13 @@ global.Buffer = Buffer;
 
 import * as bip39 from 'bip39';
 import HDKey from 'browser-hdkey';
-import * as secp from '@noble/secp256k1';
+
+import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
+secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
+
+import * as secp from '@noble/secp256k1';
+//import { sha256 } from '@noble/hashes/sha256';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
@@ -84,7 +89,8 @@ export function hashJSON(json) {
 
 export async function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
-    const signature = await secp.signAsync(msgHash, privKey);
+    //const signature = await secp.signAsync(msgHash, privKey);
+    const signature = secp.sign(msgHash, privKey);
     const sigHex = signature.toCompactHex();
     return sigHex;
 }

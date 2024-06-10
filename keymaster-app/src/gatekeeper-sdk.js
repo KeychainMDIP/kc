@@ -2,7 +2,7 @@ import axios from 'axios';
 //import config from './config.js';
 
 //export const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}`;
-export const URL = 'http://localhost:4226';
+export const URL = '';
 
 function throwError(error) {
     if (error.response) {
