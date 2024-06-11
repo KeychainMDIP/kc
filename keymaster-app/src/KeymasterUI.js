@@ -3,7 +3,7 @@ import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import './App.css';
 
-function KeymasterUI({ keymaster }) {
+function KeymasterUI({ keymaster, title }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -487,7 +487,7 @@ function KeymasterUI({ keymaster }) {
         <div className="App">
             <header className="App-header">
 
-                <h1>Keymaster Browser Wallet Demo</h1>
+                <h1>{title}</h1>
 
                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                     <Grid item>
