@@ -1,3 +1,7 @@
+// Same as ../../keymaster-lib.js except
+// - uses local cipher.js that works in a browser
+// - uses local gatekeeper-sdk.js that is hard-coded to talk directly to the origin
+
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher.js';
 import * as gatekeeper from './gatekeeper-sdk.js';

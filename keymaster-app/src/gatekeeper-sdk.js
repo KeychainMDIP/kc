@@ -1,7 +1,6 @@
 import axios from 'axios';
-//import config from './config.js';
 
-//export const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}`;
+// Same as ../../gatekeeper-sdk.js except URL is overridden here to talk directly to origin
 export const URL = '';
 
 function throwError(error) {
