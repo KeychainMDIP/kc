@@ -14,7 +14,7 @@
     "@testing-library/user-event": "^13.5.0",
     "bip32": "^4.0.0",
     "bip39": "^3.1.0",
-    "browser-hdkey": "github:macterra/browser-hdkey",
+    "browser-hdkey": "github:KeychainMDIP/browser-hdkey",
     "buffer": "^6.0.3",
     "ethereumjs-wallet": "^1.0.2",
     "hdkey": "^2.1.0",
