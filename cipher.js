@@ -1,11 +1,17 @@
-
+// node.js 18 and older, requires polyfilling globalThis.crypto
 import { webcrypto } from 'node:crypto';
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 import * as bip39 from 'bip39';
 import * as secp from '@noble/secp256k1';
 import HDKey from 'hdkey';
+
+// Polyfill for sync sign
+// Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
+import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
+secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
+
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
@@ -79,9 +85,9 @@ export function hashJSON(json) {
     return hashMessage(canonicalize(json));
 }
 
-export async function signHash(msgHash, privateJwk) {
+export function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
-    const signature = await secp.signAsync(msgHash, privKey);
+    const signature = secp.sign(msgHash, privKey);
     const sigHex = signature.toCompactHex();
     return sigHex;
 }

@@ -90,7 +90,7 @@ export async function resolveSeedBank() {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -119,7 +119,7 @@ async function updateSeedBank(doc) {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -152,7 +152,7 @@ export async function backupWallet(registry = defaultRegistry) {
         data: { backup: backup },
     };
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -325,7 +325,7 @@ export async function addSignature(obj, controller = null) {
 
     try {
         const msgHash = cipher.hashJSON(obj);
-        const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+        const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
         return {
             ...obj,
@@ -480,7 +480,7 @@ export async function createId(name, registry = defaultRegistry) {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {

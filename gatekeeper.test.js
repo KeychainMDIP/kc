@@ -63,7 +63,7 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
     return {
         ...operation,
@@ -87,7 +87,7 @@ async function createUpdateOp(keypair, did, doc) {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
     const signed = {
         ...operation,
@@ -116,7 +116,7 @@ async function createAssetOp(agent, keypair, registry = 'local') {
     };
 
     const msgHash = cipher.hashJSON(dataAnchor);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const assetOp = {
         ...dataAnchor,
         signature: {

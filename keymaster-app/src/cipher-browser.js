@@ -10,7 +10,7 @@ import * as bip39 from 'bip39';
 // Fork of browser version at https://github.com/KeychainMDIP/browser-hdkey
 import HDKey from 'browser-hdkey';
 
-// Polyfill to work in browser
+// Polyfill for sync sign
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
