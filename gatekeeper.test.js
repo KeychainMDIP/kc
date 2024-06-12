@@ -634,6 +634,27 @@ describe('importBatch', () => {
         expect(failed).toBe(0);
     });
 
+    it('should resolve as confirmed when DID is imported from its native registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TESS';
+        ops[1].registry = 'TESS';
+        await gatekeeper.importBatch(ops);
+
+        const doc2 = await gatekeeper.resolveDID(did);
+
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+        expect(doc2.didDocumentMetadata.confirmed).toBe(true);
+    });
+
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
         mockFs({});
 
