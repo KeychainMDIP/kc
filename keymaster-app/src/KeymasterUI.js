@@ -50,6 +50,9 @@ function KeymasterUI({ keymaster, title }) {
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
 
+    const [walletTab, setWalletTab] = useState(null);
+    const [walletString, setWalletString] = useState('');
+
     useEffect(() => {
         refreshAll();
     }, []);
@@ -76,6 +79,7 @@ function KeymasterUI({ keymaster, title }) {
 
                 setTab('identity');
                 setCredentialTab('held');
+                setWalletTab('backup');
             }
             else {
                 setTab('create');
@@ -483,6 +487,27 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
+    async function showMnemonic() {
+        try {
+            const response = keymaster.decryptMnemonic();
+            setWalletString(response);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideMnemonic() {
+        setWalletString('');
+    }
+
+    async function backupWallet() {
+
+    }
+
+    async function downloadWallet() {
+
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -540,6 +565,7 @@ function KeymasterUI({ keymaster, title }) {
                         {!currentId &&
                             <Tab key="create" value="create" label={'Create ID'} />
                         }
+                        <Tab key="wallet" value="wallet" label={'Wallet'} />
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
@@ -1107,6 +1133,59 @@ function KeymasterUI({ keymaster, title }) {
                                 </TableRow>
                             </TableBody>
                         </Table>
+                    }
+                    {tab === 'wallet' &&
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={walletTab}
+                                    onChange={(event, newTab) => setWalletTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="backup" value="backup" label={'Backup'} />
+                                    <Tab key="restore" value="restore" label={'Restore'} />
+                                </Tabs>
+                            </Box>
+                            <p></p>
+                            {walletTab === 'backup' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            {walletString ? (
+                                                <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                                    Hide Mnemonic
+                                                </Button>
+                                            ) : (
+                                                <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                                    Show Mnemonic
+                                                </Button>
+                                            )}
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={backupWallet}>
+                                                Save to DID
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={downloadWallet}>
+                                                Save to file...
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    <Box>
+                                        <pre>{walletString}</pre>
+                                    </Box>
+                                </Box>
+                            }
+                            {walletTab === 'restore' &&
+                                <Box>
+                                </Box>
+                            }
+                        </Box>
                     }
                     {tab === 'access' &&
                         <Box>
