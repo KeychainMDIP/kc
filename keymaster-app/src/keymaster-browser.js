@@ -180,6 +180,8 @@ export async function recoverWallet(did) {
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
     const wallet = JSON.parse(backup);
 
+    saveWallet(wallet);
+
     return wallet;
 }
 

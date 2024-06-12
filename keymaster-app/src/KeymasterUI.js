@@ -500,12 +500,37 @@ function KeymasterUI({ keymaster, title }) {
         setWalletString('');
     }
 
-    async function backupWallet() {
+    async function importMnemonic() {
+        try {
+            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
 
+            if (mnenomic) {
+                await keymaster.newWallet(mnenomic, true);
+                await keymaster.recoverWallet();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
-    async function downloadWallet() {
+    async function backupWallet() {
+        try {
+            await keymaster.backupWallet();
+            window.alert('Wallet backup successful')
 
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function restoreWallet() {
+        try {
+            if (window.confirm(`Overwrite wallet from backup?`)) {
+                await keymaster.recoverWallet();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     return (
@@ -1165,13 +1190,18 @@ function KeymasterUI({ keymaster, title }) {
                                             )}
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={backupWallet}>
-                                                Save to DID
+                                            <Button variant="contained" color="primary" onClick={importMnemonic}>
+                                                Import Mnemonic...
                                             </Button>
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={downloadWallet}>
-                                                Save to file...
+                                            <Button variant="contained" color="primary" onClick={backupWallet}>
+                                                Backup Wallet
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={restoreWallet}>
+                                                Restore Wallet...
                                             </Button>
                                         </Grid>
                                     </Grid>
