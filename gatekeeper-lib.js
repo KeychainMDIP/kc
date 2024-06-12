@@ -298,14 +298,17 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         // TBD What to return if DID was created after specified time?
     }
 
-    let version = 1;
-    // TBD What to return if create event hasn't been confirmed?
-    let confirmed = true; //(mdip.registry === anchor.registry);
+    let version = 1; // initial version is version 1 by definition
+    let confirmed = true; // create event is always confirmed by definition
 
     doc.didDocumentMetadata.version = version;
     doc.didDocumentMetadata.confirmed = confirmed;
 
     for (const { time, operation, registry } of events) {
+        if (operation.type === 'create') {
+            continue;
+        }
+
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
@@ -314,10 +317,6 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
 
         if (confirm && !confirmed) {
             break;
-        }
-
-        if (operation.type === 'create') {
-            continue;
         }
 
         const hash = cipher.hashJSON(doc);
