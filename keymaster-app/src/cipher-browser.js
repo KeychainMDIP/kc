@@ -1,10 +1,14 @@
-// node.js 18 and older, requires polyfilling globalThis.crypto
-import { webcrypto } from 'node:crypto';
-if (!globalThis.crypto) globalThis.crypto = webcrypto;
+// Same as ../../cipher.js but works in browser
+// TBD figure out how to consolidate with main version
+
+// Polyfill for browser (works in all except hdkey, hence fork of browser-hdkey)
+import { Buffer } from 'buffer';
+global.Buffer = Buffer;
 
 import * as bip39 from 'bip39';
-import * as secp from '@noble/secp256k1';
-import HDKey from 'hdkey';
+
+// Fork of browser version at https://github.com/KeychainMDIP/browser-hdkey
+import HDKey from 'browser-hdkey';
 
 // Polyfill for sync sign
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
@@ -12,6 +16,7 @@ import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
 secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
 
+import * as secp from '@noble/secp256k1';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
@@ -87,6 +92,8 @@ export function hashJSON(json) {
 
 export function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
+    // TBD change main version to use sync sign too
+    //const signature = await secp.signAsync(msgHash, privKey);
     const signature = secp.sign(msgHash, privKey);
     const sigHex = signature.toCompactHex();
     return sigHex;

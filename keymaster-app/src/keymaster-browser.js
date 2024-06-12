@@ -1,19 +1,20 @@
-import fs from 'fs';
-import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher.js';
+// Same as ../../keymaster-lib.js except
+// - uses browser version of cipher lib
+// - uses browser version of gatekeeper sdk
+// TBD keymaster should make these dependencies injectable
 
-let gatekeeper = null;
-const dataFolder = 'data';
-const walletName = `${dataFolder}/wallet.json`;
+import { JSONSchemaFaker } from "json-schema-faker";
+import * as cipher from './cipher-browser.js';
+import * as gatekeeper from './gatekeeper-browser.js';
+
+const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start(gk) {
-    gatekeeper = gk;
+export async function start() {
 }
 
 export async function stop() {
-    await gatekeeper.stop();
 }
 
 export async function listRegistries() {
@@ -21,15 +22,21 @@ export async function listRegistries() {
 }
 
 function saveWallet(wallet) {
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
+    window.localStorage.setItem(walletName, JSON.stringify(wallet));
+}
+
+export function loadWallet() {
+    const walletJson = window.localStorage.getItem(walletName);
+
+    if (walletJson) {
+        return JSON.parse(walletJson);
     }
 
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+    return newWallet();
 }
 
 export function newWallet(mnemonic, overwrite = false) {
-    if (fs.existsSync(walletName) && !overwrite) {
+    if (!overwrite && window.localStorage.getItem(walletName)) {
         throw "Wallet already exists";
     }
 
@@ -64,15 +71,6 @@ export function decryptMnemonic() {
     const mnenomic = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
 
     return mnenomic;
-}
-
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
-    }
-
-    return newWallet();
 }
 
 export async function resolveSeedBank() {
@@ -604,7 +602,7 @@ export async function rotateKeys() {
 export function listNames() {
     const wallet = loadWallet();
 
-    return wallet.names;
+    return wallet.names || {};
 }
 
 export function addName(name, did) {
