@@ -1,3 +1,6 @@
+// Same as ../../cipher.js but works in browser
+// TBD figure out how to consolidate with main version
+
 // Polyfill for browser (works in all except hdkey, hence fork of browser-hdkey)
 import { Buffer } from 'buffer';
 global.Buffer = Buffer;
@@ -87,8 +90,9 @@ export function hashJSON(json) {
     return hashMessage(canonicalize(json));
 }
 
-export async function signHash(msgHash, privateJwk) {
+export function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
+    // TBD change main version to use sync sign too
     //const signature = await secp.signAsync(msgHash, privKey);
     const signature = secp.sign(msgHash, privKey);
     const sigHex = signature.toCompactHex();

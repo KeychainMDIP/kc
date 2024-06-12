@@ -1,10 +1,11 @@
 // Same as ../../keymaster-lib.js except
-// - uses local cipher.js that works in a browser
-// - uses local gatekeeper-sdk.js that is hard-coded to talk directly to the origin
+// - uses browser version of cipher lib
+// - uses browser version of gatekeeper sdk
+// TBD keymaster should make these dependencies injectable
 
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher.js';
-import * as gatekeeper from './gatekeeper-sdk.js';
+import * as cipher from './cipher-browser.js';
+import * as gatekeeper from './gatekeeper-browser.js';
 
 const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';
@@ -87,7 +88,7 @@ export async function resolveSeedBank() {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -116,7 +117,7 @@ async function updateSeedBank(doc) {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -149,7 +150,7 @@ export async function backupWallet(registry = defaultRegistry) {
         data: { backup: backup },
     };
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
@@ -322,7 +323,7 @@ export async function addSignature(obj, controller = null) {
 
     try {
         const msgHash = cipher.hashJSON(obj);
-        const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+        const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
         return {
             ...obj,
@@ -477,7 +478,7 @@ export async function createId(name, registry = defaultRegistry) {
     };
 
     const msgHash = cipher.hashJSON(operation);
-    const signature = await cipher.signHash(msgHash, keypair.privateJwk);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
     const signed = {
         ...operation,
         signature: {
