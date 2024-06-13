@@ -43,6 +43,7 @@ function KeymasterUI({ keymaster, title }) {
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
 
     useEffect(() => {
@@ -78,7 +79,7 @@ function KeymasterUI({ keymaster, title }) {
                 setCurrentDID('');
                 setTab('create');
             }
-            setWalletString('');
+            setMnemonicString('');
         } catch (error) {
             window.alert(error);
         }
@@ -485,14 +486,14 @@ function KeymasterUI({ keymaster, title }) {
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
-            setWalletString(response);
+            setMnemonicString(response);
         } catch (error) {
             window.alert(error);
         }
     }
 
     async function hideMnemonic() {
-        setWalletString('');
+        setMnemonicString('');
     }
 
     async function newWallet() {
@@ -530,7 +531,7 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
-    async function restoreWallet() {
+    async function recoverWallet() {
         try {
             if (window.confirm(`Overwrite wallet from backup?`)) {
                 await keymaster.recoverWallet();
@@ -539,6 +540,19 @@ function KeymasterUI({ keymaster, title }) {
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    async function showWallet() {
+        try {
+            const wallet = await keymaster.loadWallet();
+            setWalletString(JSON.stringify(wallet, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideWallet() {
+        setWalletString('');
     }
 
     return (
@@ -1169,19 +1183,8 @@ function KeymasterUI({ keymaster, title }) {
                     }
                     {tab === 'wallet' &&
                         <Box>
-                            <p></p>
+                            <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    {walletString ? (
-                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
-                                            Hide Mnemonic
-                                        </Button>
-                                    ) : (
-                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
-                                            Show Mnemonic
-                                        </Button>
-                                    )}
-                                </Grid>
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={newWallet}>
                                         New...
@@ -1198,14 +1201,47 @@ function KeymasterUI({ keymaster, title }) {
                                     </Button>
                                 </Grid>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={restoreWallet}>
-                                        Restore...
+                                    <Button variant="contained" color="primary" onClick={recoverWallet}>
+                                        Recover...
                                     </Button>
                                 </Grid>
                             </Grid>
                             <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {mnemonicString ? (
+                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                            Hide Mnemonic
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                            Show Mnemonic
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Box>
+                                        <pre>{mnemonicString}</pre>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            {walletString ? (
+                                <Button variant="contained" color="primary" onClick={hideWallet}>
+                                    Hide Wallet
+                                </Button>
+                            ) : (
+                                <Button variant="contained" color="primary" onClick={showWallet}>
+                                    Show Wallet
+                                </Button>
+                            )}
+                            <p />
                             <Box>
-                                <pre>{walletString}</pre>
+                                <textarea
+                                    value={walletString}
+                                    readonly
+                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                />
                             </Box>
                         </Box>
                     }
