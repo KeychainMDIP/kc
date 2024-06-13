@@ -22,6 +22,7 @@ export async function listRegistries() {
 }
 
 function saveWallet(wallet) {
+    // TBD validate wallet before saving
     window.localStorage.setItem(walletName, JSON.stringify(wallet));
 }
 

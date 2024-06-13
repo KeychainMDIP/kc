@@ -21,6 +21,8 @@ export async function listRegistries() {
 }
 
 function saveWallet(wallet) {
+    // TBD validate wallet before saving
+    
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });
     }
@@ -181,6 +183,8 @@ export async function recoverWallet(did) {
     const data = await resolveAsset(did);
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
     const wallet = JSON.parse(backup);
+
+    saveWallet(wallet);
 
     return wallet;
 }

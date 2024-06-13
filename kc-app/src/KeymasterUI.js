@@ -15,7 +15,6 @@ function KeymasterUI({ keymaster, title }) {
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
-
     const [newName, setNewName] = useState('');
     const [registry, setRegistry] = useState('hyperswarm');
     const [nameList, setNameList] = useState(null);
@@ -23,32 +22,28 @@ function KeymasterUI({ keymaster, title }) {
     const [aliasDID, setAliasDID] = useState('');
     const [aliasDocs, setAliasDocs] = useState('');
     const [registries, setRegistries] = useState(null);
-
     const [groupList, setGroupList] = useState(null);
     const [groupName, setGroupName] = useState('');
     const [selectedGroupName, setSelectedGroupName] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
     const [memberDID, setMemberDID] = useState('');
     const [memberDocs, setMemberDocs] = useState('');
-
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
     const [schemaString, setSchemaString] = useState('');
     const [selectedSchemaName, setSelectedSchemaName] = useState('');
     const [editedSchemaName, setEditedSchemaName] = useState('');
     const [selectedSchema, setSelectedSchema] = useState('');
-
     const [agentList, setAgentList] = useState(null);
     const [credentialTab, setCredentialTab] = useState('');
     const [credentialDID, setCredentialDID] = useState('');
     const [credentialSubject, setCredentialSubject] = useState('');
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
-    const [credentialRegistry, setCredentialRegistry] = useState(null); // TBD
-
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [walletString, setWalletString] = useState('');
 
     useEffect(() => {
         refreshAll();
@@ -78,8 +73,12 @@ function KeymasterUI({ keymaster, title }) {
                 setCredentialTab('held');
             }
             else {
+                setCurrentId('');
+                setSelectedId('');
+                setCurrentDID('');
                 setTab('create');
             }
+            setWalletString('');
         } catch (error) {
             window.alert(error);
         }
@@ -483,6 +482,65 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
+    async function showMnemonic() {
+        try {
+            const response = await keymaster.decryptMnemonic();
+            setWalletString(response);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideMnemonic() {
+        setWalletString('');
+    }
+
+    async function newWallet() {
+        try {
+            if (window.confirm(`Overwrite wallet with new one?`)) {
+                await keymaster.newWallet(null, true);
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function importWallet() {
+        try {
+            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
+
+            if (mnenomic) {
+                await keymaster.newWallet(mnenomic, true);
+                await keymaster.recoverWallet();
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function backupWallet() {
+        try {
+            await keymaster.backupWallet();
+            window.alert('Wallet backup successful')
+
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function restoreWallet() {
+        try {
+            if (window.confirm(`Overwrite wallet from backup?`)) {
+                await keymaster.recoverWallet();
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -540,6 +598,7 @@ function KeymasterUI({ keymaster, title }) {
                         {!currentId &&
                             <Tab key="create" value="create" label={'Create ID'} />
                         }
+                        <Tab key="wallet" value="wallet" label={'Wallet'} />
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
@@ -1107,6 +1166,48 @@ function KeymasterUI({ keymaster, title }) {
                                 </TableRow>
                             </TableBody>
                         </Table>
+                    }
+                    {tab === 'wallet' &&
+                        <Box>
+                            <p></p>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {walletString ? (
+                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                            Hide Mnemonic
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                            Show Mnemonic
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={newWallet}>
+                                        New...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={importWallet}>
+                                        Import...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={backupWallet}>
+                                        Backup
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={restoreWallet}>
+                                        Restore...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Box>
+                                <pre>{walletString}</pre>
+                            </Box>
+                        </Box>
                     }
                     {tab === 'access' &&
                         <Box>

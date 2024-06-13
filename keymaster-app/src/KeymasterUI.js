@@ -78,6 +78,7 @@ function KeymasterUI({ keymaster, title }) {
                 setCurrentDID('');
                 setTab('create');
             }
+            setWalletString('');
         } catch (error) {
             window.alert(error);
         }
@@ -483,7 +484,7 @@ function KeymasterUI({ keymaster, title }) {
 
     async function showMnemonic() {
         try {
-            const response = keymaster.decryptMnemonic();
+            const response = await keymaster.decryptMnemonic();
             setWalletString(response);
         } catch (error) {
             window.alert(error);
