@@ -1303,11 +1303,13 @@ function KeymasterUI({ keymaster, title }) {
                             </Grid>
                             <p />
                             <Box>
-                                <textarea
-                                    value={walletString}
-                                    readonly
-                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                />
+                                {walletString &&
+                                    <textarea
+                                        value={walletString}
+                                        readonly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                }
                             </Box>
                         </Box>
                     }
