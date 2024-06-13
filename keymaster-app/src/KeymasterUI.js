@@ -80,6 +80,7 @@ function KeymasterUI({ keymaster, title }) {
                 setTab('create');
             }
             setMnemonicString('');
+            setWalletString('');
         } catch (error) {
             window.alert(error);
         }
@@ -553,6 +554,57 @@ function KeymasterUI({ keymaster, title }) {
 
     async function hideWallet() {
         setWalletString('');
+    }
+
+    async function uploadWallet() {
+        try {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'application/json';
+
+            fileInput.onchange = async (event) => {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = async (event) => {
+                    const walletUpload = event.target.result;
+                    const wallet = JSON.parse(walletUpload);
+
+                    if (window.confirm('Overwrite wallet with upload?')) {
+                        await keymaster.saveWallet(wallet);
+                        refreshAll();
+                    }
+                };
+
+                reader.onerror = (error) => {
+                    window.alert(error);
+                };
+
+                reader.readAsText(file);
+            };
+
+            fileInput.click();
+        }
+        catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function downloadWallet() {
+        try {
+            const blob = new Blob([walletString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'mdip-wallet.json';
+            link.click();
+
+            // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     return (
@@ -1226,15 +1278,29 @@ function KeymasterUI({ keymaster, title }) {
                                 </Grid>
                             </Grid>
                             <p />
-                            {walletString ? (
-                                <Button variant="contained" color="primary" onClick={hideWallet}>
-                                    Hide Wallet
-                                </Button>
-                            ) : (
-                                <Button variant="contained" color="primary" onClick={showWallet}>
-                                    Show Wallet
-                                </Button>
-                            )}
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {walletString ? (
+                                        <Button variant="contained" color="primary" onClick={hideWallet}>
+                                            Hide Wallet
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showWallet}>
+                                            Show Wallet
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={downloadWallet} disabled={!walletString}>
+                                        Download
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={uploadWallet}>
+                                        Upload...
+                                    </Button>
+                                </Grid>
+                            </Grid>
                             <p />
                             <Box>
                                 <textarea
