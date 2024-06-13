@@ -18,6 +18,16 @@ export async function loadWallet() {
     }
 }
 
+export async function saveWallet(wallet) {
+    try {
+        const response = await axios.put(`/api/v1/wallet`, { wallet });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function newWallet(mnemonic, overwrite = false) {
     try {
         const response = await axios.post(`/api/v1/wallet`, { mnemonic, overwrite });

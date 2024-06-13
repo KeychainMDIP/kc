@@ -20,7 +20,7 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-function saveWallet(wallet) {
+export function saveWallet(wallet) {
     // TBD validate wallet before saving
 
     if (!fs.existsSync(dataFolder)) {

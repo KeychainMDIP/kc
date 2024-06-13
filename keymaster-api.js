@@ -43,6 +43,16 @@ v1router.get('/wallet', async (req, res) => {
     }
 });
 
+v1router.put('/wallet', async (req, res) => {
+    try {
+        const { wallet } = req.body;
+        const response = keymaster.saveWallet(wallet);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.post('/wallet', async (req, res) => {
     try {
         const { mnemonic, overwrite } = req.body;

@@ -43,6 +43,7 @@ function KeymasterUI({ keymaster, title }) {
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
 
     useEffect(() => {
@@ -78,6 +79,7 @@ function KeymasterUI({ keymaster, title }) {
                 setCurrentDID('');
                 setTab('create');
             }
+            setMnemonicString('');
             setWalletString('');
         } catch (error) {
             window.alert(error);
@@ -485,14 +487,14 @@ function KeymasterUI({ keymaster, title }) {
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
-            setWalletString(response);
+            setMnemonicString(response);
         } catch (error) {
             window.alert(error);
         }
     }
 
     async function hideMnemonic() {
-        setWalletString('');
+        setMnemonicString('');
     }
 
     async function newWallet() {
@@ -530,12 +532,76 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
-    async function restoreWallet() {
+    async function recoverWallet() {
         try {
             if (window.confirm(`Overwrite wallet from backup?`)) {
                 await keymaster.recoverWallet();
                 refreshAll();
             }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function showWallet() {
+        try {
+            const wallet = await keymaster.loadWallet();
+            setWalletString(JSON.stringify(wallet, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideWallet() {
+        setWalletString('');
+    }
+
+    async function uploadWallet() {
+        try {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'application/json';
+
+            fileInput.onchange = async (event) => {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = async (event) => {
+                    const walletUpload = event.target.result;
+                    const wallet = JSON.parse(walletUpload);
+
+                    if (window.confirm('Overwrite wallet with upload?')) {
+                        await keymaster.saveWallet(wallet);
+                        refreshAll();
+                    }
+                };
+
+                reader.onerror = (error) => {
+                    window.alert(error);
+                };
+
+                reader.readAsText(file);
+            };
+
+            fileInput.click();
+        }
+        catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function downloadWallet() {
+        try {
+            const blob = new Blob([walletString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'mdip-wallet.json';
+            link.click();
+
+            // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().
+            URL.revokeObjectURL(url);
         } catch (error) {
             window.alert(error);
         }
@@ -1169,19 +1235,8 @@ function KeymasterUI({ keymaster, title }) {
                     }
                     {tab === 'wallet' &&
                         <Box>
-                            <p></p>
+                            <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    {walletString ? (
-                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
-                                            Hide Mnemonic
-                                        </Button>
-                                    ) : (
-                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
-                                            Show Mnemonic
-                                        </Button>
-                                    )}
-                                </Grid>
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={newWallet}>
                                         New...
@@ -1198,14 +1253,61 @@ function KeymasterUI({ keymaster, title }) {
                                     </Button>
                                 </Grid>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={restoreWallet}>
-                                        Restore...
+                                    <Button variant="contained" color="primary" onClick={recoverWallet}>
+                                        Recover...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {mnemonicString ? (
+                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                            Hide Mnemonic
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                            Show Mnemonic
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Box>
+                                        <pre>{mnemonicString}</pre>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {walletString ? (
+                                        <Button variant="contained" color="primary" onClick={hideWallet}>
+                                            Hide Wallet
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showWallet}>
+                                            Show Wallet
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={downloadWallet} disabled={!walletString}>
+                                        Download
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={uploadWallet}>
+                                        Upload...
                                     </Button>
                                 </Grid>
                             </Grid>
                             <p />
                             <Box>
-                                <pre>{walletString}</pre>
+                                <textarea
+                                    value={walletString}
+                                    readonly
+                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                />
                             </Box>
                         </Box>
                     }
