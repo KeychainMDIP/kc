@@ -43,6 +43,53 @@ v1router.get('/wallet', async (req, res) => {
     }
 });
 
+v1router.put('/wallet', async (req, res) => {
+    try {
+        const { wallet } = req.body;
+        const response = keymaster.saveWallet(wallet);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/wallet', async (req, res) => {
+    try {
+        const { mnemonic, overwrite } = req.body;
+        const wallet = keymaster.newWallet(mnemonic, overwrite);
+        res.json(wallet);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/backup-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.backupWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/recover-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.recoverWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/mnemonic', async (req, res) => {
+    try {
+        const mnemonic = keymaster.decryptMnemonic();
+        res.json(mnemonic);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/current-id', async (req, res) => {
     try {
         const current = keymaster.getCurrentId();

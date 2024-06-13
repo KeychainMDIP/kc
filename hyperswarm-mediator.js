@@ -6,7 +6,7 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import * as gatekeeper from './gatekeeper-sdk.js';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;

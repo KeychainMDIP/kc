@@ -8,6 +8,66 @@ function throwError(error) {
     throw error.message;
 }
 
+export async function loadWallet() {
+    try {
+        const response = await axios.get(`/api/v1/wallet`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function saveWallet(wallet) {
+    try {
+        const response = await axios.put(`/api/v1/wallet`, { wallet });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function newWallet(mnemonic, overwrite = false) {
+    try {
+        const response = await axios.post(`/api/v1/wallet`, { mnemonic, overwrite });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function backupWallet() {
+    try {
+        const response = await axios.post(`/api/v1/backup-wallet`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function recoverWallet() {
+    try {
+        const response = await axios.post(`/api/v1/recover-wallet`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function decryptMnemonic() {
+    try {
+        const response = await axios.get(`/api/v1/mnemonic`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function listRegistries() {
     try {
         const response = await axios.get(`/api/v1/registries`);

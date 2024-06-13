@@ -1,4 +1,4 @@
-// Same as ../../cipher.js but works in browser
+// Same as cipher-lib.js but works in browser
 // TBD figure out how to consolidate with main version
 
 // Polyfill for browser (works in all except hdkey, hence fork of browser-hdkey)

@@ -1,11 +1,11 @@
-// Same as ../../keymaster-lib.js except
+// Same as keymaster-lib.js except
 // - uses browser version of cipher lib
 // - uses browser version of gatekeeper sdk
 // TBD keymaster should make these dependencies injectable
 
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher-browser.js';
-import * as gatekeeper from './gatekeeper-browser.js';
+import * as cipher from './cipher-web.js';
+import * as gatekeeper from './gatekeeper-web.js';
 
 const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';
@@ -21,7 +21,8 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-function saveWallet(wallet) {
+export function saveWallet(wallet) {
+    // TBD validate wallet before saving
     window.localStorage.setItem(walletName, JSON.stringify(wallet));
 }
 
@@ -179,6 +180,8 @@ export async function recoverWallet(did) {
     const data = await resolveAsset(did);
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
     const wallet = JSON.parse(backup);
+
+    saveWallet(wallet);
 
     return wallet;
 }

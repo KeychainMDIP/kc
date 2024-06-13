@@ -15,7 +15,6 @@ function KeymasterUI({ keymaster, title }) {
     const [challenge, setChallenge] = useState(null);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
-
     const [newName, setNewName] = useState('');
     const [registry, setRegistry] = useState('hyperswarm');
     const [nameList, setNameList] = useState(null);
@@ -23,32 +22,29 @@ function KeymasterUI({ keymaster, title }) {
     const [aliasDID, setAliasDID] = useState('');
     const [aliasDocs, setAliasDocs] = useState('');
     const [registries, setRegistries] = useState(null);
-
     const [groupList, setGroupList] = useState(null);
     const [groupName, setGroupName] = useState('');
     const [selectedGroupName, setSelectedGroupName] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
     const [memberDID, setMemberDID] = useState('');
     const [memberDocs, setMemberDocs] = useState('');
-
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
     const [schemaString, setSchemaString] = useState('');
     const [selectedSchemaName, setSelectedSchemaName] = useState('');
     const [editedSchemaName, setEditedSchemaName] = useState('');
     const [selectedSchema, setSelectedSchema] = useState('');
-
     const [agentList, setAgentList] = useState(null);
     const [credentialTab, setCredentialTab] = useState('');
     const [credentialDID, setCredentialDID] = useState('');
     const [credentialSubject, setCredentialSubject] = useState('');
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
-    const [credentialRegistry, setCredentialRegistry] = useState(null); // TBD
-
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [mnemonicString, setMnemonicString] = useState('');
+    const [walletString, setWalletString] = useState('');
 
     useEffect(() => {
         refreshAll();
@@ -78,8 +74,13 @@ function KeymasterUI({ keymaster, title }) {
                 setCredentialTab('held');
             }
             else {
+                setCurrentId('');
+                setSelectedId('');
+                setCurrentDID('');
                 setTab('create');
             }
+            setMnemonicString('');
+            setWalletString('');
         } catch (error) {
             window.alert(error);
         }
@@ -483,6 +484,131 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
+    async function showMnemonic() {
+        try {
+            const response = await keymaster.decryptMnemonic();
+            setMnemonicString(response);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideMnemonic() {
+        setMnemonicString('');
+    }
+
+    async function newWallet() {
+        try {
+            if (window.confirm(`Overwrite wallet with new one?`)) {
+                await keymaster.newWallet(null, true);
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function importWallet() {
+        try {
+            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
+
+            if (mnenomic) {
+                await keymaster.newWallet(mnenomic, true);
+                await keymaster.recoverWallet();
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function backupWallet() {
+        try {
+            await keymaster.backupWallet();
+            window.alert('Wallet backup successful')
+
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function recoverWallet() {
+        try {
+            if (window.confirm(`Overwrite wallet from backup?`)) {
+                await keymaster.recoverWallet();
+                refreshAll();
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function showWallet() {
+        try {
+            const wallet = await keymaster.loadWallet();
+            setWalletString(JSON.stringify(wallet, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function hideWallet() {
+        setWalletString('');
+    }
+
+    async function uploadWallet() {
+        try {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'application/json';
+
+            fileInput.onchange = async (event) => {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = async (event) => {
+                    const walletUpload = event.target.result;
+                    const wallet = JSON.parse(walletUpload);
+
+                    if (window.confirm('Overwrite wallet with upload?')) {
+                        await keymaster.saveWallet(wallet);
+                        refreshAll();
+                    }
+                };
+
+                reader.onerror = (error) => {
+                    window.alert(error);
+                };
+
+                reader.readAsText(file);
+            };
+
+            fileInput.click();
+        }
+        catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function downloadWallet() {
+        try {
+            const wallet = await keymaster.loadWallet();
+            const walletJSON = JSON.stringify(wallet, null, 4);
+            const blob = new Blob([walletJSON], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'mdip-wallet.json';
+            link.click();
+
+            // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -540,6 +666,7 @@ function KeymasterUI({ keymaster, title }) {
                         {!currentId &&
                             <Tab key="create" value="create" label={'Create ID'} />
                         }
+                        <Tab key="wallet" value="wallet" label={'Wallet'} />
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
@@ -1107,6 +1234,86 @@ function KeymasterUI({ keymaster, title }) {
                                 </TableRow>
                             </TableBody>
                         </Table>
+                    }
+                    {tab === 'wallet' &&
+                        <Box>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={newWallet}>
+                                        New...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={importWallet}>
+                                        Import...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={backupWallet}>
+                                        Backup
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={recoverWallet}>
+                                        Recover...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {mnemonicString ? (
+                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                            Hide Mnemonic
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                            Show Mnemonic
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Box>
+                                        <pre>{mnemonicString}</pre>
+                                    </Box>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {walletString ? (
+                                        <Button variant="contained" color="primary" onClick={hideWallet}>
+                                            Hide Wallet
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showWallet}>
+                                            Show Wallet
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={downloadWallet}>
+                                        Download
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={uploadWallet}>
+                                        Upload...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Box>
+                                {walletString &&
+                                    <textarea
+                                        value={walletString}
+                                        readonly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                }
+                            </Box>
+                        </Box>
                     }
                     {tab === 'access' &&
                         <Box>

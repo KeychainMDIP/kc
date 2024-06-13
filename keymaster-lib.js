@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 
 let gatekeeper = null;
 const dataFolder = 'data';
@@ -20,7 +20,9 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-function saveWallet(wallet) {
+export function saveWallet(wallet) {
+    // TBD validate wallet before saving
+
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });
     }
@@ -181,6 +183,8 @@ export async function recoverWallet(did) {
     const data = await resolveAsset(did);
     const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
     const wallet = JSON.parse(backup);
+
+    saveWallet(wallet);
 
     return wallet;
 }

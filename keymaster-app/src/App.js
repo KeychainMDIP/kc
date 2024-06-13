@@ -1,4 +1,4 @@
-import * as keymaster from './keymaster-browser.js';
+import * as keymaster from './keymaster-web.js';
 import KeymasterUI from './KeymasterUI.js';
 import './App.css';
 
