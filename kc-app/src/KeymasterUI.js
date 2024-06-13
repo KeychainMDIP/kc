@@ -592,7 +592,9 @@ function KeymasterUI({ keymaster, title }) {
 
     async function downloadWallet() {
         try {
-            const blob = new Blob([walletString], { type: 'application/json' });
+            const wallet = await keymaster.loadWallet();
+            const walletJSON = JSON.stringify(wallet, null, 4);
+            const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');
@@ -1291,7 +1293,7 @@ function KeymasterUI({ keymaster, title }) {
                                     )}
                                 </Grid>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={downloadWallet} disabled={!walletString}>
+                                    <Button variant="contained" color="primary" onClick={downloadWallet}>
                                         Download
                                     </Button>
                                 </Grid>
