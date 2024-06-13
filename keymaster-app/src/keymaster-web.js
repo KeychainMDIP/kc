@@ -1,11 +1,11 @@
-// Same as ../../keymaster-lib.js except
+// Same as keymaster-lib.js except
 // - uses browser version of cipher lib
 // - uses browser version of gatekeeper sdk
 // TBD keymaster should make these dependencies injectable
 
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher-browser.js';
-import * as gatekeeper from './gatekeeper-browser.js';
+import * as cipher from './cipher-web.js';
+import * as gatekeeper from './gatekeeper-web.js';
 
 const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';

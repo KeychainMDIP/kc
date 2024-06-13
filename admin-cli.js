@@ -2,7 +2,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 
 program
     .version('1.0.0')

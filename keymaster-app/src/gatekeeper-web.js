@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Same as ../../gatekeeper-sdk.js except URL is overridden here to talk directly to origin
+// Same as gatekeeper-sdk.js except URL is overridden here to talk directly to origin
 // TBD consolidate the URL config with main version
 export const URL = '';
 

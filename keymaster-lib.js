@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 
 let gatekeeper = null;
 const dataFolder = 'data';
@@ -22,7 +22,7 @@ export async function listRegistries() {
 
 function saveWallet(wallet) {
     // TBD validate wallet before saving
-    
+
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });
     }

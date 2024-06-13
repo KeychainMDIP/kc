@@ -2,7 +2,7 @@ import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
 import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
 
 beforeEach(async () => {
