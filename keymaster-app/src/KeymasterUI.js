@@ -89,10 +89,10 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
-    async function useId(selectedId) {
+    async function selectId(id) {
         try {
-            setSelectedId(selectedId);
-            await keymaster.setCurrentId(selectedId);
+            setSelectedId(id);
+            await keymaster.setCurrentId(id);
             refreshAll();
         } catch (error) {
             window.alert(error);
@@ -683,7 +683,7 @@ function KeymasterUI({ keymaster, title }) {
                                         style={{ width: '300px' }}
                                         value={selectedId}
                                         fullWidth
-                                        onChange={(event) => useId(event.target.value)}
+                                        onChange={(event) => selectId(event.target.value)}
                                     >
                                         {idList.map((idname, index) => (
                                             <MenuItem value={idname} key={index}>
