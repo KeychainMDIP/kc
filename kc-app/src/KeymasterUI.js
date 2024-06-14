@@ -79,6 +79,9 @@ function KeymasterUI({ keymaster, title }) {
                 setCurrentDID('');
                 setTab('create');
             }
+
+            setSaveId('');
+            setNewName('');
             setMnemonicString('');
             setWalletString('');
         } catch (error) {
@@ -86,9 +89,10 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
-    async function useId() {
+    async function selectId(id) {
         try {
-            await keymaster.setCurrentId(selectedId);
+            setSelectedId(id);
+            await keymaster.setCurrentId(id);
             refreshAll();
         } catch (error) {
             window.alert(error);
@@ -141,6 +145,7 @@ function KeymasterUI({ keymaster, title }) {
 
             if (ok) {
                 window.alert(`${selectedId} backup succeeded`);
+                resolveId();
             }
             else {
                 window.alert(`${selectedId} backup failed`);
@@ -678,7 +683,7 @@ function KeymasterUI({ keymaster, title }) {
                                         style={{ width: '300px' }}
                                         value={selectedId}
                                         fullWidth
-                                        onChange={(event) => setSelectedId(event.target.value)}
+                                        onChange={(event) => selectId(event.target.value)}
                                     >
                                         {idList.map((idname, index) => (
                                             <MenuItem value={idname} key={index}>
@@ -687,19 +692,9 @@ function KeymasterUI({ keymaster, title }) {
                                         ))}
                                     </Select>
                                 </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={useId}>
-                                        Use ID
-                                    </Button>
-                                </Grid>
                             </Grid>
                             <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={resolveId}>
-                                        Resolve
-                                    </Button>
-                                </Grid>
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={showCreate}>
                                         Create...
