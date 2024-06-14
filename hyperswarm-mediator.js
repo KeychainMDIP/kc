@@ -1,3 +1,4 @@
+import fs from 'fs';
 import Hyperswarm from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
@@ -147,12 +148,12 @@ async function importBatch(batch) {
 
         batchesSeen[hash] = true;
 
-        console.log(`importBatch: merging ${batch.length} events...`);
+        console.log(`importBatch: ${shortName(hash)} merging ${batch.length} events...`);
         console.time('importBatch');
-
         const { verified, updated, failed } = await gatekeeper.importBatch(batch);
         console.timeEnd('importBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+        console.log(`${Object.keys(batchesSeen).length} batches seen`);
     }
     catch (error) {
         console.error(`importBatch error: ${error}`);
@@ -192,6 +193,13 @@ let importQueue = asyncLib.queue(async function (task, callback) {
 
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
             await mergeBatch(batch);
+
+            const batchfile = `data/${msg.node || 'anon'}-${shortName(name)}.json`;
+            const batchJSON = JSON.stringify(batch, null, 4);
+
+            console.log(`writing to ${batchfile}: ${batchJSON}`);
+
+            fs.writeFileSync(batchfile, batchJSON);
         }
     }
     catch (error) {
@@ -248,7 +256,7 @@ async function receiveMsg(conn, name, json) {
 
 async function flushQueue() {
     const queue = await gatekeeper.getQueue(REGISTRY);
-    console.log(JSON.stringify(queue, null, 4));
+    console.log(`${REGISTRY} queue: ${JSON.stringify(queue, null, 4)}`);
 
     if (queue.length > 0) {
         const batch = [];
@@ -273,9 +281,6 @@ async function flushQueue() {
         await relayMsg(msg);
         await importBatch(batch);
         await gatekeeper.clearQueue(REGISTRY, queue);
-    }
-    else {
-        console.log('empty queue');
     }
 }
 
@@ -374,12 +379,12 @@ async function start() {
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
     exportLoop();
     pingLoop();
-    gcLoop();
 }
 
 async function main() {
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
+    await gcLoop();
 
     const discovery = swarm.join(topic, { client: true, server: true });
 
