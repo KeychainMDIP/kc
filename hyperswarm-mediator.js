@@ -81,13 +81,22 @@ function cacheBatch(batch) {
     console.log(`batch in db: ${shortName(hash)}`);
 }
 
-async function initializeBatchesSeen() {
-    const batch = await createBatch();
+function logBatch(batch, name) {
+    if (!config.debug) {
+        return;
+    }
 
-    const batchfile = `data/${config.nodeName}.json`;
+    const hash = shortName(cipher.hashJSON(batch));
+    const batchfile = `data/${name}-${hash}.json`;
     const batchJSON = JSON.stringify(batch, null, 4);
     console.log(`writing to ${batchfile}: ${batchJSON}`);
     fs.writeFileSync(batchfile, batchJSON);
+}
+
+async function initializeBatchesSeen() {
+    const batch = await createBatch();
+
+    logBatch(batch, config.nodeName);
 
     let chunk = [];
     for (const events of batch) {
@@ -207,15 +216,12 @@ let importQueue = asyncLib.queue(async function (task, callback) {
                 return;
             }
 
-            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            const nodeName = msg.node || 'anon';
+
+            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
             await mergeBatch(batch);
 
-            const batchfile = `data/${msg.node || 'anon'}-${shortName(name)}.json`;
-            const batchJSON = JSON.stringify(batch, null, 4);
-
-            console.log(`writing to ${batchfile}: ${batchJSON}`);
-
-            fs.writeFileSync(batchfile, batchJSON);
+            logBatch(batch, nodeName);
         }
     }
     catch (error) {
