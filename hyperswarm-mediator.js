@@ -218,10 +218,10 @@ let importQueue = asyncLib.queue(async function (task, callback) {
 
             const nodeName = msg.node || 'anon';
 
+            logBatch(batch, nodeName);
+
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
             await mergeBatch(batch);
-
-            logBatch(batch, nodeName);
         }
     }
     catch (error) {
@@ -277,24 +277,10 @@ async function receiveMsg(conn, name, json) {
 }
 
 async function flushQueue() {
-    const queue = await gatekeeper.getQueue(REGISTRY);
-    console.log(`${REGISTRY} queue: ${JSON.stringify(queue, null, 4)}`);
+    const batch = await gatekeeper.getQueue(REGISTRY);
+    console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
-    if (queue.length > 0) {
-        const batch = [];
-        const now = new Date();
-        const isoTime = now.toISOString();
-        const ordTime = now.getTime();
-
-        for (let i = 0; i < queue.length; i++) {
-            batch.push({
-                registry: REGISTRY,
-                time: isoTime,
-                ordinal: [ordTime, i],
-                operation: queue[i],
-            });
-        }
-
+    if (batch.length > 0) {
         const msg = {
             type: 'queue',
             data: batch,
@@ -304,7 +290,7 @@ async function flushQueue() {
 
         await relayMsg(msg);
         await importBatch(batch);
-        await gatekeeper.clearQueue(REGISTRY, queue);
+        await gatekeeper.clearQueue(REGISTRY, batch);
     }
 }
 
