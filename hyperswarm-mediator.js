@@ -82,12 +82,18 @@ function cacheBatch(batch) {
 }
 
 function logBatch(batch, name) {
+    const debugFolder = 'data/debug';
+
     if (!config.debug) {
         return;
     }
 
+    if (!fs.existsSync(debugFolder)) {
+        fs.mkdirSync(debugFolder, { recursive: true });
+    }
+
     const hash = shortName(cipher.hashJSON(batch));
-    const batchfile = `data/${name}-${hash}.json`;
+    const batchfile = `${debugFolder}/${hash}-${name}.json`;
     const batchJSON = JSON.stringify(batch, null, 4);
     console.log(`writing to ${batchfile}: ${batchJSON}`);
     fs.writeFileSync(batchfile, batchJSON);
@@ -217,9 +223,6 @@ let importQueue = asyncLib.queue(async function (task, callback) {
             }
 
             const nodeName = msg.node || 'anon';
-
-            logBatch(batch, nodeName);
-
             console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
             await mergeBatch(batch);
         }
@@ -252,6 +255,7 @@ async function receiveMsg(conn, name, json) {
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
 
     if (msg.type === 'batch') {
+        logBatch(msg.data, msg.node || 'anon');
         importQueue.push({ name, msg });
         return;
     }
