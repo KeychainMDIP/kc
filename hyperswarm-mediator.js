@@ -147,15 +147,15 @@ async function relayMsg(msg) {
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
         const short = shortName(name);
-        const nodeName = connectionName[conn];
-        const lastTime = connectionLastSeen[conn];
+        const nodeName = connectionName[name];
+        const lastTime = connectionLastSeen[name];
         let lastSeen = '';
 
         if (lastTime) {
             const last = new Date(lastTime);
             const now = new Date();
             const minutesSinceLastSeen = Math.floor((now - last) / 1000 / 60);
-            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago`;
+            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
         }
 
         if (!msg.relays.includes(name)) {
@@ -267,8 +267,8 @@ async function receiveMsg(conn, name, json) {
     const msg = JSON.parse(json);
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
-    connectionLastSeen[conn] = new Date().getTime();
-    connectionName[conn] = msg.node || 'anon';
+    connectionLastSeen[name] = new Date().getTime();
+    connectionName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
         logBatch(msg.data, msg.node || 'anon');
@@ -329,7 +329,8 @@ async function removeStaleConnections() {
     const now = Date.now();
 
     connections = connections.filter(conn => {
-        const lastTime = connectionLastSeen[conn];
+        const name = b4a.toString(conn.remotePublicKey, 'hex');
+        const lastTime = connectionLastSeen[name];
         if (lastTime) {
             const timeSinceLastSeen = now - lastTime;
             return timeSinceLastSeen <= expireLimit;
@@ -348,7 +349,7 @@ async function pingLoop() {
         };
 
         await relayMsg(msg);
-        await removeStaleConnections();
+        //await removeStaleConnections();
 
         console.log('ping loop waiting 60s...');
     } catch (error) {
