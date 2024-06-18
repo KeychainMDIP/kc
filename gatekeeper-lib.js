@@ -496,6 +496,10 @@ export async function importEvent(event) {
         else {
             did = event.operation.did;
         }
+
+        if (!did) {
+            throw "Invalid operation";
+        }
     }
     catch {
         throw "Invalid operation";

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import Hyperswarm from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
@@ -13,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.05.28';
+const PROTOCOL = '/MDIP/v22.06.17';
 
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
@@ -63,18 +64,15 @@ async function createBatch() {
     console.timeEnd('getDIDs');
 
     console.time('exportDIDs');
-    let batch = await gatekeeper.exportDIDs(didList);
+    let exports = await gatekeeper.exportDIDs(didList);
     console.timeEnd('exportDIDs');
-    console.log(`${batch.length} DIDs fetched`);
+    console.log(`${exports.length} DIDs fetched`);
 
-    batch = batch.flat();
-    batch = batch.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
+    const events = exports.flat();
+    let operations = events.map(event => event.operation);
+    operations = operations.sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
 
-    for (const event of batch) {
-        event.registry = REGISTRY;
-    }
-
-    return batch;
+    return operations;
 }
 
 function cacheBatch(batch) {
@@ -83,8 +81,28 @@ function cacheBatch(batch) {
     console.log(`batch in db: ${shortName(hash)}`);
 }
 
+function logBatch(batch, name) {
+    const debugFolder = 'data/debug';
+
+    if (!config.debug) {
+        return;
+    }
+
+    if (!fs.existsSync(debugFolder)) {
+        fs.mkdirSync(debugFolder, { recursive: true });
+    }
+
+    const hash = shortName(cipher.hashJSON(batch));
+    const batchfile = `${debugFolder}/${hash}-${name}.json`;
+    const batchJSON = JSON.stringify(batch, null, 4);
+    console.log(`writing to ${batchfile}: ${batchJSON}`);
+    fs.writeFileSync(batchfile, batchJSON);
+}
+
 async function initializeBatchesSeen() {
     const batch = await createBatch();
+
+    logBatch(batch, config.nodeName);
 
     let chunk = [];
     for (const events of batch) {
@@ -147,12 +165,26 @@ async function importBatch(batch) {
 
         batchesSeen[hash] = true;
 
-        console.log(`importBatch: merging ${batch.length} events...`);
-        console.time('importBatch');
+        const events = [];
+        const now = new Date();
+        const isoTime = now.toISOString();
+        const ordTime = now.getTime();
 
-        const { verified, updated, failed } = await gatekeeper.importBatch(batch);
+        for (let i = 0; i < batch.length; i++) {
+            events.push({
+                registry: REGISTRY,
+                time: isoTime,
+                ordinal: [ordTime, i],
+                operation: batch[i],
+            })
+        }
+
+        console.log(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
+        console.time('importBatch');
+        const { verified, updated, failed } = await gatekeeper.importBatch(events);
         console.timeEnd('importBatch');
         console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+        console.log(`${Object.keys(batchesSeen).length} batches seen`);
     }
     catch (error) {
         console.error(`importBatch error: ${error}`);
@@ -166,8 +198,8 @@ async function mergeBatch(batch) {
     }
 
     let chunk = [];
-    for (const events of batch) {
-        chunk.push(events);
+    for (const operation of batch) {
+        chunk.push(operation);
 
         if (chunk.length >= BATCH_SIZE) {
             await importBatch(chunk);
@@ -190,7 +222,8 @@ let importQueue = asyncLib.queue(async function (task, callback) {
                 return;
             }
 
-            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${msg.node || 'anon'}) *`);
+            const nodeName = msg.node || 'anon';
+            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
             await mergeBatch(batch);
         }
     }
@@ -222,6 +255,7 @@ async function receiveMsg(conn, name, json) {
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
 
     if (msg.type === 'batch') {
+        logBatch(msg.data, msg.node || 'anon');
         importQueue.push({ name, msg });
         return;
     }
@@ -247,22 +281,10 @@ async function receiveMsg(conn, name, json) {
 }
 
 async function flushQueue() {
-    const queue = await gatekeeper.getQueue(REGISTRY);
-    console.log(JSON.stringify(queue, null, 4));
+    const batch = await gatekeeper.getQueue(REGISTRY);
+    console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
-    if (queue.length > 0) {
-        const batch = [];
-        const now = new Date();
-
-        for (let i = 0; i < queue.length; i++) {
-            batch.push({
-                registry: REGISTRY,
-                time: now.toISOString(),
-                ordinal: [now.getTime(), i],
-                operation: queue[i],
-            });
-        }
-
+    if (batch.length > 0) {
         const msg = {
             type: 'queue',
             data: batch,
@@ -272,10 +294,7 @@ async function flushQueue() {
 
         await relayMsg(msg);
         await importBatch(batch);
-        await gatekeeper.clearQueue(REGISTRY, queue);
-    }
-    else {
-        console.log('empty queue');
+        await gatekeeper.clearQueue(REGISTRY, batch);
     }
 }
 
@@ -334,11 +353,11 @@ async function collectGarbage() {
 async function gcLoop() {
     try {
         await collectGarbage();
-        console.log('garbage collection loop waiting 10m...');
+        console.log('garbage collection loop waiting 60m...');
     } catch (error) {
         console.error(`Error in gcLoop: ${error}`);
     }
-    setTimeout(gcLoop, 10 * 60 * 1000);
+    setTimeout(gcLoop, 60 * 60 * 1000);
 }
 
 function logConnection(name) {
@@ -374,12 +393,12 @@ async function start() {
     console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
     exportLoop();
     pingLoop();
-    gcLoop();
 }
 
 async function main() {
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
+    await gcLoop();
 
     const discovery = swarm.join(topic, { client: true, server: true });
 
