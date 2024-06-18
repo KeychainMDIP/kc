@@ -353,11 +353,11 @@ async function collectGarbage() {
 async function gcLoop() {
     try {
         await collectGarbage();
-        console.log('garbage collection loop waiting 10m...');
+        console.log('garbage collection loop waiting 60m...');
     } catch (error) {
         console.error(`Error in gcLoop: ${error}`);
     }
-    setTimeout(gcLoop, 10 * 60 * 1000);
+    setTimeout(gcLoop, 60 * 60 * 1000);
 }
 
 function logConnection(name) {
