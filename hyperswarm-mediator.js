@@ -29,13 +29,12 @@ const batchesSeen = {};
 // Keep track of all connections
 let connections = [];
 const connectionLastSeen = {};
-const connectionName = {};
+const connectionNodeName = {};
 
 swarm.on('connection', conn => {
     const name = b4a.toString(conn.remotePublicKey, 'hex');
-    console.log('* got a connection from:', shortName(name), '*');
     connections.push(conn);
-    conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
+    conn.once('close', () => closeConnection(conn, name));
     conn.on('data', data => receiveMsg(conn, name, data));
     syncWith(name, conn);
 });
@@ -55,6 +54,14 @@ async function syncWith(name, conn) {
 
     const json = JSON.stringify(msg);
     conn.write(json);
+}
+
+function closeConnection(conn, name) {
+    console.log(`* connection closed with: ${shortName(name)} (${connectionNodeName[name]}) *`);
+    const index = connections.indexOf(conn);
+    if (index !== -1) {
+        connections.splice(index, 1);
+    }
 }
 
 function shortName(name) {
@@ -147,7 +154,7 @@ async function relayMsg(msg) {
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
         const short = shortName(name);
-        const nodeName = connectionName[name];
+        const nodeName = connectionNodeName[name];
         const lastTime = connectionLastSeen[name];
         let lastSeen = '';
 
@@ -268,7 +275,7 @@ async function receiveMsg(conn, name, json) {
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
     connectionLastSeen[name] = new Date().getTime();
-    connectionName[name] = msg.node || 'anon';
+    connectionNodeName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
         logBatch(msg.data, msg.node || 'anon');
@@ -324,6 +331,7 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
+// eslint-disable-next-line no-unused-vars
 async function removeStaleConnections() {
     const expireLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
     const now = Date.now();
