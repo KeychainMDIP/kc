@@ -27,7 +27,10 @@ const nodes = {};
 const batchesSeen = {};
 
 // Keep track of all connections
-const connections = [];
+let connections = [];
+const connectionLastSeen = {};
+const connectionName = {};
+
 swarm.on('connection', conn => {
     const name = b4a.toString(conn.remotePublicKey, 'hex');
     console.log('* got a connection from:', shortName(name), '*');
@@ -143,13 +146,24 @@ async function relayMsg(msg) {
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
+        const short = shortName(name);
+        const nodeName = connectionName[conn];
+        const lastTime = connectionLastSeen[conn];
+        let lastSeen = '';
+
+        if (lastTime) {
+            const last = new Date(lastTime);
+            const now = new Date();
+            const minutesSinceLastSeen = Math.floor((now - last) / 1000 / 60);
+            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago`;
+        }
 
         if (!msg.relays.includes(name)) {
             conn.write(json);
-            console.log(`* relaying to: ${shortName(name)} *`);
+            console.log(`* relaying to: ${short} (${nodeName}) ${lastSeen} *`);
         }
         else {
-            console.log(`* skipping relay to: ${shortName(name)} *`);
+            console.log(`* skipping relay to: ${short} (${nodeName}) ${lastSeen} *`);
         }
     }
 }
@@ -253,6 +267,8 @@ async function receiveMsg(conn, name, json) {
     const msg = JSON.parse(json);
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
+    connectionLastSeen[conn] = new Date().getTime();
+    connectionName[conn] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
         logBatch(msg.data, msg.node || 'anon');
@@ -308,6 +324,20 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
+async function removeStaleConnections() {
+    const expireLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
+    const now = Date.now();
+
+    connections = connections.filter(conn => {
+        const lastTime = connectionLastSeen[conn];
+        if (lastTime) {
+            const timeSinceLastSeen = now - lastTime;
+            return timeSinceLastSeen <= expireLimit;
+        }
+        return true; // If we don't have a last seen time for a connection, keep it
+    });
+}
+
 async function pingLoop() {
     try {
         const msg = {
@@ -318,6 +348,8 @@ async function pingLoop() {
         };
 
         await relayMsg(msg);
+        await removeStaleConnections();
+
         console.log('ping loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
