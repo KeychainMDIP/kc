@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.06.17';
+const PROTOCOL = '/MDIP/v22.06.20';
 
 const swarm = new Hyperswarm();
 const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
@@ -331,24 +331,35 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
-// eslint-disable-next-line no-unused-vars
-async function removeStaleConnections() {
-    const expireLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
-    const now = Date.now();
+async function checkConnections() {
+    if (connections.length === 0) {
+        // Rejoin the topic to find peers
+        const discovery = swarm.join(topic, { client: true, server: true });
+        await discovery.flushed();
+        console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
+        console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
+    }
+    else {
+        // Remove connections that have not be seen in >10 minutes
+        const expireLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
+        const now = Date.now();
 
-    connections = connections.filter(conn => {
-        const name = b4a.toString(conn.remotePublicKey, 'hex');
-        const lastTime = connectionLastSeen[name];
-        if (lastTime) {
-            const timeSinceLastSeen = now - lastTime;
-            return timeSinceLastSeen <= expireLimit;
-        }
-        return true; // If we don't have a last seen time for a connection, keep it
-    });
+        connections = connections.filter(conn => {
+            const name = b4a.toString(conn.remotePublicKey, 'hex');
+            const lastTime = connectionLastSeen[name];
+            if (lastTime) {
+                const timeSinceLastSeen = now - lastTime;
+                return timeSinceLastSeen <= expireLimit;
+            }
+            return true; // If we don't have a last seen time for a connection, keep it
+        });
+    }
 }
 
 async function pingLoop() {
     try {
+        await checkConnections();
+
         const msg = {
             type: 'ping',
             time: new Date().toISOString(),
@@ -357,7 +368,6 @@ async function pingLoop() {
         };
 
         await relayMsg(msg);
-        //await removeStaleConnections();
 
         console.log('ping loop waiting 60s...');
     } catch (error) {
@@ -429,24 +439,12 @@ const hash = sha256(PROTOCOL);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
-async function start() {
-    console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
-    exportLoop();
-    pingLoop();
-}
-
 async function main() {
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
     await gcLoop();
-
-    const discovery = swarm.join(topic, { client: true, server: true });
-
-    // The flushed promise will resolve when the topic has been fully announced to the DHT
-    discovery.flushed().then(() => {
-        start();
-    });
+    await pingLoop();
+    await exportLoop();
 }
 
 main();
