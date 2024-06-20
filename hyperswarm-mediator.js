@@ -14,14 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.06.20';
-
-const swarm = new Hyperswarm();
-const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
-
-goodbye(() => {
-    swarm.destroy();
-});
+const PROTOCOL = '/MDIP/v22.06.19';
 
 const nodes = {};
 const batchesSeen = {};
@@ -31,13 +24,38 @@ let connections = [];
 const connectionLastSeen = {};
 const connectionNodeName = {};
 
-swarm.on('connection', conn => {
-    const name = b4a.toString(conn.remotePublicKey, 'hex');
-    connections.push(conn);
-    conn.once('close', () => closeConnection(conn, name));
-    conn.on('data', data => receiveMsg(conn, name, data));
-    syncWith(name, conn);
+let swarm = null;
+let peerName = '';
+
+goodbye(() => {
+    if (swarm) {
+        swarm.destroy();
+    }
 });
+
+async function createSwarm() {
+    if (swarm) {
+        swarm.destroy();
+    }
+
+    swarm = new Hyperswarm();
+    peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
+
+    swarm.on('connection', conn => {
+        const name = b4a.toString(conn.remotePublicKey, 'hex');
+        connections.push(conn);
+        conn.once('close', () => closeConnection(conn, name));
+        conn.on('data', data => receiveMsg(conn, name, data));
+        syncWith(name, conn);
+    });
+
+    const discovery = swarm.join(topic, { client: true, server: true });
+    await discovery.flushed();
+
+    const shortTopic = shortName(b4a.toString(topic, 'hex'));
+
+    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${PROTOCOL}`);
+}
 
 async function syncWith(name, conn) {
     console.log(`received connection from: ${shortName(name)}`);
@@ -334,10 +352,7 @@ async function exportLoop() {
 async function checkConnections() {
     if (connections.length === 0) {
         // Rejoin the topic to find peers
-        const discovery = swarm.join(topic, { client: true, server: true });
-        await discovery.flushed();
-        console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-        console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
+        await createSwarm();
     }
     else {
         // Remove connections that have not be seen in >10 minutes
