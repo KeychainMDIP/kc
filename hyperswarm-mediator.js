@@ -41,23 +41,22 @@ async function createSwarm() {
     swarm = new Hyperswarm();
     peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
-    swarm.on('connection', conn => {
-        const name = b4a.toString(conn.remotePublicKey, 'hex');
-        connections.push(conn);
-        conn.once('close', () => closeConnection(conn, name));
-        conn.on('data', data => receiveMsg(conn, name, data));
-        syncWith(name, conn);
-    });
+    swarm.on('connection', conn => addConnection(conn));
 
     const discovery = swarm.join(topic, { client: true, server: true });
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
-
     console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${PROTOCOL}`);
 }
 
-async function syncWith(name, conn) {
+async function addConnection(conn) {
+    connections.push(conn);
+
+    const name = b4a.toString(conn.remotePublicKey, 'hex');
+    conn.once('close', () => closeConnection(conn, name));
+    conn.on('data', data => receiveMsg(conn, name, data));
+
     console.log(`received connection from: ${shortName(name)}`);
 
     const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
@@ -366,8 +365,8 @@ async function checkConnections() {
         await createSwarm();
     }
     else {
-        // Remove connections that have not be seen in >10 minutes
-        const expireLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
+        // Remove connections that have not be seen in >3 minutes
+        const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
         const now = Date.now();
 
         connections = connections.filter(conn => {
@@ -382,7 +381,7 @@ async function checkConnections() {
     }
 }
 
-async function pingLoop() {
+async function connectionLoop() {
     try {
         await checkConnections();
 
@@ -399,7 +398,7 @@ async function pingLoop() {
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
     }
-    setTimeout(pingLoop, 60 * 1000);
+    setTimeout(connectionLoop, 60 * 1000);
 }
 
 async function collectGarbage() {
@@ -469,7 +468,7 @@ async function main() {
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
     await gcLoop();
-    await pingLoop();
+    await connectionLoop();
     await exportLoop();
 }
 
