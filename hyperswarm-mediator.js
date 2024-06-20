@@ -96,9 +96,20 @@ async function createBatch() {
     console.timeEnd('exportDIDs');
     console.log(`${exports.length} DIDs fetched`);
 
-    const events = exports.flat();
-    let operations = events.map(event => event.operation);
-    operations = operations.sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
+    const operations = exports.flat()
+        .map(event => event.operation)
+        .filter(op => { // filter out local events
+            if (op.mdip) {
+                return op.mdip.registry !== 'local';
+            }
+
+            if (op.doc.mdip) {
+                return op.doc.mdip.registry !== 'local';
+            }
+
+            return false;
+        })
+        .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
 
     return operations;
 }
