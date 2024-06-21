@@ -10,6 +10,19 @@ program
     .configureHelp({ sortSubcommands: true });
 
 program
+    .command('resolve-did <did> [confirm]')
+    .description('Return document associated with DID')
+    .action(async (did, confirm) => {
+        try {
+            const doc = await gatekeeper.resolveDID(did, null, !!confirm);
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
+
+program
     .command('get-dids')
     .description('Fetch all DIDs')
     .action(async () => {
