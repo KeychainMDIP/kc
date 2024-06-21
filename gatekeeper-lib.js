@@ -8,7 +8,6 @@ import config from './config.js';
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm', 'TESS'];
-//const queueRegistries = ['TESS'];
 
 let db = null;
 let helia = null;
@@ -32,6 +31,18 @@ export async function stop() {
     await db.stop();
 }
 
+export async function verifyDID(did) {
+    const doc = await resolveDID(did, null, false, true);
+
+    if (doc.didDocument.controller) {
+        const controller = await resolveDID(doc.didDocument.controller);
+
+        if (controller.mdip.registry === 'local' && doc.mdip.registry !== 'local') {
+            throw "Registry mistmatch";
+        }
+    }
+}
+
 export async function verifyDb() {
     const dids = await db.getAllKeys();
     let n = 0;
@@ -40,7 +51,7 @@ export async function verifyDb() {
     for (const did of dids) {
         n += 1;
         try {
-            await resolveDID(did, null, false, true);
+            await verifyDID(did);
             console.log(`${n} ${did} OK`);
         }
         catch (error) {
@@ -171,7 +182,7 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(did, anchor, asofTime) {
+async function generateDoc(anchor, asofTime) {
     try {
         if (!anchor?.mdip) {
             return {};
@@ -192,6 +203,8 @@ async function generateDoc(did, anchor, asofTime) {
         if (!validRegistries.includes(anchor.mdip.registry)) {
             return {};
         }
+
+        const did = await anchorSeed(anchor);
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
@@ -287,7 +300,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
     }
 
     const anchor = events[0];
-    let doc = await generateDoc(did, anchor.operation);
+    let doc = await generateDoc(anchor.operation);
     let mdip = doc?.mdip;
 
     if (!mdip) {

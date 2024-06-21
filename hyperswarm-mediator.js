@@ -14,30 +14,49 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.06.17';
-
-const swarm = new Hyperswarm();
-const peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
-
-goodbye(() => {
-    swarm.destroy();
-});
+const PROTOCOL = '/MDIP/v22.06.20';
 
 const nodes = {};
 const batchesSeen = {};
 
 // Keep track of all connections
-const connections = [];
-swarm.on('connection', conn => {
-    const name = b4a.toString(conn.remotePublicKey, 'hex');
-    console.log('* got a connection from:', shortName(name), '*');
-    connections.push(conn);
-    conn.once('close', () => connections.splice(connections.indexOf(conn), 1));
-    conn.on('data', data => receiveMsg(conn, name, data));
-    syncWith(name, conn);
+let connections = [];
+const connectionLastSeen = {};
+const connectionNodeName = {};
+
+let swarm = null;
+let peerName = '';
+
+goodbye(() => {
+    if (swarm) {
+        swarm.destroy();
+    }
 });
 
-async function syncWith(name, conn) {
+async function createSwarm() {
+    if (swarm) {
+        swarm.destroy();
+    }
+
+    swarm = new Hyperswarm();
+    peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
+
+    swarm.on('connection', conn => addConnection(conn));
+
+    const discovery = swarm.join(topic, { client: true, server: true });
+    await discovery.flushed();
+
+    const shortTopic = shortName(b4a.toString(topic, 'hex'));
+    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${PROTOCOL}`);
+}
+
+async function addConnection(conn) {
+    connections.push(conn);
+
+    const name = b4a.toString(conn.remotePublicKey, 'hex');
+    conn.once('close', () => closeConnection(conn, name));
+    conn.on('data', data => receiveMsg(conn, name, data));
+
     console.log(`received connection from: ${shortName(name)}`);
 
     const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
@@ -54,6 +73,14 @@ async function syncWith(name, conn) {
     conn.write(json);
 }
 
+function closeConnection(conn, name) {
+    console.log(`* connection closed with: ${shortName(name)} (${connectionNodeName[name]}) *`);
+    const index = connections.indexOf(conn);
+    if (index !== -1) {
+        connections.splice(index, 1);
+    }
+}
+
 function shortName(name) {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
@@ -68,9 +95,20 @@ async function createBatch() {
     console.timeEnd('exportDIDs');
     console.log(`${exports.length} DIDs fetched`);
 
-    const events = exports.flat();
-    let operations = events.map(event => event.operation);
-    operations = operations.sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
+    const operations = exports.flat()
+        .map(event => event.operation)
+        .filter(op => { // filter out local events
+            if (op.mdip) {
+                return op.mdip.registry !== 'local';
+            }
+
+            if (op.doc.mdip) {
+                return op.doc.mdip.registry !== 'local';
+            }
+
+            return false;
+        })
+        .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
 
     return operations;
 }
@@ -143,13 +181,24 @@ async function relayMsg(msg) {
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
+        const short = shortName(name);
+        const nodeName = connectionNodeName[name];
+        const lastTime = connectionLastSeen[name];
+        let lastSeen = '';
+
+        if (lastTime) {
+            const last = new Date(lastTime);
+            const now = new Date();
+            const minutesSinceLastSeen = Math.floor((now - last) / 1000 / 60);
+            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
+        }
 
         if (!msg.relays.includes(name)) {
             conn.write(json);
-            console.log(`* relaying to: ${shortName(name)} *`);
+            console.log(`* relaying to: ${short} (${nodeName}) ${lastSeen} *`);
         }
         else {
-            console.log(`* skipping relay to: ${shortName(name)} *`);
+            console.log(`* skipping relay to: ${short} (${nodeName}) ${lastSeen} *`);
         }
     }
 }
@@ -253,6 +302,8 @@ async function receiveMsg(conn, name, json) {
     const msg = JSON.parse(json);
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
+    connectionLastSeen[name] = new Date().getTime();
+    connectionNodeName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
         logBatch(msg.data, msg.node || 'anon');
@@ -308,8 +359,32 @@ async function exportLoop() {
     setTimeout(exportLoop, 10 * 1000);
 }
 
-async function pingLoop() {
+async function checkConnections() {
+    if (connections.length === 0) {
+        // Rejoin the topic to find peers
+        await createSwarm();
+    }
+    else {
+        // Remove connections that have not be seen in >3 minutes
+        const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
+        const now = Date.now();
+
+        connections = connections.filter(conn => {
+            const name = b4a.toString(conn.remotePublicKey, 'hex');
+            const lastTime = connectionLastSeen[name];
+            if (lastTime) {
+                const timeSinceLastSeen = now - lastTime;
+                return timeSinceLastSeen <= expireLimit;
+            }
+            return true; // If we don't have a last seen time for a connection, keep it
+        });
+    }
+}
+
+async function connectionLoop() {
     try {
+        await checkConnections();
+
         const msg = {
             type: 'ping',
             time: new Date().toISOString(),
@@ -318,11 +393,12 @@ async function pingLoop() {
         };
 
         await relayMsg(msg);
+
         console.log('ping loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
     }
-    setTimeout(pingLoop, 60 * 1000);
+    setTimeout(connectionLoop, 60 * 1000);
 }
 
 async function collectGarbage() {
@@ -388,24 +464,12 @@ const hash = sha256(PROTOCOL);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
-async function start() {
-    console.log(`hyperswarm peer id: ${shortName(peerName)} (${config.nodeName})`);
-    console.log(`joined topic: ${shortName(b4a.toString(topic, 'hex'))} using protocol: ${PROTOCOL}`);
-    exportLoop();
-    pingLoop();
-}
-
 async function main() {
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
     await gcLoop();
-
-    const discovery = swarm.join(topic, { client: true, server: true });
-
-    // The flushed promise will resolve when the topic has been fully announced to the DHT
-    discovery.flushed().then(() => {
-        start();
-    });
+    await connectionLoop();
+    await exportLoop();
 }
 
 main();
