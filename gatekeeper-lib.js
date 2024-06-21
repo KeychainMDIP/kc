@@ -38,7 +38,7 @@ export async function verifyDID(did) {
         const controller = await resolveDID(doc.didDocument.controller);
 
         if (controller.mdip.registry === 'local' && doc.mdip.registry !== 'local') {
-            console.log(`registry mistmatch ${JSON.stringify(doc, null, 4)}`);
+            throw "Registry mistmatch";
         }
     }
 }
