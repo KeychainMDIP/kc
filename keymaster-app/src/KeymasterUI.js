@@ -45,6 +45,7 @@ function KeymasterUI({ keymaster, title }) {
     const [heldString, setHeldString] = useState('');
     const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
+    const [manifest, setManifest] = useState(null);
 
     useEffect(() => {
         refreshAll();
@@ -65,6 +66,7 @@ function KeymasterUI({ keymaster, title }) {
 
                 const docs = await keymaster.resolveId(currentId);
                 setCurrentDID(docs.didDocument.id);
+                setManifest(docs.didDocumentData.manifest);
                 setDocsString(JSON.stringify(docs, null, 4));
 
                 refreshNames();
@@ -122,6 +124,7 @@ function KeymasterUI({ keymaster, title }) {
     async function resolveId() {
         try {
             const docs = await keymaster.resolveId(selectedId);
+            setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
             window.alert(error);
@@ -493,7 +496,6 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, false);
             resolveId();
-            window.alert('Credential published');
         } catch (error) {
             window.alert(error);
         }
@@ -503,7 +505,6 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, true);
             resolveId();
-            window.alert('Credential revealed');
         } catch (error) {
             window.alert(error);
         }
@@ -513,10 +514,41 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.unpublishCredential(did);
             resolveId();
-            window.alert('Credential unpublished');
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    function credentialPublished(did) {
+        if (!manifest) {
+            return false;
+        }
+
+        if (!manifest[did]) {
+            return false;
+        }
+
+        return manifest[did].credential === null;
+    }
+
+    function credentialRevealed(did) {
+        if (!manifest) {
+            return false;
+        }
+
+        if (!manifest[did]) {
+            return false;
+        }
+
+        return manifest[did].credential !== null;
+    }
+
+    function credentialUnpublished(did) {
+        if (!manifest) {
+            return true;
+        }
+
+        return !manifest[did];
     }
 
     async function showMnemonic() {
@@ -1042,17 +1074,17 @@ function KeymasterUI({ keymaster, title }) {
                                                                 </Button>
                                                             </Grid>
                                                             <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => publishCredential(did)}>
+                                                                <Button variant="contained" color="primary" onClick={() => publishCredential(did)} disabled={credentialPublished(did)}>
                                                                     Publish
                                                                 </Button>
                                                             </Grid>
                                                             <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => revealCredential(did)}>
+                                                                <Button variant="contained" color="primary" onClick={() => revealCredential(did)} disabled={credentialRevealed(did)}>
                                                                     Reveal
                                                                 </Button>
                                                             </Grid>
                                                             <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)}>
+                                                                <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)} disabled={credentialUnpublished(did)}>
                                                                     Unpublish
                                                                 </Button>
                                                             </Grid>
