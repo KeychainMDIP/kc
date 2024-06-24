@@ -425,8 +425,8 @@ program
     .description('Publish the existence of a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const vc = await keymaster.publishCredential(did, false);
-            console.log(JSON.stringify(vc, null, 4));
+            const response = await keymaster.publishCredential(did, false);
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -438,8 +438,8 @@ program
     .description('Reveal a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const vc = await keymaster.publishCredential(did, true);
-            console.log(JSON.stringify(vc, null, 4));
+            const response = await keymaster.publishCredential(did, true);
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);

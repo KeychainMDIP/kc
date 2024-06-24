@@ -808,9 +808,14 @@ export async function publishCredential(did, reveal = false) {
         }
         doc.didDocumentData.manifest[credential] = vc;
 
-        await updateDID(id.did, doc);
+        const ok = await updateDID(id.did, doc);
 
-        return vc;
+        if (ok) {
+            return vc;
+        }
+        else {
+            return "Update failed";
+        }
     }
     catch (error) {
         return error;

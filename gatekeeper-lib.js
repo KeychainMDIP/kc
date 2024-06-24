@@ -418,7 +418,7 @@ export async function updateDID(operation) {
         return true;
     }
     catch (error) {
-        //console.error(error);
+        console.error(error);
         return false;
     }
 }

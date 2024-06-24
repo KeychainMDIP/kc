@@ -388,4 +388,24 @@ export async function removeCredential(did) {
     }
 }
 
+export async function publishCredential(did, reveal) {
+    try {
+        const response = await axios.post(`/api/v1/credentials/${did}/publish`, { reveal });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function unpublishCredential(did) {
+    try {
+        const response = await axios.post(`/api/v1/credentials/${did}/unpublish`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 
