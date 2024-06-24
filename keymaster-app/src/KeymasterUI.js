@@ -493,6 +493,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, false);
             resolveId();
+            window.alert('Credential published');
         } catch (error) {
             window.alert(error);
         }
@@ -502,6 +503,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, true);
             resolveId();
+            window.alert('Credential revealed');
         } catch (error) {
             window.alert(error);
         }
@@ -511,6 +513,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.unpublishCredential(did);
             resolveId();
+            window.alert('Credential unpublished');
         } catch (error) {
             window.alert(error);
         }
