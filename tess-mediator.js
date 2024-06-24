@@ -196,7 +196,8 @@ async function anchorBatch() {
         console.log(JSON.stringify(walletInfo, null, 4));
 
         if (walletInfo.balance < 1) {
-            console.log('TESS wallet has insufficient funds');
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Wallet has insufficient funds. Send TESS to ${address}`);
             return;
         }
     }
@@ -270,6 +271,10 @@ async function waitForTess() {
         try {
             const walletInfo = await client.getWalletInfo();
             console.log(JSON.stringify(walletInfo, null, 4));
+
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Send TESS to ${address}`);
+            
             isReady = true;
         }
         catch {
