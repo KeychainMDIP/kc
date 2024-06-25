@@ -77,12 +77,18 @@ export function decryptMnemonic() {
 export async function checkWallet() {
     const wallet = loadWallet();
     let invalid = 0;
+    let deleted = 0;
 
+    // Validate keys
     await resolveSeedBank();
 
     for (const name of Object.keys(wallet.ids)) {
         try {
-            await resolveDID(wallet.ids[name].did);
+            const doc = await resolveDID(wallet.ids[name].did);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                deleted += 1;
+            }
         }
         catch (error) {
             invalid += 1;
@@ -92,7 +98,11 @@ export async function checkWallet() {
     for (const id of Object.values(wallet.ids)) {
         for (const did of id.owned) {
             try {
-                await resolveDID(did);
+                const doc = await resolveDID(did);
+
+                if (doc.didDocumentMetadata.deactivated) {
+                    deleted += 1;
+                }
             }
             catch (error) {
                 invalid += 1;
@@ -100,19 +110,13 @@ export async function checkWallet() {
         }
     }
 
-    return invalid;
+    return { invalid, deleted };
 }
 
 export async function fixWallet() {
-    const invalid = await checkWallet();
+    const wallet = loadWallet();
     let idsRemoved = 0;
     let ownedRemoved = 0;
-
-    if (invalid === 0) {
-        return { idsRemoved, ownedRemoved };
-    }
-
-    const wallet = loadWallet();
 
     for (const name of Object.keys(wallet.ids)) {
         try {
