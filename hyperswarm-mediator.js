@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.06.20';
+const PROTOCOL = '/MDIP/v22.06.25';
 
 const nodes = {};
 const batchesSeen = {};
@@ -99,13 +99,16 @@ async function createBatch() {
         .map(event => event.operation)
         .filter(op => { // filter out local events
             if (op.mdip) {
+                // create operation
                 return op.mdip.registry !== 'local';
             }
 
-            if (op.doc.mdip) {
+            if (op.doc?.mdip) {
+                // update operation
                 return op.doc.mdip.registry !== 'local';
             }
 
+            // delete operation
             return false;
         })
         .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
@@ -444,13 +447,11 @@ function logConnection(name) {
 }
 
 process.on('uncaughtException', (error) => {
-    //console.error('Unhandled exception caught');
     console.error('Unhandled exception caught', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection at:', promise, 'reason:', reason);
-    //console.error('Unhandled rejection caught');
 });
 
 process.stdin.on('data', d => {
