@@ -112,7 +112,7 @@ export async function fixWallet() {
     let ownedRemoved = 0;
 
     if (invalid === 0) {
-        return {idsRemoved, ownedRemoved};
+        return { idsRemoved, ownedRemoved };
     }
 
     const wallet = loadWallet();
@@ -141,7 +141,7 @@ export async function fixWallet() {
 
     saveWallet(wallet);
 
-    return {idsRemoved, ownedRemoved};
+    return { idsRemoved, ownedRemoved };
 }
 
 export async function resolveSeedBank() {
@@ -765,8 +765,11 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     const signed = await addSignature(operation, name);
     const did = await gatekeeper.createDID(signed);
 
-    // TBD skip if registry is hyperswarm?
-    addToOwned(did);
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
     return did;
 }
 
@@ -808,6 +811,11 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     const id = fetchId();
 
     if (vc.issuer !== id.did) {
+        throw 'Invalid VC';
+    }
+
+    // Don't allow credentials that will be garbage-collected
+    if (registry === 'hyperswarm') {
         throw 'Invalid VC';
     }
 
