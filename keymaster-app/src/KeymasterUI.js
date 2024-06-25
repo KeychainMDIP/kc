@@ -1117,7 +1117,7 @@ function KeymasterUI({ keymaster, title }) {
                                                                 </Button>
                                                             </Grid>
                                                             <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => removeCredential(did)}>
+                                                                <Button variant="contained" color="primary" onClick={() => removeCredential(did)} disabled={!credentialUnpublished(did)}>
                                                                     Remove
                                                                 </Button>
                                                             </Grid>
