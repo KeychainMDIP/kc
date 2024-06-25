@@ -43,6 +43,8 @@ function KeymasterUI({ keymaster, title }) {
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [issuedList, setIssuedList] = useState(null);
+    const [issuedString, setIssuedString] = useState('');
     const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
     const [manifest, setManifest] = useState(null);
@@ -71,6 +73,7 @@ function KeymasterUI({ keymaster, title }) {
 
                 refreshNames();
                 refreshHeld();
+                refreshIssued();
 
                 setTab('identity');
                 setCredentialTab('held');
@@ -433,6 +436,8 @@ function KeymasterUI({ keymaster, title }) {
         try {
             const did = await keymaster.issueCredential(JSON.parse(credentialString));
             setCredentialDID(did);
+            // Add did to issuedList
+            setIssuedList(prevIssuedList => [...prevIssuedList, did]);
         } catch (error) {
             window.alert(error);
         }
@@ -443,6 +448,16 @@ function KeymasterUI({ keymaster, title }) {
             const heldList = await keymaster.listCredentials();
             setHeldList(heldList);
             setHeldString('');
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function refreshIssued() {
+        try {
+            const issuedList = await keymaster.listIssued();
+            setIssuedList(issuedList);
+            setIssuedString('');
         } catch (error) {
             window.alert(error);
         }
@@ -549,6 +564,38 @@ function KeymasterUI({ keymaster, title }) {
         }
 
         return !manifest[did];
+    }
+
+    async function resolveIssued(did) {
+        try {
+            const doc = await keymaster.resolveDID(did);
+            setIssuedString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function decryptIssued(did) {
+        try {
+            const doc = await keymaster.getCredential(did);
+            setIssuedString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function revokeIssued(did) {
+        try {
+            if (window.confirm(`Revoke credential?`)) {
+                await keymaster.revokeCredential(did);
+
+                // Remove did from issuedList
+                const newIssuedList = issuedList.filter(item => item !== did);
+                setIssuedList(newIssuedList);
+            }
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     async function showMnemonic() {
@@ -1045,6 +1092,7 @@ function KeymasterUI({ keymaster, title }) {
                                 >
                                     <Tab key="held" value="held" label={'Held'} />
                                     <Tab key="issue" value="issue" label={'Issue'} />
+                                    <Tab key="issued" value="issued" label={'Issued'} />
                                 </Tabs>
                             </Box>
                             {credentialTab === 'held' &&
@@ -1204,6 +1252,45 @@ function KeymasterUI({ keymaster, title }) {
                                             </Grid>
                                         </Box>
                                     }
+                                </Box>
+                            }
+                            {credentialTab === 'issued' &&
+                                <Box>
+                                    <Table style={{ width: '800px' }}>
+                                        <TableBody>
+                                            {issuedList.map((did, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell colSpan={6}>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {did}
+                                                        </Typography>
+                                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                            <Grid item>
+                                                                <Button variant="contained" color="primary" onClick={() => resolveIssued(did)}>
+                                                                    Resolve
+                                                                </Button>
+                                                            </Grid>
+                                                            <Grid item>
+                                                                <Button variant="contained" color="primary" onClick={() => decryptIssued(did)}>
+                                                                    Decrypt
+                                                                </Button>
+                                                            </Grid>
+                                                            <Grid item>
+                                                                <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
+                                                                    Revoke
+                                                                </Button>
+                                                            </Grid>
+                                                        </Grid>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                    <textarea
+                                        value={issuedString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
                                 </Box>
                             }
                         </Box>
