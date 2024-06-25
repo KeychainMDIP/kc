@@ -827,18 +827,22 @@ export async function issueCredential(vc, registry = defaultRegistry) {
 
 export async function listIssued(issuer) {
     const id = fetchId(issuer);
+    const issued = [];
 
     for (const did of id.owned) {
         try {
-            const asset = await resolveDID(did);
-            console.log(JSON.stringify(asset, null, 4));
+            const credential = await decryptJSON(did);
+
+            if (credential.issuer === id.did) {
+                issued.push(did);
+            }
         }
         catch (error) {
-            console.log(error);
+            continue;
         }
     }
 
-    return "TBD";
+    return issued;
 }
 
 export async function revokeCredential(did) {
