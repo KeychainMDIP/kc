@@ -30,6 +30,15 @@ export function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
+export function loadWallet() {
+    if (fs.existsSync(walletName)) {
+        const walletJson = fs.readFileSync(walletName);
+        return JSON.parse(walletJson);
+    }
+
+    return newWallet();
+}
+
 export function newWallet(mnemonic, overwrite = false) {
     if (fs.existsSync(walletName) && !overwrite) {
         throw "Wallet already exists";
@@ -66,15 +75,6 @@ export function decryptMnemonic() {
     const mnenomic = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
 
     return mnenomic;
-}
-
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
-    }
-
-    return newWallet();
 }
 
 export async function checkWallet() {
@@ -675,7 +675,7 @@ export async function rotateKeys() {
 export function listNames() {
     const wallet = loadWallet();
 
-    return wallet.names;
+    return wallet.names || {};
 }
 
 export function addName(name, did) {
@@ -901,6 +901,7 @@ export async function publishCredential(did, reveal = false) {
             // Remove the credential values
             vc.credential = null;
         }
+
         doc.didDocumentData.manifest[credential] = vc;
 
         const ok = await updateDID(id.did, doc);

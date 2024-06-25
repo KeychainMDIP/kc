@@ -74,6 +74,73 @@ export function decryptMnemonic() {
     return mnenomic;
 }
 
+export async function checkWallet() {
+    const wallet = loadWallet();
+    let invalid = 0;
+
+    await resolveSeedBank();
+
+    for (const name of Object.keys(wallet.ids)) {
+        try {
+            await resolveDID(wallet.ids[name].did);
+        }
+        catch (error) {
+            invalid += 1;
+        }
+    }
+
+    for (const id of Object.values(wallet.ids)) {
+        for (const did of id.owned) {
+            try {
+                await resolveDID(did);
+            }
+            catch (error) {
+                invalid += 1;
+            }
+        }
+    }
+
+    return invalid;
+}
+
+export async function fixWallet() {
+    const invalid = await checkWallet();
+    let idsRemoved = 0;
+    let ownedRemoved = 0;
+
+    if (invalid === 0) {
+        return { idsRemoved, ownedRemoved };
+    }
+
+    const wallet = loadWallet();
+
+    for (const name of Object.keys(wallet.ids)) {
+        try {
+            await resolveDID(wallet.ids[name].did);
+        }
+        catch (error) {
+            delete wallet.ids[name];
+            idsRemoved += 1;
+        }
+    }
+
+    for (const id of Object.values(wallet.ids)) {
+        for (let i = 0; i < id.owned.length; i++) {
+            try {
+                await resolveDID(id.owned[i]);
+            } catch {
+                id.owned.splice(i, 1);
+                i--; // Decrement index to account for the removed item
+                ownedRemoved += 1;
+            }
+        }
+    }
+
+    saveWallet(wallet);
+
+    return { idsRemoved, ownedRemoved };
+}
+
 export async function resolveSeedBank() {
     const keypair = hdKeyPair();
 
@@ -695,8 +762,11 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     const signed = await addSignature(operation, name);
     const did = await gatekeeper.createDID(signed);
 
-    // TBD skip if registry is hyperswarm?
-    addToOwned(did);
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
     return did;
 }
 
@@ -741,10 +811,35 @@ export async function issueCredential(vc, registry = defaultRegistry) {
         throw 'Invalid VC';
     }
 
+    // Don't allow credentials that will be garbage-collected
+    if (registry === 'hyperswarm') {
+        throw 'Invalid VC';
+    }
+
     const signed = await addSignature(vc);
     const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function listIssued(issuer) {
+    const id = fetchId(issuer);
+    const issued = [];
+
+    for (const did of id.owned) {
+        try {
+            const credential = await decryptJSON(did);
+
+            if (credential.issuer === id.did) {
+                issued.push(did);
+            }
+        }
+        catch (error) {
+            continue;
+        }
+    }
+
+    return issued;
 }
 
 export async function revokeCredential(did) {
@@ -803,11 +898,17 @@ export async function publishCredential(did, reveal = false) {
             // Remove the credential values
             vc.credential = null;
         }
+
         doc.didDocumentData.manifest[credential] = vc;
 
-        await updateDID(id.did, doc);
+        const ok = await updateDID(id.did, doc);
 
-        return vc;
+        if (ok) {
+            return vc;
+        }
+        else {
+            return "Update failed";
+        }
     }
     catch (error) {
         return error;
