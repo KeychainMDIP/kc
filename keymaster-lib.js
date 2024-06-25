@@ -103,7 +103,45 @@ export async function checkWallet() {
         }
     }
 
-    return invalid ? `${invalid} invalid DIDs detected` : `Wallet check OK`;
+    return invalid;
+}
+
+export async function fixWallet() {
+    const invalid = await checkWallet();
+    let idsRemoved = 0;
+    let ownedRemoved = 0;
+
+    if (invalid === 0) {
+        return {idsRemoved, ownedRemoved};
+    }
+
+    const wallet = loadWallet();
+
+    for (const name of Object.keys(wallet.ids)) {
+        try {
+            await resolveDID(wallet.ids[name].did);
+        }
+        catch (error) {
+            delete wallet.ids[name];
+            idsRemoved += 1;
+        }
+    }
+
+    for (const id of Object.values(wallet.ids)) {
+        for (let i = 0; i < id.owned.length; i++) {
+            try {
+                await resolveDID(id.owned[i]);
+            } catch {
+                id.owned.splice(i, 1);
+                i--; // Decrement index to account for the removed item
+                ownedRemoved += 1;
+            }
+        }
+    }
+
+    saveWallet(wallet);
+
+    return {idsRemoved, ownedRemoved};
 }
 
 export async function resolveSeedBank() {

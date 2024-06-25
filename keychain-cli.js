@@ -26,8 +26,28 @@ program
     .description('Validate DIDs in wallet')
     .action(async () => {
         try {
-            const response = await keymaster.checkWallet();
-            console.log(response);
+            const invalid = await keymaster.checkWallet();
+
+            if (invalid) {
+                console.log(`${invalid} DIDs detected`);
+            }
+            else {
+                console.log('Wallet OK');
+            }
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('fix-wallet')
+    .description('Remove invalid DIDs from the wallet')
+    .action(async () => {
+        try {
+            const {idsRemoved, ownedRemoved } = await keymaster.fixWallet();
+
+            console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs were removed`);
         }
         catch (error) {
             console.error(error);
