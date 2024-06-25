@@ -22,6 +22,19 @@ program
     });
 
 program
+    .command('check-wallet')
+    .description('Validate DIDs in wallet')
+    .action(async () => {
+        try {
+            const response = await keymaster.checkWallet();
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {
@@ -378,6 +391,20 @@ program
             }
 
             console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('list-issued')
+    .description('List issued credentials')
+    .action(async () => {
+        try {
+            const response = await keymaster.listIssued();
+
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);

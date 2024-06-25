@@ -77,6 +77,35 @@ export function loadWallet() {
     return newWallet();
 }
 
+export async function checkWallet() {
+    const wallet = loadWallet();
+    let invalid = 0;
+
+    await resolveSeedBank();
+
+    for (const name of Object.keys(wallet.ids)) {
+        try {
+            await resolveDID(wallet.ids[name].did);
+        }
+        catch (error) {
+            invalid += 1;
+        }
+    }
+
+    for (const id of Object.values(wallet.ids)) {
+        for (const did of id.owned) {
+            try {
+                await resolveDID(did);
+            }
+            catch (error) {
+                invalid += 1;
+            }
+        }
+    }
+
+    return invalid ? `${invalid} invalid DIDs detected` : `Wallet check OK`;
+}
+
 export async function resolveSeedBank() {
     const keypair = hdKeyPair();
 
@@ -748,6 +777,22 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function listIssued(issuer) {
+    const id = fetchId(issuer);
+
+    for (const did of id.owned) {
+        try {
+            const asset = await resolveDID(did);
+            console.log(JSON.stringify(asset, null, 4));
+        }
+        catch (error) {
+            console.log(error);
+        }
+    }
+
+    return "TBD";
 }
 
 export async function revokeCredential(did) {
