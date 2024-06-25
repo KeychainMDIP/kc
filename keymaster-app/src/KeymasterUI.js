@@ -436,8 +436,8 @@ function KeymasterUI({ keymaster, title }) {
         try {
             const did = await keymaster.issueCredential(JSON.parse(credentialString));
             setCredentialDID(did);
-            refreshIssued();
-            resolveIssued(did);
+            // Add did to issuedList
+            setIssuedList(prevIssuedList => [...prevIssuedList, did]);
         } catch (error) {
             window.alert(error);
         }
@@ -588,7 +588,10 @@ function KeymasterUI({ keymaster, title }) {
         try {
             if (window.confirm(`Revoke credential?`)) {
                 await keymaster.revokeCredential(did);
-                refreshIssued();
+
+                // Remove did from issuedList
+                const newIssuedList = issuedList.filter(item => item !== did);
+                setIssuedList(newIssuedList);
             }
         } catch (error) {
             window.alert(error);
