@@ -6,7 +6,7 @@
   "main": "gatekeeper-api.js",
   "scripts": {
     "start": "node gatekeeper-api.js",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose --coverage",
     "lint": "eslint ."
   },
   "author": "",
