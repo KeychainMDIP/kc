@@ -26,9 +26,9 @@ program
     .description('Validate DIDs in wallet')
     .action(async () => {
         try {
-            const { invalid, deleted } = await keymaster.checkWallet();
+            const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-            console.log(`${invalid} invalid DIDs found, ${deleted} deleted DIDs found`);
+            console.log(`${checked} DIDs checked, ${invalid} invalid DIDs found, ${deleted} deleted DIDs found`);
         }
         catch (error) {
             console.error(error);
@@ -40,9 +40,9 @@ program
     .description('Remove invalid DIDs from the wallet')
     .action(async () => {
         try {
-            const { idsRemoved, ownedRemoved } = await keymaster.fixWallet();
+            const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
 
-            console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs were removed`);
+            console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs and ${heldRemoved} held DIDs were removed`);
         }
         catch (error) {
             console.error(error);

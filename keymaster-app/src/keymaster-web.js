@@ -76,6 +76,8 @@ export function decryptMnemonic() {
 
 export async function checkWallet() {
     const wallet = loadWallet();
+
+    let checked = 0;
     let invalid = 0;
     let deleted = 0;
 
@@ -93,56 +95,126 @@ export async function checkWallet() {
         catch (error) {
             invalid += 1;
         }
+
+        checked += 1;
     }
 
     for (const id of Object.values(wallet.ids)) {
-        for (const did of id.owned) {
-            try {
-                const doc = await resolveDID(did);
+        if (id.owned) {
+            for (const did of id.owned) {
+                try {
+                    const doc = await resolveDID(did);
 
-                if (doc.didDocumentMetadata.deactivated) {
-                    deleted += 1;
+                    if (doc.didDocumentMetadata.deactivated) {
+                        deleted += 1;
+                    }
                 }
+                catch (error) {
+                    invalid += 1;
+                }
+
+                checked += 1;
             }
-            catch (error) {
-                invalid += 1;
+        }
+
+        if (id.held) {
+            for (const did of id.held) {
+                try {
+                    const doc = await resolveDID(did);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        deleted += 1;
+                    }
+                }
+                catch (error) {
+                    invalid += 1;
+                }
+
+                checked += 1;
             }
         }
     }
 
-    return { invalid, deleted };
+    return { checked, invalid, deleted };
 }
 
 export async function fixWallet() {
     const wallet = loadWallet();
     let idsRemoved = 0;
     let ownedRemoved = 0;
+    let heldRemoved = 0;
 
     for (const name of Object.keys(wallet.ids)) {
+        let remove = false;
+
         try {
-            await resolveDID(wallet.ids[name].did);
+            const doc = await resolveDID(wallet.ids[name].did);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                remove = true;
+            }
         }
         catch (error) {
+            remove = true;
+        }
+
+        if (remove) {
             delete wallet.ids[name];
             idsRemoved += 1;
         }
     }
 
     for (const id of Object.values(wallet.ids)) {
-        for (let i = 0; i < id.owned.length; i++) {
-            try {
-                await resolveDID(id.owned[i]);
-            } catch {
-                id.owned.splice(i, 1);
-                i--; // Decrement index to account for the removed item
-                ownedRemoved += 1;
+        if (id.owned) {
+            for (let i = 0; i < id.owned.length; i++) {
+                let remove = false;
+
+                try {
+                    const doc = await resolveDID(id.owned[i]);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        remove = true;
+                    }
+                }
+                catch {
+                    remove = true;
+                }
+
+                if (remove) {
+                    id.owned.splice(i, 1);
+                    i--; // Decrement index to account for the removed item
+                    ownedRemoved += 1;
+                }
+            }
+        }
+
+        if (id.held) {
+            for (let i = 0; i < id.held.length; i++) {
+                let remove = false;
+
+                try {
+                    const doc = await resolveDID(id.held[i]);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        remove = true;
+                    }
+                }
+                catch {
+                    remove = true;
+                }
+
+                if (remove) {
+                    id.held.splice(i, 1);
+                    i--; // Decrement index to account for the removed item
+                    heldRemoved += 1;
+                }
             }
         }
     }
 
     saveWallet(wallet);
 
-    return { idsRemoved, ownedRemoved };
+    return { idsRemoved, ownedRemoved, heldRemoved };
 }
 
 export async function resolveSeedBank() {
