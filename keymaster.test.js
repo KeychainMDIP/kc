@@ -1194,6 +1194,35 @@ describe('issueCredential', () => {
     });
 });
 
+describe('listIssued', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return empty list for new ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const issued = await keymaster.listIssued();
+
+        expect(issued).toStrictEqual([]);
+    });
+
+    it('should return list containing one issued credential', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.issueCredential(boundCredential);
+        
+        const issued = await keymaster.listIssued();
+
+        expect(issued).toStrictEqual([did]);
+    });
+});
+
 describe('revokeCredential', () => {
 
     afterEach(() => {
