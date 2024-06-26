@@ -91,26 +91,18 @@ async function createBatch() {
     console.timeEnd('getDIDs');
 
     console.time('exportDIDs');
-    let exports = await gatekeeper.exportDIDs(didList);
+    const allDIDs = await gatekeeper.exportDIDs(didList);
     console.timeEnd('exportDIDs');
-    console.log(`${exports.length} DIDs fetched`);
+    console.log(`${allDIDs.length} DIDs fetched`);
 
-    const operations = exports.flat()
+    const nonlocalDIDs = allDIDs.filter(events => {
+        const create = events[0];
+        const registry = create.operation?.mdip?.registry;
+        return registry && registry !== 'local'
+    });
+
+    const operations = nonlocalDIDs.flat()
         .map(event => event.operation)
-        .filter(op => { // filter out local events
-            if (op.mdip) {
-                // create operation
-                return op.mdip.registry !== 'local';
-            }
-
-            if (op.doc?.mdip) {
-                // update operation
-                return op.doc.mdip.registry !== 'local';
-            }
-
-            // delete operation
-            return false;
-        })
         .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
 
     return operations;
