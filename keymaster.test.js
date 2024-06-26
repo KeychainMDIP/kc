@@ -794,18 +794,14 @@ describe('revokeDID', () => {
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.revokeDID(dataDid);
         const doc = await keymaster.resolveDID(dataDid);
 
-        const dataUpdated = { name: 'updated' };
-        doc.didDocumentData = dataUpdated;
-
-        const ok = await keymaster.revokeDID(dataDid, doc);
-        const doc2 = await keymaster.resolveDID(dataDid);
-
         expect(ok).toBe(true);
-        expect(doc2.didDocument).toStrictEqual({});
-        expect(doc2.didDocumentData).toStrictEqual({});
-        expect(doc2.didDocumentMetadata.deactivated).toBe(true);
+        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocumentData).toStrictEqual({});
+        expect(doc.didDocumentMetadata.deactivated).toBe(true);
     });
 
     it('should revoke an asset DID when current ID is not owner ID', async () => {
@@ -818,20 +814,16 @@ describe('revokeDID', () => {
 
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        const doc = await keymaster.resolveDID(dataDid);
-
-        const dataUpdated = { name: 'updated' };
-        doc.didDocumentData = dataUpdated;
 
         keymaster.setCurrentId('Alice');
 
-        const ok = await keymaster.revokeDID(dataDid, doc);
-        const doc2 = await keymaster.resolveDID(dataDid);
+        const ok = await keymaster.revokeDID(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc2.didDocument).toStrictEqual({});
-        expect(doc2.didDocumentData).toStrictEqual({});
-        expect(doc2.didDocumentMetadata.deactivated).toBe(true);
+        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocumentData).toStrictEqual({});
+        expect(doc.didDocumentMetadata.deactivated).toBe(true);
     });
 });
 

@@ -414,6 +414,35 @@ v1router.post('/credentials/:did/unpublish', async (req, res) => {
     }
 });
 
+v1router.get('/issued', async (req, res) => {
+    try {
+        const response = await keymaster.listIssued();
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/issued/:did', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const response = await keymaster.getCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.delete('/issued/:did', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const response = await keymaster.revokeCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

@@ -22,6 +22,34 @@ program
     });
 
 program
+    .command('check-wallet')
+    .description('Validate DIDs in wallet')
+    .action(async () => {
+        try {
+            const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+            console.log(`${checked} DIDs checked, ${invalid} invalid DIDs found, ${deleted} deleted DIDs found`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('fix-wallet')
+    .description('Remove invalid DIDs from the wallet')
+    .action(async () => {
+        try {
+            const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+
+            console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs and ${heldRemoved} held DIDs were removed`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
     .action((recoveryPhrase) => {
@@ -378,6 +406,20 @@ program
             }
 
             console.log(did);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('list-issued')
+    .description('List issued credentials')
+    .action(async () => {
+        try {
+            const response = await keymaster.listIssued();
+
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);

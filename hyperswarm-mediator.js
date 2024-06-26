@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.06.20';
+const PROTOCOL = '/MDIP/v22.06.25';
 
 const nodes = {};
 const batchesSeen = {};
@@ -91,23 +91,18 @@ async function createBatch() {
     console.timeEnd('getDIDs');
 
     console.time('exportDIDs');
-    let exports = await gatekeeper.exportDIDs(didList);
+    const allDIDs = await gatekeeper.exportDIDs(didList);
     console.timeEnd('exportDIDs');
-    console.log(`${exports.length} DIDs fetched`);
+    console.log(`${allDIDs.length} DIDs fetched`);
 
-    const operations = exports.flat()
+    const nonlocalDIDs = allDIDs.filter(events => {
+        const create = events[0];
+        const registry = create.operation?.mdip?.registry;
+        return registry && registry !== 'local'
+    });
+
+    const operations = nonlocalDIDs.flat()
         .map(event => event.operation)
-        .filter(op => { // filter out local events
-            if (op.mdip) {
-                return op.mdip.registry !== 'local';
-            }
-
-            if (op.doc.mdip) {
-                return op.doc.mdip.registry !== 'local';
-            }
-
-            return false;
-        })
         .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
 
     return operations;
@@ -444,13 +439,11 @@ function logConnection(name) {
 }
 
 process.on('uncaughtException', (error) => {
-    //console.error('Unhandled exception caught');
     console.error('Unhandled exception caught', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection at:', promise, 'reason:', reason);
-    //console.error('Unhandled rejection caught');
 });
 
 process.stdin.on('data', d => {

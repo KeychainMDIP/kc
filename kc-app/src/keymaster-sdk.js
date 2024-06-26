@@ -408,4 +408,22 @@ export async function unpublishCredential(did) {
     }
 }
 
+export async function listIssued() {
+    try {
+        const response = await axios.get(`/api/v1/issued`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
 
+export async function revokeCredential(did) {
+    try {
+        const response = await axios.delete(`/api/v1/issued/${did}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}

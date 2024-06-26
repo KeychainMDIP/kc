@@ -30,6 +30,15 @@ export function saveWallet(wallet) {
     fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
 }
 
+export function loadWallet() {
+    if (fs.existsSync(walletName)) {
+        const walletJson = fs.readFileSync(walletName);
+        return JSON.parse(walletJson);
+    }
+
+    return newWallet();
+}
+
 export function newWallet(mnemonic, overwrite = false) {
     if (fs.existsSync(walletName) && !overwrite) {
         throw "Wallet already exists";
@@ -68,13 +77,147 @@ export function decryptMnemonic() {
     return mnenomic;
 }
 
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
+export async function checkWallet() {
+    const wallet = loadWallet();
+
+    let checked = 0;
+    let invalid = 0;
+    let deleted = 0;
+
+    // Validate keys
+    await resolveSeedBank();
+
+    for (const name of Object.keys(wallet.ids)) {
+        try {
+            const doc = await resolveDID(wallet.ids[name].did);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                deleted += 1;
+            }
+        }
+        catch (error) {
+            invalid += 1;
+        }
+
+        checked += 1;
     }
 
-    return newWallet();
+    for (const id of Object.values(wallet.ids)) {
+        if (id.owned) {
+            for (const did of id.owned) {
+                try {
+                    const doc = await resolveDID(did);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        deleted += 1;
+                    }
+                }
+                catch (error) {
+                    invalid += 1;
+                }
+
+                checked += 1;
+            }
+        }
+
+        if (id.held) {
+            for (const did of id.held) {
+                try {
+                    const doc = await resolveDID(did);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        deleted += 1;
+                    }
+                }
+                catch (error) {
+                    invalid += 1;
+                }
+
+                checked += 1;
+            }
+        }
+    }
+
+    return { checked, invalid, deleted };
+}
+
+export async function fixWallet() {
+    const wallet = loadWallet();
+    let idsRemoved = 0;
+    let ownedRemoved = 0;
+    let heldRemoved = 0;
+
+    for (const name of Object.keys(wallet.ids)) {
+        let remove = false;
+
+        try {
+            const doc = await resolveDID(wallet.ids[name].did);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                remove = true;
+            }
+        }
+        catch (error) {
+            remove = true;
+        }
+
+        if (remove) {
+            delete wallet.ids[name];
+            idsRemoved += 1;
+        }
+    }
+
+    for (const id of Object.values(wallet.ids)) {
+        if (id.owned) {
+            for (let i = 0; i < id.owned.length; i++) {
+                let remove = false;
+
+                try {
+                    const doc = await resolveDID(id.owned[i]);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        remove = true;
+                    }
+                }
+                catch {
+                    remove = true;
+                }
+
+                if (remove) {
+                    id.owned.splice(i, 1);
+                    i--; // Decrement index to account for the removed item
+                    ownedRemoved += 1;
+                }
+            }
+        }
+
+        if (id.held) {
+            for (let i = 0; i < id.held.length; i++) {
+                let remove = false;
+
+                try {
+                    const doc = await resolveDID(id.held[i]);
+
+                    if (doc.didDocumentMetadata.deactivated) {
+                        remove = true;
+                    }
+                }
+                catch {
+                    remove = true;
+                }
+
+                if (remove) {
+                    id.held.splice(i, 1);
+                    i--; // Decrement index to account for the removed item
+                    heldRemoved += 1;
+                }
+            }
+        }
+    }
+
+    saveWallet(wallet);
+
+    return { idsRemoved, ownedRemoved, heldRemoved };
 }
 
 export async function resolveSeedBank() {
@@ -401,7 +544,13 @@ export async function revokeDID(did) {
 
     const controller = current.didDocument.controller || current.didDocument.id;
     const signed = await addSignature(operation, controller);
-    return gatekeeper.deleteDID(signed);
+    const ok = gatekeeper.deleteDID(signed);
+
+    if (ok && current.didDocument.controller) {
+        removeFromOwned(did, current.didDocument.controller);
+    }
+
+    return ok;
 }
 
 function addToOwned(did) {
@@ -411,6 +560,16 @@ function addToOwned(did) {
 
     owned.add(did);
     id.owned = Array.from(owned);
+
+    saveWallet(wallet);
+    return true;
+}
+
+function removeFromOwned(did, owner) {
+    const wallet = loadWallet();
+    const id = fetchId(owner);
+
+    id.owned = id.owned.filter(item => item !== did);
 
     saveWallet(wallet);
     return true;
@@ -608,7 +767,7 @@ export async function rotateKeys() {
 export function listNames() {
     const wallet = loadWallet();
 
-    return wallet.names;
+    return wallet.names || {};
 }
 
 export function addName(name, did) {
@@ -698,8 +857,11 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
     const signed = await addSignature(operation, name);
     const did = await gatekeeper.createDID(signed);
 
-    // TBD skip if registry is hyperswarm?
-    addToOwned(did);
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
     return did;
 }
 
@@ -744,10 +906,35 @@ export async function issueCredential(vc, registry = defaultRegistry) {
         throw 'Invalid VC';
     }
 
+    // Don't allow credentials that will be garbage-collected
+    if (registry === 'hyperswarm') {
+        throw 'Invalid VC';
+    }
+
     const signed = await addSignature(vc);
     const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function listIssued(issuer) {
+    const id = fetchId(issuer);
+    const issued = [];
+
+    for (const did of id.owned) {
+        try {
+            const credential = await decryptJSON(did);
+
+            if (credential.issuer === id.did) {
+                issued.push(did);
+            }
+        }
+        catch (error) {
+            continue;
+        }
+    }
+
+    return issued;
 }
 
 export async function revokeCredential(did) {
@@ -806,6 +993,7 @@ export async function publishCredential(did, reveal = false) {
             // Remove the credential values
             vc.credential = null;
         }
+
         doc.didDocumentData.manifest[credential] = vc;
 
         const ok = await updateDID(id.did, doc);
