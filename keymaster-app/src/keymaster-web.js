@@ -541,7 +541,13 @@ export async function revokeDID(did) {
 
     const controller = current.didDocument.controller || current.didDocument.id;
     const signed = await addSignature(operation, controller);
-    return gatekeeper.deleteDID(signed);
+    const ok = gatekeeper.deleteDID(signed);
+
+    if (ok && current.didDocument.controller) {
+        removeFromOwned(did, current.didDocument.controller);
+    }
+
+    return ok;
 }
 
 function addToOwned(did) {
@@ -551,6 +557,16 @@ function addToOwned(did) {
 
     owned.add(did);
     id.owned = Array.from(owned);
+
+    saveWallet(wallet);
+    return true;
+}
+
+function removeFromOwned(did, owner) {
+    const wallet = loadWallet();
+    const id = fetchId(owner);
+
+    id.owned = id.owned.filter(item => item !== did);
 
     saveWallet(wallet);
     return true;
