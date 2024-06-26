@@ -921,16 +921,18 @@ export async function listIssued(issuer) {
     const id = fetchId(issuer);
     const issued = [];
 
-    for (const did of id.owned) {
-        try {
-            const credential = await decryptJSON(did);
+    if (id.owned) {
+        for (const did of id.owned) {
+            try {
+                const credential = await decryptJSON(did);
 
-            if (credential.issuer === id.did) {
-                issued.push(did);
+                if (credential.issuer === id.did) {
+                    issued.push(did);
+                }
             }
-        }
-        catch (error) {
-            continue;
+            catch (error) {
+                continue;
+            }
         }
     }
 

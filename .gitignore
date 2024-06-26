@@ -4,3 +4,4 @@ ipfs/
 .env
 last-compose-file.txt
 custodials
+coverage/
