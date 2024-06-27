@@ -3160,3 +3160,81 @@ describe('fixWallet', () => {
         expect(heldRemoved).toBe(2);
     });
 });
+
+describe('listIds', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should list all IDs wallet', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        const ids = keymaster.listIds();
+
+        expect(ids.length).toBe(4);
+        expect(ids.includes('Alice')).toBe(true);
+        expect(ids.includes('Bob')).toBe(true);
+        expect(ids.includes('Carol')).toBe(true);
+        expect(ids.includes('Victor')).toBe(true);
+    });
+});
+
+describe('getCurrentId', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should list all IDs wallet', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        const current = keymaster.getCurrentId();
+
+        expect(current).toBe('Victor');
+    });
+});
+
+describe('setCurrentId', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should set current ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.setCurrentId('Carol');
+        const current = keymaster.getCurrentId();
+
+        expect(current).toBe('Carol');
+    });
+
+    it('should throw an exception on invalid ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        try {
+            keymaster.setCurrentId('mock');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown ID`);
+        }
+    });
+});
