@@ -1216,7 +1216,7 @@ describe('listIssued', () => {
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
-        
+
         const issued = await keymaster.listIssued();
 
         expect(issued).toStrictEqual([did]);
@@ -3064,5 +3064,99 @@ describe('setSchema', () => {
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
         }
+    });
+});
+
+describe('listRegistries', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of valid registries', async () => {
+        mockFs({});
+
+        const registries = await keymaster.listRegistries();
+
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+});
+
+async function setupCredentials() {
+    await keymaster.createId('Alice');
+    await keymaster.createId('Bob');
+    const carol = await keymaster.createId('Carol');
+    await keymaster.createId('Victor');
+
+    keymaster.setCurrentId('Alice');
+
+    const credential1 = await keymaster.createCredential(mockSchema);
+    const credential2 = await keymaster.createCredential(mockSchema);
+
+    const bc1 = await keymaster.bindCredential(credential1, carol);
+    const bc2 = await keymaster.bindCredential(credential2, carol);
+
+    const vc1 = await keymaster.issueCredential(bc1);
+    const vc2 = await keymaster.issueCredential(bc2);
+
+    keymaster.setCurrentId('Bob');
+
+    const credential3 = await keymaster.createCredential(mockSchema);
+    const credential4 = await keymaster.createCredential(mockSchema);
+
+    const bc3 = await keymaster.bindCredential(credential3, carol);
+    const bc4 = await keymaster.bindCredential(credential4, carol);
+
+    const vc3 = await keymaster.issueCredential(bc3);
+    const vc4 = await keymaster.issueCredential(bc4);
+
+    keymaster.setCurrentId('Carol');
+
+    await keymaster.acceptCredential(vc1);
+    await keymaster.acceptCredential(vc2);
+    await keymaster.acceptCredential(vc3);
+    await keymaster.acceptCredential(vc4);
+
+    keymaster.setCurrentId('Alice');
+    await keymaster.revokeCredential(vc1);
+
+    keymaster.setCurrentId('Bob');
+    await keymaster.revokeCredential(vc3);
+}
+
+describe('checkWallet', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should validate all DIDs in wallet', async () => {
+        mockFs({});
+
+        await setupCredentials();
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(16);
+        expect(invalid).toBe(0);
+        expect(deleted).toBe(4); // 2 credentials mentioned in both owned and held lists
+    });
+});
+
+describe('fixWallet', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should validate all DIDs in wallet', async () => {
+        mockFs({});
+
+        await setupCredentials();
+
+        const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(2);
+        expect(heldRemoved).toBe(2);
     });
 });
