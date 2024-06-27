@@ -597,11 +597,19 @@ export async function importBatch(batch) {
 }
 
 export async function getQueue(registry) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+
     const queue = db.getQueue(registry);
     return queue;
 }
 
 export async function clearQueue(registry, events) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+    
     const ok = db.clearQueue(registry, events);
     return ok;
 }

@@ -823,6 +823,17 @@ describe('getQueue', () => {
 
         expect(queue).toStrictEqual([updateOp]);
     });
+
+    it('should throw an exception if invalid registry', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.getQueue('mock');
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid registry');
+        }
+    });
 });
 
 describe('clearQueue', () => {
@@ -881,5 +892,63 @@ describe('clearQueue', () => {
         await gatekeeper.clearQueue(registry, queue3);
         const queue4 = await gatekeeper.getQueue(registry);
         expect(queue4).toStrictEqual(queue2);
+    });
+
+    it('should return true if queue already empty', async () => {
+        mockFs({});
+
+        const ok = await gatekeeper.clearQueue('TESS', []);
+        expect(ok).toBe(true);
+    });
+
+    it('should return true if invalid queue specified', async () => {
+        const registry = 'TESS';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, registry);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const queue = await gatekeeper.getQueue(registry);
+        await gatekeeper.clearQueue(registry, queue);
+        await gatekeeper.getQueue(registry);
+
+        const ok = await gatekeeper.clearQueue(registry, 'mock');
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should throw an exception if invalid registry', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.clearQueue('mock', []);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid registry');
+        }
+    });
+});
+
+describe('getDids', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return all DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+
+        const allDIDs = await gatekeeper.getDIDs();
+
+        expect(allDIDs.length).toBe(2);
+        expect(allDIDs.includes(agentDID)).toBe(true);
+        expect(allDIDs.includes(assetDID)).toBe(true);
     });
 });
