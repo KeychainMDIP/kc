@@ -30,7 +30,7 @@ describe('anchorSeed', () => {
         };
         const did = await gatekeeper.anchorSeed(mockTxn);
 
-        expect(did.startsWith('did:test:'));
+        expect(did.startsWith('did:test:')).toBe(true);
     });
 
     it('should create same DID from same operation with date included', async () => {
@@ -143,7 +143,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentOp);
 
-        expect(did.startsWith('did:test:'));
+        expect(did.startsWith('did:test:')).toBe(true);
     });
 
     it('should create DID for local registry', async () => {
@@ -154,7 +154,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(agentOp);
 
-        expect(did.startsWith('did:test:'));
+        expect(did.startsWith('did:test:')).toBe(true);
     });
 
     it('should throw exception on invalid version', async () => {
@@ -195,7 +195,7 @@ describe('createDID', () => {
 
         const did = await gatekeeper.createDID(assetOp);
 
-        expect(did.startsWith('did:test:'));
+        expect(did.startsWith('did:test:')).toBe(true);
     });
 });
 
@@ -500,6 +500,25 @@ describe('updateDID', () => {
         expect(updatedDoc).toStrictEqual(doc);
     });
 
+    it('should increment version with each update', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        for (let i = 0; i < 10; i++) {
+            doc.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            const ok = await gatekeeper.updateDID(updateOp);
+            const updatedDoc = await gatekeeper.resolveDID(did);
+
+            expect(ok).toBe(true);
+            expect(updatedDoc.didDocumentMetadata.version).toBe(i + 2);
+        }
+    });
+
     it('should return false if update operation is invalid', async () => {
         mockFs({});
 
@@ -780,5 +799,87 @@ describe('importBatch', () => {
         expect(updated).toBe(0);
         expect(verified).toBe(0);
         expect(failed).toBe(3);
+    });
+});
+
+describe('getQueue', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return single event in queue', async () => {
+        mockFs({});
+
+        const registry = 'TESS';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, registry);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const queue = await gatekeeper.getQueue(registry);
+
+        expect(queue).toStrictEqual([updateOp]);
+    });
+});
+
+describe('clearQueue', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should clear non-empty queue', async () => {
+        mockFs({});
+
+        const registry = 'TESS';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, registry);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const queue = await gatekeeper.getQueue(registry);
+
+        await gatekeeper.clearQueue(registry, queue);
+        const queue2 = await gatekeeper.getQueue(registry);
+
+        expect(queue2).toStrictEqual([]);
+    });
+
+    it('should clear only specified events', async () => {
+        mockFs({});
+
+        const registry = 'TESS';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, registry);
+        const did = await gatekeeper.createDID(agentOp);
+        const queue1 = [];
+        const queue2 = [];
+
+        for (let i = 0; i < 5; i++) {
+            const doc = await gatekeeper.resolveDID(did);
+            doc.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gatekeeper.updateDID(updateOp);
+            queue1.push(updateOp);
+        }
+
+        const queue3 = await gatekeeper.getQueue(registry);
+        expect(queue3).toStrictEqual(queue1);
+
+        for (let i = 0; i < 5; i++) {
+            const doc = await gatekeeper.resolveDID(did);
+            doc.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gatekeeper.updateDID(updateOp);
+            queue2.push(updateOp);
+        }
+
+        await gatekeeper.clearQueue(registry, queue3);
+        const queue4 = await gatekeeper.getQueue(registry);
+        expect(queue4).toStrictEqual(queue2);
     });
 });
