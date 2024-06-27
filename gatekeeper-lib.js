@@ -448,9 +448,15 @@ export async function exportDIDs(dids) {
 }
 
 export async function removeDIDs(dids) {
+    if (!Array.isArray(dids)) {
+        throw "Invalid array";
+    }
+
     for (const did of dids) {
         await db.deleteEvents(did);
     }
+
+    return true;
 }
 
 async function importCreateEvent(event) {
@@ -459,11 +465,6 @@ async function importCreateEvent(event) {
 
         if (valid) {
             const did = await anchorSeed(event.operation);
-
-            // if (did !== event.did) {
-            //     return false;
-            // }
-
             await db.addEvent(did, event);
             return true;
         }
@@ -609,7 +610,7 @@ export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
         throw `Invalid registry`;
     }
-    
+
     const ok = db.clearQueue(registry, events);
     return ok;
 }

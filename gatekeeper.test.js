@@ -550,7 +550,6 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(1);
-        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
@@ -567,9 +566,7 @@ describe('exportDID', () => {
         const ops = await gatekeeper.exportDID(did);
 
         expect(ops.length).toBe(2);
-        //expect(ops[0].did).toStrictEqual(did);
         expect(ops[0].operation).toStrictEqual(agentOp);
-        //expect(ops[1].did).toStrictEqual(did);
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
@@ -578,6 +575,122 @@ describe('exportDID', () => {
 
         const ops = await gatekeeper.exportDID('mockDID');
         expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('exportDIDs', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should export a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        const exports = await gatekeeper.exportDIDs([did]);
+        const ops = exports[0];
+
+        expect(ops.length).toBe(1);
+        expect(ops[0].operation).toStrictEqual(agentOp);
+    });
+
+
+    it('should export a DIDs in order requested', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+
+        const exports = await gatekeeper.exportDIDs([assetDID, agentDID]);
+
+        expect(exports.length).toBe(2);
+        expect(exports[0][0].operation).toStrictEqual(assetOp);
+        expect(exports[1][0].operation).toStrictEqual(agentOp);
+    });
+
+    it('should export a valid updated DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const exports = await gatekeeper.exportDIDs([did]);
+        const ops = exports[0];
+
+        expect(ops.length).toBe(2);
+        expect(ops[0].operation).toStrictEqual(agentOp);
+        expect(ops[1].operation).toStrictEqual(updateOp);
+    });
+
+    it('should return empty array on an invalid DID', async () => {
+        mockFs({});
+
+        const exports = await gatekeeper.exportDIDs(['mockDID']);
+        const ops = exports[0];
+        expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('removeDIDs', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should remove a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        const ok = await gatekeeper.removeDIDs([did]);
+
+        expect(ok).toBe(true);
+
+        try {
+            await gatekeeper.resolveDID(did);
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should throw an exception if no array specified', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.removeDIDs();
+            throw 'Expected to throw an exception';
+        } catch (error) {
+            expect(error).toBe('Invalid array');
+        }
+    });
+
+    it('should return true if no DID specified remove', async () => {
+        mockFs({});
+
+        const ok = await gatekeeper.removeDIDs([]);
+        expect(ok).toBe(true);
+    });
+
+    it('should return true if unknown DIDs specified', async () => {
+        mockFs({});
+
+        const ok = await gatekeeper.removeDIDs(['did:test:mock']);
+        expect(ok).toBe(true);
     });
 });
 
