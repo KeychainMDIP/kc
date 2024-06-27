@@ -1065,3 +1065,39 @@ describe('getDids', () => {
         expect(allDIDs.includes(assetDID)).toBe(true);
     });
 });
+
+describe('listRegistries', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of valid registries', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.listRegistries();
+
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+});
+
+describe('verifyDb', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should verify all DIDs in db', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const invalid = await gatekeeper.verifyDb(false);
+
+        expect(invalid).toBe(0);
+    });
+});

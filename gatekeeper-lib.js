@@ -43,7 +43,7 @@ export async function verifyDID(did) {
     }
 }
 
-export async function verifyDb() {
+export async function verifyDb(chatty = true) {
     const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
@@ -52,10 +52,14 @@ export async function verifyDb() {
         n += 1;
         try {
             await verifyDID(did);
-            console.log(`${n} ${did} OK`);
+            if (chatty) {
+                console.log(`${n} ${did} OK`);
+            }
         }
         catch (error) {
-            console.log(`${n} ${did} ${error}`);
+            if (chatty) {
+                console.log(`${n} ${did} ${error}`);
+            }
             invalid += 1;
             await db.deleteEvents(did);
         }
