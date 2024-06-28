@@ -131,10 +131,15 @@ export async function getQueue(registry) {
 export async function clearQueue(registry, batch) {
     try {
         const db = loadDb();
+
+        if (!db.queue) {
+            return true;
+        }
+
         const oldQueue = db.queue[registry];
 
         if (!oldQueue) {
-            throw `Unknown registry ${registry}`;
+            return true;
         }
 
         const newQueue = oldQueue.filter(item => !batch.some(op => op.signature.value === item.signature.value));
@@ -145,7 +150,6 @@ export async function clearQueue(registry, batch) {
         return true;
     }
     catch (error) {
-        console.error(error);
         return false;
     }
 }

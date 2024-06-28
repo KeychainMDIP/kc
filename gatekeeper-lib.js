@@ -43,7 +43,7 @@ export async function verifyDID(did) {
     }
 }
 
-export async function verifyDb() {
+export async function verifyDb(chatty = true) {
     const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
@@ -52,10 +52,14 @@ export async function verifyDb() {
         n += 1;
         try {
             await verifyDID(did);
-            console.log(`${n} ${did} OK`);
+            if (chatty) {
+                console.log(`${n} ${did} OK`);
+            }
         }
         catch (error) {
-            console.log(`${n} ${did} ${error}`);
+            if (chatty) {
+                console.log(`${n} ${did} ${error}`);
+            }
             invalid += 1;
             await db.deleteEvents(did);
         }
@@ -448,9 +452,15 @@ export async function exportDIDs(dids) {
 }
 
 export async function removeDIDs(dids) {
+    if (!Array.isArray(dids)) {
+        throw "Invalid array";
+    }
+
     for (const did of dids) {
         await db.deleteEvents(did);
     }
+
+    return true;
 }
 
 async function importCreateEvent(event) {
@@ -459,11 +469,6 @@ async function importCreateEvent(event) {
 
         if (valid) {
             const did = await anchorSeed(event.operation);
-
-            // if (did !== event.did) {
-            //     return false;
-            // }
-
             await db.addEvent(did, event);
             return true;
         }
@@ -597,11 +602,19 @@ export async function importBatch(batch) {
 }
 
 export async function getQueue(registry) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+
     const queue = db.getQueue(registry);
     return queue;
 }
 
 export async function clearQueue(registry, events) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+
     const ok = db.clearQueue(registry, events);
     return ok;
 }
