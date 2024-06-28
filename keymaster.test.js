@@ -402,6 +402,56 @@ describe('recoverId', () => {
     });
 });
 
+describe('testAgent', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for agent DID', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const isAgent = await keymaster.testAgent(did);
+
+        expect(isAgent).toBe(true);
+    });
+
+    it('should return false for non-agent DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const dataDID = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isAgent = await keymaster.testAgent(dataDID);
+
+        expect(isAgent).toBe(false);
+    });
+
+    it('should raise an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testAgent();
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should raise an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testAgent('mock');
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+});
+
 describe('resolveDID', () => {
 
     afterEach(() => {
