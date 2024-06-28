@@ -625,7 +625,7 @@ describe('listNames', () => {
 
         const bob = await keymaster.createId('Bob');
 
-        for(let i = 0; i < 10; i++) {
+        for (let i = 0; i < 10; i++) {
             keymaster.addName(`name-${i}`, bob);
         }
 
@@ -633,7 +633,7 @@ describe('listNames', () => {
 
         expect(Object.keys(names).length).toBe(10);
 
-        for(const name of Object.keys(names)) {
+        for (const name of Object.keys(names)) {
             expect(names[name]).toBe(bob);
         }
     });
@@ -3068,20 +3068,6 @@ describe('createSchema', () => {
     it('should create a simple schema', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
@@ -3113,20 +3099,6 @@ describe('getSchema', () => {
     it('should return the schema', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const schema = await keymaster.getSchema(did);
@@ -3157,20 +3129,6 @@ describe('setSchema', () => {
     it('should update the schema', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
         const ok = await keymaster.setSchema(did, mockSchema);
@@ -3191,6 +3149,45 @@ describe('setSchema', () => {
             throw ('Expected createId to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
+        }
+    });
+});
+
+describe('testSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for a valid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        await keymaster.setSchema(did, mockSchema);
+
+        const isSchema = await keymaster.testSchema(did);
+
+        expect(isSchema).toBe(true);
+    });
+
+    it('should return false for a non-schema DID', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const isSchema = await keymaster.testSchema(agentDID);
+
+        expect(isSchema).toBe(false);
+    });
+
+    it('should raise an exception when no DID provided', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testSchema();
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
         }
     });
 });
@@ -3334,7 +3331,7 @@ describe('getCredential', () => {
 
         const credentials = await setupCredentials();
 
-        for(const did of credentials) {
+        for (const did of credentials) {
             const credential = await keymaster.getCredential(did);
             expect(credential.type[0]).toBe('VerifiableCredential');
         }

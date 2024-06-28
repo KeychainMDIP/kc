@@ -1419,15 +1419,14 @@ export async function setSchema(id, newSchema) {
 
 // TBD add optional 2nd parameter that will validate JSON against the schema
 export async function testSchema(id) {
-    try {
-        const schema = await getSchema(id);
-        validateSchema(schema);
-    }
-    catch {
+    const schema = await getSchema(id);
+
+    // TBD Need a better way because any random object with keys can be a valid schema
+    if (Object.keys(schema).length === 0) {
         return false;
     }
 
-    return true;
+    return validateSchema(schema);
 }
 
 export async function createTemplate(schemaId) {
