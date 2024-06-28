@@ -2582,6 +2582,51 @@ describe('groupTest', () => {
     });
 });
 
+describe('getGroup', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the specified group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mock';
+        const groupDID = await keymaster.createGroup(groupName);
+
+        const group = await keymaster.getGroup(groupDID);
+
+        expect(group.name).toBe(groupName);
+        expect(group.members).toStrictEqual([]);
+    });
+
+    it('should raise an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.getGroup();
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should raise an exception non-group DID specified', async () => {
+        mockFs({});
+
+        try {
+            const agentDID = await keymaster.createId('Bob');
+            await keymaster.getGroup(agentDID);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
+    });
+});
+
 describe('pollTemplate', () => {
 
     afterEach(() => {

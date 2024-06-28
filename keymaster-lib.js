@@ -1225,8 +1225,14 @@ export async function createGroup(name) {
     return createAsset(group);
 }
 
-export async function getGroup(name) {
-    return resolveAsset(name);
+export async function getGroup(id) {
+    const isGroup = await groupTest(id);
+
+    if (!isGroup) {
+        throw "Invalid group";
+    }
+
+    return resolveAsset(id);
 }
 
 export async function groupAdd(groupId, memberId) {
