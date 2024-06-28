@@ -205,7 +205,7 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Already have an ID named ${name}`);
         }
@@ -258,7 +258,7 @@ describe('removeId', () => {
 
         try {
             keymaster.removeId(name2);
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`No ID named ${name2}`);
         }
@@ -770,7 +770,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset();
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -782,7 +782,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -794,7 +794,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset([]);
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -806,7 +806,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset({});
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -1083,7 +1083,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(mockJson);
-            throw ('Expected addSignature to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -1096,7 +1096,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            throw ('Expected addSignature to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -1269,7 +1269,7 @@ describe('issueCredential', () => {
 
         try {
             await keymaster.issueCredential(boundCredential);
-            throw ('Expected issueCredential to throw an exception');
+            throw ('Expected to throw an exception');
         }
         catch (error) {
             expect(error).toBe('Invalid VC');
@@ -3083,7 +3083,7 @@ describe('createSchema', () => {
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
         }
@@ -3113,7 +3113,7 @@ describe('getSchema', () => {
 
         try {
             await keymaster.getSchema('bogus');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown DID`);
         }
@@ -3146,7 +3146,7 @@ describe('setSchema', () => {
 
         try {
             await keymaster.setSchema(did, { mock: 'not a schema' });
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
         }
@@ -3185,7 +3185,41 @@ describe('testSchema', () => {
 
         try {
             await keymaster.testSchema();
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
+        }
+    });
+});
+
+describe('createTemplate', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create template from a valid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        await keymaster.setSchema(did, mockSchema);
+
+        const template = await keymaster.createTemplate(did);
+        const expectedTemplate = {
+            "$schema": did,
+            email: expect.any(String),
+        };
+
+        expect(template).toStrictEqual(expectedTemplate);
+    });
+
+    it('should raise an exception when no DID provided', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createTemplate();
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid DID`);
         }
@@ -3314,7 +3348,7 @@ describe('listCredentials', () => {
 
         try {
             await keymaster.listCredentials('mock');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown ID`);
         }
@@ -3342,7 +3376,7 @@ describe('getCredential', () => {
 
         try {
             await keymaster.getCredential('mock');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown DID`);
         }
@@ -3354,7 +3388,7 @@ describe('getCredential', () => {
         try {
             const agentDID = await keymaster.createId('Rando');
             await keymaster.getCredential(agentDID);
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`DID is not encrypted`);
         }
@@ -3396,7 +3430,7 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential();
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid DID`);
         }
@@ -3407,7 +3441,7 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential('mock');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown DID`);
         }
@@ -3485,7 +3519,7 @@ describe('setCurrentId', () => {
 
         try {
             keymaster.setCurrentId('mock');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown ID`);
         }

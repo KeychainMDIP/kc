@@ -1429,8 +1429,16 @@ export async function testSchema(id) {
     return validateSchema(schema);
 }
 
-export async function createTemplate(schemaId) {
-    const schemaDID = lookupDID(schemaId);
+export async function createTemplate(id) {
+    //JSONSchemaFaker.option("alwaysFakeOptionals", true);
+
+    const isSchema = await testSchema(id);
+
+    if (!isSchema) {
+        throw "Invalid schema";
+    }
+
+    const schemaDID = lookupDID(id);
     const schema = await resolveAsset(schemaDID);
     const template = JSONSchemaFaker.generate(schema);
 
