@@ -564,6 +564,39 @@ describe('removeName', () => {
     });
 });
 
+describe('listNames', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return current list of wallet names', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        for(let i = 0; i < 10; i++) {
+            keymaster.addName(`name-${i}`, bob);
+        }
+
+        const names = keymaster.listNames();
+
+        expect(Object.keys(names).length).toBe(10);
+
+        for(const name of Object.keys(names)) {
+            expect(names[name]).toBe(bob);
+        }
+    });
+
+    it('should return empty list if no names added', async () => {
+        mockFs({});
+
+        const names = keymaster.listNames();
+
+        expect(Object.keys(names).length).toBe(0);
+    });
+});
+
 describe('resolveDID', () => {
 
     afterEach(() => {
