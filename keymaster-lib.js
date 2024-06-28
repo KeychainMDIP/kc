@@ -969,10 +969,8 @@ export async function removeCredential(did) {
     return removeFromHeld(lookupDID(did));
 }
 
-export async function listCredentials() {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
-    return id.held || [];
+export async function listCredentials(id) {
+    return fetchId(id).held || [];
 }
 
 export async function publishCredential(did, reveal = false) {

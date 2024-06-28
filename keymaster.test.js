@@ -3118,11 +3118,7 @@ async function setupCredentials() {
     await keymaster.acceptCredential(vc3);
     await keymaster.acceptCredential(vc4);
 
-    keymaster.setCurrentId('Alice');
-    await keymaster.revokeCredential(vc1);
-
-    keymaster.setCurrentId('Bob');
-    await keymaster.revokeCredential(vc3);
+    return [vc1, vc2, vc3, vc4];
 }
 
 describe('checkWallet', () => {
@@ -3133,7 +3129,9 @@ describe('checkWallet', () => {
     it('should validate all DIDs in wallet', async () => {
         mockFs({});
 
-        await setupCredentials();
+        const credentials = await setupCredentials();
+        await keymaster.revokeCredential(credentials[0]);
+        await keymaster.revokeCredential(credentials[2]);
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
@@ -3151,13 +3149,143 @@ describe('fixWallet', () => {
     it('should validate all DIDs in wallet', async () => {
         mockFs({});
 
-        await setupCredentials();
+        const credentials = await setupCredentials();
+        await keymaster.revokeCredential(credentials[0]);
+        await keymaster.revokeCredential(credentials[2]);
 
         const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(0);
         expect(ownedRemoved).toBe(2);
         expect(heldRemoved).toBe(2);
+    });
+});
+
+describe('listCredentials', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('return list of held credentials', async () => {
+        mockFs({});
+
+        const expectedCredentials = await setupCredentials();
+        const credentials = await keymaster.listCredentials('Carol');
+
+        expect(credentials).toStrictEqual(expectedCredentials);
+    });
+
+    it('return empty list if specified ID holds no credentials', async () => {
+        mockFs({});
+
+        await setupCredentials();
+        const credentials = await keymaster.listCredentials('Bob');
+
+        expect(credentials).toStrictEqual([]);
+    });
+
+    it('raises an exception if invalid ID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.listCredentials('mock');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown ID`);
+        }
+    });
+});
+
+describe('getCredential', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('returns decrypted credential for valid DID', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+
+        for(const did of credentials) {
+            const credential = await keymaster.getCredential(did);
+            expect(credential.type[0]).toBe('VerifiableCredential');
+        }
+    });
+
+    it('raises an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.getCredential('mock');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
+    });
+
+    it('raises an exception if DID specified that is not a credential', async () => {
+        mockFs({});
+
+        try {
+            const agentDID = await keymaster.createId('Rando');
+            await keymaster.getCredential(agentDID);
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`DID is not encrypted`);
+        }
+    });
+});
+
+describe('removeCredential', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('removes specified credential from held credentials list', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+
+        const ok1 = await keymaster.removeCredential(credentials[1]);
+        const ok2 = await keymaster.removeCredential(credentials[3]);
+
+        expect(ok1).toBe(true);
+        expect(ok2).toBe(true);
+
+        const held = await keymaster.listCredentials('Carol');
+
+        expect(held).toStrictEqual([credentials[0], credentials[2]]);
+    });
+
+    it('returns false if DID not previously held', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Rando');
+        const ok = await keymaster.removeCredential(agentDID);
+
+        expect(ok).toBe(false);
+    });
+
+    it('raises an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.removeCredential();
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
+        }
+    });
+
+    it('raises an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.removeCredential('mock');
+            throw ('Expected createId to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
     });
 });
 
