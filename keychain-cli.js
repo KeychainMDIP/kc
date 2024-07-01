@@ -2,6 +2,8 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
+import * as cipher from './cipher-lib.js';
+import * as db_wallet from './db-wallet-json.js';
 
 program
     .version('1.0.0')
@@ -830,7 +832,7 @@ program
     });
 
 async function run() {
-    await keymaster.start(gatekeeper);
+    await keymaster.start(gatekeeper, cipher, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();
 }

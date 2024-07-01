@@ -4,11 +4,12 @@ import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
+import * as db_wallet from './db-wallet-json.js';
 
 beforeEach(async () => {
     db_json.start('mdip');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper);
+    await keymaster.start(gatekeeper, cipher, db_wallet);
 });
 
 afterEach(async () => {
