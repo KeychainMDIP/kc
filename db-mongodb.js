@@ -67,6 +67,22 @@ export async function getAllKeys() {
     return ids;
 }
 
+export async function getDIDsUpdatedWithinTimeWindow(startTime, endTime) {
+    if (!startTime || !endTime) {
+        throw "Invalid time window";
+    }
+
+    const updatedDIDs = await db.collection('dids').find({
+        events: {
+            $elemMatch: {
+                time: { $gte: new Date(startTime), $lte: new Date(endTime) }
+            }
+        }
+    }).toArray();
+
+    return updatedDIDs.map(doc => doc.id);
+}
+
 export async function queueOperation(registry, op) {
     await db.collection('queue').updateOne(
         { id: registry },

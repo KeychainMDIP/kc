@@ -1,5 +1,7 @@
 import express from 'express';
 import morgan from 'morgan';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import * as gatekeeper from './gatekeeper-lib.js';
 import config from './config.js';
 import * as db_json from './db-json.js';
@@ -21,6 +23,12 @@ const v1router = express.Router();
 
 app.use(morgan('dev'));
 app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
+
+// Define __dirname in ES module scope
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Serve the React frontend
+app.use(express.static(path.join(__dirname, 'keymaster-app/build')));
 
 let serverReady = false;
 
@@ -123,22 +131,11 @@ v1router.post('/export-dids', async (req, res) => {
     }
 });
 
-v1router.post('/import', async (req, res) => {
+v1router.post('/remove-dids', async (req, res) => {
     try {
-        const ops = req.body;
-        const did = await gatekeeper.importDID(ops);
-        res.json(did);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.post('/import-dids', async (req, res) => {
-    try {
-        const batch = req.body;
-        const did = await gatekeeper.importDIDs(batch);
-        res.json(did);
+        const dids = req.body;
+        const response = await gatekeeper.removeDIDs(dids);
+        res.json(response);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -166,10 +163,10 @@ v1router.get('/queue/:registry', async (req, res) => {
     }
 });
 
-v1router.post('/queue/clear', async (req, res) => {
+v1router.post('/queue/:registry/clear', async (req, res) => {
     try {
         const events = req.body;
-        const queue = await gatekeeper.clearQueue(events);
+        const queue = await gatekeeper.clearQueue(req.params.registry, events);
         res.json(queue);
     } catch (error) {
         console.error(error);
@@ -186,6 +183,18 @@ v1router.get('/registries', async (req, res) => {
         res.status(500).send(error.toString());
     }
 });
+
+v1router.get('/dids/updated', async (req, res) => {
+    try {
+        const { startTime, endTime } = req.query;
+        const updatedDIDs = await gatekeeper.getDIDsUpdatedWithinTimeWindow(startTime, endTime);
+        res.json(updatedDIDs);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 
 app.get('/explore/:did', async (req, res) => {
     try {
@@ -214,6 +223,15 @@ app.get('/explore/:did', async (req, res) => {
 });
 
 app.use('/api/v1', v1router);
+
+app.use((req, res) => {
+    if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(__dirname, 'keymaster-app/build', 'index.html'));
+    } else {
+        console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+        res.status(404).json({ message: 'Endpoint not found' });
+    }
+});
 
 gatekeeper.verifyDb().then((invalid) => {
     if (invalid > 0) {

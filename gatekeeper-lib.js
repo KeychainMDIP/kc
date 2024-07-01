@@ -2,13 +2,13 @@ import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 import config from './config.js';
+import * as db from './db-mongodb.js'; 
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm', 'TESS'];
-const queueRegistries = ['TESS'];
 
 let db = null;
 let helia = null;
@@ -32,7 +32,11 @@ export async function stop() {
     await db.stop();
 }
 
-export async function verifyDb() {
+export async function verifyDID(did) {
+    await resolveDID(did, null, false, true);
+}
+
+export async function verifyDb(chatty = true) {
     const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
@@ -40,11 +44,15 @@ export async function verifyDb() {
     for (const did of dids) {
         n += 1;
         try {
-            await resolveDID(did, null, false, true);
-            console.log(`${n} ${did} OK`);
+            await verifyDID(did);
+            if (chatty) {
+                console.log(`${n} ${did} OK`);
+            }
         }
         catch (error) {
-            console.log(`${n} ${did} ${error}`);
+            if (chatty) {
+                console.log(`${n} ${did} ${error}`);
+            }
             invalid += 1;
             await db.deleteEvents(did);
         }
@@ -88,6 +96,11 @@ async function verifyCreateAsset(operation) {
     }
 
     const doc = await resolveDID(operation.signature.signer, operation.signature.signed);
+
+    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+        throw "Invalid operation";
+    }
+
     const operationCopy = JSON.parse(JSON.stringify(operation));
     delete operationCopy.signature;
     const msgHash = cipher.hashJSON(operationCopy);
@@ -142,15 +155,21 @@ export async function createDID(operation) {
         const did = await anchorSeed(operation);
         const ops = await exportDID(did);
 
+        // Check to see if we already have this DID in the db
         if (ops.length === 0) {
             await db.addEvent(did, {
-                registry: 'hyperswarm',
+                registry: 'local',
                 time: operation.created,
                 ordinal: 0,
                 operation: operation
             });
 
-            await db.queueOperation(operation.mdip.registry, operation);
+            // Create events are distributed only by hyperswarm
+            // (because the DID's registry specifies where to look for *update* events)
+            // Don't distribute local DIDs
+            if (operation.mdip.registry !== 'local') {
+                await db.queueOperation('hyperswarm', operation);
+            }
         }
 
         return did;
@@ -160,7 +179,7 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(did, anchor, asofTime) {
+async function generateDoc(anchor, asofTime) {
     try {
         if (!anchor?.mdip) {
             return {};
@@ -181,6 +200,8 @@ async function generateDoc(did, anchor, asofTime) {
         if (!validRegistries.includes(anchor.mdip.registry)) {
             return {};
         }
+
+        const did = await anchorSeed(anchor);
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
@@ -276,7 +297,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
     }
 
     const anchor = events[0];
-    let doc = await generateDoc(did, anchor.operation);
+    let doc = await generateDoc(anchor.operation);
     let mdip = doc?.mdip;
 
     if (!mdip) {
@@ -287,14 +308,17 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         // TBD What to return if DID was created after specified time?
     }
 
-    let version = 1;
-    // TBD What to return if create event hasn't been confirmed?
-    let confirmed = true; //(mdip.registry === anchor.registry);
+    let version = 1; // initial version is version 1 by definition
+    let confirmed = true; // create event is always confirmed by definition
 
     doc.didDocumentMetadata.version = version;
     doc.didDocumentMetadata.confirmed = confirmed;
 
     for (const { time, operation, registry } of events) {
+        if (operation.type === 'create') {
+            continue;
+        }
+
         if (asOfTime && new Date(time) > new Date(asOfTime)) {
             break;
         }
@@ -303,10 +327,6 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
 
         if (confirm && !confirmed) {
             break;
-        }
-
-        if (operation.type === 'create') {
-            continue;
         }
 
         const hash = cipher.hashJSON(doc);
@@ -375,21 +395,27 @@ export async function updateDID(operation) {
 
         const registry = doc.mdip.registry;
 
-        if (queueRegistries.includes(registry)) {
-            await db.queueOperation(registry, operation);
-        }
-
         await db.addEvent(operation.did, {
-            registry: 'hyperswarm',
+            registry: 'local',
             time: operation.signature.signed,
             ordinal: 0,
             operation: operation
         });
 
+        if (registry === 'local') {
+            return true;
+        }
+
+        await db.queueOperation(registry, operation);
+
+        if (registry !== 'hyperswarm') {
+            await db.queueOperation('hyperswarm', operation);
+        }
+
         return true;
     }
     catch (error) {
-        //console.error(error);
+        console.error(error);
         return false;
     }
 }
@@ -418,17 +444,24 @@ export async function exportDIDs(dids) {
     return batch;
 }
 
+export async function removeDIDs(dids) {
+    if (!Array.isArray(dids)) {
+        throw "Invalid array";
+    }
+
+    for (const did of dids) {
+        await db.deleteEvents(did);
+    }
+
+    return true;
+}
+
 async function importCreateEvent(event) {
     try {
         const valid = await verifyCreate(event.operation);
 
         if (valid) {
             const did = await anchorSeed(event.operation);
-
-            // if (did !== event.did) {
-            //     return false;
-            // }
-
             await db.addEvent(did, event);
             return true;
         }
@@ -459,57 +492,6 @@ async function importUpdateEvent(event) {
     }
 }
 
-export async function importDID(events) {
-    if (!events || !Array.isArray(events) || events.length < 1) {
-        throw "Invalid import";
-    }
-
-    let updated = 0;
-
-    for (const event of events) {
-        const imported = await importEvent(event);
-
-        if (imported) {
-            updated += 1;
-        }
-    }
-
-    return updated;
-}
-
-export async function importDIDs(batch) {
-    let verified = 0;
-    let updated = 0;
-    let failed = 0;
-
-    for (const events of batch) {
-        console.time('importDID');
-        try {
-            for (const event of events) {
-                const imported = await importEvent(event);
-
-                if (imported) {
-                    updated += 1;
-                }
-                else {
-                    verified += 1;
-                }
-            }
-        }
-        catch (error) {
-            console.error(error);
-            failed += 1;
-        }
-        console.timeEnd('importDID');
-    }
-
-    return {
-        verified: verified,
-        updated: updated,
-        failed: failed,
-    };
-}
-
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
@@ -524,6 +506,10 @@ export async function importEvent(event) {
         }
         else {
             did = event.operation.did;
+        }
+
+        if (!did) {
+            throw "Invalid operation";
         }
     }
     catch {
@@ -574,12 +560,16 @@ export async function importEvent(event) {
 }
 
 export async function importBatch(batch) {
+    if (!batch || !Array.isArray(batch) || batch.length < 1) {
+        throw "Invalid import";
+    }
+
     let verified = 0;
     let updated = 0;
     let failed = 0;
 
     for (const event of batch) {
-        console.time('importEvent');
+        //console.time('importEvent');
         try {
             const imported = await importEvent(event);
 
@@ -591,10 +581,10 @@ export async function importBatch(batch) {
             }
         }
         catch (error) {
-            console.error(error);
+            //console.error(error);
             failed += 1;
         }
-        console.timeEnd('importEvent');
+        //console.timeEnd('importEvent');
     }
 
     return {
@@ -605,12 +595,35 @@ export async function importBatch(batch) {
 }
 
 export async function getQueue(registry) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+
     const queue = db.getQueue(registry);
     return queue;
 }
 
-export async function clearQueue(events) {
-    const registry = events[0].mdip.registry;
+export async function clearQueue(registry, events) {
+    if (!validRegistries.includes(registry)) {
+        throw `Invalid registry`;
+    }
+
     const ok = db.clearQueue(registry, events);
     return ok;
+}
+
+export async function getDIDsUpdatedWithinTimeWindow(startTime, endTime) {
+    if (!startTime || !endTime) {
+        throw "Invalid time window";
+    }
+
+    const dids = await mongodb.getDIDsUpdatedWithinTimeWindow(startTime, endTime);
+    const resolvedDIDs = [];
+
+    for (const did of dids) {
+        const resolvedDID = await resolveDID(did, endTime);
+        resolvedDIDs.push(resolvedDID);
+    }
+
+    return resolvedDIDs;
 }
