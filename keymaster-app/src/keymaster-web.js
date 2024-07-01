@@ -778,6 +778,10 @@ export function addName(name, did) {
         throw `Name already in use`;
     }
 
+    if (Object.keys(wallet.ids).includes(name)) {
+        throw `Name already in use`;
+    }
+
     wallet.names[name] = did;
     saveWallet(wallet);
 

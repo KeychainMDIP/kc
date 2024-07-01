@@ -568,7 +568,7 @@ describe('addName', () => {
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
-    it('should not add the same name twice', async () => {
+    it('should not add duplicate name', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -577,13 +577,26 @@ describe('addName', () => {
         try {
             keymaster.addName('Jack', alice);
             keymaster.addName('Jack', bob);
-            throw 'Expected addName to throw an exception';
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Name already in use');
         }
     });
 
+    it('should not add a name that is same as an ID', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            keymaster.addName('Alice', alice);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Name already in use');
+        }
+    });
 });
 
 describe('removeName', () => {
@@ -758,7 +771,7 @@ describe('createAsset', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
-            throw 'Expected createAsset to throw an exception';
+            throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('No current ID');
         }
