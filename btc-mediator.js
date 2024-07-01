@@ -341,6 +341,8 @@ async function main() {
         return;
     }
 
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
+    
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper, cipher, db_wallet);
 

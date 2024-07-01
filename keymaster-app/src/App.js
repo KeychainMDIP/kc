@@ -1,5 +1,5 @@
-import * as gatekeeper from './gatekeeper-web.js';
-import * as keymaster from './keymaster-web.js';
+import * as gatekeeper from './gatekeeper-sdk.js';
+import * as keymaster from './keymaster-lib.js';
 import * as db_wallet from "./db-wallet-web.js";
 import * as cipher from './cipher-web.js';
 import KeymasterUI from './KeymasterUI.js';

@@ -4,6 +4,7 @@ import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
 import * as cipher from './cipher-lib.js';
 import * as db_wallet from './db-wallet-json.js';
+import config from './config.js';
 
 program
     .version('1.0.0')
@@ -832,6 +833,7 @@ program
     });
 
 async function run() {
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await keymaster.start(gatekeeper, cipher, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();

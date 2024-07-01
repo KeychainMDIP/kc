@@ -1,7 +1,6 @@
 import axios from 'axios';
-import config from './config.js';
 
-export const URL = `${config.gatekeeperURL}:${config.gatekeeperPort}`;
+export let URL = '';
 
 function throwError(error) {
     if (error.response) {
@@ -15,6 +14,10 @@ export async function start() {
 }
 
 export async function stop() {
+}
+
+export function setURL(url) {
+    URL = url;
 }
 
 export async function listRegistries() {

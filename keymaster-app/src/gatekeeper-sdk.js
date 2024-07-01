@@ -1,8 +1,6 @@
 import axios from 'axios';
 
-// Same as gatekeeper-sdk.js except URL is overridden here to talk directly to origin
-// TBD consolidate the URL config with main version
-export const URL = '';
+export let URL = '';
 
 function throwError(error) {
     if (error.response) {
@@ -16,6 +14,10 @@ export async function start() {
 }
 
 export async function stop() {
+}
+
+export function setURL(url) {
+    URL = url;
 }
 
 export async function listRegistries() {
