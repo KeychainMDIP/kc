@@ -1,13 +1,8 @@
-// Same as keymaster-lib.js except
-// - uses browser version of cipher lib
-// - uses browser version of gatekeeper sdk
-// TBD keymaster should make these dependencies injectable
-
 import { JSONSchemaFaker } from "json-schema-faker";
+import * as db from "./db-wallet-web.js";
 import * as cipher from './cipher-web.js';
 import * as gatekeeper from './gatekeeper-web.js';
 
-const walletName = 'mdip-keymaster';
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
@@ -21,49 +16,16 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-export function saveWallet(wallet) {
-    // TBD validate wallet before saving
-    window.localStorage.setItem(walletName, JSON.stringify(wallet));
+export function loadWallet() {
+    return db.loadWallet();
 }
 
-export function loadWallet() {
-    const walletJson = window.localStorage.getItem(walletName);
-
-    if (walletJson) {
-        return JSON.parse(walletJson);
-    }
-
-    return newWallet();
+export function saveWallet(wallet) {
+    return db.saveWallet(wallet);
 }
 
 export function newWallet(mnemonic, overwrite = false) {
-    if (!overwrite && window.localStorage.getItem(walletName)) {
-        throw "Wallet already exists";
-    }
-
-    try {
-        if (!mnemonic) {
-            mnemonic = cipher.generateMnemonic();
-        }
-        const hdkey = cipher.generateHDKey(mnemonic);
-        const keypair = cipher.generateJwk(hdkey.privateKey);
-        const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
-
-        const wallet = {
-            seed: {
-                mnemonic: backup,
-                hdkey: hdkey.toJSON(),
-            },
-            counter: 0,
-            ids: {},
-        }
-
-        saveWallet(wallet);
-        return wallet;
-    }
-    catch (error) {
-        throw "Invalid mnemonic";
-    }
+    return db.newWallet(mnemonic, overwrite);
 }
 
 export function decryptMnemonic() {
