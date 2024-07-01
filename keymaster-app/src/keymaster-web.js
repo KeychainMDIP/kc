@@ -1,15 +1,20 @@
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as db from "./db-wallet-web.js";
-import * as cipher from './cipher-web.js';
-import * as gatekeeper from './gatekeeper-web.js';
+
+let gatekeeper = null;
+let cipher = null;
+let db = null;
 
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start() {
+export async function start(gatekeeperDep, cipherDep, dbDep) {
+    gatekeeper = gatekeeperDep;
+    cipher = cipherDep;
+    db = dbDep;
 }
 
 export async function stop() {
+    await gatekeeper.stop();
 }
 
 export async function listRegistries() {
