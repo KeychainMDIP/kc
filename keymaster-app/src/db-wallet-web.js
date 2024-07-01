@@ -1,4 +1,4 @@
-import * as cipher from './cipher-web.js';
+import * as cipher from './cipher-lib.js';
 
 const walletName = 'mdip-keymaster';
 

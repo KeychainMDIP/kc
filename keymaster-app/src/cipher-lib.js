@@ -8,13 +8,26 @@ import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
 
-import HDKey from 'browser-hdkey'; // Fork of browser version at https://github.com/KeychainMDIP/browser-hdkey
-import { Buffer } from 'buffer';
+let HDKey;
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    // Node.js environment
+    import('hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('node:crypto').then(({ webcrypto }) => {
+        if (!globalThis.crypto) globalThis.crypto = webcrypto;
+    });
+} else {
+    // Browser environment
+    import('browser-hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('buffer').then(({ Buffer }) => {
+        global.Buffer = Buffer;
+    });
+}
 
-// Polyfill for browser (works in all except hdkey, hence fork of browser-hdkey)
-global.Buffer = Buffer;
-
-// Polyfill for sync sign
+// Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
 secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
 
