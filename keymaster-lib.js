@@ -1,15 +1,15 @@
-import fs from 'fs';
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher-lib.js';
 
 let gatekeeper = null;
-const dataFolder = 'data';
-const walletName = `${dataFolder}/wallet.json`;
+let db = null;
+
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start(gk) {
-    gatekeeper = gk;
+export async function start(gatekeeperDep, dbDep) {
+    gatekeeper = gatekeeperDep;
+    db = dbDep;
 }
 
 export async function stop() {
@@ -20,53 +20,16 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-export function saveWallet(wallet) {
-    // TBD validate wallet before saving
-
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
-    }
-
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+export function loadWallet() {
+    return db.loadWallet();
 }
 
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
-    }
-
-    return newWallet();
+export function saveWallet(wallet) {
+    return db.saveWallet(wallet);
 }
 
 export function newWallet(mnemonic, overwrite = false) {
-    if (fs.existsSync(walletName) && !overwrite) {
-        throw "Wallet already exists";
-    }
-
-    try {
-        if (!mnemonic) {
-            mnemonic = cipher.generateMnemonic();
-        }
-        const hdkey = cipher.generateHDKey(mnemonic);
-        const keypair = cipher.generateJwk(hdkey.privateKey);
-        const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
-
-        const wallet = {
-            seed: {
-                mnemonic: backup,
-                hdkey: hdkey.toJSON(),
-            },
-            counter: 0,
-            ids: {},
-        }
-
-        saveWallet(wallet);
-        return wallet;
-    }
-    catch (error) {
-        throw "Invalid mnemonic";
-    }
+    return db.newWallet(mnemonic, overwrite);
 }
 
 export function decryptMnemonic() {
@@ -778,6 +741,10 @@ export function addName(name, did) {
     }
 
     if (Object.keys(wallet.names).includes(name)) {
+        throw `Name already in use`;
+    }
+
+    if (Object.keys(wallet.ids).includes(name)) {
         throw `Name already in use`;
     }
 

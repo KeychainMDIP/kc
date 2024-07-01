@@ -458,6 +458,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function main() {
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
     await gcLoop();

@@ -4,11 +4,12 @@ import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
+import * as db_wallet from './db-wallet-json.js';
 
 beforeEach(async () => {
     db_json.start('mdip');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper);
+    await keymaster.start(gatekeeper, db_wallet);
 });
 
 afterEach(async () => {
@@ -568,7 +569,7 @@ describe('addName', () => {
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
-    it('should not add the same name twice', async () => {
+    it('should not add duplicate name', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -577,13 +578,26 @@ describe('addName', () => {
         try {
             keymaster.addName('Jack', alice);
             keymaster.addName('Jack', bob);
-            throw 'Expected addName to throw an exception';
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Name already in use');
         }
     });
 
+    it('should not add a name that is same as an ID', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            keymaster.addName('Alice', alice);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Name already in use');
+        }
+    });
 });
 
 describe('removeName', () => {
@@ -758,7 +772,7 @@ describe('createAsset', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
-            throw 'Expected createAsset to throw an exception';
+            throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('No current ID');
         }

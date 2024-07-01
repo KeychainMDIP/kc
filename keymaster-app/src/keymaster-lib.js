@@ -1,69 +1,35 @@
-// Same as keymaster-lib.js except
-// - uses browser version of cipher lib
-// - uses browser version of gatekeeper sdk
-// TBD keymaster should make these dependencies injectable
-
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from './cipher-web.js';
-import * as gatekeeper from './gatekeeper-web.js';
+import * as cipher from './cipher-lib.js';
 
-const walletName = 'mdip-keymaster';
+let gatekeeper = null;
+let db = null;
+
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start() {
+export async function start(gatekeeperDep, dbDep) {
+    gatekeeper = gatekeeperDep;
+    db = dbDep;
 }
 
 export async function stop() {
+    await gatekeeper.stop();
 }
 
 export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-export function saveWallet(wallet) {
-    // TBD validate wallet before saving
-    window.localStorage.setItem(walletName, JSON.stringify(wallet));
+export function loadWallet() {
+    return db.loadWallet();
 }
 
-export function loadWallet() {
-    const walletJson = window.localStorage.getItem(walletName);
-
-    if (walletJson) {
-        return JSON.parse(walletJson);
-    }
-
-    return newWallet();
+export function saveWallet(wallet) {
+    return db.saveWallet(wallet);
 }
 
 export function newWallet(mnemonic, overwrite = false) {
-    if (!overwrite && window.localStorage.getItem(walletName)) {
-        throw "Wallet already exists";
-    }
-
-    try {
-        if (!mnemonic) {
-            mnemonic = cipher.generateMnemonic();
-        }
-        const hdkey = cipher.generateHDKey(mnemonic);
-        const keypair = cipher.generateJwk(hdkey.privateKey);
-        const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
-
-        const wallet = {
-            seed: {
-                mnemonic: backup,
-                hdkey: hdkey.toJSON(),
-            },
-            counter: 0,
-            ids: {},
-        }
-
-        saveWallet(wallet);
-        return wallet;
-    }
-    catch (error) {
-        throw "Invalid mnemonic";
-    }
+    return db.newWallet(mnemonic, overwrite);
 }
 
 export function decryptMnemonic() {
@@ -778,6 +744,10 @@ export function addName(name, did) {
         throw `Name already in use`;
     }
 
+    if (Object.keys(wallet.ids).includes(name)) {
+        throw `Name already in use`;
+    }
+
     wallet.names[name] = did;
     saveWallet(wallet);
 
@@ -966,10 +936,8 @@ export async function removeCredential(did) {
     return removeFromHeld(lookupDID(did));
 }
 
-export async function listCredentials() {
-    const wallet = loadWallet();
-    const id = wallet.ids[wallet.current];
-    return id.held || [];
+export async function listCredentials(id) {
+    return fetchId(id).held || [];
 }
 
 export async function publishCredential(did, reveal = false) {
@@ -1224,8 +1192,14 @@ export async function createGroup(name) {
     return createAsset(group);
 }
 
-export async function getGroup(name) {
-    return resolveAsset(name);
+export async function getGroup(id) {
+    const isGroup = await groupTest(id);
+
+    if (!isGroup) {
+        throw "Invalid group";
+    }
+
+    return resolveAsset(id);
 }
 
 export async function groupAdd(groupId, memberId) {
@@ -1412,19 +1386,26 @@ export async function setSchema(id, newSchema) {
 
 // TBD add optional 2nd parameter that will validate JSON against the schema
 export async function testSchema(id) {
-    try {
-        const schema = await getSchema(id);
-        validateSchema(schema);
-    }
-    catch {
+    const schema = await getSchema(id);
+
+    // TBD Need a better way because any random object with keys can be a valid schema
+    if (Object.keys(schema).length === 0) {
         return false;
     }
 
-    return true;
+    return validateSchema(schema);
 }
 
-export async function createTemplate(schemaId) {
-    const schemaDID = lookupDID(schemaId);
+export async function createTemplate(id) {
+    //JSONSchemaFaker.option("alwaysFakeOptionals", true);
+
+    const isSchema = await testSchema(id);
+
+    if (!isSchema) {
+        throw "Invalid schema";
+    }
+
+    const schemaDID = lookupDID(id);
     const schema = await resolveAsset(schemaDID);
     const template = JSONSchemaFaker.generate(schema);
 

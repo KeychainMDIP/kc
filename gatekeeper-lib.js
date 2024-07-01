@@ -32,15 +32,7 @@ export async function stop() {
 }
 
 export async function verifyDID(did) {
-    const doc = await resolveDID(did, null, false, true);
-
-    if (doc.didDocument.controller) {
-        const controller = await resolveDID(doc.didDocument.controller);
-
-        if (controller.mdip.registry === 'local' && doc.mdip.registry !== 'local') {
-            throw "Registry mistmatch";
-        }
-    }
+    await resolveDID(did, null, false, true);
 }
 
 export async function verifyDb(chatty = true) {

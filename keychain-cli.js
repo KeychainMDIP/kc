@@ -2,6 +2,8 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
+import * as db_wallet from './db-wallet-json.js';
+import config from './config.js';
 
 program
     .version('1.0.0')
@@ -830,7 +832,8 @@ program
     });
 
 async function run() {
-    await keymaster.start(gatekeeper);
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
+    await keymaster.start(gatekeeper, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();
 }

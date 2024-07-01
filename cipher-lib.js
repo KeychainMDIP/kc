@@ -1,22 +1,35 @@
-// node.js 18 and older, requires polyfilling globalThis.crypto
-import { webcrypto } from 'node:crypto';
-if (!globalThis.crypto) globalThis.crypto = webcrypto;
-
 import * as bip39 from 'bip39';
 import * as secp from '@noble/secp256k1';
-import HDKey from 'hdkey';
-
-// Polyfill for sync sign
-// Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
-secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
-
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
+
+let HDKey;
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    // Node.js environment
+    import('hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('node:crypto').then(({ webcrypto }) => {
+        if (!globalThis.crypto) globalThis.crypto = webcrypto;
+    });
+} else {
+    // Browser environment
+    import('browser-hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('buffer').then(({ Buffer }) => {
+        global.Buffer = Buffer;
+    });
+}
+
+// Polyfill for synchronous signatures
+// Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
+secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
 
 export function generateMnemonic() {
     return bip39.generateMnemonic();

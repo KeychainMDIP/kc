@@ -1,23 +1,33 @@
-// Same as cipher-lib.js but works in browser
-// TBD figure out how to consolidate with main version
-
-import { Buffer } from 'buffer';
 import * as bip39 from 'bip39';
-// Fork of browser version at https://github.com/KeychainMDIP/browser-hdkey
-import HDKey from 'browser-hdkey';
+import * as secp from '@noble/secp256k1';
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
-import * as secp from '@noble/secp256k1';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
 
-// Polyfill for browser (works in all except hdkey, hence fork of browser-hdkey)
-global.Buffer = Buffer;
+let HDKey;
+if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    // Node.js environment
+    import('hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('node:crypto').then(({ webcrypto }) => {
+        if (!globalThis.crypto) globalThis.crypto = webcrypto;
+    });
+} else {
+    // Browser environment
+    import('browser-hdkey').then(module => {
+        HDKey = module.default || module;
+    });
+    import('buffer').then(({ Buffer }) => {
+        global.Buffer = Buffer;
+    });
+}
 
-// Polyfill for sync sign
+// Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
 secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
 
@@ -90,8 +100,6 @@ export function hashJSON(json) {
 
 export function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
-    // TBD change main version to use sync sign too
-    //const signature = await secp.signAsync(msgHash, privKey);
     const signature = secp.sign(msgHash, privKey);
     const sigHex = signature.toCompactHex();
     return sigHex;
