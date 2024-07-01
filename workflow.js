@@ -2,7 +2,6 @@ import fs from 'fs';
 import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
-import * as cipher from './cipher-lib.js';
 import * as db_wallet from './db-wallet-json.js';
 
 const mockSchema = {
@@ -23,7 +22,7 @@ async function runWorkflow() {
 
     await db_json.start('mdip-workflow');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper, cipher, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet);
 
     const alice = await keymaster.createId('Alice');
     const bob = await keymaster.createId('Bob');

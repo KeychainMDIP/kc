@@ -1,15 +1,14 @@
 import { JSONSchemaFaker } from "json-schema-faker";
+import * as cipher from './cipher-lib.js';
 
 let gatekeeper = null;
-let cipher = null;
 let db = null;
 
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start(gatekeeperDep, cipherDep, dbDep) {
+export async function start(gatekeeperDep, dbDep) {
     gatekeeper = gatekeeperDep;
-    cipher = cipherDep;
     db = dbDep;
 }
 

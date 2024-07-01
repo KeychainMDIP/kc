@@ -221,7 +221,7 @@ program
 
 async function run() {
     gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
-    await keymaster.start(gatekeeper, cipher, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();
 }

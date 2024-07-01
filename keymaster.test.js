@@ -9,7 +9,7 @@ import * as db_wallet from './db-wallet-json.js';
 beforeEach(async () => {
     db_json.start('mdip');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper, cipher, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet);
 });
 
 afterEach(async () => {

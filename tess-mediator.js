@@ -2,7 +2,6 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
-import * as cipher from './cipher-lib.js';
 import * as db_wallet from './db-wallet-json.js';
 import config from './config.js';
 
@@ -295,7 +294,7 @@ async function main() {
     await waitForTess();
     gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper, cipher, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet);
 
     if (!config.nodeID) {
         console.log('tess-mediator must have a KC_NODE_ID configured');
