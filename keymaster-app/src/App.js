@@ -5,9 +5,9 @@ import * as cipher from './cipher-web.js';
 import KeymasterUI from './KeymasterUI.js';
 import './App.css';
 
-keymaster.start(gatekeeper, cipher, db_wallet);
-
 function App() {
+    keymaster.start(gatekeeper, cipher, db_wallet);
+
     return (
         <KeymasterUI keymaster={keymaster} title={'Keymaster Wallet Demo'} />
     );
