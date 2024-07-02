@@ -1,6 +1,6 @@
 ---
 title: Keychain-MDIP CLI User Manual
-sidebar_label: User Manual
+sidebar_label: CLI
 ---
 
 The CLI is a Command Line Interface to the Keychain implementation of the MultiDimensional Identity Protocol (MDIP). `kc` (short for KeyChain) is a script invoked in a unix-like terminal environment (bash, zsh, etc).
