@@ -9,23 +9,34 @@ import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
 
 let HDKey;
-if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-    // Node.js environment
-    import('hdkey').then(module => {
-        HDKey = module.default || module;
-    });
-    import('node:crypto').then(({ webcrypto }) => {
-        if (!globalThis.crypto) globalThis.crypto = webcrypto;
-    });
-} else {
-    // Browser environment
-    import('browser-hdkey').then(module => {
-        HDKey = module.default || module;
-    });
-    import('buffer').then(({ Buffer }) => {
-        global.Buffer = Buffer;
-    });
-}
+
+// Temporary workaround for webpack issue.
+
+// if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+//     // Node.js environment
+//     import('hdkey').then(module => {
+//         HDKey = module.default || module;
+//     });
+//     import('node:crypto').then(({ webcrypto }) => {
+//         if (!globalThis.crypto) globalThis.crypto = webcrypto;
+//     });
+// } else {
+//     // Browser environment
+//     import('browser-hdkey').then(module => {
+//         HDKey = module.default || module;
+//     });
+//     import('buffer').then(({ Buffer }) => {
+//         global.Buffer = Buffer;
+//     });
+// }
+
+// Browser environment
+import('browser-hdkey').then(module => {
+    HDKey = module.default || module;
+});
+import('buffer').then(({ Buffer }) => {
+    global.Buffer = Buffer;
+});
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
