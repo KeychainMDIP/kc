@@ -130,10 +130,16 @@ export async function deleteDID(operation) {
     }
 }
 
-export async function getDIDs() {
+export async function getDIDs(updatedAfter) {
     try {
-        const response = await axios.get(`${URL}/api/v1/did/`);
-        return response.data;
+        if (updatedAfter) {
+            const response = await axios.get(`${URL}/api/v1/did/?updatedAfter=${updatedAfter}`);
+            return response.data;
+        }
+        else {
+            const response = await axios.get(`${URL}/api/v1/did/`);
+            return response.data;
+        }
     }
     catch (error) {
         throwError(error);

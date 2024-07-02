@@ -1064,6 +1064,31 @@ describe('getDids', () => {
         expect(allDIDs.includes(agentDID)).toBe(true);
         expect(allDIDs.includes(assetDID)).toBe(true);
     });
+
+    it('should return all DIDs after specified time', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const dids = [];
+
+        for (let i = 0; i < 10; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            const assetDID = await gatekeeper.createDID(assetOp);
+            dids.push(assetDID);
+        }
+
+        const doc = await gatekeeper.resolveDID(dids[4]);
+        const recentDIDs = await gatekeeper.getDIDs(doc.didDocumentMetadata.created);
+
+        expect(recentDIDs.length).toBe(5);
+        expect(recentDIDs.includes(dids[5])).toBe(true);
+        expect(recentDIDs.includes(dids[6])).toBe(true);
+        expect(recentDIDs.includes(dids[7])).toBe(true);
+        expect(recentDIDs.includes(dids[8])).toBe(true);
+        expect(recentDIDs.includes(dids[9])).toBe(true);
+    });
 });
 
 describe('listRegistries', () => {

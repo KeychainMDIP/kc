@@ -25,11 +25,11 @@ program
     });
 
 program
-    .command('get-dids')
+    .command('get-dids [updatedAfter]')
     .description('Fetch all DIDs')
-    .action(async () => {
+    .action(async (updatedAfter) => {
         try {
-            const dids = await gatekeeper.getDIDs();
+            const dids = await gatekeeper.getDIDs(updatedAfter);
             console.log(JSON.stringify(dids, null, 4));
         }
         catch (error) {

@@ -102,7 +102,7 @@ v1router.delete('/did/:did', async (req, res) => {
 
 v1router.get('/did/', async (req, res) => {
     try {
-        const dids = await gatekeeper.getDIDs();
+        const dids = await gatekeeper.getDIDs(req.query.updatedAfter);
         res.json(dids);
     } catch (error) {
         console.error(error);
