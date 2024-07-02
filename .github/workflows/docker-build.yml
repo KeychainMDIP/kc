@@ -7,18 +7,17 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Build and publish Docker images
+name: Build Docker images
 
 on:
   push:
-    branches: ['release']
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-image:
+  build-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,62 +31,43 @@ jobs:
         id: calver
         run: echo "::set-output name=version::v$(date +'%y.%m.%d')"
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            ${{ steps.calver.outputs.version }}
-            release
-
-      - name: Build and push gatekeeper image
+      - name: Build gatekeeper image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
           file: Dockerfile.gatekeeper
-          push: true
+          push: false
           tags: |
             ${{ env.REGISTRY }}/keychainmdip/gatekeeper:${{ steps.calver.outputs.version }}
-            ${{ env.REGISTRY }}/keychainmdip/gatekeeper:release
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build and push keymaster image
+      - name: Build keymaster image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
           file: Dockerfile.keymaster
-          push: true
+          push: false
           tags: |
             ${{ env.REGISTRY }}/keychainmdip/keymaster:${{ steps.calver.outputs.version }}
-            ${{ env.REGISTRY }}/keychainmdip/keymaster:release
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build and push hyperswarm mediator image
+      - name: Build hyperswarm mediator image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
           file: Dockerfile.hyperswarm
-          push: true
+          push: false
           tags: |
             ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ steps.calver.outputs.version }}
-            ${{ env.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build and push TESS mediator image
+      - name: Build TESS mediator image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
           file: Dockerfile.tess
-          push: true
+          push: false
           tags: |
             ${{ env.REGISTRY }}/keychainmdip/tess-mediator:${{ steps.calver.outputs.version }}
-            ${{ env.REGISTRY }}/keychainmdip/tess-mediator:release
           labels: ${{ steps.meta.outputs.labels }}
