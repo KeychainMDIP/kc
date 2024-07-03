@@ -1086,6 +1086,55 @@ describe('getDids', () => {
         expect(allDocs[1]).toStrictEqual(assetDoc);
     });
 
+    it('should return all DIDs confirmed and resolved', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+
+        const updatedAgentDoc = JSON.parse(JSON.stringify(agentDoc));
+        updatedAgentDoc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, agentDID, updatedAgentDoc);
+        await gatekeeper.updateDID(updateOp);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+
+        const allDocs = await gatekeeper.getDIDs({confirm: true, resolve: true});
+
+        expect(allDocs.length).toBe(2);
+        expect(allDocs[0]).toStrictEqual(agentDoc); // version 1
+        expect(allDocs[1]).toStrictEqual(assetDoc);
+    });
+
+    it('should return all DIDs unconfirmed and resolved', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+
+        const updatedAgentDoc = JSON.parse(JSON.stringify(agentDoc));
+        updatedAgentDoc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, agentDID, updatedAgentDoc);
+        await gatekeeper.updateDID(updateOp);
+        const agentDocv2 = await gatekeeper.resolveDID(agentDID);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+
+        const allDocs = await gatekeeper.getDIDs({confirm: false, resolve: true});
+
+        expect(allDocs.length).toBe(2);
+        expect(allDocs[0]).toStrictEqual(agentDocv2);
+        expect(allDocs[1]).toStrictEqual(assetDoc);
+    });
+
     it('should return all DIDs after specified time', async () => {
         mockFs({});
 
