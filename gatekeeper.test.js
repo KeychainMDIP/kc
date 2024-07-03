@@ -1016,7 +1016,7 @@ describe('clearQueue', () => {
 
     it('should return true if invalid queue specified', async () => {
         mockFs({});
-        
+
         const registry = 'TESS';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
@@ -1065,6 +1065,25 @@ describe('getDids', () => {
         expect(allDIDs.length).toBe(2);
         expect(allDIDs.includes(agentDID)).toBe(true);
         expect(allDIDs.includes(assetDID)).toBe(true);
+    });
+
+    it('should return all DIDs resolved', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+
+        const allDocs = await gatekeeper.getDIDs({resolve: true});
+
+        expect(allDocs.length).toBe(2);
+        expect(allDocs[0]).toStrictEqual(agentDoc);
+        expect(allDocs[1]).toStrictEqual(assetDoc);
     });
 
     it('should return all DIDs after specified time', async () => {

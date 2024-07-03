@@ -431,17 +431,17 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs({updatedAfter, updatedBefore} = {}) {
+export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = {}) {
     const keys = await db.getAllKeys();
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
 
-    if (updatedAfter || updatedBefore) {
+    if (updatedAfter || updatedBefore || resolve) {
         const start = updatedAfter ? new Date(updatedAfter) : null;
         const end = updatedBefore ? new Date(updatedBefore) : null;
-        const recent = [];
+        const response = [];
 
         for (const did of dids) {
-            const doc = await resolveDID(did);
+            const doc = await resolveDID(did, null, confirm);
             const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
 
             if (start && updated <= start) {
@@ -452,10 +452,10 @@ export async function getDIDs({updatedAfter, updatedBefore} = {}) {
                 continue;
             }
 
-            recent.push(did);
+            response.push(resolve ? doc : did);
         }
 
-        return recent;
+        return response;
     }
 
     return dids;
