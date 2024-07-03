@@ -58,6 +58,26 @@ export async function recoverWallet() {
     }
 }
 
+export async function checkWallet() {
+    try {
+        const response = await axios.post(`/api/v1/check-wallet`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function fixWallet() {
+    try {
+        const response = await axios.post(`/api/v1/fix-wallet`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function decryptMnemonic() {
     try {
         const response = await axios.get(`/api/v1/mnemonic`);

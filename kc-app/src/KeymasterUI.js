@@ -48,6 +48,7 @@ function KeymasterUI({ keymaster, title }) {
     const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
     const [manifest, setManifest] = useState(null);
+    const [checkingWallet, setCheckingWallet] = useState(false);
 
     useEffect(() => {
         refreshAll();
@@ -655,6 +656,25 @@ function KeymasterUI({ keymaster, title }) {
         } catch (error) {
             window.alert(error);
         }
+    }
+
+    async function checkWallet() {
+        setCheckingWallet(true);
+        try {
+            const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+            if (invalid == 0 && deleted == 0) {
+                window.alert(`${checked} DIDs checked, no problems found`);
+            }
+            else if (window.confirm(`${checked} DIDs checked\n${invalid} invalid DIDs found\n${deleted} deleted DIDs found\n\nFix wallet?`)) {
+                const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+                window.alert(`${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed`);
+            }
+
+        } catch (error) {
+            window.alert(error);
+        }
+        setCheckingWallet(false);
     }
 
     async function showWallet() {
@@ -1420,6 +1440,11 @@ function KeymasterUI({ keymaster, title }) {
                                         Recover...
                                     </Button>
                                 </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={checkWallet} disabled={checkingWallet}>
+                                        Check...
+                                    </Button>
+                                </Grid>
                             </Grid>
                             <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -1434,14 +1459,6 @@ function KeymasterUI({ keymaster, title }) {
                                         </Button>
                                     )}
                                 </Grid>
-                                <Grid item>
-                                    <Box>
-                                        <pre>{mnemonicString}</pre>
-                                    </Box>
-                                </Grid>
-                            </Grid>
-                            <p />
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
                                     {walletString ? (
                                         <Button variant="contained" color="primary" onClick={hideWallet}>
@@ -1465,6 +1482,9 @@ function KeymasterUI({ keymaster, title }) {
                                 </Grid>
                             </Grid>
                             <p />
+                            <Box>
+                                <pre>{mnemonicString}</pre>
+                            </Box>
                             <Box>
                                 {walletString &&
                                     <textarea

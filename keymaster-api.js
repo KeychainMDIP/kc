@@ -82,6 +82,24 @@ v1router.post('/recover-wallet', async (req, res) => {
     }
 });
 
+v1router.post('/check-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.checkWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/fix-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.fixWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 v1router.get('/mnemonic', async (req, res) => {
     try {
         const mnemonic = keymaster.decryptMnemonic();
