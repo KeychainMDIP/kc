@@ -1,2 +1,5 @@
 #!/usr/bin/env bash
-npm --prefix ./keymaster-app run build && node gatekeeper-api.js
+set -e
+
+npm --prefix ./keymaster-app run build
+node gatekeeper-api.js
