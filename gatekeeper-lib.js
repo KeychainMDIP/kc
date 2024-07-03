@@ -36,6 +36,10 @@ export async function verifyDID(did) {
 }
 
 export async function verifyDb(chatty = true) {
+    if (chatty) {
+        console.time('verifyDb');
+    }
+
     const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
@@ -55,6 +59,10 @@ export async function verifyDb(chatty = true) {
             invalid += 1;
             await db.deleteEvents(did);
         }
+    }
+
+    if (chatty) {
+        console.timeEnd('verifyDb');
     }
 
     return invalid;
@@ -328,16 +336,16 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             break;
         }
 
-        const hash = cipher.hashJSON(doc);
+        // const hash = cipher.hashJSON(doc);
 
-        if (hash !== operation.prev) {
-            // hash mismatch
-            // if (verify) {
-            //     throw "Invalid hash";
-            // }
-            // !!! This fails on key rotation #3 (!?), disabling for now
-            // continue;
-        }
+        // if (hash !== operation.prev) {
+        //     // hash mismatch
+        //     // if (verify) {
+        //     //     throw "Invalid hash";
+        //     // }
+        //     // !!! This fails on key rotation #3 (!?), disabling for now
+        //     // continue;
+        // }
 
         const valid = await verifyUpdate(operation, doc);
 
@@ -423,9 +431,33 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs() {
+export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = {}) {
     const keys = await db.getAllKeys();
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
+
+    if (updatedAfter || updatedBefore || resolve) {
+        const start = updatedAfter ? new Date(updatedAfter) : null;
+        const end = updatedBefore ? new Date(updatedBefore) : null;
+        const response = [];
+
+        for (const did of dids) {
+            const doc = await resolveDID(did, null, confirm);
+            const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
+
+            if (start && updated <= start) {
+                continue;
+            }
+
+            if (end && updated >= end) {
+                continue;
+            }
+
+            response.push(resolve ? doc : did);
+        }
+
+        return response;
+    }
+
     return dids;
 }
 

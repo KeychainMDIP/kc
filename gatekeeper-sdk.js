@@ -130,9 +130,27 @@ export async function deleteDID(operation) {
     }
 }
 
-export async function getDIDs() {
+export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = {}) {
     try {
-        const response = await axios.get(`${URL}/api/v1/did/`);
+        let params = '';
+
+        if (updatedAfter) {
+            params += `updatedAfter=${updatedAfter}&`;
+        }
+
+        if (updatedBefore) {
+            params += `updatedBefore=${updatedBefore}&`;
+        }
+
+        if (confirm) {
+            params += `confirm=${confirm}&`;
+        }
+
+        if (resolve) {
+            params += `resolve=${resolve}&`;
+        }
+
+        const response = await axios.get(`${URL}/api/v1/did/?${params}`);
         return response.data;
     }
     catch (error) {
