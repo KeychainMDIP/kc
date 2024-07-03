@@ -1015,6 +1015,8 @@ describe('clearQueue', () => {
     });
 
     it('should return true if invalid queue specified', async () => {
+        mockFs({});
+        
         const registry = 'TESS';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
@@ -1080,7 +1082,7 @@ describe('getDids', () => {
         }
 
         const doc = await gatekeeper.resolveDID(dids[4]);
-        const recentDIDs = await gatekeeper.getDIDs(doc.didDocumentMetadata.created);
+        const recentDIDs = await gatekeeper.getDIDs({updatedAfter: doc.didDocumentMetadata.created});
 
         expect(recentDIDs.length).toBe(5);
         expect(recentDIDs.includes(dids[5])).toBe(true);
@@ -1088,6 +1090,60 @@ describe('getDids', () => {
         expect(recentDIDs.includes(dids[7])).toBe(true);
         expect(recentDIDs.includes(dids[8])).toBe(true);
         expect(recentDIDs.includes(dids[9])).toBe(true);
+    });
+
+    it('should return all DIDs before specified time', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const dids = [];
+
+        for (let i = 0; i < 10; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            const assetDID = await gatekeeper.createDID(assetOp);
+            dids.push(assetDID);
+        }
+
+        const doc = await gatekeeper.resolveDID(dids[5]);
+        const recentDIDs = await gatekeeper.getDIDs({updatedBefore: doc.didDocumentMetadata.created});
+
+        expect(recentDIDs.length).toBe(6);
+        expect(recentDIDs.includes(agentDID)).toBe(true);
+        expect(recentDIDs.includes(dids[0])).toBe(true);
+        expect(recentDIDs.includes(dids[1])).toBe(true);
+        expect(recentDIDs.includes(dids[2])).toBe(true);
+        expect(recentDIDs.includes(dids[3])).toBe(true);
+        expect(recentDIDs.includes(dids[4])).toBe(true);
+    });
+
+    it('should return all DIDs between specified times', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const dids = [];
+
+        for (let i = 0; i < 10; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            const assetDID = await gatekeeper.createDID(assetOp);
+            dids.push(assetDID);
+        }
+
+        const doc3 = await gatekeeper.resolveDID(dids[3]);
+        const doc8 = await gatekeeper.resolveDID(dids[8]);
+        const recentDIDs = await gatekeeper.getDIDs({
+            updatedAfter: doc3.didDocumentMetadata.created,
+            updatedBefore: doc8.didDocumentMetadata.created
+        });
+
+        expect(recentDIDs.length).toBe(4);
+        expect(recentDIDs.includes(dids[4])).toBe(true);
+        expect(recentDIDs.includes(dids[5])).toBe(true);
+        expect(recentDIDs.includes(dids[6])).toBe(true);
+        expect(recentDIDs.includes(dids[7])).toBe(true);
     });
 });
 
