@@ -186,14 +186,10 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(anchor, asOfTime) {
+async function generateDoc(anchor) {
     try {
         if (!anchor?.mdip) {
             return {};
-        }
-
-        if (asOfTime && new Date(anchor.created) < new Date(asOfTime)) {
-            return {}; // DID was not yet created
         }
 
         if (!validVersions.includes(anchor.mdip.version)) {
