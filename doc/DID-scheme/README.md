@@ -289,7 +289,7 @@ If invalid, the update is ignored, otherwise it is applied to the previous docum
 In pseudo-code:
 
 ```
-function resolveDid(did, atTme=now):
+function resolveDid(did, atTime=now):
     get suffix from did
     use suffix as content address to retrieve document seed from CAS
     if fail to retrieve the document seed
@@ -301,7 +301,7 @@ function resolveDid(did, atTme=now):
         return
     generate initial document from anchor
     retrieve all update operations from did's registry
-    for all updates until atTme:
+    for all updates until atTime:
         if signature is valid and update is valid:
             apply update to DID document
     return DID document

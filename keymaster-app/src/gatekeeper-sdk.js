@@ -94,12 +94,12 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, { atTme, atVersion, confirm } = {}) {
+export async function resolveDID(did, { atTime, atVersion, confirm } = {}) {
     try {
         let params = '';
 
-        if (atTme) {
-            params += `atTme=${atTme}&`;
+        if (atTime) {
+            params += `atTime=${atTime}&`;
         }
 
         if (atVersion) {

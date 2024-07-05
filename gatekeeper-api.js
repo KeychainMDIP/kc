@@ -72,8 +72,8 @@ v1router.get('/did/:did', async (req, res) => {
     try {
         const options = {};
 
-        if (req.query.atTme) {
-            options.atTme = req.query.atTme;
+        if (req.query.atTime) {
+            options.atTime = req.query.atTime;
         }
 
         if (req.query.atVersion) {
@@ -200,7 +200,7 @@ v1router.get('/registries', async (req, res) => {
 
 app.get('/explore/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, { atTme: req.query.atTme });
+        const doc = await gatekeeper.resolveDID(req.params.did, { atTime: req.query.atTime });
         var hthead = '<html><body>';
         hthead = hthead + '<h1>MDIP Network Explorer</h1>';
         hthead = hthead + '<table><tr><td><h3>' + req.params.did + '</h3></td>';
