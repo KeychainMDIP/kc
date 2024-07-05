@@ -70,7 +70,21 @@ v1router.post('/did', async (req, res) => {
 
 v1router.get('/did/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, { asOfTime: req.query.asOfTime, confirm: req.query.confirm });
+        const options = {};
+
+        if (req.query.asOfTime) {
+            options.asOfTime = req.query.asOfTime;
+        }
+
+        if (req.query.atVersion) {
+            options.atVersion = parseInt(req.query.atVersion);
+        }
+
+        if (req.query.confirm) {
+            options.confirm = req.query.confirm === 'true';
+        }
+
+        const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
     } catch (error) {
         console.error(error);
@@ -102,12 +116,25 @@ v1router.delete('/did/:did', async (req, res) => {
 
 v1router.get('/did/', async (req, res) => {
     try {
-        const dids = await gatekeeper.getDIDs({
-            updatedAfter: req.query.updatedAfter,
-            updatedBefore: req.query.updatedBefore,
-            confirm: req.query.confirm,
-            resolve: req.query.resolve,
-        });
+        const options = {};
+
+        if (req.query.updatedAfter) {
+            options.updatedAfter = req.query.updatedAfter;
+        }
+
+        if (req.query.updatedBefore) {
+            options.updatedBefore = req.query.updatedBefore;
+        }
+
+        if (req.query.confirm) {
+            options.confirm = req.query.confirm === 'true';
+        }
+
+        if (req.query.resolve) {
+            options.resolve = req.query.resolve === 'true';
+        }
+
+        const dids = await gatekeeper.getDIDs(options);
         res.json(dids);
     } catch (error) {
         console.error(error);

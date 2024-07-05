@@ -243,6 +243,19 @@ program
     });
 
 program
+    .command('resolve-did-version <did> <version>')
+    .description('Return specified version of document associated with DID')
+    .action(async (did, version) => {
+        try {
+            const doc = await keymaster.resolveDID(did, { atVersion: version });
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
+
+program
     .command('encrypt-msg <msg> <did>')
     .description('Encrypt a message for a DID')
     .action(async (msg, did) => {

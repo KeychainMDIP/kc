@@ -292,7 +292,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, { asOfTime, confirm, verify } = {}) {
+export async function resolveDID(did, { asOfTime, atVersion, confirm, verify } = {}) {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -332,17 +332,6 @@ export async function resolveDID(did, { asOfTime, confirm, verify } = {}) {
             break;
         }
 
-        // const hash = cipher.hashJSON(doc);
-
-        // if (hash !== operation.prev) {
-        //     // hash mismatch
-        //     // if (verify) {
-        //     //     throw "Invalid hash";
-        //     // }
-        //     // !!! This fails on key rotation #3 (!?), disabling for now
-        //     // continue;
-        // }
-
         const valid = await verifyUpdate(operation, doc);
 
         if (!valid) {
@@ -381,6 +370,10 @@ export async function resolveDID(did, { asOfTime, confirm, verify } = {}) {
             }
 
             console.error(`unknown type ${operation.type}`);
+        }
+
+        if (atVersion && version === atVersion) {
+            break;
         }
     }
 

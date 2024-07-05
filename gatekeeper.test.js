@@ -379,6 +379,33 @@ describe('resolveDID', () => {
         expect(doc).toStrictEqual(expected);
     });
 
+    it('should resolve specified version', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        let expected;
+
+        // Add 10 versions, save one from the middle
+        for (let i = 0; i < 10; i++) {
+            const update = await gatekeeper.resolveDID(did);
+
+            if (i == 5) {
+                expected = update;
+            }
+
+            update.didDocumentData = { mock: 1 };
+            const updateOp = await createUpdateOp(keypair, did, update);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc = await gatekeeper.resolveDID(did, { atVersion: expected.didDocumentMetadata.version });
+        expect(doc).toStrictEqual(expected);
+    });
+
     it('should resolve a valid asset DID', async () => {
         mockFs({});
 

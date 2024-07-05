@@ -94,12 +94,16 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, { asOfTime, confirm } = {}) {
+export async function resolveDID(did, { asOfTime, atVersion, confirm } = {}) {
     try {
         let params = '';
 
         if (asOfTime) {
             params += `asOfTime=${asOfTime}&`;
+        }
+
+        if (atVersion) {
+            params += `atVersion=${atVersion}&`;
         }
 
         if (confirm) {
