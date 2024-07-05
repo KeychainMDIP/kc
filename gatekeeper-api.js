@@ -70,7 +70,7 @@ v1router.post('/did', async (req, res) => {
 
 v1router.get('/did/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof, req.query.confirm);
+        const doc = await gatekeeper.resolveDID(req.params.did, { asOfTime: req.query.asOfTime, confirm: req.query.confirm });
         res.json(doc);
     } catch (error) {
         console.error(error);
@@ -191,7 +191,7 @@ v1router.get('/registries', async (req, res) => {
 
 app.get('/explore/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
+        const doc = await gatekeeper.resolveDID(req.params.did, { asOfTime: req.query.asOfTime });
         var hthead = '<html><body>';
         hthead = hthead + '<h1>MDIP Network Explorer</h1>';
         hthead = hthead + '<table><tr><td><h3>' + req.params.did + '</h3></td>';

@@ -16,7 +16,7 @@ program
     .description('Return document associated with DID')
     .action(async (did, confirm) => {
         try {
-            const doc = await gatekeeper.resolveDID(did, null, !!confirm);
+            const doc = await gatekeeper.resolveDID(did, { confirm: !!confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {

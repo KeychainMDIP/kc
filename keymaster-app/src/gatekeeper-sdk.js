@@ -94,16 +94,20 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, asof = null, confirm = false) {
+export async function resolveDID(did, { asOfTime, confirm } = {}) {
     try {
-        if (asof || confirm) {
-            const response = await axios.get(`${URL}/api/v1/did/${did}?asof=${asof}&confirm=${confirm}`);
-            return response.data;
+        let params = '';
+
+        if (asOfTime) {
+            params += `asOfTime=${asOfTime}&`;
         }
-        else {
-            const response = await axios.get(`${URL}/api/v1/did/${did}`);
-            return response.data;
+
+        if (confirm) {
+            params += `confirm=${confirm}&`;
         }
+
+        const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
@@ -130,9 +134,27 @@ export async function deleteDID(operation) {
     }
 }
 
-export async function getDIDs() {
+export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
     try {
-        const response = await axios.get(`${URL}/api/v1/did/`);
+        let params = '';
+
+        if (updatedAfter) {
+            params += `updatedAfter=${updatedAfter}&`;
+        }
+
+        if (updatedBefore) {
+            params += `updatedBefore=${updatedBefore}&`;
+        }
+
+        if (confirm) {
+            params += `confirm=${confirm}&`;
+        }
+
+        if (resolve) {
+            params += `resolve=${resolve}&`;
+        }
+
+        const response = await axios.get(`${URL}/api/v1/did/?${params}`);
         return response.data;
     }
     catch (error) {

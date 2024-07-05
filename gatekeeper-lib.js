@@ -32,7 +32,7 @@ export async function stop() {
 }
 
 export async function verifyDID(did) {
-    await resolveDID(did, null, false, true);
+    await resolveDID(did, { verify: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -102,7 +102,7 @@ async function verifyCreateAsset(operation) {
         throw "Invalid operation";
     }
 
-    const doc = await resolveDID(operation.signature.signer, operation.signature.signed);
+    const doc = await resolveDID(operation.signature.signer, { asOfTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
         throw "Invalid operation";
@@ -186,13 +186,13 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(anchor, asofTime) {
+async function generateDoc(anchor, asOfTime) {
     try {
         if (!anchor?.mdip) {
             return {};
         }
 
-        if (asofTime && new Date(anchor.created) < new Date(asofTime)) {
+        if (asOfTime && new Date(anchor.created) < new Date(asOfTime)) {
             return {}; // DID was not yet created
         }
 
@@ -271,7 +271,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, operation.signature.signed);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { asOfTime: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 
@@ -296,7 +296,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
+export async function resolveDID(did, { asOfTime, confirm, verify } = {}) {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -431,7 +431,7 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = {}) {
+export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
     const keys = await db.getAllKeys();
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
 
@@ -441,7 +441,7 @@ export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = 
         const response = [];
 
         for (const did of dids) {
-            const doc = await resolveDID(did, null, confirm);
+            const doc = await resolveDID(did, { confirm: confirm });
             const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
 
             if (start && updated <= start) {
