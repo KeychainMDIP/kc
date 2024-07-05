@@ -1241,6 +1241,34 @@ describe('getDids', () => {
         expect(recentDIDs.includes(dids[6])).toBe(true);
         expect(recentDIDs.includes(dids[7])).toBe(true);
     });
+
+    it('should resolve all specified DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const dids = [];
+        const expected = [];
+
+        for (let i = 0; i < 10; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            const assetDID = await gatekeeper.createDID(assetOp);
+            dids.push(assetDID);
+            expected.push(await gatekeeper.resolveDID(assetDID));
+        }
+
+        const resolvedDIDs = await gatekeeper.getDIDs({
+            dids: dids,
+            resolve: true
+        });
+
+        expect(resolvedDIDs.length).toBe(10);
+
+        for (let i = 0; i < 10; i++) {
+            expect(resolvedDIDs[i]).toStrictEqual(expected[i]);
+        }
+    });
 });
 
 describe('listRegistries', () => {

@@ -114,27 +114,9 @@ v1router.delete('/did/:did', async (req, res) => {
     }
 });
 
-v1router.get('/did/', async (req, res) => {
+v1router.post('/dids/', async (req, res) => {
     try {
-        const options = {};
-
-        if (req.query.updatedAfter) {
-            options.updatedAfter = req.query.updatedAfter;
-        }
-
-        if (req.query.updatedBefore) {
-            options.updatedBefore = req.query.updatedBefore;
-        }
-
-        if (req.query.confirm) {
-            options.confirm = req.query.confirm === 'true';
-        }
-
-        if (req.query.resolve) {
-            options.resolve = req.query.resolve === 'true';
-        }
-
-        const dids = await gatekeeper.getDIDs(options);
+        const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
     } catch (error) {
         console.error(error);

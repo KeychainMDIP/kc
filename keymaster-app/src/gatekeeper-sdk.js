@@ -138,27 +138,37 @@ export async function deleteDID(operation) {
     }
 }
 
-export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
+// export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
+//     try {
+//         let params = '';
+
+//         if (updatedAfter) {
+//             params += `updatedAfter=${updatedAfter}&`;
+//         }
+
+//         if (updatedBefore) {
+//             params += `updatedBefore=${updatedBefore}&`;
+//         }
+
+//         if (confirm) {
+//             params += `confirm=${confirm}&`;
+//         }
+
+//         if (resolve) {
+//             params += `resolve=${resolve}&`;
+//         }
+
+//         const response = await axios.get(`${URL}/api/v1/dids/?${params}`);
+//         return response.data;
+//     }
+//     catch (error) {
+//         throwError(error);
+//     }
+// }
+
+export async function getDIDs(options = {}) {
     try {
-        let params = '';
-
-        if (updatedAfter) {
-            params += `updatedAfter=${updatedAfter}&`;
-        }
-
-        if (updatedBefore) {
-            params += `updatedBefore=${updatedBefore}&`;
-        }
-
-        if (confirm) {
-            params += `confirm=${confirm}&`;
-        }
-
-        if (resolve) {
-            params += `resolve=${resolve}&`;
-        }
-
-        const response = await axios.get(`${URL}/api/v1/did/?${params}`);
+        const response = await axios.post(`${URL}/api/v1/dids/`, options);
         return response.data;
     }
     catch (error) {

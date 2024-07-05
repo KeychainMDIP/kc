@@ -420,9 +420,11 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
-    const keys = await db.getAllKeys();
-    const dids = keys.map(key => `${config.didPrefix}:${key}`);
+export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, resolve } = {}) {
+    if (!dids) {
+        const keys = await db.getAllKeys();
+        dids = keys.map(key => `${config.didPrefix}:${key}`);
+    }
 
     if (updatedAfter || updatedBefore || resolve) {
         const start = updatedAfter ? new Date(updatedAfter) : null;
