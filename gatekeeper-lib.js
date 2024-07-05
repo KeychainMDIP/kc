@@ -102,7 +102,7 @@ async function verifyCreateAsset(operation) {
         throw "Invalid operation";
     }
 
-    const doc = await resolveDID(operation.signature.signer, { asOfTime: operation.signature.signed });
+    const doc = await resolveDID(operation.signature.signer, { atTme: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
         throw "Invalid operation";
@@ -267,7 +267,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { asOfTime: operation.signature.signed });
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { atTme: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 
@@ -292,7 +292,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, { asOfTime, atVersion, confirm, verify } = {}) {
+export async function resolveDID(did, { atTme, atVersion, confirm, verify } = {}) {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -307,7 +307,7 @@ export async function resolveDID(did, { asOfTime, atVersion, confirm, verify } =
         throw "Invalid DID";
     }
 
-    if (asOfTime && new Date(mdip.created) > new Date(asOfTime)) {
+    if (atTme && new Date(mdip.created) > new Date(atTme)) {
         // TBD What to return if DID was created after specified time?
     }
 
@@ -322,7 +322,7 @@ export async function resolveDID(did, { asOfTime, atVersion, confirm, verify } =
             continue;
         }
 
-        if (asOfTime && new Date(time) > new Date(asOfTime)) {
+        if (atTme && new Date(time) > new Date(atTme)) {
             break;
         }
 

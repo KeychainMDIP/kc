@@ -375,7 +375,7 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { asOfTime: expected.didDocumentMetadata.updated });
+        const doc = await gatekeeper.resolveDID(did, { atTme: expected.didDocumentMetadata.updated });
         expect(doc).toStrictEqual(expected);
     });
 
