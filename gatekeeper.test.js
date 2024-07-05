@@ -289,18 +289,63 @@ describe('resolveDID', () => {
         expect(updatedDoc).toStrictEqual(expected);
     });
 
-    it('should resolve unconfirmed updates when allowed', async () => {
+    it('should resolve confirmed version when specified', async () => {
 
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const expected = await gatekeeper.resolveDID(did);
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
         const ok = await gatekeeper.updateDID(updateOp);
-        const updatedDoc = await gatekeeper.resolveDID(did);
+        const confirmedDoc = await gatekeeper.resolveDID(did, null, true);
+
+        expect(ok).toBe(true);
+        expect(confirmedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve version at specified time', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+
+        let expected;
+
+        // Add 10 versions, save one from the middle
+        for (let i = 0; i < 10; i++) {
+            const update = await gatekeeper.resolveDID(did);
+
+            if (i == 5) {
+                expected = update;
+            }
+
+            update.didDocumentData = { mock: 1 };
+            const updateOp = await createUpdateOp(keypair, did, update);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc = await gatekeeper.resolveDID(did, expected.didDocumentMetadata.updated);
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should resolve unconfirmed updates when specified', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did, null, false);
         const expected = {
             "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
@@ -320,7 +365,7 @@ describe('resolveDID', () => {
                     },
                 ],
             },
-            didDocumentData: doc.didDocumentData,
+            didDocumentData: update.didDocumentData,
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
