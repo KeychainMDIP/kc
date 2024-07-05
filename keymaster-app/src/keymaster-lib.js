@@ -397,7 +397,7 @@ export async function decrypt(did) {
         throw "DID is not encrypted";
     }
 
-    const doc = await resolveDID(crypt.sender, crypt.created);
+    const doc = await resolveDID(crypt.sender, { atTime: crypt.created });
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -466,7 +466,7 @@ export async function verifySignature(obj) {
         return false;
     }
 
-    const doc = await resolveDID(signature.signer, signature.signed);
+    const doc = await resolveDID(signature.signer, { atTime: signature.signed });
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -564,8 +564,8 @@ function removeFromHeld(did) {
     return false;
 }
 
-export async function resolveDID(did, asof, confirm) {
-    const doc = await gatekeeper.resolveDID(lookupDID(did), asof, confirm);
+export async function resolveDID(did, options = {}) {
+    const doc = await gatekeeper.resolveDID(lookupDID(did), options);
     return doc;
 }
 

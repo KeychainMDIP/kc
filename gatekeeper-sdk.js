@@ -94,16 +94,24 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, asof = null, confirm = false) {
+export async function resolveDID(did, { atTime, atVersion, confirm } = {}) {
     try {
-        if (asof || confirm) {
-            const response = await axios.get(`${URL}/api/v1/did/${did}?asof=${asof}&confirm=${confirm}`);
-            return response.data;
+        let params = '';
+
+        if (atTime) {
+            params += `atTime=${atTime}&`;
         }
-        else {
-            const response = await axios.get(`${URL}/api/v1/did/${did}`);
-            return response.data;
+
+        if (atVersion) {
+            params += `atVersion=${atVersion}&`;
         }
+
+        if (confirm) {
+            params += `confirm=${confirm}&`;
+        }
+
+        const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);
+        return response.data;
     }
     catch (error) {
         throwError(error);
@@ -130,27 +138,37 @@ export async function deleteDID(operation) {
     }
 }
 
-export async function getDIDs({updatedAfter, updatedBefore, confirm, resolve} = {}) {
+// export async function getDIDs({ updatedAfter, updatedBefore, confirm, resolve } = {}) {
+//     try {
+//         let params = '';
+
+//         if (updatedAfter) {
+//             params += `updatedAfter=${updatedAfter}&`;
+//         }
+
+//         if (updatedBefore) {
+//             params += `updatedBefore=${updatedBefore}&`;
+//         }
+
+//         if (confirm) {
+//             params += `confirm=${confirm}&`;
+//         }
+
+//         if (resolve) {
+//             params += `resolve=${resolve}&`;
+//         }
+
+//         const response = await axios.get(`${URL}/api/v1/dids/?${params}`);
+//         return response.data;
+//     }
+//     catch (error) {
+//         throwError(error);
+//     }
+// }
+
+export async function getDIDs(options = {}) {
     try {
-        let params = '';
-
-        if (updatedAfter) {
-            params += `updatedAfter=${updatedAfter}&`;
-        }
-
-        if (updatedBefore) {
-            params += `updatedBefore=${updatedBefore}&`;
-        }
-
-        if (confirm) {
-            params += `confirm=${confirm}&`;
-        }
-
-        if (resolve) {
-            params += `resolve=${resolve}&`;
-        }
-
-        const response = await axios.get(`${URL}/api/v1/did/?${params}`);
+        const response = await axios.post(`${URL}/api/v1/dids/`, options);
         return response.data;
     }
     catch (error) {

@@ -234,7 +234,20 @@ program
     .description('Return document associated with DID')
     .action(async (did, confirm) => {
         try {
-            const doc = await keymaster.resolveDID(did, null, !!confirm);
+            const doc = await keymaster.resolveDID(did, { confirm: !!confirm });
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
+
+program
+    .command('resolve-did-version <did> <version>')
+    .description('Return specified version of document associated with DID')
+    .action(async (did, version) => {
+        try {
+            const doc = await keymaster.resolveDID(did, { atVersion: version });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {

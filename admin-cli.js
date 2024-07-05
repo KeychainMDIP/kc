@@ -16,7 +16,7 @@ program
     .description('Return document associated with DID')
     .action(async (did, confirm) => {
         try {
-            const doc = await gatekeeper.resolveDID(did, null, !!confirm);
+            const doc = await gatekeeper.resolveDID(did, { confirm: !!confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
@@ -29,12 +29,29 @@ program
     .description('Fetch all DIDs')
     .action(async (updatedAfter, updatedBefore, confirm, resolve) => {
         try {
-            const dids = await gatekeeper.getDIDs({
-                updatedAfter: updatedAfter,
-                updatedBefore: updatedBefore,
-                confirm: confirm,
-                resolve: resolve,
-            });
+            let options = {};
+
+            const after = new Date(updatedAfter);
+
+            if (!isNaN(after.getTime())) {
+                options.updatedAfter = after.toISOString();
+            }
+
+            const before = new Date(updatedBefore);
+
+            if (!isNaN(before.getTime())) {
+                options.updatedBefore = before.toISOString();
+            }
+
+            if (confirm) {
+                options.confirm = confirm === 'true';
+            }
+
+            if (resolve) {
+                options.resolve = resolve === 'true';
+            }
+
+            const dids = await gatekeeper.getDIDs(options);
             console.log(JSON.stringify(dids, null, 4));
         }
         catch (error) {

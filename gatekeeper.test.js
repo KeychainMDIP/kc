@@ -289,18 +289,36 @@ describe('resolveDID', () => {
         expect(updatedDoc).toStrictEqual(expected);
     });
 
-    it('should resolve unconfirmed updates when allowed', async () => {
+    it('should resolve confirmed version when specified', async () => {
 
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const expected = await gatekeeper.resolveDID(did);
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
         const ok = await gatekeeper.updateDID(updateOp);
-        const updatedDoc = await gatekeeper.resolveDID(did);
+        const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
+
+        expect(ok).toBe(true);
+        expect(confirmedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolve unconfirmed version when specified', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const did = await gatekeeper.createDID(agentOp);
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const updatedDoc = await gatekeeper.resolveDID(did, { confirm: false });
         const expected = {
             "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
@@ -320,7 +338,7 @@ describe('resolveDID', () => {
                     },
                 ],
             },
-            didDocumentData: doc.didDocumentData,
+            didDocumentData: update.didDocumentData,
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
@@ -334,48 +352,58 @@ describe('resolveDID', () => {
         expect(updatedDoc).toStrictEqual(expected);
     });
 
-    it('should resolve only confirmed updates when specified', async () => {
+    it('should resolve version at specified time', async () => {
 
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        const ok = await gatekeeper.updateDID(updateOp);
-        const updatedDoc = await gatekeeper.resolveDID(did, null, true);
-        const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
-            didDocument: {
-                "@context": [
-                    "https://www.w3.org/ns/did/v1",
-                ],
-                authentication: [
-                    "#key-1",
-                ],
-                id: did,
-                verificationMethod: [
-                    {
-                        controller: did,
-                        id: "#key-1",
-                        publicKeyJwk: agentOp.publicJwk,
-                        type: "EcdsaSecp256k1VerificationKey2019",
-                    },
-                ],
-            },
-            didDocumentData: {},
-            didDocumentMetadata: {
-                created: expect.any(String),
-                version: 1,
-                confirmed: true,
-            },
-            mdip: agentOp.mdip,
-        };
 
-        expect(ok).toBe(true);
-        expect(updatedDoc).toStrictEqual(expected);
+        let expected;
+
+        // Add 10 versions, save one from the middle
+        for (let i = 0; i < 10; i++) {
+            const update = await gatekeeper.resolveDID(did);
+
+            if (i == 5) {
+                expected = update;
+            }
+
+            update.didDocumentData = { mock: 1 };
+            const updateOp = await createUpdateOp(keypair, did, update);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc = await gatekeeper.resolveDID(did, { atTime: expected.didDocumentMetadata.updated });
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should resolve specified version', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        let expected;
+
+        // Add 10 versions, save one from the middle
+        for (let i = 0; i < 10; i++) {
+            const update = await gatekeeper.resolveDID(did);
+
+            if (i == 5) {
+                expected = update;
+            }
+
+            update.didDocumentData = { mock: 1 };
+            const updateOp = await createUpdateOp(keypair, did, update);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc = await gatekeeper.resolveDID(did, { atVersion: expected.didDocumentMetadata.version });
+        expect(doc).toStrictEqual(expected);
     });
 
     it('should resolve a valid asset DID', async () => {
@@ -1079,7 +1107,7 @@ describe('getDids', () => {
         const assetDID = await gatekeeper.createDID(assetOp);
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
-        const allDocs = await gatekeeper.getDIDs({resolve: true});
+        const allDocs = await gatekeeper.getDIDs({ resolve: true });
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc);
@@ -1103,7 +1131,7 @@ describe('getDids', () => {
         const assetDID = await gatekeeper.createDID(assetOp);
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
-        const allDocs = await gatekeeper.getDIDs({confirm: true, resolve: true});
+        const allDocs = await gatekeeper.getDIDs({ confirm: true, resolve: true });
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc); // version 1
@@ -1128,7 +1156,7 @@ describe('getDids', () => {
         const assetDID = await gatekeeper.createDID(assetOp);
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
-        const allDocs = await gatekeeper.getDIDs({confirm: false, resolve: true});
+        const allDocs = await gatekeeper.getDIDs({ confirm: false, resolve: true });
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDocv2);
@@ -1150,7 +1178,7 @@ describe('getDids', () => {
         }
 
         const doc = await gatekeeper.resolveDID(dids[4]);
-        const recentDIDs = await gatekeeper.getDIDs({updatedAfter: doc.didDocumentMetadata.created});
+        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata.created });
 
         expect(recentDIDs.length).toBe(5);
         expect(recentDIDs.includes(dids[5])).toBe(true);
@@ -1175,7 +1203,7 @@ describe('getDids', () => {
         }
 
         const doc = await gatekeeper.resolveDID(dids[5]);
-        const recentDIDs = await gatekeeper.getDIDs({updatedBefore: doc.didDocumentMetadata.created});
+        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata.created });
 
         expect(recentDIDs.length).toBe(6);
         expect(recentDIDs.includes(agentDID)).toBe(true);
@@ -1212,6 +1240,34 @@ describe('getDids', () => {
         expect(recentDIDs.includes(dids[5])).toBe(true);
         expect(recentDIDs.includes(dids[6])).toBe(true);
         expect(recentDIDs.includes(dids[7])).toBe(true);
+    });
+
+    it('should resolve all specified DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const dids = [];
+        const expected = [];
+
+        for (let i = 0; i < 10; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            const assetDID = await gatekeeper.createDID(assetOp);
+            dids.push(assetDID);
+            expected.push(await gatekeeper.resolveDID(assetDID));
+        }
+
+        const resolvedDIDs = await gatekeeper.getDIDs({
+            dids: dids,
+            resolve: true
+        });
+
+        expect(resolvedDIDs.length).toBe(10);
+
+        for (let i = 0; i < 10; i++) {
+            expect(resolvedDIDs[i]).toStrictEqual(expected[i]);
+        }
     });
 });
 
