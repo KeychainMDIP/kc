@@ -3,18 +3,21 @@ title: Credentials
 author: Christian
 ---
 
-The Credentials screen allows a user to decrypt, accept, or issue verifiable credentials. Users must have created a Schema before a Credential can be issued. The credentials subjects are listed from known Agent DIDs contained in the wallet (from IDENTITIES and DIDS screens).
+The Credentials screen allows a user to decrypt, accept, or issue verifiable credentials. Users must register  a schema on the MDIP network, or select an existing schema's DID, before a credential can be issued.
 
-![Credentials screen](08.png)
+The credential's subjects are listed from known Agent DIDs contained in the wallet (from the [IDENTITIES](./identities) and [DIDS](./dids) screens).
 
-The credential screen also allows the issuing user to "fill-in" the credential with recipient-specific content. The credential below attests Bob's membership to Alice.
+![Credentials screen](credentials-screen.png)
 
-![Issue Credential](09.png)
+The credential screen also allows the issuing user to fill in the credential with recipient-specific content. The credential below attests Bob's membership to Alice:
+
+![Issue Credential](issue-credential.png)
 
 ## HELD Screen
 
-In the "HELD" Credentials screen, a user can chose from a variety of options.
-![Held Credentials](10.png)
+In the "HELD" Credentials screen, a user can chose from a variety of options:
+
+![Held Credentials](held-credentials.png)
 
 - **Resolve**: This will display the *public* (encrypted) view of the credential. Resolving a credential confirms it exists in the MDIP Gatekeeper node.
 
@@ -28,6 +31,6 @@ In the "HELD" Credentials screen, a user can chose from a variety of options.
 
 - **Unpublish**: This removes the credential from a DID manifest. Note: other nodes on the network may retain the *history* of a DID; once published or revealed a credential has been winessed by other nodes.
 
-The image below shows a portion of Bob's Agent DID with a revealed "isMember: true" credention in the visible portion of his DID document.
+The image below shows a portion of Bob's Agent DID with a revealed "isMember: true" credential in the visible portion of his DID document:
 
-![revealed membership](11.png)
+![revealed membership](revealed-membership.png)
