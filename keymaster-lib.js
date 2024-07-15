@@ -418,9 +418,9 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did, registry = defaultRegistry) {
+export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
-    return encrypt(plaintext, did, registry);
+    return encrypt(plaintext, did, encryptForSender, registry);
 }
 
 export async function decryptJSON(did) {
@@ -874,12 +874,12 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     }
 
     // Don't allow credentials that will be garbage-collected
-    if (registry === 'hyperswarm') {
-        throw 'Invalid VC';
-    }
+    // if (registry === 'hyperswarm') {
+    //     throw 'Invalid VC';
+    // }
 
     const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
+    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1106,8 +1106,7 @@ export async function createResponse(did) {
         match: match,
     };
 
-    const responseDid = await encryptJSON(response, requestor, ephemeralRegistry);
-
+    const responseDid = await encryptJSON(response, requestor, true, ephemeralRegistry);
     return responseDid;
 }
 
@@ -1599,8 +1598,8 @@ export async function votePoll(poll, vote, spoil = false) {
     }
 
     // Encrypt for receiver only
+    // TBD which registry?
     const didBallot = await encryptJSON(ballot, owner, false);
-
     return didBallot;
 }
 
