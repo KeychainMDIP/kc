@@ -435,7 +435,7 @@ function KeymasterUI({ keymaster, title }) {
 
     async function issueCredential() {
         try {
-            const did = await keymaster.issueCredential(JSON.parse(credentialString));
+            const did = await keymaster.issueCredential(JSON.parse(credentialString), registry);
             setCredentialDID(did);
             // Add did to issuedList
             setIssuedList(prevIssuedList => [...prevIssuedList, did]);
@@ -1261,14 +1261,28 @@ function KeymasterUI({ keymaster, title }) {
                                                             Issue Credential
                                                         </Button>
                                                     </Grid>
-                                                    {credentialDID &&
-                                                        <Grid item>
-                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                                {credentialDID}
-                                                            </Typography>
-                                                        </Grid>
-                                                    }
+                                                    <Grid item>on registry:
+                                                        <Select
+                                                            style={{ width: '300px' }}
+                                                            value={registry}
+                                                            fullWidth
+                                                            onChange={(event) => setRegistry(event.target.value)}
+                                                        >
+                                                            {registries.map((registry, index) => (
+                                                                <MenuItem value={registry} key={index}>
+                                                                    {registry}
+                                                                </MenuItem>
+                                                            ))}
+                                                        </Select>
+                                                    </Grid>
                                                 </Grid>
+                                                {credentialDID &&
+                                                    <Grid item>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {credentialDID}
+                                                        </Typography>
+                                                    </Grid>
+                                                }
                                             </Grid>
                                         </Box>
                                     }

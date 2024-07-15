@@ -367,8 +367,8 @@ v1router.post('/bind-credential', async (req, res) => {
 
 v1router.post('/issue-credential', async (req, res) => {
     try {
-        const { credential } = req.body;
-        const response = await keymaster.issueCredential(credential);
+        const { credential, registry } = req.body;
+        const response = await keymaster.issueCredential(credential, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
