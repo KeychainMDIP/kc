@@ -8,35 +8,12 @@ import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
 
-let HDKey;
+// vv Browser specific modifications
+import HDKey from 'browser-hdkey';
+import { Buffer } from 'buffer';
 
-// Temporary workaround for webpack issue.
-
-// if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-//     // Node.js environment
-//     import('hdkey').then(module => {
-//         HDKey = module.default || module;
-//     });
-//     import('node:crypto').then(({ webcrypto }) => {
-//         if (!globalThis.crypto) globalThis.crypto = webcrypto;
-//     });
-// } else {
-//     // Browser environment
-//     import('browser-hdkey').then(module => {
-//         HDKey = module.default || module;
-//     });
-//     import('buffer').then(({ Buffer }) => {
-//         global.Buffer = Buffer;
-//     });
-// }
-
-// Browser environment
-import('browser-hdkey').then(module => {
-    HDKey = module.default || module;
-});
-import('buffer').then(({ Buffer }) => {
-    global.Buffer = Buffer;
-});
+global.Buffer = Buffer;
+// ^^ Browser specific modifications
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
