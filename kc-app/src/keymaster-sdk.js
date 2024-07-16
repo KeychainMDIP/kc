@@ -248,9 +248,9 @@ export async function verifyResponse(responseDID, challengeDID) {
     }
 }
 
-export async function createGroup(group) {
+export async function createGroup(name, registry) {
     try {
-        const response = await axios.post(`/api/v1/groups`, { name: group });
+        const response = await axios.post(`/api/v1/groups`, { name, registry });
         return response.data;
     }
     catch (error) {
@@ -298,9 +298,9 @@ export async function groupTest(group, member) {
     }
 }
 
-export async function createSchema(schema) {
+export async function createSchema(schema, registry) {
     try {
-        const response = await axios.post(`/api/v1/schemas`, { schema });
+        const response = await axios.post(`/api/v1/schemas`, { schema, registry });
         return response.data;
     }
     catch (error) {
@@ -358,9 +358,9 @@ export async function bindCredential(schema, subject) {
     }
 }
 
-export async function issueCredential(credential) {
+export async function issueCredential(credential, registry) {
     try {
-        const response = await axios.post(`/api/v1/issue-credential`, { credential });
+        const response = await axios.post(`/api/v1/issue-credential`, { credential, registry });
         return response.data;
     }
     catch (error) {

@@ -418,9 +418,9 @@ export async function decrypt(did) {
     throw 'Cannot decrypt';
 }
 
-export async function encryptJSON(json, did, registry = defaultRegistry) {
+export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
-    return encrypt(plaintext, did, registry);
+    return encrypt(plaintext, did, encryptForSender, registry);
 }
 
 export async function decryptJSON(did) {
@@ -794,7 +794,7 @@ export function lookupDID(name) {
     throw "Unknown DID";
 }
 
-export async function createAsset(data, registry = defaultRegistry, name = null) {
+export async function createAsset(data, registry = defaultRegistry, owner = null) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -807,7 +807,7 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
         throw 'Invalid input';
     }
 
-    const id = fetchId(name);
+    const id = fetchId(owner);
 
     const operation = {
         type: "create",
@@ -821,7 +821,7 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
         data: data,
     };
 
-    const signed = await addSignature(operation, name);
+    const signed = await addSignature(operation, owner);
     const did = await gatekeeper.createDID(signed);
 
     // Keep assets that will be garbage-collected out of the owned list
@@ -874,12 +874,12 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     }
 
     // Don't allow credentials that will be garbage-collected
-    if (registry === 'hyperswarm') {
-        throw 'Invalid VC';
-    }
+    // if (registry === 'hyperswarm') {
+    //     throw 'Invalid VC';
+    // }
 
     const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, registry);
+    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1106,8 +1106,7 @@ export async function createResponse(did) {
         match: match,
     };
 
-    const responseDid = await encryptJSON(response, requestor, ephemeralRegistry);
-
+    const responseDid = await encryptJSON(response, requestor, true, ephemeralRegistry);
     return responseDid;
 }
 
@@ -1183,13 +1182,13 @@ export async function importDID(events) {
     return gatekeeper.importBatch(events);
 }
 
-export async function createGroup(name) {
+export async function createGroup(name, registry) {
     const group = {
         name: name,
         members: []
     };
 
-    return createAsset(group);
+    return createAsset(group, registry);
 }
 
 export async function getGroup(id) {
@@ -1360,14 +1359,14 @@ function validateSchema(schema) {
     return true;
 }
 
-export async function createSchema(schema) {
+export async function createSchema(schema, registry) {
     if (!schema) {
         schema = defaultSchema;
     }
 
     validateSchema(schema);
 
-    return createAsset(schema);
+    return createAsset(schema, registry);
 }
 
 export async function getSchema(id) {
@@ -1599,8 +1598,8 @@ export async function votePoll(poll, vote, spoil = false) {
     }
 
     // Encrypt for receiver only
+    // TBD which registry?
     const didBallot = await encryptJSON(ballot, owner, false);
-
     return didBallot;
 }
 

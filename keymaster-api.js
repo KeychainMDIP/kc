@@ -261,8 +261,8 @@ v1router.post('/verify-response', async (req, res) => {
 
 v1router.post('/groups', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = await keymaster.createGroup(name);
+        const { name, registry } = req.body;
+        const response = await keymaster.createGroup(name, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
@@ -310,8 +310,8 @@ v1router.post('/groups/:name/test', async (req, res) => {
 
 v1router.post('/schemas', async (req, res) => {
     try {
-        const { schema } = req.body;
-        const response = await keymaster.createSchema(schema);
+        const { schema, registry } = req.body;
+        const response = await keymaster.createSchema(schema, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
@@ -367,8 +367,8 @@ v1router.post('/bind-credential', async (req, res) => {
 
 v1router.post('/issue-credential', async (req, res) => {
     try {
-        const { credential } = req.body;
-        const response = await keymaster.issueCredential(credential);
+        const { credential, registry } = req.body;
+        const response = await keymaster.issueCredential(credential, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
