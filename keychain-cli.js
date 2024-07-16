@@ -2,6 +2,8 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
+import * as db_wallet from './db-wallet-json.js';
+import config from './config.js';
 
 program
     .version('1.0.0')
@@ -15,6 +17,34 @@ program
         try {
             const wallet = keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('check-wallet')
+    .description('Validate DIDs in wallet')
+    .action(async () => {
+        try {
+            const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+            console.log(`${checked} DIDs checked, ${invalid} invalid DIDs found, ${deleted} deleted DIDs found`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('fix-wallet')
+    .description('Remove invalid DIDs from the wallet')
+    .action(async () => {
+        try {
+            const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+
+            console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs and ${heldRemoved} held DIDs were removed`);
         }
         catch (error) {
             console.error(error);
@@ -204,7 +234,20 @@ program
     .description('Return document associated with DID')
     .action(async (did, confirm) => {
         try {
-            const doc = await keymaster.resolveDID(did, null, !!confirm);
+            const doc = await keymaster.resolveDID(did, { confirm: !!confirm });
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
+
+program
+    .command('resolve-did-version <did> <version>')
+    .description('Return specified version of document associated with DID')
+    .action(async (did, version) => {
+        try {
+            const doc = await keymaster.resolveDID(did, { atVersion: version });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
@@ -385,6 +428,20 @@ program
     });
 
 program
+    .command('list-issued')
+    .description('List issued credentials')
+    .action(async () => {
+        try {
+            const response = await keymaster.listIssued();
+
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('revoke-credential <did>')
     .description('Revokes a verifiable credential')
     .action(async (did) => {
@@ -425,8 +482,8 @@ program
     .description('Publish the existence of a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const vc = await keymaster.publishCredential(did, false);
-            console.log(JSON.stringify(vc, null, 4));
+            const response = await keymaster.publishCredential(did, false);
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -438,8 +495,8 @@ program
     .description('Reveal a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const vc = await keymaster.publishCredential(did, true);
-            console.log(JSON.stringify(vc, null, 4));
+            const response = await keymaster.publishCredential(did, true);
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -550,7 +607,7 @@ program
         try {
             const contents = fs.readFileSync(file).toString();
             const ops = JSON.parse(contents);
-            const did = await keymaster.importDID(ops);
+            const did = await keymaster.importBatch(ops);
             console.log(did);
         }
         catch (error) {
@@ -788,7 +845,8 @@ program
     });
 
 async function run() {
-    await keymaster.start(gatekeeper);
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
+    await keymaster.start(gatekeeper, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();
 }

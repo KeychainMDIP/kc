@@ -2,10 +2,11 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
+import * as db_wallet from './db-wallet-json.js';
 import config from './config.js';
 
 const REGISTRY = 'TESS';
-const FIRST = 139520;
+const FIRST = 142865;
 
 const client = new BtcClient({
     network: 'mainnet',
@@ -24,6 +25,7 @@ function loadDb() {
     else {
         return {
             height: 0,
+            first: FIRST,
             time: "",
             blockCount: 0,
             scanned: 0,
@@ -36,6 +38,14 @@ function loadDb() {
 
 function writeDb(db) {
     fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
+}
+
+function checkDb() {
+    const db = loadDb();
+
+    if (!db.first || db.first < FIRST) {
+        fs.rmSync(dbName);
+    }
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -182,6 +192,21 @@ async function importBatch() {
 }
 
 async function anchorBatch() {
+    try {
+        const walletInfo = await client.getWalletInfo();
+        console.log(JSON.stringify(walletInfo, null, 4));
+
+        if (walletInfo.balance < 1) {
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Wallet has insufficient funds. Send TESS to ${address}`);
+            return;
+        }
+    }
+    catch {
+        console.log('TESS node not accessible');
+        return;
+    }
+
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(JSON.stringify(batch, null, 4));
 
@@ -192,7 +217,7 @@ async function anchorBatch() {
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
-            const ok = await gatekeeper.clearQueue(batch);
+            const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
             if (ok) {
                 const db = loadDb();
@@ -247,6 +272,10 @@ async function waitForTess() {
         try {
             const walletInfo = await client.getWalletInfo();
             console.log(JSON.stringify(walletInfo, null, 4));
+
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Send TESS to ${address}`);
+
             isReady = true;
         }
         catch {
@@ -260,9 +289,12 @@ async function waitForTess() {
 }
 
 async function main() {
+    checkDb();
+
     await waitForTess();
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper);
+    await keymaster.start(gatekeeper, db_wallet);
 
     if (!config.nodeID) {
         console.log('tess-mediator must have a KC_NODE_ID configured');

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-pushd kc-app
-npm run build
-popd
+set -e
+
+npm --prefix ./kc-app run build
 node keymaster-api.js

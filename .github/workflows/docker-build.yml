@@ -7,11 +7,10 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Build & Publish
+name: Build Docker images
 
 on:
   push:
-    branches: ['release']
 
 env:
   REGISTRY: ghcr.io
@@ -48,23 +47,15 @@ jobs:
           - dockerfile: Dockerfile.gatekeeper
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.CALVER }}
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:release
           - dockerfile: Dockerfile.keymaster
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.CALVER }}
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:release
           - dockerfile: Dockerfile.hyperswarm
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.CALVER }}
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           - dockerfile: Dockerfile.tess
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:${{ needs.generate.outputs.CALVER }}
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:release
-    permissions:
-      contents: read
-      packages: write
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,10 +76,10 @@ jobs:
             ${{ needs.generate.outputs.CALVER }}
             release
 
-      - name: Build and push Docker images
+      - name: Build Docker images
         uses: docker/build-push-action@1a162644f9a7e87d8f4b053101d1d9a712edc18c
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
+          push: false
           labels: ${{ steps.meta.outputs.labels }}

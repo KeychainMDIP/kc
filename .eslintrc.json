@@ -1,5 +1,6 @@
 {
     "env": {
+        "browser": true,
         "es2021": true,
         "node": true,
         "jest": true
@@ -10,6 +11,9 @@
         "sourceType": "module"
     },
     "rules": {
-        "indent": ["error", 4]
+        "indent": [
+            "error",
+            4
+        ]
     }
 }

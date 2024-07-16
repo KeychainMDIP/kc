@@ -70,7 +70,21 @@ v1router.post('/did', async (req, res) => {
 
 v1router.get('/did/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof, req.query.confirm);
+        const options = {};
+
+        if (req.query.atTime) {
+            options.atTime = req.query.atTime;
+        }
+
+        if (req.query.atVersion) {
+            options.atVersion = parseInt(req.query.atVersion);
+        }
+
+        if (req.query.confirm) {
+            options.confirm = req.query.confirm === 'true';
+        }
+
+        const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
     } catch (error) {
         console.error(error);
@@ -100,9 +114,9 @@ v1router.delete('/did/:did', async (req, res) => {
     }
 });
 
-v1router.get('/did/', async (req, res) => {
+v1router.post('/dids/', async (req, res) => {
     try {
-        const dids = await gatekeeper.getDIDs();
+        const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
     } catch (error) {
         console.error(error);
@@ -198,7 +212,7 @@ v1router.get('/dids/updated', async (req, res) => {
 
 app.get('/explore/:did', async (req, res) => {
     try {
-        const doc = await gatekeeper.resolveDID(req.params.did, req.query.asof);
+        const doc = await gatekeeper.resolveDID(req.params.did, { atTime: req.query.atTime });
         var hthead = '<html><body>';
         hthead = hthead + '<h1>MDIP Network Explorer</h1>';
         hthead = hthead + '<table><tr><td><h3>' + req.params.did + '</h3></td>';

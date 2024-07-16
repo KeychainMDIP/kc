@@ -33,10 +33,14 @@ export async function stop() {
 }
 
 export async function verifyDID(did) {
-    await resolveDID(did, null, false, true);
+    await resolveDID(did, { verify: true });
 }
 
 export async function verifyDb(chatty = true) {
+    if (chatty) {
+        console.time('verifyDb');
+    }
+
     const dids = await db.getAllKeys();
     let n = 0;
     let invalid = 0;
@@ -56,6 +60,10 @@ export async function verifyDb(chatty = true) {
             invalid += 1;
             await db.deleteEvents(did);
         }
+    }
+
+    if (chatty) {
+        console.timeEnd('verifyDb');
     }
 
     return invalid;
@@ -95,7 +103,7 @@ async function verifyCreateAsset(operation) {
         throw "Invalid operation";
     }
 
-    const doc = await resolveDID(operation.signature.signer, operation.signature.signed);
+    const doc = await resolveDID(operation.signature.signer, { atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
         throw "Invalid operation";
@@ -179,14 +187,10 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(anchor, asofTime) {
+async function generateDoc(anchor) {
     try {
         if (!anchor?.mdip) {
             return {};
-        }
-
-        if (asofTime && new Date(anchor.created) < new Date(asofTime)) {
-            return {}; // DID was not yet created
         }
 
         if (!validVersions.includes(anchor.mdip.version)) {
@@ -264,7 +268,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, operation.signature.signed);
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { atTime: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 
@@ -289,7 +293,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, asOfTime = null, confirm = false, verify = false) {
+export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -304,7 +308,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
         throw "Invalid DID";
     }
 
-    if (asOfTime && new Date(mdip.created) > new Date(asOfTime)) {
+    if (atTime && new Date(mdip.created) > new Date(atTime)) {
         // TBD What to return if DID was created after specified time?
     }
 
@@ -319,7 +323,7 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             continue;
         }
 
-        if (asOfTime && new Date(time) > new Date(asOfTime)) {
+        if (atTime && new Date(time) > new Date(atTime)) {
             break;
         }
 
@@ -327,17 +331,6 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
 
         if (confirm && !confirmed) {
             break;
-        }
-
-        const hash = cipher.hashJSON(doc);
-
-        if (hash !== operation.prev) {
-            // hash mismatch
-            // if (verify) {
-            //     throw "Invalid hash";
-            // }
-            // !!! This fails on key rotation #3 (!?), disabling for now
-            // continue;
         }
 
         const valid = await verifyUpdate(operation, doc);
@@ -378,6 +371,10 @@ export async function resolveDID(did, asOfTime = null, confirm = false, verify =
             }
 
             console.error(`unknown type ${operation.type}`);
+        }
+
+        if (atVersion && version === atVersion) {
+            break;
         }
     }
 
@@ -424,9 +421,35 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs() {
-    const keys = await db.getAllKeys();
-    const dids = keys.map(key => `${config.didPrefix}:${key}`);
+export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, resolve } = {}) {
+    if (!dids) {
+        const keys = await db.getAllKeys();
+        dids = keys.map(key => `${config.didPrefix}:${key}`);
+    }
+
+    if (updatedAfter || updatedBefore || resolve) {
+        const start = updatedAfter ? new Date(updatedAfter) : null;
+        const end = updatedBefore ? new Date(updatedBefore) : null;
+        const response = [];
+
+        for (const did of dids) {
+            const doc = await resolveDID(did, { confirm: confirm });
+            const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
+
+            if (start && updated <= start) {
+                continue;
+            }
+
+            if (end && updated >= end) {
+                continue;
+            }
+
+            response.push(resolve ? doc : did);
+        }
+
+        return response;
+    }
+
     return dids;
 }
 

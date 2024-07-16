@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
+import * as db_wallet from './db-wallet-json.js';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();
@@ -38,6 +39,71 @@ v1router.get('/wallet', async (req, res) => {
     try {
         const wallet = keymaster.loadWallet();
         res.json(wallet);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.put('/wallet', async (req, res) => {
+    try {
+        const { wallet } = req.body;
+        const response = keymaster.saveWallet(wallet);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/wallet', async (req, res) => {
+    try {
+        const { mnemonic, overwrite } = req.body;
+        const wallet = keymaster.newWallet(mnemonic, overwrite);
+        res.json(wallet);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/backup-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.backupWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/recover-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.recoverWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/check-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.checkWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/fix-wallet', async (req, res) => {
+    try {
+        const response = await keymaster.fixWallet();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/mnemonic', async (req, res) => {
+    try {
+        const mnemonic = keymaster.decryptMnemonic();
+        res.json(mnemonic);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -195,8 +261,8 @@ v1router.post('/verify-response', async (req, res) => {
 
 v1router.post('/groups', async (req, res) => {
     try {
-        const { name } = req.body;
-        const response = await keymaster.createGroup(name);
+        const { name, registry } = req.body;
+        const response = await keymaster.createGroup(name, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
@@ -244,8 +310,8 @@ v1router.post('/groups/:name/test', async (req, res) => {
 
 v1router.post('/schemas', async (req, res) => {
     try {
-        const { schema } = req.body;
-        const response = await keymaster.createSchema(schema);
+        const { schema, registry } = req.body;
+        const response = await keymaster.createSchema(schema, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
@@ -301,8 +367,8 @@ v1router.post('/bind-credential', async (req, res) => {
 
 v1router.post('/issue-credential', async (req, res) => {
     try {
-        const { credential } = req.body;
-        const response = await keymaster.issueCredential(credential);
+        const { credential, registry } = req.body;
+        const response = await keymaster.issueCredential(credential, registry);
         res.json(response);
     } catch (error) {
         res.status(400).send(error.toString());
@@ -346,6 +412,56 @@ v1router.delete('/credentials/:did', async (req, res) => {
     }
 });
 
+v1router.post('/credentials/:did/publish', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const { reveal } = req.body;
+        const response = await keymaster.publishCredential(did, reveal);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.post('/credentials/:did/unpublish', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const response = await keymaster.unpublishCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/issued', async (req, res) => {
+    try {
+        const response = await keymaster.listIssued();
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.get('/issued/:did', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const response = await keymaster.getCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
+v1router.delete('/issued/:did', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const response = await keymaster.revokeCredential(did);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
@@ -370,8 +486,9 @@ process.on('unhandledRejection', (reason, promise) => {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    await keymaster.start(gatekeeper);
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await gatekeeper.waitUntilReady();
+    await keymaster.start(gatekeeper, db_wallet);
     console.log(`keymaster server running on port ${port}`);
 
     try {

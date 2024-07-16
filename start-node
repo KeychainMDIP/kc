@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 COMPOSE_FILE="docker-compose.yml"
 DOCKER_OPTIONS=""

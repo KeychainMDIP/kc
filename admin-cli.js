@@ -2,7 +2,9 @@ import { program } from 'commander';
 import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
+import * as db_wallet from './db-wallet-json.js';
+import config from './config.js';
 
 program
     .version('1.0.0')
@@ -10,11 +12,46 @@ program
     .configureHelp({ sortSubcommands: true });
 
 program
-    .command('get-dids')
-    .description('Fetch all DIDs')
-    .action(async () => {
+    .command('resolve-did <did> [confirm]')
+    .description('Return document associated with DID')
+    .action(async (did, confirm) => {
         try {
-            const dids = await gatekeeper.getDIDs();
+            const doc = await gatekeeper.resolveDID(did, { confirm: !!confirm });
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot resolve ${did}`);
+        }
+    });
+
+program
+    .command('get-dids [updatedAfter] [updatedBefore] [confirm] [resolve]')
+    .description('Fetch all DIDs')
+    .action(async (updatedAfter, updatedBefore, confirm, resolve) => {
+        try {
+            let options = {};
+
+            const after = new Date(updatedAfter);
+
+            if (!isNaN(after.getTime())) {
+                options.updatedAfter = after.toISOString();
+            }
+
+            const before = new Date(updatedBefore);
+
+            if (!isNaN(before.getTime())) {
+                options.updatedBefore = before.toISOString();
+            }
+
+            if (confirm) {
+                options.confirm = confirm === 'true';
+            }
+
+            if (resolve) {
+                options.resolve = resolve === 'true';
+            }
+
+            const dids = await gatekeeper.getDIDs(options);
             console.log(JSON.stringify(dids, null, 4));
         }
         catch (error) {
@@ -52,17 +89,17 @@ program
                 chunk.push(events);
 
                 if (chunk.length >= 10) {
-                    console.time('importDIDs');
-                    const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
-                    console.timeEnd('importDIDs');
+                    console.time('importBatch');
+                    const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
+                    console.timeEnd('importBatch');
                     console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
                     chunk = [];
                 }
             }
 
-            console.time('importDIDs');
-            const { verified, updated, failed } = await gatekeeper.importDIDs(chunk);
-            console.timeEnd('importDIDs');
+            console.time('importBatch');
+            const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
+            console.timeEnd('importBatch');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
         }
         catch (error) {
@@ -125,13 +162,13 @@ program
     });
 
 program
-    .command('clear-queue <batch>')
+    .command('clear-queue <registry> <batch>')
     .description('Clear a registry queue')
-    .action(async (batch) => {
+    .action(async (registry, batch) => {
         try {
             const events = await keymaster.resolveAsset(batch);
             console.log(JSON.stringify(events, null, 4));
-            const ok = await gatekeeper.clearQueue(events);
+            const ok = await gatekeeper.clearQueue(registry, events);
 
             if (ok) {
                 console.log("Batch cleared");
@@ -205,7 +242,8 @@ program
     });
 
 async function run() {
-    await keymaster.start(gatekeeper);
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
+    await keymaster.start(gatekeeper, db_wallet);
     program.parse(process.argv);
     await keymaster.stop();
 }

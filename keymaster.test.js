@@ -2,13 +2,14 @@ import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
 import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
-import * as cipher from './cipher.js';
+import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
+import * as db_wallet from './db-wallet-json.js';
 
 beforeEach(async () => {
     db_json.start('mdip');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper);
+    await keymaster.start(gatekeeper, db_wallet);
 });
 
 afterEach(async () => {
@@ -205,7 +206,7 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Already have an ID named ${name}`);
         }
@@ -258,7 +259,7 @@ describe('removeId', () => {
 
         try {
             keymaster.removeId(name2);
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`No ID named ${name2}`);
         }
@@ -402,6 +403,56 @@ describe('recoverId', () => {
     });
 });
 
+describe('testAgent', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for agent DID', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const isAgent = await keymaster.testAgent(did);
+
+        expect(isAgent).toBe(true);
+    });
+
+    it('should return false for non-agent DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const dataDID = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isAgent = await keymaster.testAgent(dataDID);
+
+        expect(isAgent).toBe(false);
+    });
+
+    it('should raise an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testAgent();
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should raise an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testAgent('mock');
+            throw "Expected to throw an exception";
+        }
+        catch (error) {
+            expect(error).toBe('Unknown DID');
+        }
+    });
+});
+
 describe('resolveDID', () => {
 
     afterEach(() => {
@@ -491,13 +542,13 @@ describe('rotateKeys', () => {
             await keymaster.rotateKeys();
         }
 
-        const ops = await keymaster.exportDID(alice);
+        const events = await keymaster.exportDID(alice);
 
         await gatekeeper.resetDb();
 
-        const imported = await keymaster.importDID(ops);
+        const { updated } = await keymaster.importDID(events);
 
-        expect(imported).toBe(rotations + 1);
+        expect(updated).toBe(rotations + 1);
     });
 });
 
@@ -518,7 +569,7 @@ describe('addName', () => {
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
-    it('should not add the same name twice', async () => {
+    it('should not add duplicate name', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -527,13 +578,26 @@ describe('addName', () => {
         try {
             keymaster.addName('Jack', alice);
             keymaster.addName('Jack', bob);
-            throw 'Expected addName to throw an exception';
+            throw 'Expected to throw an exception';
         }
         catch (error) {
             expect(error).toBe('Name already in use');
         }
     });
 
+    it('should not add a name that is same as an ID', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            keymaster.addName('Alice', alice);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Name already in use');
+        }
+    });
 });
 
 describe('removeName', () => {
@@ -561,6 +625,39 @@ describe('removeName', () => {
         const ok = keymaster.removeName('Jack');
 
         expect(ok).toBe(true);
+    });
+});
+
+describe('listNames', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return current list of wallet names', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        for (let i = 0; i < 10; i++) {
+            keymaster.addName(`name-${i}`, bob);
+        }
+
+        const names = keymaster.listNames();
+
+        expect(Object.keys(names).length).toBe(10);
+
+        for (const name of Object.keys(names)) {
+            expect(names[name]).toBe(bob);
+        }
+    });
+
+    it('should return empty list if no names added', async () => {
+        mockFs({});
+
+        const names = keymaster.listNames();
+
+        expect(Object.keys(names).length).toBe(0);
     });
 });
 
@@ -675,7 +772,7 @@ describe('createAsset', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
-            throw 'Expected createAsset to throw an exception';
+            throw 'Expected to throw an exception';
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -687,7 +784,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset();
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -699,7 +796,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -711,7 +808,7 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset([]);
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -723,10 +820,107 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset({});
-            throw ('Expected createAsset to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
+    });
+});
+
+describe('updateDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update an asset DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        const ok = await keymaster.updateDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+    });
+
+    it('should update an asset DID when current ID is not owner ID', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+
+        keymaster.setCurrentId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        keymaster.setCurrentId('Alice');
+
+        const ok = await keymaster.updateDID(dataDid, doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocument.controller).toBe(bob);
+        expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+    });
+});
+
+describe('revokeDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should revoke an asset DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.revokeDID(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocumentData).toStrictEqual({});
+        expect(doc.didDocumentMetadata.deactivated).toBe(true);
+    });
+
+    it('should revoke an asset DID when current ID is not owner ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+
+        keymaster.setCurrentId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        keymaster.setCurrentId('Alice');
+
+        const ok = await keymaster.revokeDID(dataDid);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocumentData).toStrictEqual({});
+        expect(doc.didDocumentMetadata.deactivated).toBe(true);
     });
 });
 
@@ -903,7 +1097,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(mockJson);
-            throw ('Expected addSignature to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('No current ID');
         }
@@ -916,7 +1110,7 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            throw ('Expected addSignature to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe('Invalid input');
         }
@@ -1089,11 +1283,40 @@ describe('issueCredential', () => {
 
         try {
             await keymaster.issueCredential(boundCredential);
-            throw ('Expected issueCredential to throw an exception');
+            throw ('Expected to throw an exception');
         }
         catch (error) {
             expect(error).toBe('Invalid VC');
         }
+    });
+});
+
+describe('listIssued', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return empty list for new ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const issued = await keymaster.listIssued();
+
+        expect(issued).toStrictEqual([]);
+    });
+
+    it('should return list containing one issued credential', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.issueCredential(boundCredential);
+
+        const issued = await keymaster.listIssued();
+
+        expect(issued).toStrictEqual([did]);
     });
 });
 
@@ -1138,7 +1361,7 @@ describe('revokeCredential', () => {
         expect(ok2).toBe(false);
     });
 
-    it('should return false if user does not control verifiable credential', async () => {
+    it('should throw exception if user does not control verifiable credential', async () => {
         mockFs({});
 
         await keymaster.createId('Alice');
@@ -1151,9 +1374,16 @@ describe('revokeCredential', () => {
         const did = await keymaster.issueCredential(boundCredential);
 
         keymaster.setCurrentId('Bob');
+        keymaster.removeId('Alice');
 
-        const ok = await keymaster.revokeCredential(did);
-        expect(ok).toBe(false);
+        try {
+            await keymaster.revokeCredential(did);
+            throw ('Expected to throw an exception');
+        }
+        catch (error) {
+            expect(error).toBe('Unknown ID');
+        }
+
     });
 
     it('should import a revoked credential', async () => {
@@ -1172,9 +1402,9 @@ describe('revokeCredential', () => {
         await gatekeeper.resetDb();
 
         await keymaster.importDID(userExport);
-        const imported = await keymaster.importDID(credentialExport);
+        const { updated } = await keymaster.importDID(credentialExport);
 
-        expect(imported).toBe(2);
+        expect(updated).toBe(2);
     });
 });
 
@@ -1900,6 +2130,26 @@ describe('groupAdd', () => {
         expect(data).toStrictEqual(expectedGroup);
     });
 
+    it('should not increment version when adding a member a 2nd time', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        const dox1 = await keymaster.resolveDID(groupDid);
+        const version1 = dox1.didDocumentMetadata.version;
+
+        await keymaster.groupAdd(groupDid, dataDid);
+        const dox2 = await keymaster.resolveDID(groupDid);
+        const version2 = dox2.didDocumentMetadata.version;
+
+        expect(version2).toBe(version1);
+    });
+
     it('should add multiple members to the group', async () => {
         mockFs({});
 
@@ -2127,6 +2377,24 @@ describe('groupRemove', () => {
         expect(data).toStrictEqual(expectedGroup);
     });
 
+    it('should not increment version when removing a non-existent member', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName);
+        const mockAnchor = { name: 'mockData' };
+        const dox1 = await keymaster.resolveDID(groupDid);
+        const version1 = dox1.didDocumentMetadata.version;
+
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        await keymaster.groupRemove(groupDid, dataDid);
+        const dox2 = await keymaster.resolveDID(groupDid);
+        const version2 = dox2.didDocumentMetadata.version;
+
+        expect(version2).toBe(version1);
+    });
+
     it('should not remove a non-DID from the group', async () => {
         mockFs({});
 
@@ -2325,6 +2593,51 @@ describe('groupTest', () => {
 
         const test4 = await keymaster.groupTest(group1Did, group5Did);
         expect(test4).toBe(true);
+    });
+});
+
+describe('getGroup', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the specified group', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const groupName = 'mock';
+        const groupDID = await keymaster.createGroup(groupName);
+
+        const group = await keymaster.getGroup(groupDID);
+
+        expect(group.name).toBe(groupName);
+        expect(group.members).toStrictEqual([]);
+    });
+
+    it('should raise an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.getGroup();
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid DID');
+        }
+    });
+
+    it('should raise an exception non-group DID specified', async () => {
+        mockFs({});
+
+        try {
+            const agentDID = await keymaster.createId('Bob');
+            await keymaster.getGroup(agentDID);
+            throw 'Expected to throw an exception';
+        }
+        catch (error) {
+            expect(error).toBe('Invalid group');
+        }
     });
 });
 
@@ -2769,20 +3082,6 @@ describe('createSchema', () => {
     it('should create a simple schema', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
@@ -2798,7 +3097,7 @@ describe('createSchema', () => {
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
         }
@@ -2814,20 +3113,6 @@ describe('getSchema', () => {
     it('should return the schema', async () => {
         mockFs({});
 
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const schema = await keymaster.getSchema(did);
@@ -2842,7 +3127,7 @@ describe('getSchema', () => {
 
         try {
             await keymaster.getSchema('bogus');
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Unknown DID`);
         }
@@ -2857,20 +3142,6 @@ describe('setSchema', () => {
 
     it('should update the schema', async () => {
         mockFs({});
-
-        const mockSchema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "format": "email"
-                }
-            },
-            "required": [
-                "email"
-            ]
-        };
 
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
@@ -2889,9 +3160,382 @@ describe('setSchema', () => {
 
         try {
             await keymaster.setSchema(did, { mock: 'not a schema' });
-            throw ('Expected createId to throw an exception');
+            throw ('Expected to throw an exception');
         } catch (error) {
             expect(error).toBe(`Invalid schema`);
+        }
+    });
+});
+
+describe('testSchema', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for a valid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        await keymaster.setSchema(did, mockSchema);
+
+        const isSchema = await keymaster.testSchema(did);
+
+        expect(isSchema).toBe(true);
+    });
+
+    it('should return false for a non-schema DID', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const isSchema = await keymaster.testSchema(agentDID);
+
+        expect(isSchema).toBe(false);
+    });
+
+    it('should raise an exception when no DID provided', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.testSchema();
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
+        }
+    });
+});
+
+describe('createTemplate', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create template from a valid schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createSchema();
+        await keymaster.setSchema(did, mockSchema);
+
+        const template = await keymaster.createTemplate(did);
+        const expectedTemplate = {
+            "$schema": did,
+            email: expect.any(String),
+        };
+
+        expect(template).toStrictEqual(expectedTemplate);
+    });
+
+    it('should raise an exception when no DID provided', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createTemplate();
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
+        }
+    });
+});
+
+describe('listRegistries', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of valid registries', async () => {
+        mockFs({});
+
+        const registries = await keymaster.listRegistries();
+
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+});
+
+async function setupCredentials() {
+    await keymaster.createId('Alice');
+    await keymaster.createId('Bob');
+    const carol = await keymaster.createId('Carol');
+    await keymaster.createId('Victor');
+
+    keymaster.setCurrentId('Alice');
+
+    const credential1 = await keymaster.createCredential(mockSchema);
+    const credential2 = await keymaster.createCredential(mockSchema);
+
+    const bc1 = await keymaster.bindCredential(credential1, carol);
+    const bc2 = await keymaster.bindCredential(credential2, carol);
+
+    const vc1 = await keymaster.issueCredential(bc1);
+    const vc2 = await keymaster.issueCredential(bc2);
+
+    keymaster.setCurrentId('Bob');
+
+    const credential3 = await keymaster.createCredential(mockSchema);
+    const credential4 = await keymaster.createCredential(mockSchema);
+
+    const bc3 = await keymaster.bindCredential(credential3, carol);
+    const bc4 = await keymaster.bindCredential(credential4, carol);
+
+    const vc3 = await keymaster.issueCredential(bc3);
+    const vc4 = await keymaster.issueCredential(bc4);
+
+    keymaster.setCurrentId('Carol');
+
+    await keymaster.acceptCredential(vc1);
+    await keymaster.acceptCredential(vc2);
+    await keymaster.acceptCredential(vc3);
+    await keymaster.acceptCredential(vc4);
+
+    return [vc1, vc2, vc3, vc4];
+}
+
+describe('checkWallet', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should validate all DIDs in wallet', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+        await keymaster.revokeCredential(credentials[0]);
+        await keymaster.revokeCredential(credentials[2]);
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(16);
+        expect(invalid).toBe(0);
+        expect(deleted).toBe(4); // 2 credentials mentioned in both owned and held lists
+    });
+});
+
+describe('fixWallet', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should validate all DIDs in wallet', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+        await keymaster.revokeCredential(credentials[0]);
+        await keymaster.revokeCredential(credentials[2]);
+
+        const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(2);
+        expect(heldRemoved).toBe(2);
+    });
+});
+
+describe('listCredentials', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('return list of held credentials', async () => {
+        mockFs({});
+
+        const expectedCredentials = await setupCredentials();
+        const credentials = await keymaster.listCredentials('Carol');
+
+        expect(credentials).toStrictEqual(expectedCredentials);
+    });
+
+    it('return empty list if specified ID holds no credentials', async () => {
+        mockFs({});
+
+        await setupCredentials();
+        const credentials = await keymaster.listCredentials('Bob');
+
+        expect(credentials).toStrictEqual([]);
+    });
+
+    it('raises an exception if invalid ID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.listCredentials('mock');
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown ID`);
+        }
+    });
+});
+
+describe('getCredential', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('returns decrypted credential for valid DID', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+
+        for (const did of credentials) {
+            const credential = await keymaster.getCredential(did);
+            expect(credential.type[0]).toBe('VerifiableCredential');
+        }
+    });
+
+    it('raises an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.getCredential('mock');
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
+    });
+
+    it('raises an exception if DID specified that is not a credential', async () => {
+        mockFs({});
+
+        try {
+            const agentDID = await keymaster.createId('Rando');
+            await keymaster.getCredential(agentDID);
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`DID is not encrypted`);
+        }
+    });
+});
+
+describe('removeCredential', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('removes specified credential from held credentials list', async () => {
+        mockFs({});
+
+        const credentials = await setupCredentials();
+
+        const ok1 = await keymaster.removeCredential(credentials[1]);
+        const ok2 = await keymaster.removeCredential(credentials[3]);
+
+        expect(ok1).toBe(true);
+        expect(ok2).toBe(true);
+
+        const held = await keymaster.listCredentials('Carol');
+
+        expect(held).toStrictEqual([credentials[0], credentials[2]]);
+    });
+
+    it('returns false if DID not previously held', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Rando');
+        const ok = await keymaster.removeCredential(agentDID);
+
+        expect(ok).toBe(false);
+    });
+
+    it('raises an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.removeCredential();
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Invalid DID`);
+        }
+    });
+
+    it('raises an exception if invalid DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.removeCredential('mock');
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown DID`);
+        }
+    });
+});
+
+describe('listIds', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should list all IDs wallet', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        const ids = keymaster.listIds();
+
+        expect(ids.length).toBe(4);
+        expect(ids.includes('Alice')).toBe(true);
+        expect(ids.includes('Bob')).toBe(true);
+        expect(ids.includes('Carol')).toBe(true);
+        expect(ids.includes('Victor')).toBe(true);
+    });
+});
+
+describe('getCurrentId', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should list all IDs wallet', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        const current = keymaster.getCurrentId();
+
+        expect(current).toBe('Victor');
+    });
+});
+
+describe('setCurrentId', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should set current ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        keymaster.setCurrentId('Carol');
+        const current = keymaster.getCurrentId();
+
+        expect(current).toBe('Carol');
+    });
+
+    it('should throw an exception on invalid ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        try {
+            keymaster.setCurrentId('mock');
+            throw ('Expected to throw an exception');
+        } catch (error) {
+            expect(error).toBe(`Unknown ID`);
         }
     });
 });
