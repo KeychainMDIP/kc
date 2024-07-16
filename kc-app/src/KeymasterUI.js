@@ -332,7 +332,7 @@ function KeymasterUI({ keymaster, title }) {
                 return;
             }
 
-            const groupDID = await keymaster.createGroup(groupName);
+            const groupDID = await keymaster.createGroup(groupName, registry);
             await keymaster.addName(groupName, groupDID);
 
             setGroupName('');
@@ -391,7 +391,7 @@ function KeymasterUI({ keymaster, title }) {
                 return;
             }
 
-            const schemaDID = await keymaster.createSchema();
+            const schemaDID = await keymaster.createSchema(null, registry);
             await keymaster.addName(schemaName, schemaDID);
 
             setSchemaName('');
@@ -941,6 +941,20 @@ function KeymasterUI({ keymaster, title }) {
                                         Create Group
                                     </Button>
                                 </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={registry}
+                                        fullWidth
+                                        onChange={(event) => setRegistry(event.target.value)}
+                                    >
+                                        {registries.map((registry, index) => (
+                                            <MenuItem value={registry} key={index}>
+                                                {registry}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
                             </Grid>
                             {groupList &&
                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -1047,6 +1061,20 @@ function KeymasterUI({ keymaster, title }) {
                                     <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
                                         Create Schema
                                     </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={registry}
+                                        fullWidth
+                                        onChange={(event) => setRegistry(event.target.value)}
+                                    >
+                                        {registries.map((registry, index) => (
+                                            <MenuItem value={registry} key={index}>
+                                                {registry}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
                                 </Grid>
                             </Grid>
                             {schemaList &&
@@ -1261,7 +1289,7 @@ function KeymasterUI({ keymaster, title }) {
                                                             Issue Credential
                                                         </Button>
                                                     </Grid>
-                                                    <Grid item>on registry:
+                                                    <Grid item>
                                                         <Select
                                                             style={{ width: '300px' }}
                                                             value={registry}
