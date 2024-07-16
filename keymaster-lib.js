@@ -794,7 +794,7 @@ export function lookupDID(name) {
     throw "Unknown DID";
 }
 
-export async function createAsset(data, registry = defaultRegistry, name = null) {
+export async function createAsset(data, registry = defaultRegistry, owner = null) {
 
     function isEmpty(data) {
         if (!data) return true;
@@ -807,7 +807,7 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
         throw 'Invalid input';
     }
 
-    const id = fetchId(name);
+    const id = fetchId(owner);
 
     const operation = {
         type: "create",
@@ -821,7 +821,7 @@ export async function createAsset(data, registry = defaultRegistry, name = null)
         data: data,
     };
 
-    const signed = await addSignature(operation, name);
+    const signed = await addSignature(operation, owner);
     const did = await gatekeeper.createDID(signed);
 
     // Keep assets that will be garbage-collected out of the owned list
@@ -1182,13 +1182,13 @@ export async function importDID(events) {
     return gatekeeper.importBatch(events);
 }
 
-export async function createGroup(name) {
+export async function createGroup(name, registry) {
     const group = {
         name: name,
         members: []
     };
 
-    return createAsset(group);
+    return createAsset(group, registry);
 }
 
 export async function getGroup(id) {
@@ -1359,14 +1359,14 @@ function validateSchema(schema) {
     return true;
 }
 
-export async function createSchema(schema) {
+export async function createSchema(schema, registry) {
     if (!schema) {
         schema = defaultSchema;
     }
 
     validateSchema(schema);
 
-    return createAsset(schema);
+    return createAsset(schema, registry);
 }
 
 export async function getSchema(id) {
