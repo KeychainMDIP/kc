@@ -405,7 +405,7 @@ async function collectGarbage() {
 
         console.log(`gc check: ${i} ${did}`);
 
-        const doc = await gatekeeper.resolveDID(did);
+        const doc = await gatekeeper.resolveDID(did, { confirm: true });
         const now = new Date();
         const created = new Date(doc.didDocumentMetadata.created);
         const ageInHours = (now - created) / 1000 / 60 / 60;
