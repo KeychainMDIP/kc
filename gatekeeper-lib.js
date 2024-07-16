@@ -582,6 +582,7 @@ export async function importEvent(event) {
             current[index] = event;
 
             db.setEvents(did, current);
+            delete confirmedCache[did];
             return true;
         }
 
@@ -594,6 +595,7 @@ export async function importEvent(event) {
         throw "Invalid operation";
     }
 
+    delete confirmedCache[did];
     return true;
 }
 
