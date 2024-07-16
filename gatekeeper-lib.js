@@ -13,6 +13,8 @@ let db = null;
 let helia = null;
 let ipfs = null;
 
+const confirmedCache = {};
+
 export async function listRegistries() {
     return validRegistries;
 }
@@ -293,6 +295,12 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+    const cacheable = confirm && !atTime && !atVersion;
+
+    if (cacheable && confirmedCache[did]) {
+        return confirmedCache[did];
+    }
+
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -377,6 +385,10 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
+    if (cacheable) {
+        confirmedCache[did] = doc;
+    }
+
     return doc;
 }
 
@@ -397,6 +409,8 @@ export async function updateDID(operation) {
             ordinal: 0,
             operation: operation
         });
+
+        delete confirmedCache[operation.did];
 
         if (registry === 'local') {
             return true;
