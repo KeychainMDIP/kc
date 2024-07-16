@@ -35,6 +35,7 @@ export async function stop() {
 
 export async function verifyDID(did) {
     await resolveDID(did, { verify: true });
+    await resolveDID(did, { confirm: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -42,7 +43,8 @@ export async function verifyDb(chatty = true) {
         console.time('verifyDb');
     }
 
-    const dids = await db.getAllKeys();
+    const keys = await db.getAllKeys();
+    const dids = keys.map(key => `${config.didPrefix}:${key}`);
     let n = 0;
     let invalid = 0;
 
