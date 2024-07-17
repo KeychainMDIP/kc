@@ -13,6 +13,8 @@ let db = null;
 let helia = null;
 let ipfs = null;
 
+const confirmedCache = {};
+
 export async function listRegistries() {
     return validRegistries;
 }
@@ -33,6 +35,7 @@ export async function stop() {
 
 export async function verifyDID(did) {
     await resolveDID(did, { verify: true });
+    await resolveDID(did, { confirm: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -40,7 +43,8 @@ export async function verifyDb(chatty = true) {
         console.time('verifyDb');
     }
 
-    const dids = await db.getAllKeys();
+    const keys = await db.getAllKeys();
+    const dids = keys.map(key => `${config.didPrefix}:${key}`);
     let n = 0;
     let invalid = 0;
 
@@ -293,6 +297,12 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+    const cacheable = confirm && !atTime && !atVersion;
+
+    if (cacheable && confirmedCache[did]) {
+        return confirmedCache[did];
+    }
+
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
@@ -377,6 +387,10 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
+    if (cacheable) {
+        confirmedCache[did] = doc;
+    }
+
     return doc;
 }
 
@@ -397,6 +411,8 @@ export async function updateDID(operation) {
             ordinal: 0,
             operation: operation
         });
+
+        delete confirmedCache[operation.did];
 
         if (registry === 'local') {
             return true;
@@ -566,6 +582,7 @@ export async function importEvent(event) {
             current[index] = event;
 
             db.setEvents(did, current);
+            delete confirmedCache[did];
             return true;
         }
 
@@ -578,6 +595,7 @@ export async function importEvent(event) {
         throw "Invalid operation";
     }
 
+    delete confirmedCache[did];
     return true;
 }
 

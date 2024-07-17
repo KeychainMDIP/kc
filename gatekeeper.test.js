@@ -303,6 +303,67 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
+
+        expect(ok).toBe(true);
+        expect(confirmedDoc).toStrictEqual(expected);
+    });
+
+    it('should resolved cached confirmed version', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const initialDoc = await gatekeeper.resolveDID(did, { confirm: true });
+        const cachedDoc = await gatekeeper.resolveDID(did, { confirm: true });
+
+        expect(initialDoc).toStrictEqual(cachedDoc);
+    });
+
+    it('should resolve confirmed version after an update (confirmed cache refresh)', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        await gatekeeper.resolveDID(did, { confirm: true });
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
+
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: update.didDocumentData,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                updated: expect.any(String),
+                version: 2,
+                confirmed: true,
+            },
+            mdip: agentOp.mdip,
+        };
+
         expect(ok).toBe(true);
         expect(confirmedDoc).toStrictEqual(expected);
     });
