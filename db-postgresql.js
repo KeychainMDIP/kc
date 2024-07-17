@@ -2,8 +2,8 @@ import { Sequelize, DataTypes } from 'sequelize';
 import config from './config.js';
 import async from 'async';
 
-const sequelize = new Sequelize('mdip', 'postgres', 'postgres', {
-    host: 'postgres',
+const sequelize = new Sequelize('mdip', 'postgres', 'postgres123', {
+    host: '34.41.230.147',
     dialect: 'postgres',
     logging: config.debug ? console.log : false,
     pool: {
