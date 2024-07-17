@@ -3,7 +3,7 @@
 # kc
 
 kc is the reference implementation of the Multi Dimensional Identity Protocol ([MDIP](/docs/mdip/scheme)).
-Details on each command can be found in the [CLI User Manual](doc/CLI-user-manual/README.md).
+Details on each command can be found in the [CLI User Manual](doc/).
 
 ## Quick start
 

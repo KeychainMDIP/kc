@@ -29,7 +29,7 @@ Groups are simply collections of identity DIDs that are allowed to cast votes in
     }
     ```
 
-   Members can also be added using their [aliased names](./08-aliased-names):
+   Members can also be added using their [aliased names](./aliased-names):
 
     ```sh
     kc group-add icecream-tasters alice
