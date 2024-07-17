@@ -294,10 +294,11 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        // Specify hyperswarm registry for this agent so updates are not automatically confirmed (unlike local)
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
         const did = await gatekeeper.createDID(agentOp);
         const expected = await gatekeeper.resolveDID(did);
-        const update = await gatekeeper.resolveDID(did);
+        const update = JSON.parse(JSON.stringify(expected)); // make deep copy
         update.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, update);
         const ok = await gatekeeper.updateDID(updateOp);
@@ -1073,9 +1074,10 @@ describe('clearQueue', () => {
         const queue2 = [];
 
         for (let i = 0; i < 5; i++) {
-            const doc = await gatekeeper.resolveDID(did);
-            doc.didDocumentData = { mock: i };
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const doc = await gatekeeper.resolveDID(did, { confirm: false });
+            const update = JSON.parse(JSON.stringify(doc));
+            update.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
             queue1.push(updateOp);
         }
@@ -1084,9 +1086,10 @@ describe('clearQueue', () => {
         expect(queue3).toStrictEqual(queue1);
 
         for (let i = 0; i < 5; i++) {
-            const doc = await gatekeeper.resolveDID(did);
-            doc.didDocumentData = { mock: i };
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const doc = await gatekeeper.resolveDID(did, { confirm: false });
+            const update = JSON.parse(JSON.stringify(doc));
+            update.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
             queue2.push(updateOp);
         }
@@ -1211,7 +1214,7 @@ describe('getDids', () => {
         updatedAgentDoc.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, agentDID, updatedAgentDoc);
         await gatekeeper.updateDID(updateOp);
-        const agentDocv2 = await gatekeeper.resolveDID(agentDID);
+        const agentDocv2 = await gatekeeper.resolveDID(agentDID, { confirm: false });
 
         const assetOp = await createAssetOp(agentDID, keypair);
         const assetDID = await gatekeeper.createDID(assetOp);

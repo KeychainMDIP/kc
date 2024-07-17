@@ -208,7 +208,7 @@ export async function resolveSeedBank() {
         }
     }
     const did = await gatekeeper.createDID(signed);
-    const doc = await gatekeeper.resolveDID(did);
+    const doc = await gatekeeper.resolveDID(did, { confirm: false });
 
     return doc;
 }

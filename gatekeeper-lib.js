@@ -296,7 +296,7 @@ async function verifyUpdate(operation, doc) {
     return isValid;
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+export async function resolveDID(did, { atTime, atVersion, confirm, verify } = { confirm: true }) {
     const cacheable = confirm && !atTime && !atVersion;
 
     if (cacheable && confirmedCache[did]) {

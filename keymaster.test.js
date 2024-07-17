@@ -126,21 +126,21 @@ describe('backupWallet', () => {
     it('should return a valid DID', async () => {
         mockFs({});
 
-        await keymaster.createId('Bob');
+        await keymaster.createId('Bob', 'local');
         const did = await keymaster.backupWallet();
         const doc = await keymaster.resolveDID(did);
 
-        expect(did === doc.didDocument.id).toBe(true);
+        expect(did).toBe(doc.didDocument.id);
     });
 
     it('should store backup in seed bank', async () => {
         mockFs({});
 
-        await keymaster.createId('Bob');
+        await keymaster.createId('Bob', 'local');
         const did = await keymaster.backupWallet();
         const bank = await keymaster.resolveSeedBank();
 
-        expect(did === bank.didDocumentData.wallet).toBe(true);
+        expect(did).toBe(bank.didDocumentData.wallet);
     });
 });
 
@@ -479,7 +479,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -500,19 +500,15 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
         const secrets = [];
         const msg = "Hi Bob!";
 
-        keymaster.setCurrentId('Alice');
-
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
-
-            const did = await keymaster.encrypt(msg, bob);
+            const did = await keymaster.encrypt(msg, bob, true, 'local');
             secrets.push(did);
-
             await keymaster.rotateKeys();
 
             keymaster.setCurrentId('Bob');
@@ -535,7 +531,7 @@ describe('rotateKeys', () => {
     it('should import DID with multiple key rotations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         const rotations = 10;
 
         for (let i = 0; i < rotations; i++) {
@@ -1348,7 +1344,7 @@ describe('revokeCredential', () => {
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
-        const did = await keymaster.issueCredential(boundCredential);
+        const did = await keymaster.issueCredential(boundCredential, 'local');
 
         const ok1 = await keymaster.revokeCredential(did);
         expect(ok1).toBe(true);
