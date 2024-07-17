@@ -2,7 +2,7 @@
 
 # kc
 
-kc is the reference implementation of the Multi Dimensional Identity Protocol ([MDIP](doc/DID-scheme/README.md)).
+kc is the reference implementation of the Multi Dimensional Identity Protocol ([MDIP](/docs/mdip/scheme)).
 Details on each command can be found in the [CLI User Manual](doc/CLI-user-manual/README.md).
 
 ## Quick start
