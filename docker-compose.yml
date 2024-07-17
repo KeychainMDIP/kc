@@ -1,9 +1,13 @@
 services:
 
-  mongodb:
-    image: mongo:latest
-    volumes:
-      - ./data/db:/data/db
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mdip
+    ports:
+      - "5432:5432"
 
   gatekeeper:
     build:
@@ -13,12 +17,13 @@ services:
     environment:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_POSTGRESQL_URL="postgres://postgres:postgres@postgres:5432/mdip"
     volumes:
       - ./data:/app/data
     ports:
       - "4224:4224"
     depends_on:
-      - mongodb
+      - postgres
 
   keymaster:
     build:

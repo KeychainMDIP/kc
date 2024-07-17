@@ -33,6 +33,9 @@
     "mongodb": "^6.5.0",
     "morgan": "^1.10.0",
     "multiformats": "^13.0.0",
+    "pg": "^8.12.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "uuid": "^9.0.1"
