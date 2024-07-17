@@ -6,6 +6,7 @@ import * as cipher from './cipher-lib.js';
 import config from './config.js';
 import * as db from './db-postgresql.js';  // Assuming PostgreSQL is being used
 import async from 'async';
+import { Sequelize, DataTypes } from 'sequelize';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
@@ -13,6 +14,28 @@ const validRegistries = ['local', 'hyperswarm', 'TESS'];
 
 let helia = null;
 let ipfs = null;
+
+const sequelize = new Sequelize('mdip', 'postgres', 'postgres123', {
+    host: '34.41.230.147',
+    dialect: 'postgres',
+    logging: config.debug ? console.log : false,
+    pool: {
+    max: 10,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
+  }
+});
+  
+  const DID = sequelize.define('did', {
+    id: {
+      type: DataTypes.STRING,
+      primaryKey: true
+    },
+    events: {
+      type: DataTypes.JSON
+    }
+  });
 
 export async function listRegistries() {
   return validRegistries;
@@ -397,10 +420,10 @@ export async function deleteDID(operation) {
 }
 
 export async function getDIDs() {
-  const keys = await db.getAllKeys();
-  const dids = keys.map(key => `${config.didPrefix}:${key}`);
-  return dids;
-}
+    const didRecords = await DID.findAll({ attributes: ['id'] });
+    const dids = didRecords.map(record => `${config.didPrefix}:${record.id}`);
+    return dids;
+  }
 
 export async function exportDID(did) {
   return await db.getEvents(did);
