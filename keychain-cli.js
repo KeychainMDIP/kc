@@ -234,7 +234,9 @@ program
     .description('Return document associated with DID')
     .action(async (did, confirm) => {
         try {
-            const doc = await keymaster.resolveDID(did, { confirm: !!confirm });
+            // Set confirm to true if it is undefined or 'true', false otherwise
+            confirm = confirm === undefined || confirm.toLowerCase() === 'true';
+            const doc = await keymaster.resolveDID(did, { confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
