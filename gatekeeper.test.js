@@ -321,6 +321,38 @@ describe('resolveDID', () => {
         expect(initialDoc).toStrictEqual(cachedDoc);
     });
 
+    it('should return copies of cached version (confirmed)', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const initialDoc = await gatekeeper.resolveDID(did, { confirm: true });
+        const cachedDoc1 = await gatekeeper.resolveDID(did, { confirm: true });
+        const cachedDoc2 = await gatekeeper.resolveDID(did, { confirm: true });
+
+        cachedDoc1.didDocumentData = { mock: true };
+
+        expect(cachedDoc2.didDocumentData).toStrictEqual(initialDoc.didDocumentData);
+    });
+
+    it('should return copies of cached version (unconfirmed)', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const initialDoc = await gatekeeper.resolveDID(did, { confirm: false });
+        const cachedDoc1 = await gatekeeper.resolveDID(did, { confirm: false });
+        const cachedDoc2 = await gatekeeper.resolveDID(did, { confirm: false });
+
+        cachedDoc1.didDocumentData = { mock: true };
+
+        expect(cachedDoc2.didDocumentData).toStrictEqual(initialDoc.didDocumentData);
+    });
+
     it('should resolve confirmed version after an update (confirmed cache refresh)', async () => {
 
         mockFs({});

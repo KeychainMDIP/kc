@@ -14,6 +14,7 @@ let helia = null;
 let ipfs = null;
 
 const confirmedCache = {};
+const unconfirmedCache = {};
 
 export async function listRegistries() {
     return validRegistries;
@@ -297,10 +298,15 @@ async function verifyUpdate(operation, doc) {
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
-    const cacheable = confirm && !atTime && !atVersion;
+    const confirmedCacheable = confirm && !atTime && !atVersion;
+    const unconfirmedCacheable = !confirm && !atTime && !atVersion;
 
-    if (cacheable && !verify && confirmedCache[did]) {
-        return confirmedCache[did];
+    if (confirmedCacheable && !verify && confirmedCache[did]) {
+        return JSON.parse(JSON.stringify(confirmedCache[did]));
+    }
+
+    if (unconfirmedCacheable && !verify && unconfirmedCache[did]) {
+        return JSON.parse(JSON.stringify(unconfirmedCache[did]));
     }
 
     const events = await db.getEvents(did);
@@ -385,11 +391,15 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
-    if (cacheable) {
+    if (confirmedCacheable) {
         confirmedCache[did] = doc;
     }
 
-    return doc;
+    if (unconfirmedCacheable) {
+        unconfirmedCache[did] = doc;
+    }
+
+    return JSON.parse(JSON.stringify(doc));
 }
 
 export async function updateDID(operation) {
@@ -411,6 +421,7 @@ export async function updateDID(operation) {
         });
 
         delete confirmedCache[operation.did];
+        delete unconfirmedCache[operation.did];
 
         if (registry === 'local') {
             return true;
@@ -581,6 +592,7 @@ export async function importEvent(event) {
 
             db.setEvents(did, current);
             delete confirmedCache[did];
+            delete unconfirmedCache[did];
             return true;
         }
 
@@ -594,6 +606,7 @@ export async function importEvent(event) {
     }
 
     delete confirmedCache[did];
+    delete unconfirmedCache[did];
     return true;
 }
 

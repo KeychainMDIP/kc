@@ -76,11 +76,11 @@ program
             }
             console.timeEnd('resolveDID(did, { confirm: true })');
 
-            console.time('resolveDID(did)');
+            console.time('resolveDID(did, { confirm: false })');
             for (const did of dids) {
-                await gatekeeper.resolveDID(did);
+                await gatekeeper.resolveDID(did, { confirm: false });
             }
-            console.timeEnd('resolveDID(did)');
+            console.timeEnd('resolveDID(did, { confirm: false })');
 
             console.time('resolveDID(did, { verify: true })');
             for (const did of dids) {
