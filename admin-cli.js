@@ -60,6 +60,40 @@ program
     });
 
 program
+    .command('perf-test')
+    .description('DID resolution performance test')
+    .action(async () => {
+        try {
+            console.time('getDIDs');
+            const dids = await gatekeeper.getDIDs();
+            console.timeEnd('getDIDs');
+
+            console.log(`${dids.length} DIDs`);
+
+            console.time('resolveDID(did, { confirm: true })');
+            for (const did of dids) {
+                await gatekeeper.resolveDID(did, { confirm: true });
+            }
+            console.timeEnd('resolveDID(did, { confirm: true })');
+
+            console.time('resolveDID(did)');
+            for (const did of dids) {
+                await gatekeeper.resolveDID(did);
+            }
+            console.timeEnd('resolveDID(did)');
+
+            console.time('resolveDID(did, { verify: true })');
+            for (const did of dids) {
+                await gatekeeper.resolveDID(did, { verify: true });
+            }
+            console.timeEnd('resolveDID(did, { verify: true })');
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('export-dids')
     .description('Export all DIDs')
     .action(async () => {

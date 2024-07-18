@@ -342,14 +342,12 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             break;
         }
 
-        const valid = await verifyUpdate(operation, doc);
+        if (verify) {
+            const valid = await verifyUpdate(operation, doc);
 
-        if (!valid) {
-            if (verify) {
+            if (!valid) {
                 throw "Invalid update";
             }
-
-            continue;
         }
 
         if (operation.type === 'update') {
