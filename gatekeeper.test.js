@@ -368,6 +368,53 @@ describe('resolveDID', () => {
         expect(confirmedDoc).toStrictEqual(expected);
     });
 
+    it('should resolve verified version after an update', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        await gatekeeper.resolveDID(did, { confirm: true });
+        const update = await gatekeeper.resolveDID(did);
+        update.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, update);
+        const ok = await gatekeeper.updateDID(updateOp);
+        const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
+
+        const expected = {
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: did,
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: update.didDocumentData,
+            didDocumentMetadata: {
+                created: expect.any(String),
+                updated: expect.any(String),
+                version: 2,
+                confirmed: true,
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(ok).toBe(true);
+        expect(verifiedDoc).toStrictEqual(expected);
+    });
+
     it('should resolve unconfirmed version when specified', async () => {
 
         mockFs({});

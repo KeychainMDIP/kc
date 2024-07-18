@@ -299,7 +299,7 @@ async function verifyUpdate(operation, doc) {
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
     const cacheable = confirm && !atTime && !atVersion;
 
-    if (cacheable && confirmedCache[did]) {
+    if (cacheable && !verify && confirmedCache[did]) {
         return confirmedCache[did];
     }
 
@@ -342,14 +342,12 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             break;
         }
 
-        const valid = await verifyUpdate(operation, doc);
+        if (verify) {
+            const valid = await verifyUpdate(operation, doc);
 
-        if (!valid) {
-            if (verify) {
+            if (!valid) {
                 throw "Invalid update";
             }
-
-            continue;
         }
 
         if (operation.type === 'update') {

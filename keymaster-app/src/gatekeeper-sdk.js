@@ -94,7 +94,7 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm } = {}) {
+export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
     try {
         let params = '';
 
@@ -108,6 +108,10 @@ export async function resolveDID(did, { atTime, atVersion, confirm } = {}) {
 
         if (confirm) {
             params += `confirm=${confirm}&`;
+        }
+
+        if (verify) {
+            params += `verify=${verify}&`;
         }
 
         const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);

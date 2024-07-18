@@ -84,6 +84,10 @@ v1router.get('/did/:did', async (req, res) => {
             options.confirm = req.query.confirm === 'true';
         }
 
+        if (req.query.verify) {
+            options.verify = req.query.verify === 'true';
+        }
+
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
     } catch (error) {
