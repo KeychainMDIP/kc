@@ -400,12 +400,13 @@ async function collectGarbage() {
     const didList = await gatekeeper.getDIDs();
     const expired = [];
 
+    console.time('gc check');
     for (let i = 0; i < didList.length; i++) {
         const did = didList[i];
 
         console.log(`gc check: ${i} ${did}`);
 
-        const doc = await gatekeeper.resolveDID(did, { confirm: true });
+        const doc = await gatekeeper.resolveDID(did);
         const now = new Date();
         const created = new Date(doc.didDocumentMetadata.created);
         const ageInHours = (now - created) / 1000 / 60 / 60;
@@ -419,6 +420,7 @@ async function collectGarbage() {
         console.log(`garbage collecting ${expired.length} DIDs...`);
         await gatekeeper.removeDIDs(expired);
     }
+    console.timeEnd('gc check');
 }
 
 async function gcLoop() {

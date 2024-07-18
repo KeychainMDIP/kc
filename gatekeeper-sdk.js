@@ -94,7 +94,7 @@ export async function createDID(operation) {
     }
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm } = {}) {
+export async function resolveDID(did, { atTime, atVersion, confirm } = { confirm: true }) {
     try {
         let params = '';
 
