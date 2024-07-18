@@ -505,8 +505,6 @@ describe('rotateKeys', () => {
         const secrets = [];
         const msg = "Hi Bob!";
 
-        keymaster.setCurrentId('Alice');
-
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
