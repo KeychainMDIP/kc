@@ -3324,11 +3324,12 @@ describe('fixWallet', () => {
         await keymaster.revokeCredential(credentials[0]);
         await keymaster.revokeCredential(credentials[2]);
 
-        const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(0);
         expect(ownedRemoved).toBe(2);
         expect(heldRemoved).toBe(2);
+        expect(namesRemoved).toBe(0);
     });
 });
 

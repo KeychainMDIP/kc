@@ -101,19 +101,21 @@ export async function checkWallet() {
         }
     }
 
-    for (const name of Object.keys(wallet.names)) {
-        try {
-            const doc = await resolveDID(wallet.names[name]);
+    if (wallet.names) {
+        for (const name of Object.keys(wallet.names)) {
+            try {
+                const doc = await resolveDID(wallet.names[name]);
 
-            if (doc.didDocumentMetadata.deactivated) {
-                deleted += 1;
+                if (doc.didDocumentMetadata.deactivated) {
+                    deleted += 1;
+                }
             }
-        }
-        catch (error) {
-            invalid += 1;
-        }
+            catch (error) {
+                invalid += 1;
+            }
 
-        checked += 1;
+            checked += 1;
+        }
     }
 
     return { checked, invalid, deleted };
@@ -194,23 +196,25 @@ export async function fixWallet() {
         }
     }
 
-    for (const name of Object.keys(wallet.names)) {
-        let remove = false;
+    if (wallet.names) {
+        for (const name of Object.keys(wallet.names)) {
+            let remove = false;
 
-        try {
-            const doc = await resolveDID(wallet.names[name]);
+            try {
+                const doc = await resolveDID(wallet.names[name]);
 
-            if (doc.didDocumentMetadata.deactivated) {
+                if (doc.didDocumentMetadata.deactivated) {
+                    remove = true;
+                }
+            }
+            catch (error) {
                 remove = true;
             }
-        }
-        catch (error) {
-            remove = true;
-        }
 
-        if (remove) {
-            delete wallet.names[name];
-            namesRemoved += 1;
+            if (remove) {
+                delete wallet.names[name];
+                namesRemoved += 1;
+            }
         }
     }
 
