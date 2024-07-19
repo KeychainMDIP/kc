@@ -101,6 +101,21 @@ export async function checkWallet() {
         }
     }
 
+    for (const name of Object.keys(wallet.names)) {
+        try {
+            const doc = await resolveDID(wallet.names[name]);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                deleted += 1;
+            }
+        }
+        catch (error) {
+            invalid += 1;
+        }
+
+        checked += 1;
+    }
+
     return { checked, invalid, deleted };
 }
 
@@ -109,6 +124,7 @@ export async function fixWallet() {
     let idsRemoved = 0;
     let ownedRemoved = 0;
     let heldRemoved = 0;
+    let namesRemoved = 0;
 
     for (const name of Object.keys(wallet.ids)) {
         let remove = false;
@@ -178,9 +194,29 @@ export async function fixWallet() {
         }
     }
 
+    for (const name of Object.keys(wallet.names)) {
+        let remove = false;
+
+        try {
+            const doc = await resolveDID(wallet.names[name]);
+
+            if (doc.didDocumentMetadata.deactivated) {
+                remove = true;
+            }
+        }
+        catch (error) {
+            remove = true;
+        }
+
+        if (remove) {
+            delete wallet.names[name];
+            namesRemoved += 1;
+        }
+    }
+
     saveWallet(wallet);
 
-    return { idsRemoved, ownedRemoved, heldRemoved };
+    return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
 }
 
 export async function resolveSeedBank() {
