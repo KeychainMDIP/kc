@@ -3297,7 +3297,44 @@ describe('checkWallet', () => {
         mockFs.restore();
     });
 
-    it('should validate all DIDs in wallet', async () => {
+    it('should report no problems with empty wallet', async () => {
+        mockFs({});
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(0);
+        expect(invalid).toBe(0);
+        expect(deleted).toBe(0);
+    });
+
+    it('should report no problems with wallet with only one ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(1);
+        expect(invalid).toBe(0);
+        expect(deleted).toBe(0);
+    });
+
+    it('should detect invalid DIDs', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Alice');
+        const schemaDID = await keymaster.createSchema();
+        keymaster.addName('schema', schemaDID);
+        await gatekeeper.removeDIDs([agentDID, schemaDID]);
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(3);
+        expect(invalid).toBe(3);
+        expect(deleted).toBe(0);
+    });
+
+    it('should detect revoked credentials in wallet', async () => {
         mockFs({});
 
         const credentials = await setupCredentials();
@@ -3317,7 +3354,46 @@ describe('fixWallet', () => {
         mockFs.restore();
     });
 
-    it('should validate all DIDs in wallet', async () => {
+    it('should report no problems with empty wallet', async () => {
+        mockFs({});
+
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(0);
+        expect(heldRemoved).toBe(0);
+        expect(namesRemoved).toBe(0);
+    });
+
+    it('should report no problems with wallet with only one ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(0);
+        expect(heldRemoved).toBe(0);
+        expect(namesRemoved).toBe(0);
+    });
+
+    it('should remove invalid DIDs', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Alice');
+        const schemaDID = await keymaster.createSchema();
+        keymaster.addName('schema', schemaDID);
+        await gatekeeper.removeDIDs([agentDID, schemaDID]);
+
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(1);
+        expect(ownedRemoved).toBe(0);
+        expect(heldRemoved).toBe(0);
+        expect(namesRemoved).toBe(1);
+    });
+
+    it('should remove revoked credentials', async () => {
         mockFs({});
 
         const credentials = await setupCredentials();
