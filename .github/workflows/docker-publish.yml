@@ -92,3 +92,4 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ matrix.tags }}
