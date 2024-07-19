@@ -667,8 +667,9 @@ function KeymasterUI({ keymaster, title }) {
                 window.alert(`${checked} DIDs checked, no problems found`);
             }
             else if (window.confirm(`${checked} DIDs checked\n${invalid} invalid DIDs found\n${deleted} deleted DIDs found\n\nFix wallet?`)) {
-                const { idsRemoved, ownedRemoved, heldRemoved } = await keymaster.fixWallet();
-                window.alert(`${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed`);
+                const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+                window.alert(`${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`);
+                refreshAll();
             }
 
         } catch (error) {
