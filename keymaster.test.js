@@ -3319,6 +3319,19 @@ describe('checkWallet', () => {
         expect(deleted).toBe(0);
     });
 
+    it('should detect revoked ID', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Alice');
+        await keymaster.revokeDID(agentDID);
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(1);
+        expect(invalid).toBe(0);
+        expect(deleted).toBe(1);
+    });
+
     it('should detect invalid DIDs', async () => {
         mockFs({});
 
@@ -3338,14 +3351,16 @@ describe('checkWallet', () => {
         mockFs({});
 
         const credentials = await setupCredentials();
+        keymaster.addName('credential-0', credentials[0]);
+        keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);
         await keymaster.revokeCredential(credentials[2]);
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-        expect(checked).toBe(16);
+        expect(checked).toBe(18);
         expect(invalid).toBe(0);
-        expect(deleted).toBe(4); // 2 credentials mentioned in both owned and held lists
+        expect(deleted).toBe(6); // 2 credentials mentioned in owned and held and name lists
     });
 });
 
@@ -3377,6 +3392,20 @@ describe('fixWallet', () => {
         expect(namesRemoved).toBe(0);
     });
 
+    it('should remove revoked ID', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Alice');
+        await keymaster.revokeDID(agentDID);
+
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(1);
+        expect(ownedRemoved).toBe(0);
+        expect(heldRemoved).toBe(0);
+        expect(namesRemoved).toBe(0);
+    });
+
     it('should remove invalid DIDs', async () => {
         mockFs({});
 
@@ -3397,6 +3426,8 @@ describe('fixWallet', () => {
         mockFs({});
 
         const credentials = await setupCredentials();
+        keymaster.addName('credential-0', credentials[0]);
+        keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);
         await keymaster.revokeCredential(credentials[2]);
 
@@ -3405,7 +3436,7 @@ describe('fixWallet', () => {
         expect(idsRemoved).toBe(0);
         expect(ownedRemoved).toBe(2);
         expect(heldRemoved).toBe(2);
-        expect(namesRemoved).toBe(0);
+        expect(namesRemoved).toBe(2);
     });
 });
 
