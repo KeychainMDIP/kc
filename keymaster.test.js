@@ -1485,7 +1485,12 @@ describe('createChallenge', () => {
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        const expected = { credentials: [] };
+        const expected = {
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
+            credentials: []
+        };
         expect(doc.didDocumentData).toStrictEqual(expected);
     });
 
@@ -1624,6 +1629,9 @@ describe('verifyResponse', () => {
             fulfilled: 0,
             match: true,
             vps: [],
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);
@@ -1651,6 +1659,9 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: false,
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);
@@ -1679,6 +1690,9 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: false,
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);

@@ -1039,9 +1039,13 @@ export async function createChallenge(challenge) {
         challenge = { credentials: [] };
     }
 
-    // TBD: replace with challenge schema validation
+    if (!challenge.ephemeral) {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        challenge.ephemeral = { validUntil: expires.toISOString() };
+    }
 
-    if (!challenge?.credentials) {
+    if (!challenge.credentials) {
         throw "Invalid input";
     }
 
@@ -1138,12 +1142,16 @@ export async function createResponse(did) {
     const requested = credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 1); // Add 1 hour
+
     const response = {
         challenge: challenge,
         credentials: pairs,
         requested: requested,
         fulfilled: fulfilled,
         match: match,
+        ephemeral: { validUntil: expires.toISOString() }
     };
 
     const responseDid = await encryptJSON(response, requestor, true, ephemeralRegistry);
