@@ -1485,7 +1485,12 @@ describe('createChallenge', () => {
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        const expected = { credentials: [] };
+        const expected = {
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
+            credentials: []
+        };
         expect(doc.didDocumentData).toStrictEqual(expected);
     });
 

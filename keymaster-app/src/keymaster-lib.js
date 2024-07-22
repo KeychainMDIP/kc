@@ -1039,9 +1039,13 @@ export async function createChallenge(challenge) {
         challenge = { credentials: [] };
     }
 
-    // TBD: replace with challenge schema validation
+    if (!challenge.ephemeral) {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        challenge.ephemeral = { validUntil: expires.toISOString() };
+    }
 
-    if (!challenge?.credentials) {
+    if (!challenge.credentials) {
         throw "Invalid input";
     }
 
