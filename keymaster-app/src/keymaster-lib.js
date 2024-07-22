@@ -1142,12 +1142,16 @@ export async function createResponse(did) {
     const requested = credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 1); // Add 1 hour
+
     const response = {
         challenge: challenge,
         credentials: pairs,
         requested: requested,
         fulfilled: fulfilled,
         match: match,
+        ephemeral: { validUntil: expires.toISOString() }
     };
 
     const responseDid = await encryptJSON(response, requestor, true, ephemeralRegistry);

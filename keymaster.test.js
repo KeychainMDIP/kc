@@ -1629,6 +1629,9 @@ describe('verifyResponse', () => {
             fulfilled: 0,
             match: true,
             vps: [],
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);
@@ -1656,6 +1659,9 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: false,
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);
@@ -1684,6 +1690,9 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: false,
+            ephemeral: {
+                validUntil: expect.any(String),
+            },
         };
 
         expect(verify).toStrictEqual(expected);
