@@ -186,6 +186,7 @@ function KeymasterUI({ keymaster, title }) {
 
     async function createResponse() {
         try {
+            await clearResponse();
             const response = await keymaster.createResponse(challenge);
             setResponse(response);
         } catch (error) {
@@ -1406,7 +1407,7 @@ function KeymasterUI({ keymaster, title }) {
                             <TableBody>
                                 <TableRow>
                                     <TableCell style={{ width: '10%' }}>Challenge</TableCell>
-                                    <TableCell style={{ width: '80%' }}>
+                                    <TableCell style={{ width: '60%' }}>
                                         <TextField
                                             label=""
                                             value={challenge}
@@ -1416,15 +1417,24 @@ function KeymasterUI({ keymaster, title }) {
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                         />
                                     </TableCell>
-                                    <TableCell style={{ width: '10%' }}>
-                                        <Button variant="contained" color="primary" onClick={newChallenge}>
-                                            New
-                                        </Button>
+                                    <TableCell style={{ width: '30%' }}>
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={newChallenge}>
+                                                    New
+                                                </Button>
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
+                                                    Respond
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
                                     </TableCell>
                                 </TableRow>
                                 <TableRow>
                                     <TableCell style={{ width: '10%' }}>Response</TableCell>
-                                    <TableCell style={{ width: '80%' }}>
+                                    <TableCell style={{ width: '60%' }}>
                                         <TextField
                                             label=""
                                             value={response}
@@ -1434,26 +1444,19 @@ function KeymasterUI({ keymaster, title }) {
                                             inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                         />
                                     </TableCell>
-                                    <TableCell style={{ width: '10%' }}>
-                                        {response ? (
-                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={verifyResponse}>
-                                                        Verify
-                                                    </Button>
-
-                                                </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={clearResponse}>
-                                                        Clear
-                                                    </Button>
-                                                </Grid>
+                                    <TableCell style={{ width: '30%' }}>
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={verifyResponse} disabled={!response}>
+                                                    Verify
+                                                </Button>
                                             </Grid>
-                                        ) : (
-                                            <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
-                                                Create
-                                            </Button>
-                                        )}
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
+                                                    Clear
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
                                     </TableCell>
                                 </TableRow>
                             </TableBody>
