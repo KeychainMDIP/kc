@@ -406,24 +406,35 @@ async function collectGarbage() {
     for (let i = 0; i < didList.length; i++) {
         const did = didList[i];
 
-        console.log(`gc check: ${i} ${did}`);
+        let output = `gc check: ${i} ${did}`;
 
         const doc = await gatekeeper.resolveDID(did, { confirm: true });
 
         if (doc.mdip.registry === REGISTRY) {
             const isoDate = doc.didDocumentData?.ephemeral?.validUntil;
+
+            if (!isoDate) {
+                continue;
+            }
+
             const validUntil = new Date(isoDate);
 
             // Check if validUntil is a valid date
             if (isNaN(validUntil.getTime())) {
-                console.error(`Invalid validUntil date: ${isoDate}`);
+                output += ` invalid date format: ${isoDate}`;
                 continue;
             }
 
             if (validUntil < now) {
                 expired.push(did);
             }
+            else {
+                const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
+                output += ` expires in ${minutesLeft} minutes`;
+            }
         }
+
+        console.log(output);
     }
 
     if (expired.length > 0) {
