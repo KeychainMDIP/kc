@@ -410,8 +410,15 @@ async function collectGarbage() {
 
         const doc = await gatekeeper.resolveDID(did, { confirm: true });
 
-        if (doc.mdip.registry === REGISTRY && doc.didDocumentData?.ephemeral?.validUntil) {
-            const validUntil = new Date(doc.didDocumentData.ephemeral.validUntil);
+        if (doc.mdip.registry === REGISTRY) {
+            const isoDate = doc.didDocumentData?.ephemeral?.validUntil;
+            const validUntil = new Date(isoDate);
+
+            // Check if validUntil is a valid date
+            if (isNaN(validUntil.getTime())) {
+                console.error(`Invalid validUntil date: ${isoDate}`);
+                continue;
+            }
 
             if (validUntil < now) {
                 expired.push(did);
