@@ -93,6 +93,9 @@ function KeymasterUI({ keymaster, title }) {
             setNewName('');
             setMnemonicString('');
             setWalletString('');
+            setSelectedName('');
+            setSelectedHeld('');
+            setSelectedIssued('')
         } catch (error) {
             window.alert(error);
         }
