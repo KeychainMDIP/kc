@@ -57,8 +57,7 @@ export async function getEvents(did) {
         console.time("SELECT");
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
         console.timeEnd("SELECT");
-        const events = JSON.parse(row.events);
-        return events;
+        return JSON.parse(row.events);
     }
     catch {
         return [];
@@ -90,8 +89,7 @@ export async function getQueue(registry) {
             return [];
         }
 
-        const ops = JSON.parse(row.ops);
-        return ops;
+        return JSON.parse(row.ops);
     }
     catch {
         return [];
@@ -114,6 +112,5 @@ export async function clearQueue(registry, batch) {
 
 export async function getAllKeys() {
     const rows = await db.all('SELECT id FROM dids');
-    const ids = rows.map(row => row.id);
-    return ids;
+    return rows.map(row => row.id);
 }

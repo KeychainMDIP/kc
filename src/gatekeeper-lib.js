@@ -80,8 +80,7 @@ export async function resetDb() {
 
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    return did;
+    return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
 async function verifyCreateAgent(operation) {
@@ -97,9 +96,7 @@ async function verifyCreateAgent(operation) {
     delete operationCopy.signature;
 
     const msgHash = cipher.hashJSON(operationCopy);
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 }
 
 async function verifyCreateAsset(operation) {
@@ -118,9 +115,7 @@ async function verifyCreateAsset(operation) {
     const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 }
 
 async function verifyCreate(operation) {
@@ -192,6 +187,7 @@ export async function createDID(operation) {
 }
 
 async function generateDoc(anchor) {
+    let doc = {};
     try {
         if (!anchor?.mdip) {
             return {};
@@ -213,7 +209,7 @@ async function generateDoc(anchor) {
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -236,12 +232,10 @@ async function generateDoc(anchor) {
                 "didDocumentData": {},
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
 
         if (anchor.mdip.type === 'asset') {
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -254,15 +248,13 @@ async function generateDoc(anchor) {
                 "didDocumentData": anchor.data,
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
     }
     catch (error) {
         // console.error(error);
     }
 
-    return {}; // TBD unknown type error
+    return doc;
 }
 
 async function verifyUpdate(operation, doc) {
@@ -292,9 +284,7 @@ async function verifyUpdate(operation, doc) {
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
@@ -650,8 +640,7 @@ export async function getQueue(registry) {
         throw `Invalid registry`;
     }
 
-    const queue = db.getQueue(registry);
-    return queue;
+    return db.getQueue(registry);
 }
 
 export async function clearQueue(registry, events) {
@@ -659,6 +648,5 @@ export async function clearQueue(registry, events) {
         throw `Invalid registry`;
     }
 
-    const ok = db.clearQueue(registry, events);
-    return ok;
+    return db.clearQueue(registry, events);
 }

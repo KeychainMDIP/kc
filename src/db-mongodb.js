@@ -63,8 +63,7 @@ export async function deleteEvents(did) {
 
 export async function getAllKeys() {
     const rows = await db.collection('dids').find().toArray();
-    const ids = rows.map(row => row.id);
-    return ids;
+    return rows.map(row => row.id);
 }
 
 export async function queueOperation(registry, op) {

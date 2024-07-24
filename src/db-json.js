@@ -156,6 +156,5 @@ export async function clearQueue(registry, batch) {
 
 export async function getAllKeys() {
     const db = loadDb();
-    const ids = Object.keys(db.dids);
-    return ids;
+    return Object.keys(db.dids);
 }
