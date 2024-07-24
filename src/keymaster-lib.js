@@ -604,10 +604,8 @@ export async function resolveDID(did, options = {}) {
 export async function resolveAsset(did) {
     const doc = await resolveDID(did);
 
-    if (doc?.didDocumentMetadata) {
-        if (!doc.didDocumentMetadata.deactivated) {
-            return doc.didDocumentData;
-        }
+    if (doc?.didDocumentMetadata && !doc.didDocumentMetadata.deactivated) {
+        return doc.didDocumentData;
     }
 
     return null;
@@ -787,11 +785,9 @@ export function addName(name, did) {
 export function removeName(name) {
     const wallet = loadWallet();
 
-    if (wallet.names) {
-        if (Object.keys(wallet.names).includes(name)) {
-            delete wallet.names[name];
-            saveWallet(wallet);
-        }
+    if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        delete wallet.names[name];
+        saveWallet(wallet);
     }
 
     return true;
@@ -809,16 +805,12 @@ export function lookupDID(name) {
 
     const wallet = loadWallet();
 
-    if (wallet.names) {
-        if (Object.keys(wallet.names).includes(name)) {
-            return wallet.names[name];
-        }
+    if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        return wallet.names[name];
     }
 
-    if (wallet.ids) {
-        if (Object.keys(wallet.ids).includes(name)) {
-            return wallet.ids[name].did;
-        }
+    if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        return wallet.ids[name].did;
     }
 
     throw "Unknown DID";
@@ -1067,18 +1059,14 @@ async function findMatchingCredential(credential) {
                 continue;
             }
 
-            if (credential.issuers) {
-                if (!credential.issuers.includes(doc.issuer)) {
-                    // Attestor not trusted by Verifier
-                    continue;
-                }
+            if (credential.issuers && !credential.issuers.includes(doc.issuer)) {
+                // Attestor not trusted by Verifier
+                continue;
             }
 
-            if (doc.type) {
-                if (!doc.type.includes(credential.schema)) {
-                    // Wrong type
-                    continue;
-                }
+            if (doc.type && !doc.type.includes(credential.schema)) {
+                // Wrong type
+                continue;
             }
 
             // TBD test for VC expiry too
@@ -1193,10 +1181,8 @@ export async function verifyResponse(responseDID, challengeDID) {
             }
 
             // Check if issuer of VP is in the trusted issuer list
-            if (credential.issuers && credential.issuers.length > 0) {
-                if (!credential.issuers.includes(vp.issuer)) {
-                    continue;
-                }
+            if (credential.issuers && credential.issuers.length > 0 && !credential.issuers.includes(vp.issuer)) {
+                continue;
             }
         }
 
