@@ -30,7 +30,7 @@ program
         try {
             const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-            if (invalid == 0 && deleted == 0) {
+            if (invalid === 0 && deleted === 0) {
                 console.log(`${checked} DIDs checked, no problems found`);
             }
             else {

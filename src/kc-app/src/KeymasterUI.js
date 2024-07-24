@@ -678,7 +678,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-            if (invalid == 0 && deleted == 0) {
+            if (invalid === 0 && deleted === 0) {
                 window.alert(`${checked} DIDs checked, no problems found`);
             }
             else if (window.confirm(`${checked} DIDs checked\n${invalid} invalid DIDs found\n${deleted} deleted DIDs found\n\nFix wallet?`)) {

@@ -503,7 +503,7 @@ describe('resolveDID', () => {
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
 
-            if (i == 5) {
+            if (i === 5) {
                 expected = update;
             }
 
@@ -530,7 +530,7 @@ describe('resolveDID', () => {
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
 
-            if (i == 5) {
+            if (i === 5) {
                 expected = update;
             }
 
