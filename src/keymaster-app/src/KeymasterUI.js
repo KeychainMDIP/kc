@@ -44,7 +44,9 @@ function KeymasterUI({ keymaster, title }) {
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
+    const [selectedHeld, setSelectedHeld] = useState('');
     const [issuedList, setIssuedList] = useState(null);
+    const [selectedIssued, setSelectedIssued] = useState('');
     const [issuedString, setIssuedString] = useState('');
     const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
@@ -496,6 +498,7 @@ function KeymasterUI({ keymaster, title }) {
     async function resolveCredential(did) {
         try {
             const doc = await keymaster.resolveDID(did);
+            setSelectedHeld(did);
             setHeldString(JSON.stringify(doc, null, 4));
         } catch (error) {
             window.alert(error);
@@ -505,6 +508,7 @@ function KeymasterUI({ keymaster, title }) {
     async function decryptCredential(did) {
         try {
             const doc = await keymaster.getCredential(did);
+            setSelectedHeld(did);
             setHeldString(JSON.stringify(doc, null, 4));
         } catch (error) {
             window.alert(error);
@@ -515,6 +519,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, false);
             resolveId();
+            decryptCredential(did);
         } catch (error) {
             window.alert(error);
         }
@@ -524,6 +529,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.publishCredential(did, true);
             resolveId();
+            decryptCredential(did);
         } catch (error) {
             window.alert(error);
         }
@@ -533,6 +539,7 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.unpublishCredential(did);
             resolveId();
+            decryptCredential(did);
         } catch (error) {
             window.alert(error);
         }
@@ -573,6 +580,7 @@ function KeymasterUI({ keymaster, title }) {
     async function resolveIssued(did) {
         try {
             const doc = await keymaster.resolveDID(did);
+            setSelectedIssued(did);
             setIssuedString(JSON.stringify(doc, null, 4));
         } catch (error) {
             window.alert(error);
@@ -582,6 +590,7 @@ function KeymasterUI({ keymaster, title }) {
     async function decryptIssued(did) {
         try {
             const doc = await keymaster.getCredential(did);
+            setSelectedIssued(did);
             setIssuedString(JSON.stringify(doc, null, 4));
         } catch (error) {
             window.alert(error);
@@ -1152,79 +1161,82 @@ function KeymasterUI({ keymaster, title }) {
                             </Box>
                             {credentialTab === 'held' &&
                                 <Box>
-                                    <Table style={{ width: '800px' }}>
-                                        <TableBody>
-                                            {heldList.map((did, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell colSpan={6}>
-                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {did}
-                                                        </Typography>
-                                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
-                                                                    Resolve
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
-                                                                    Decrypt
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => removeCredential(did)} disabled={!credentialUnpublished(did)}>
-                                                                    Remove
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => publishCredential(did)} disabled={credentialPublished(did)}>
-                                                                    Publish
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => revealCredential(did)} disabled={credentialRevealed(did)}>
-                                                                    Reveal
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)} disabled={credentialUnpublished(did)}>
-                                                                    Unpublish
-                                                                </Button>
-                                                            </Grid>
-                                                        </Grid>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                <TableRow>
+                                                    <TableCell style={{ width: '100%' }}>
+                                                        <TextField
+                                                            label="Credential DID"
+                                                            style={{ width: '500px' }}
+                                                            value={heldDID}
+                                                            onChange={(e) => setHeldDID(e.target.value.trim())}
+                                                            fullWidth
+                                                            margin="normal"
+                                                            inputProps={{ maxLength: 80 }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
+                                                            Accept
+                                                        </Button>
                                                     </TableCell>
                                                 </TableRow>
-                                            ))}
-                                            <TableRow>
-                                                <TableCell style={{ width: '100%' }}>
-                                                    <TextField
-                                                        label="Credential DID"
-                                                        style={{ width: '500px' }}
-                                                        value={heldDID}
-                                                        onChange={(e) => setHeldDID(e.target.value.trim())}
-                                                        fullWidth
-                                                        margin="normal"
-                                                        inputProps={{ maxLength: 80 }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
-                                                        Resolve
-                                                    </Button>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
-                                                        Decrypt
-                                                    </Button>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
-                                                        Accept
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        </TableBody>
-                                    </Table>
+                                                {heldList.map((did, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell colSpan={6}>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {did}
+                                                            </Typography>
+                                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
+                                                                        Resolve
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
+                                                                        Decrypt
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => removeCredential(did)} disabled={!credentialUnpublished(did)}>
+                                                                        Remove
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => publishCredential(did)} disabled={credentialPublished(did)}>
+                                                                        Publish
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => revealCredential(did)} disabled={credentialRevealed(did)}>
+                                                                        Reveal
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)} disabled={credentialUnpublished(did)}>
+                                                                        Unpublish
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <p>{selectedHeld}</p>
                                     <textarea
                                         value={heldString}
                                         readOnly
@@ -1325,36 +1337,39 @@ function KeymasterUI({ keymaster, title }) {
                             }
                             {credentialTab === 'issued' &&
                                 <Box>
-                                    <Table style={{ width: '800px' }}>
-                                        <TableBody>
-                                            {issuedList.map((did, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell colSpan={6}>
-                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {did}
-                                                        </Typography>
-                                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => resolveIssued(did)}>
-                                                                    Resolve
-                                                                </Button>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                {issuedList.map((did, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell colSpan={6}>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {did}
+                                                            </Typography>
+                                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => resolveIssued(did)}>
+                                                                        Resolve
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => decryptIssued(did)}>
+                                                                        Decrypt
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
+                                                                        Revoke
+                                                                    </Button>
+                                                                </Grid>
                                                             </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => decryptIssued(did)}>
-                                                                    Decrypt
-                                                                </Button>
-                                                            </Grid>
-                                                            <Grid item>
-                                                                <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
-                                                                    Revoke
-                                                                </Button>
-                                                            </Grid>
-                                                        </Grid>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <p>{selectedIssued}</p>
                                     <textarea
                                         value={issuedString}
                                         readOnly
