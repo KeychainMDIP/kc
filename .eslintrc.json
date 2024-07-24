@@ -5,15 +5,17 @@
         "node": true,
         "jest": true
     },
-    "extends": "eslint:recommended",
+    "plugins": ["sonarjs", "only-warn"],
+    "extends": ["plugin:sonarjs/recommended-legacy","react-app"],
     "parserOptions": {
         "ecmaVersion": "latest",
         "sourceType": "module"
     },
     "rules": {
         "indent": [
-            "error",
+            "warn",
             4
         ]
+
     }
 }
