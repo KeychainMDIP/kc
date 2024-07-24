@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Select, Tab, Tabs } from '@mui/material';
+import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import './App.css';
 
@@ -20,6 +20,7 @@ function KeymasterUI({ keymaster, title }) {
     const [nameList, setNameList] = useState(null);
     const [aliasName, setAliasName] = useState('');
     const [aliasDID, setAliasDID] = useState('');
+    const [selectedName, setSelectedName] = useState('');
     const [aliasDocs, setAliasDocs] = useState('');
     const [registries, setRegistries] = useState(null);
     const [groupList, setGroupList] = useState(null);
@@ -320,6 +321,7 @@ function KeymasterUI({ keymaster, title }) {
     async function resolveName(name) {
         try {
             const docs = await keymaster.resolveDID(name);
+            setSelectedName(name);
             setAliasDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
             window.alert(error);
@@ -859,64 +861,67 @@ function KeymasterUI({ keymaster, title }) {
                     }
                     {tab === 'names' &&
                         <Box>
-                            <Table style={{ width: '800px' }}>
-                                <TableBody>
-                                    {Object.entries(nameList).map(([name, did], index) => (
-                                        <TableRow key={index}>
-                                            <TableCell>{name}</TableCell>
-                                            <TableCell>
-                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
-                                                    {did}
-                                                </Typography>
+                            <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                <Table style={{ width: '800px' }}>
+                                    <TableBody>
+                                        <TableRow>
+                                            <TableCell style={{ width: '100%' }}>
+                                                <TextField
+                                                    label="Name"
+                                                    style={{ width: '200px' }}
+                                                    value={aliasName}
+                                                    onChange={(e) => setAliasName(e.target.value.trim())}
+                                                    fullWidth
+                                                    margin="normal"
+                                                    inputProps={{ maxLength: 20 }}
+                                                />
+                                            </TableCell>
+                                            <TableCell style={{ width: '100%' }}>
+                                                <TextField
+                                                    label="DID"
+                                                    style={{ width: '500px' }}
+                                                    value={aliasDID}
+                                                    onChange={(e) => setAliasDID(e.target.value.trim())}
+                                                    fullWidth
+                                                    margin="normal"
+                                                    inputProps={{ maxLength: 80 }}
+                                                />
                                             </TableCell>
                                             <TableCell>
-                                                <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
+                                                <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
                                                     Resolve
                                                 </Button>
                                             </TableCell>
                                             <TableCell>
-                                                <Button variant="contained" color="primary" onClick={() => removeName(name)}>
-                                                    Remove
+                                                <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
+                                                    Add
                                                 </Button>
                                             </TableCell>
                                         </TableRow>
-                                    ))}
-                                    <TableRow>
-                                        <TableCell style={{ width: '100%' }}>
-                                            <TextField
-                                                label="Name"
-                                                style={{ width: '200px' }}
-                                                value={aliasName}
-                                                onChange={(e) => setAliasName(e.target.value.trim())}
-                                                fullWidth
-                                                margin="normal"
-                                                inputProps={{ maxLength: 20 }}
-                                            />
-                                        </TableCell>
-                                        <TableCell style={{ width: '100%' }}>
-                                            <TextField
-                                                label="DID"
-                                                style={{ width: '500px' }}
-                                                value={aliasDID}
-                                                onChange={(e) => setAliasDID(e.target.value.trim())}
-                                                fullWidth
-                                                margin="normal"
-                                                inputProps={{ maxLength: 80 }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
-                                                Resolve
-                                            </Button>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
-                                                Add
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                </TableBody>
-                            </Table>
+                                        {Object.entries(nameList).map(([name, did], index) => (
+                                            <TableRow key={index}>
+                                                <TableCell>{name}</TableCell>
+                                                <TableCell>
+                                                    <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                        {did}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
+                                                        Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => removeName(name)}>
+                                                        Remove
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <p>{selectedName}</p>
                             <textarea
                                 value={aliasDocs}
                                 readOnly

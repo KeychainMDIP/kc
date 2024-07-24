@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+
+npm --prefix src/kc-app run build
+node src/keymaster-api.js
