@@ -1,5 +1,6 @@
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher-lib.js';
+import * as exceptions from './exceptions.js';
 
 let gatekeeper = null;
 let db = null;
@@ -35,9 +36,8 @@ export function newWallet(mnemonic, overwrite = false) {
 export function decryptMnemonic() {
     const wallet = loadWallet();
     const keypair = hdKeyPair();
-    const mnenomic = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
 
-    return mnenomic;
+    return cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
 }
 
 export async function checkWallet() {
@@ -248,9 +248,7 @@ export async function resolveSeedBank() {
         }
     }
     const did = await gatekeeper.createDID(signed);
-    const doc = await gatekeeper.resolveDID(did);
-
-    return doc;
+    return await gatekeeper.resolveDID(did);
 }
 
 async function updateSeedBank(doc) {
@@ -278,8 +276,7 @@ async function updateSeedBank(doc) {
         }
     };
 
-    const ok = await gatekeeper.updateDID(signed);
-    return ok;
+    return await gatekeeper.updateDID(signed);
 }
 
 export async function backupWallet(registry = defaultRegistry) {
@@ -352,7 +349,7 @@ export function setCurrentId(name) {
         saveWallet(wallet);
     }
     else {
-        throw `Unknown ID`;
+        throw exceptions.UNKNOWN_ID;
     }
 }
 
@@ -384,7 +381,7 @@ function fetchId(id) {
     }
 
     if (!idInfo) {
-        throw "Unknown ID";
+        throw exceptions.UNKNOWN_ID;
     }
 
     return idInfo;
@@ -393,9 +390,8 @@ function fetchId(id) {
 function hdKeyPair() {
     const wallet = loadWallet();
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const keypair = cipher.generateJwk(hdkey.privateKey);
 
-    return keypair;
+    return cipher.generateJwk(hdkey.privateKey);
 }
 
 function fetchKeyPair(name = null) {
@@ -404,9 +400,8 @@ function fetchKeyPair(name = null) {
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const path = `m/44'/0'/${id.account}'/0/${id.index}`;
     const didkey = hdkey.derive(path);
-    const keypair = cipher.generateJwk(didkey.privateKey);
 
-    return keypair;
+    return cipher.generateJwk(didkey.privateKey);
 }
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
@@ -417,15 +412,14 @@ export async function encrypt(msg, did, encryptForSender = true, registry = defa
     const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
-    const cipherDid = await createAsset({
+
+    return await createAsset({
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
         cipher_receiver: cipher_receiver,
     }, registry);
-
-    return cipherDid;
 }
 
 export async function decrypt(did) {
@@ -605,17 +599,14 @@ function removeFromHeld(did) {
 }
 
 export async function resolveDID(did, options = {}) {
-    const doc = await gatekeeper.resolveDID(lookupDID(did), options);
-    return doc;
+    return await gatekeeper.resolveDID(lookupDID(did), options);
 }
 
 export async function resolveAsset(did) {
     const doc = await resolveDID(did);
 
-    if (doc?.didDocumentMetadata) {
-        if (!doc.didDocumentMetadata.deactivated) {
-            return doc.didDocumentData;
-        }
+    if (doc?.didDocumentMetadata && !doc.didDocumentMetadata.deactivated) {
+        return doc.didDocumentData;
     }
 
     return null;
@@ -712,9 +703,7 @@ export async function backupId(name = null) {
     const vaultDid = await createAsset({ backup: backup }, registry, name);
 
     doc.didDocumentData.vault = vaultDid;
-    const ok = await updateDID(id.did, doc);
-
-    return ok;
+    return await updateDID(id.did, doc);
 }
 
 export async function recoverId(did) {
@@ -797,11 +786,9 @@ export function addName(name, did) {
 export function removeName(name) {
     const wallet = loadWallet();
 
-    if (wallet.names) {
-        if (Object.keys(wallet.names).includes(name)) {
-            delete wallet.names[name];
-            saveWallet(wallet);
-        }
+    if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        delete wallet.names[name];
+        saveWallet(wallet);
     }
 
     return true;
@@ -814,24 +801,20 @@ export function lookupDID(name) {
         }
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const wallet = loadWallet();
 
-    if (wallet.names) {
-        if (Object.keys(wallet.names).includes(name)) {
-            return wallet.names[name];
-        }
+    if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        return wallet.names[name];
     }
 
-    if (wallet.ids) {
-        if (Object.keys(wallet.ids).includes(name)) {
-            return wallet.ids[name].did;
-        }
+    if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        return wallet.ids[name].did;
     }
 
-    throw "Unknown DID";
+    throw exceptions.UNKNOWN_DID;
 }
 
 export async function createAsset(data, registry = defaultRegistry, owner = null) {
@@ -888,7 +871,7 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
     const schema = await resolveAsset(type);
     const credential = JSONSchemaFaker.generate(schema);
 
-    const vc = {
+    return {
         "@context": [
             "https://www.w3.org/ns/credentials/v2",
             "https://www.w3.org/ns/credentials/examples/v2"
@@ -902,8 +885,6 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
         },
         credential: credential,
     };
-
-    return vc;
 }
 
 export async function issueCredential(vc, registry = defaultRegistry) {
@@ -1079,18 +1060,14 @@ async function findMatchingCredential(credential) {
                 continue;
             }
 
-            if (credential.issuers) {
-                if (!credential.issuers.includes(doc.issuer)) {
-                    // Attestor not trusted by Verifier
-                    continue;
-                }
+            if (credential.issuers && !credential.issuers.includes(doc.issuer)) {
+                // Attestor not trusted by Verifier
+                continue;
             }
 
-            if (doc.type) {
-                if (!doc.type.includes(credential.schema)) {
-                    // Wrong type
-                    continue;
-                }
+            if (doc.type && !doc.type.includes(credential.schema)) {
+                // Wrong type
+                continue;
             }
 
             // TBD test for VC expiry too
@@ -1154,8 +1131,7 @@ export async function createResponse(did) {
         ephemeral: { validUntil: expires.toISOString() }
     };
 
-    const responseDid = await encryptJSON(response, requestor, true, ephemeralRegistry);
-    return responseDid;
+    return await encryptJSON(response, requestor, true, ephemeralRegistry);
 }
 
 export async function verifyResponse(responseDID, challengeDID) {
@@ -1206,10 +1182,8 @@ export async function verifyResponse(responseDID, challengeDID) {
             }
 
             // Check if issuer of VP is in the trusted issuer list
-            if (credential.issuers && credential.issuers.length > 0) {
-                if (!credential.issuers.includes(vp.issuer)) {
-                    continue;
-                }
+            if (credential.issuers && credential.issuers.length > 0 && !credential.issuers.includes(vp.issuer)) {
+                continue;
             }
         }
 
@@ -1265,7 +1239,7 @@ export async function groupAdd(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     // If already a member, return immediately
@@ -1314,7 +1288,7 @@ export async function groupRemove(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     // If not already a member, return immediately
@@ -1647,8 +1621,7 @@ export async function votePoll(poll, vote, spoil = false) {
 
     // Encrypt for receiver only
     // TBD which registry?
-    const didBallot = await encryptJSON(ballot, owner, false);
-    return didBallot;
+    return await encryptJSON(ballot, owner, false);
 }
 
 export async function updatePoll(ballot) {
@@ -1707,9 +1680,7 @@ export async function updatePoll(ballot) {
         received: new Date().toISOString(),
     };
 
-    const ok = await updateDID(didPoll, docPoll);
-
-    return ok;
+    return await updateDID(didPoll, docPoll);
 }
 
 export async function publishPoll(poll, reveal = false) {
@@ -1734,9 +1705,7 @@ export async function publishPoll(poll, reveal = false) {
 
     doc.didDocumentData.results = view.results;
 
-    const ok = await updateDID(didPoll, doc);
-
-    return ok;
+    return await updateDID(didPoll, doc);
 }
 
 export async function unpublishPoll(poll) {
@@ -1751,7 +1720,5 @@ export async function unpublishPoll(poll) {
 
     delete doc.didDocumentData.results;
 
-    const ok = await updateDID(didPoll, doc);
-
-    return ok;
+    return await updateDID(didPoll, doc);
 }

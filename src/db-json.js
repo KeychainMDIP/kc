@@ -1,4 +1,5 @@
 import fs from 'fs';
+import * as exceptions from './exceptions.js';
 
 const dataFolder = 'data';
 let dbName;
@@ -39,7 +40,7 @@ export async function addEvent(did, event) {
     const db = loadDb();
 
     if (!did) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const suffix = did.split(':').pop();
@@ -74,7 +75,7 @@ export async function getEvents(did) {
 
 export async function setEvents(did, events) {
     if (!did) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const db = loadDb();

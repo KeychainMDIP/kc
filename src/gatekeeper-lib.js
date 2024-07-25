@@ -4,6 +4,7 @@ import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher-lib.js';
 import config from './config.js';
+import * as exceptions from './exceptions.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
@@ -302,7 +303,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const anchor = events[0];
@@ -310,7 +311,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     let mdip = doc?.mdip;
 
     if (!mdip) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
@@ -342,7 +343,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             const valid = await verifyUpdate(operation, doc);
 
             if (!valid) {
-                throw "Invalid update";
+                throw exceptions.INVALID_UPDATE;
             }
         }
 

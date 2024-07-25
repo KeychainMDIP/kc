@@ -1,5 +1,6 @@
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from './cipher-lib.js';
+import * as exceptions from './exceptions.js';
 
 let gatekeeper = null;
 let db = null;
@@ -348,7 +349,7 @@ export function setCurrentId(name) {
         saveWallet(wallet);
     }
     else {
-        throw `Unknown ID`;
+        throw exceptions.UNKNOWN_ID;
     }
 }
 
@@ -380,7 +381,7 @@ function fetchId(id) {
     }
 
     if (!idInfo) {
-        throw "Unknown ID";
+        throw exceptions.UNKNOWN_ID;
     }
 
     return idInfo;
@@ -800,7 +801,7 @@ export function lookupDID(name) {
         }
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const wallet = loadWallet();
@@ -813,7 +814,7 @@ export function lookupDID(name) {
         return wallet.ids[name].did;
     }
 
-    throw "Unknown DID";
+    throw exceptions.UNKNOWN_DID;
 }
 
 export async function createAsset(data, registry = defaultRegistry, owner = null) {
@@ -1238,7 +1239,7 @@ export async function groupAdd(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     // If already a member, return immediately
@@ -1287,7 +1288,7 @@ export async function groupRemove(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     // If not already a member, return immediately
