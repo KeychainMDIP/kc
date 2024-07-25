@@ -26,7 +26,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite) {
     if (fs.existsSync(walletName) && !overwrite) {
-        throw exceptions.WALLET_ALREADY_EXISTS;
+        throw exceptions.UPDATE_FAILED;
     }
 
     try {

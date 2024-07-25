@@ -7,6 +7,5 @@ export const INVALID_VERSION = new Error('Invalid version');
 export const INVALID_TYPE = new Error('Invalid type');
 export const INVALID_REGISTRY = new Error('Invalid registry');
 export const INVALID_PARAMETER = new Error('Invalid parameter');
-export const WALLET_ALREADY_EXISTS = new Error('Wallet already exists');
 export const UPDATE_FAILED = new Error('Update failed');
 export const EXPECTED_EXCEPTION = new Error('Expected to throw an exception');

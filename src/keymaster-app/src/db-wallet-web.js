@@ -20,7 +20,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite = false) {
     if (!overwrite && window.localStorage.getItem(walletName)) {
-        throw exceptions.WALLET_ALREADY_EXISTS;
+        throw exceptions.UPDATE_FAILED;
     }
 
     try {

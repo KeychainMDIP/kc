@@ -91,7 +91,7 @@ describe('newWallet', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe(exceptions.WALLET_ALREADY_EXISTS);
+            expect(error).toBe(exceptions.UPDATE_FAILED);
         }
     });
 
