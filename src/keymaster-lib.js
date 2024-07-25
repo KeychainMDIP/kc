@@ -820,10 +820,11 @@ export function lookupDID(name) {
 export async function createAsset(data, registry = defaultRegistry, owner = null) {
 
     function isEmpty(data) {
-        if (!data) return true;
-        if (Array.isArray(data) && data.length === 0) return true;
-        if (typeof data === 'object' && Object.keys(data).length === 0) return true;
-        return false;
+        return (
+            !data ||
+            (Array.isArray(data) && data.length === 0) ||
+            (typeof data === 'object' && Object.keys(data).length === 0)
+        );
     }
 
     if (isEmpty(data)) {
