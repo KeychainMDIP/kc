@@ -5,7 +5,7 @@
         "node": true,
         "jest": true
     },
-    "plugins": ["sonarjs", "only-warn"],
+    "plugins": ["sonarjs"],
     "extends": ["plugin:sonarjs/recommended-legacy","react-app"],
     "parserOptions": {
         "ecmaVersion": "latest",
@@ -16,6 +16,5 @@
             "error",
             4
         ]
-
     }
 }
