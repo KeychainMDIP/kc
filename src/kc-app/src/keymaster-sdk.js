@@ -30,7 +30,7 @@ export async function saveWallet(wallet) {
 
 export async function newWallet(mnemonic, overwrite = false) {
     try {
-        const response = await axios.post(`/api/v1/wallet`, { mnemonic, overwrite });
+        const response = await axios.post(`/api/v1/wallet/new`, { mnemonic, overwrite });
         return response.data;
     }
     catch (error) {
@@ -40,7 +40,7 @@ export async function newWallet(mnemonic, overwrite = false) {
 
 export async function backupWallet() {
     try {
-        const response = await axios.post(`/api/v1/backup-wallet`);
+        const response = await axios.post(`/api/v1/wallet/backup`);
         return response.data;
     }
     catch (error) {
@@ -50,7 +50,7 @@ export async function backupWallet() {
 
 export async function recoverWallet() {
     try {
-        const response = await axios.post(`/api/v1/recover-wallet`);
+        const response = await axios.post(`/api/v1/wallet/recover`);
         return response.data;
     }
     catch (error) {
@@ -60,7 +60,7 @@ export async function recoverWallet() {
 
 export async function checkWallet() {
     try {
-        const response = await axios.post(`/api/v1/check-wallet`);
+        const response = await axios.post(`/api/v1/wallet/check`);
         return response.data;
     }
     catch (error) {
@@ -70,7 +70,7 @@ export async function checkWallet() {
 
 export async function fixWallet() {
     try {
-        const response = await axios.post(`/api/v1/fix-wallet`);
+        const response = await axios.post(`/api/v1/wallet/fix`);
         return response.data;
     }
     catch (error) {
@@ -100,7 +100,7 @@ export async function listRegistries() {
 
 export async function getCurrentId() {
     try {
-        const response = await axios.get(`/api/v1/current-id`);
+        const response = await axios.get(`/api/v1/ids/current`);
         return response.data;
     }
     catch (error) {
@@ -110,7 +110,7 @@ export async function getCurrentId() {
 
 export async function setCurrentId(name) {
     try {
-        const response = await axios.put(`/api/v1/current-id`, { name: name });
+        const response = await axios.put(`/api/v1/ids`, { name: name });
         return response.data;
     }
     catch (error) {
@@ -140,7 +140,7 @@ export async function resolveId(id) {
 
 export async function createId(name, registry) {
     try {
-        const response = await axios.post(`/api/v1/ids`, { name: name, registry: registry });
+        const response = await axios.post(`/api/v1/ids/new`, { name: name, registry: registry });
         return response.data;
     }
     catch (error) {
@@ -170,7 +170,7 @@ export async function backupId(id) {
 
 export async function recoverId(did) {
     try {
-        const response = await axios.post(`/api/v1/recover-id`, { did: did });
+        const response = await axios.post(`/api/v1/ids/recover`, { did: did });
         return response.data;
     }
     catch (error) {
@@ -240,7 +240,7 @@ export async function createResponse(challengeDID) {
 
 export async function verifyResponse(responseDID, challengeDID) {
     try {
-        const response = await axios.post(`/api/v1/verify-response`, { response: responseDID, challenge: challengeDID });
+        const response = await axios.post(`/api/v1/response/verify`, { response: responseDID, challenge: challengeDID });
         return response.data;
     }
     catch (error) {
@@ -350,7 +350,7 @@ export async function testAgent(id) {
 
 export async function bindCredential(schema, subject) {
     try {
-        const response = await axios.post(`/api/v1/bind-credential`, { schema, subject });
+        const response = await axios.post(`/api/v1/credentials/bind`, { schema, subject });
         return response.data;
     }
     catch (error) {
@@ -360,7 +360,7 @@ export async function bindCredential(schema, subject) {
 
 export async function issueCredential(credential, registry) {
     try {
-        const response = await axios.post(`/api/v1/issue-credential`, { credential, registry });
+        const response = await axios.post(`/api/v1/credentials/issue`, { credential, registry });
         return response.data;
     }
     catch (error) {
