@@ -2727,7 +2727,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll type');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2737,7 +2737,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll version');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2747,7 +2747,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll description');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2757,7 +2757,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll roster');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2767,7 +2767,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2777,7 +2777,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2787,7 +2787,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2797,7 +2797,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2807,7 +2807,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2817,7 +2817,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2832,7 +2832,7 @@ describe('createPoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2917,7 +2917,7 @@ describe('votePoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Vote must be a number between 1 and 3');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2937,7 +2937,7 @@ describe('votePoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Not eligible to vote on this poll');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2981,7 +2981,7 @@ describe('updatePoll', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid ballot');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });

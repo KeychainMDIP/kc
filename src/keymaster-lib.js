@@ -1452,48 +1452,48 @@ export async function pollTemplate() {
 
 export async function createPoll(poll) {
     if (poll.type !== 'poll') {
-        throw "Invalid poll type";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (poll.version !== 1) {
-        throw "Invalid poll version";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!poll.description) {
-        throw "Invalid poll description";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!poll.options || !Array.isArray(poll.options) || poll.options.length < 2 || poll.options.length > 10) {
-        throw "Invalid poll options";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!poll.roster) {
-        throw "Invalid poll roster";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     try {
         const isValidGroup = await groupTest(poll.roster);
 
         if (!isValidGroup) {
-            throw "Invalid poll roster";
+            throw exceptions.INVALID_PARAMETER;
         }
     }
     catch {
-        throw "Invalid poll roster";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!poll.deadline) {
-        throw "Invalid poll deadline";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const deadline = new Date(poll.deadline);
 
     if (isNaN(deadline.getTime())) {
-        throw "Invalid poll deadline";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (deadline < new Date()) {
-        throw "Invalid poll deadline";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     return createAsset(poll);
@@ -1506,7 +1506,7 @@ export async function viewPoll(poll) {
     const data = doc.didDocumentData;
 
     if (!data || !data.options || !data.deadline) {
-        throw "Invalid poll";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let hasVoted = false;
@@ -1590,11 +1590,11 @@ export async function votePoll(poll, vote, spoil = false) {
     const owner = doc.didDocument.controller;
 
     if (!eligible) {
-        throw "Not eligible to vote on this poll";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (expired) {
-        throw "The deadline to vote has passed for this poll";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let ballot;
@@ -1610,7 +1610,7 @@ export async function votePoll(poll, vote, spoil = false) {
         vote = parseInt(vote);
 
         if (!Number.isInteger(vote) || vote < 1 || vote > max) {
-            throw `Vote must be a number between 1 and ${max}`;
+            throw exceptions.INVALID_PARAMETER;
         }
 
         ballot = {
@@ -1636,11 +1636,11 @@ export async function updatePoll(ballot) {
         dataBallot = await decryptJSON(didBallot);
 
         if (!dataBallot.poll || !dataBallot.vote) {
-            throw "Invalid ballot";
+            throw exceptions.INVALID_PARAMETER;
         }
     }
     catch {
-        throw "Invalid ballot";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const didPoll = lookupDID(dataBallot.poll);
@@ -1649,26 +1649,26 @@ export async function updatePoll(ballot) {
     const didOwner = docPoll.didDocument.controller;
 
     if (id.did !== didOwner) {
-        throw "Only poll owners can add a ballot";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const eligible = await groupTest(dataPoll.roster, didVoter);
 
     if (!eligible) {
-        throw "Voter not eligible to vote on this poll";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const expired = (Date(dataPoll.deadline) > new Date());
 
     if (expired) {
-        throw "The deadline to vote has passed for this poll";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const max = dataPoll.options.length;
     const vote = parseInt(dataBallot.vote);
 
     if (!vote || vote < 0 || vote > max) {
-        throw "Invalid ballot vote";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!dataPoll.ballots) {
@@ -1690,13 +1690,13 @@ export async function publishPoll(poll, reveal = false) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw "Only poll owners can publish";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const view = await viewPoll(poll);
 
     if (!view.results.final) {
-        throw "Poll can be published only when results are final";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!reveal) {
@@ -1715,7 +1715,7 @@ export async function unpublishPoll(poll) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw "Only poll owners can unpublish";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     delete doc.didDocumentData.results;
