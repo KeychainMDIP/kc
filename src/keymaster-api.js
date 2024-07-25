@@ -462,7 +462,7 @@ v1router.delete('/issued/:did', async (req, res) => {
     }
 });
 
-v1router.get('/exportdid/:did/export', async (req, res) => {
+v1router.get('/dids/:did/export', async (req, res) => {
     try {
         const response = await keymaster.exportDID(req.params.did);
         res.json(response);
