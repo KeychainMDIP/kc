@@ -55,6 +55,7 @@ function KeymasterUI({ keymaster, title }) {
 
     useEffect(() => {
         refreshAll();
+        // eslint-disable-next-line
     }, []);
 
     async function refreshAll() {
