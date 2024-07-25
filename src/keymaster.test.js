@@ -221,7 +221,7 @@ describe('createId', () => {
             await keymaster.createId(name);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe(`Already have an ID named ${name}`);
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -274,7 +274,7 @@ describe('removeId', () => {
             keymaster.removeId(name2);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe(`No ID named ${name2}`);
+            expect(error).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -411,7 +411,7 @@ describe('recoverId', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Cannot recover ID');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -592,7 +592,7 @@ describe('addName', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Name already in use');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -606,7 +606,7 @@ describe('addName', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Name already in use');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -785,7 +785,7 @@ describe('createAsset', () => {
             await keymaster.createAsset(mockAnchor);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -797,7 +797,7 @@ describe('createAsset', () => {
             await keymaster.createAsset();
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -809,7 +809,7 @@ describe('createAsset', () => {
             await keymaster.createAsset("");
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -821,7 +821,7 @@ describe('createAsset', () => {
             await keymaster.createAsset([]);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -833,7 +833,7 @@ describe('createAsset', () => {
             await keymaster.createAsset({});
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1110,7 +1110,7 @@ describe('addSignature', () => {
             await keymaster.addSignature(mockJson);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -1123,7 +1123,7 @@ describe('addSignature', () => {
             await keymaster.addSignature();
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1297,7 +1297,7 @@ describe('issueCredential', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid VC');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1972,7 +1972,7 @@ describe('unpublishCredential', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -3537,7 +3537,7 @@ describe('getCredential', () => {
             await keymaster.getCredential(agentDID);
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe(`DID is not encrypted`);
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });

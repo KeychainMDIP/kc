@@ -376,7 +376,7 @@ function fetchId(id) {
         idInfo = wallet.ids[wallet.current];
 
         if (!idInfo) {
-            throw "No current ID";
+            throw exceptions.UNKNOWN_ID;
         }
     }
 
@@ -428,7 +428,7 @@ export async function decrypt(did) {
     const crypt = await resolveAsset(did);
 
     if (!crypt || !crypt.cipher_hash) {
-        throw "DID is not encrypted";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const doc = await resolveDID(crypt.sender, { atTime: crypt.created });
@@ -449,7 +449,7 @@ export async function decrypt(did) {
         }
     }
 
-    throw 'Cannot decrypt';
+    throw new Error('Cannot decrypt');
 }
 
 export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
@@ -482,7 +482,7 @@ export async function addSignature(obj, controller = null) {
         };
     }
     catch (error) {
-        throw 'Invalid input';
+        throw exceptions.INVALID_PARAMETER;
     }
 }
 
@@ -615,7 +615,7 @@ export async function resolveAsset(did) {
 export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        throw `Already have an ID named ${name}`;
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const account = wallet.counter;
@@ -678,7 +678,7 @@ export function removeId(name) {
         return true;
     }
     else {
-        throw `No ID named ${name}`;
+        throw exceptions.UNKNOWN_ID;
     }
 }
 
@@ -725,7 +725,7 @@ export async function recoverId(did) {
         return `Recovered ${data.name}!`;
     }
     catch {
-        throw "Cannot recover ID";
+        throw exceptions.INVALID_PARAMETER;
     }
 }
 
@@ -752,7 +752,7 @@ export async function rotateKeys() {
         return doc;
     }
     else {
-        throw 'cannot rotate keys';
+        throw new Error('Cannot rotate keys');
     }
 }
 
@@ -770,11 +770,11 @@ export function addName(name, did) {
     }
 
     if (Object.keys(wallet.names).includes(name)) {
-        throw `Name already in use`;
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (Object.keys(wallet.ids).includes(name)) {
-        throw `Name already in use`;
+        throw exceptions.INVALID_PARAMETER;
     }
 
     wallet.names[name] = did;
@@ -827,7 +827,7 @@ export async function createAsset(data, registry = defaultRegistry, owner = null
     }
 
     if (isEmpty(data)) {
-        throw 'Invalid input';
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const id = fetchId(owner);
@@ -891,7 +891,7 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     const id = fetchId();
 
     if (vc.issuer !== id.did) {
-        throw 'Invalid VC';
+        throw exceptions.INVALID_PARAMETER;
     }
 
     // Don't allow credentials that will be garbage-collected
@@ -939,7 +939,7 @@ export async function acceptCredential(did) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw 'VC not valid or not assigned to this ID';
+            throw exceptions.INVALID_PARAMETER;
         }
 
         return addToHeld(credential);
@@ -968,7 +968,7 @@ export async function publishCredential(did, reveal = false) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw 'VC not valid or not assigned to this ID';
+            throw exceptions.INVALID_PARAMETER;
         }
 
         const doc = await resolveDID(id.did);
