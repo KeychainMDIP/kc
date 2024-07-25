@@ -962,39 +962,34 @@ export async function listCredentials(id) {
 }
 
 export async function publishCredential(did, reveal = false) {
-    try {
-        const id = fetchId();
-        const credential = lookupDID(did);
-        const vc = await decryptJSON(credential);
+    const id = fetchId();
+    const credential = lookupDID(did);
+    const vc = await decryptJSON(credential);
 
-        if (vc.credentialSubject.id !== id.did) {
-            throw exceptions.INVALID_PARAMETER;
-        }
-
-        const doc = await resolveDID(id.did);
-
-        if (!doc.didDocumentData.manifest) {
-            doc.didDocumentData.manifest = {};
-        }
-
-        if (!reveal) {
-            // Remove the credential values
-            vc.credential = null;
-        }
-
-        doc.didDocumentData.manifest[credential] = vc;
-
-        const ok = await updateDID(id.did, doc);
-
-        if (ok) {
-            return vc;
-        }
-        else {
-            return "Update failed";
-        }
+    if (vc.credentialSubject.id !== id.did) {
+        throw exceptions.INVALID_PARAMETER;
     }
-    catch (error) {
-        return error;
+
+    const doc = await resolveDID(id.did);
+
+    if (!doc.didDocumentData.manifest) {
+        doc.didDocumentData.manifest = {};
+    }
+
+    if (!reveal) {
+        // Remove the credential values
+        vc.credential = null;
+    }
+
+    doc.didDocumentData.manifest[credential] = vc;
+
+    const ok = await updateDID(id.did, doc);
+
+    if (ok) {
+        return vc;
+    }
+    else {
+        throw exceptions.UPDATE_FAILED;
     }
 }
 
@@ -1011,7 +1006,7 @@ export async function unpublishCredential(did) {
         return `OK credential ${did} removed from manifest`;
     }
 
-    throw `Error: credential ${did} not found in manifest`;
+    throw exceptions.INVALID_PARAMETER;
 }
 
 export async function createChallenge(challenge) {
@@ -1027,11 +1022,11 @@ export async function createChallenge(challenge) {
     }
 
     if (!challenge.credentials) {
-        throw "Invalid input";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     if (!Array.isArray(challenge.credentials)) {
-        throw "Invalid input";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     return createAsset(challenge, ephemeralRegistry);
@@ -1083,7 +1078,7 @@ export async function createResponse(did) {
     const challenge = lookupDID(did);
 
     if (!challenge) {
-        throw "Invalid challenge";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const doc = await resolveDID(challenge);
@@ -1091,7 +1086,7 @@ export async function createResponse(did) {
     const { credentials } = await resolveAsset(challenge);
 
     if (!credentials) {
-        throw "Invalid challenge";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const matches = [];
@@ -1105,7 +1100,7 @@ export async function createResponse(did) {
     }
 
     if (!matches) {
-        throw "VCs don't match challenge";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const pairs = [];
@@ -1139,7 +1134,7 @@ export async function verifyResponse(responseDID, challengeDID) {
     challengeDID = lookupDID(challengeDID);
 
     if (!responseDID) {
-        throw "Invalid response";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const response = await decryptJSON(responseDID);
@@ -1217,7 +1212,7 @@ export async function getGroup(id) {
     const isGroup = await groupTest(id);
 
     if (!isGroup) {
-        throw "Invalid group";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     return resolveAsset(id);
@@ -1229,7 +1224,7 @@ export async function groupAdd(groupId, memberId) {
     const data = doc.didDocumentData;
 
     if (!data.members || !Array.isArray(data.members)) {
-        throw "Invalid group";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const memberDID = lookupDID(memberId);
@@ -1249,14 +1244,14 @@ export async function groupAdd(groupId, memberId) {
 
     // Can't add a group to itself
     if (memberDID === groupDID) {
-        throw "Invalid member";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     // Can't add a mutual membership relation
     const isMember = await groupTest(memberId, groupId);
 
     if (isMember) {
-        throw "Invalid member";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const members = new Set(data.members);
@@ -1266,7 +1261,7 @@ export async function groupAdd(groupId, memberId) {
     const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw `Error: can't update ${groupId}`
+        throw exceptions.UPDATE_FAILED;
     }
 
     return data;
@@ -1278,7 +1273,7 @@ export async function groupRemove(groupId, memberId) {
     const data = doc.didDocumentData;
 
     if (!data.members) {
-        throw "Invalid group";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const memberDID = lookupDID(memberId);
@@ -1303,7 +1298,7 @@ export async function groupRemove(groupId, memberId) {
     const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw `Error: can't update ${groupId}`
+        throw exceptions.UPDATE_FAILED;
     }
 
     return data;
@@ -1368,14 +1363,14 @@ export const defaultSchema = {
 function validateSchema(schema) {
     try {
         if (!Object.keys(schema).includes('$schema')) {
-            throw "Invalid schema";
+            throw exceptions.INVALID_PARAMETER;
         }
 
         // Attempt to instantiate the schema
         JSONSchemaFaker.generate(schema);
     }
     catch {
-        throw "Invalid schema";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     return true;
@@ -1423,7 +1418,7 @@ export async function createTemplate(id) {
     const isSchema = await testSchema(id);
 
     if (!isSchema) {
-        throw "Invalid schema";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     const schemaDID = lookupDID(id);

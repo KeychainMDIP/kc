@@ -1542,7 +1542,7 @@ describe('createChallenge', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -1550,7 +1550,7 @@ describe('createChallenge', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -1558,7 +1558,7 @@ describe('createChallenge', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1986,7 +1986,7 @@ describe('unpublishCredential', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Error: credential did:test:mock not found in manifest');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2003,7 +2003,7 @@ describe('unpublishCredential', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe(`Error: credential ${did} not found in manifest`);
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2286,7 +2286,7 @@ describe('groupAdd', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2294,7 +2294,7 @@ describe('groupAdd', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2309,7 +2309,7 @@ describe('groupAdd', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid member');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2329,7 +2329,7 @@ describe('groupAdd', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid member');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2520,7 +2520,7 @@ describe('groupRemove', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2528,7 +2528,7 @@ describe('groupRemove', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2661,7 +2661,7 @@ describe('getGroup', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3124,7 +3124,7 @@ describe('createSchema', () => {
             await keymaster.createSchema({ mock: 'not a schema' });
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe(`Invalid schema`);
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3187,7 +3187,7 @@ describe('setSchema', () => {
             await keymaster.setSchema(did, { mock: 'not a schema' });
             throw exceptions.EXPECTED_EXCEPTION;;
         } catch (error) {
-            expect(error).toBe(`Invalid schema`);
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
