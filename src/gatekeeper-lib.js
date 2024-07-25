@@ -484,7 +484,7 @@ export async function exportDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw "Invalid array";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     for (const did of dids) {
@@ -533,7 +533,7 @@ async function importUpdateEvent(event) {
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
-        throw "Invalid import";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let did;
@@ -603,7 +603,7 @@ export async function importEvent(event) {
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw "Invalid import";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let verified = 0;
@@ -638,7 +638,7 @@ export async function importBatch(batch) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
     return db.getQueue(registry);
@@ -646,7 +646,7 @@ export async function getQueue(registry) {
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
     return db.clearQueue(registry, events);

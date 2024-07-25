@@ -318,9 +318,11 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
+            // eslint-disable-next-line
             "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
+                    // eslint-disable-next-line
                     "https://www.w3.org/ns/did/v1",
                 ],
                 authentication: [
@@ -947,7 +949,7 @@ describe('removeDIDs', () => {
             await gatekeeper.removeDIDs();
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid array');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1150,7 +1152,7 @@ describe('importBatch', () => {
             await gatekeeper.importBatch();
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1161,7 +1163,7 @@ describe('importBatch', () => {
             await gatekeeper.importBatch('mock');
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1172,7 +1174,7 @@ describe('importBatch', () => {
             await gatekeeper.importBatch([]);
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1216,7 +1218,7 @@ describe('getQueue', () => {
             await gatekeeper.getQueue('mock');
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid registry');
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
         }
     });
 });
@@ -1313,7 +1315,7 @@ describe('clearQueue', () => {
             await gatekeeper.clearQueue('mock', []);
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid registry');
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
         }
     });
 });
