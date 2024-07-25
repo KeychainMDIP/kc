@@ -86,11 +86,11 @@ export async function anchorSeed(seed) {
 
 async function verifyCreateAgent(operation) {
     if (!operation.signature) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.publicJwk) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -101,14 +101,14 @@ async function verifyCreateAgent(operation) {
 }
 
 async function verifyCreateAsset(operation) {
-    if (operation.controller !== operation.signature.signer) {
-        throw "Invalid operation";
+    if (operation.controller !== operation.signature?.signer) {
+        throw exceptions.INVALID_OPERATION;
     }
 
     const doc = await resolveDID(operation.signature.signer, { atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -121,28 +121,28 @@ async function verifyCreateAsset(operation) {
 
 async function verifyCreate(operation) {
     if (operation?.type !== "create") {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.created) {
         // TBD ensure valid timestamp format
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.mdip) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw `Valid versions include: ${validVersions}`;
+        throw exceptions.INVALID_VERSION;
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw `Valid types include: ${validTypes}`;
+        throw exceptions.INVALID_TYPE;
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw `Valid registries include: ${validRegistries}`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
     if (operation.mdip.type === 'agent') {
@@ -153,7 +153,7 @@ async function verifyCreate(operation) {
         return verifyCreateAsset(operation);
     }
 
-    throw "Invalid operation";
+    throw exceptions.INVALID_OPERATION;
 }
 
 export async function createDID(operation) {
@@ -183,7 +183,7 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 }
 
@@ -371,7 +371,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
         else {
             if (verify) {
-                throw "Invalid operation";
+                throw exceptions.INVALID_OPERATION;
             }
 
             console.error(`unknown type ${operation.type}`);
@@ -547,11 +547,11 @@ export async function importEvent(event) {
         }
 
         if (!did) {
-            throw "Invalid operation";
+            throw exceptions.INVALID_OPERATION;
         }
     }
     catch {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const current = await exportDID(did);
@@ -560,7 +560,7 @@ export async function importEvent(event) {
         const ok = await importCreateEvent(event);
 
         if (!ok) {
-            throw "Invalid operation";
+            throw exceptions.INVALID_OPERATION;
         }
 
         return true;
@@ -593,7 +593,7 @@ export async function importEvent(event) {
     const ok = await importUpdateEvent(event);
 
     if (!ok) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     delete confirmedCache[did];

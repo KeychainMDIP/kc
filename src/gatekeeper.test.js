@@ -165,7 +165,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error.startsWith('Valid versions include')).toBe(true);
+            expect(error).toBe(exceptions.INVALID_VERSION);
         }
     });
 
@@ -179,7 +179,80 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error.startsWith('Valid registries include')).toBe(true);
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
+        }
+    });
+
+    it('should throw exception on invalid type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'mockRegistry');
+        agentOp.mdip.type = 'mock';
+
+        try {
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_TYPE);
+        }
+    });
+
+    it('should throw exception on invalid agent operation', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.createDID();
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        const keypair = cipher.generateRandomJwk();
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.type = 'mock';
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.mdip = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.created = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.signature = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.publicJwk = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
         }
     });
 
@@ -195,8 +268,41 @@ describe('createDID', () => {
 
         expect(did.startsWith('did:test:')).toBe(true);
     });
-});
 
+    it('should throw exception on invalid asset operation', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            assetOp.controller = 'mock';
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            assetOp.signature = null;
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+    });
+});
 
 describe('resolveDID', () => {
 
