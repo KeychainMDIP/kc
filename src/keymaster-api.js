@@ -109,7 +109,7 @@ v1router.get('/mnemonic', async (req, res) => {
     }
 });
 
-v1router.get('/current/id', async (req, res) => {
+v1router.get('/ids/current', async (req, res) => {
     try {
         const current = keymaster.getCurrentId();
         res.json(current);
@@ -118,7 +118,7 @@ v1router.get('/current/id', async (req, res) => {
     }
 });
 
-v1router.put('/current/:id', async (req, res) => {
+v1router.put('/ids/:id', async (req, res) => {
     try {
         const { name } = req.body;
         keymaster.setCurrentId(name);
@@ -462,7 +462,7 @@ v1router.delete('/issued/:did', async (req, res) => {
     }
 });
 
-v1router.get('/exportdid/:did/did', async (req, res) => {
+v1router.get('/exportdid/:did/export', async (req, res) => {
     try {
         const response = await keymaster.exportDID(req.params.did);
         res.json(response);
@@ -474,15 +474,6 @@ v1router.get('/exportdid/:did/did', async (req, res) => {
 v1router.post('/batch/import', async (req, res) => {
     try {
         const response = await keymaster.importBatch(req.body.ops);
-        res.json(response);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.get('/lookup/:did/did', async (req, res) => {
-    try {
-        const response = await keymaster.lookupDID(req.params.did);
         res.json(response);
     } catch (error) {
         res.status(500).send(error.toString());
