@@ -4,6 +4,7 @@ import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher-lib.js';
 import config from './config.js';
+import * as exceptions from './exceptions.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
@@ -80,37 +81,34 @@ export async function resetDb() {
 
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    return did;
+    return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
 async function verifyCreateAgent(operation) {
     if (!operation.signature) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.publicJwk) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
     delete operationCopy.signature;
 
     const msgHash = cipher.hashJSON(operationCopy);
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 }
 
 async function verifyCreateAsset(operation) {
-    if (operation.controller !== operation.signature.signer) {
-        throw "Invalid operation";
+    if (operation.controller !== operation.signature?.signer) {
+        throw exceptions.INVALID_OPERATION;
     }
 
     const doc = await resolveDID(operation.signature.signer, { atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -118,35 +116,33 @@ async function verifyCreateAsset(operation) {
     const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 }
 
 async function verifyCreate(operation) {
     if (operation?.type !== "create") {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.created) {
         // TBD ensure valid timestamp format
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!operation.mdip) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw `Valid versions include: ${validVersions}`;
+        throw exceptions.INVALID_VERSION;
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw `Valid types include: ${validTypes}`;
+        throw exceptions.INVALID_TYPE;
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw `Valid registries include: ${validRegistries}`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
     if (operation.mdip.type === 'agent') {
@@ -157,7 +153,7 @@ async function verifyCreate(operation) {
         return verifyCreateAsset(operation);
     }
 
-    throw "Invalid operation";
+    throw exceptions.INVALID_OPERATION;
 }
 
 export async function createDID(operation) {
@@ -187,11 +183,12 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 }
 
 async function generateDoc(anchor) {
+    let doc = {};
     try {
         if (!anchor?.mdip) {
             return {};
@@ -213,7 +210,7 @@ async function generateDoc(anchor) {
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -236,12 +233,10 @@ async function generateDoc(anchor) {
                 "didDocumentData": {},
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
 
         if (anchor.mdip.type === 'asset') {
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -254,15 +249,13 @@ async function generateDoc(anchor) {
                 "didDocumentData": anchor.data,
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
     }
     catch (error) {
         // console.error(error);
     }
 
-    return {}; // TBD unknown type error
+    return doc;
 }
 
 async function verifyUpdate(operation, doc) {
@@ -292,9 +285,7 @@ async function verifyUpdate(operation, doc) {
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
@@ -312,7 +303,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const anchor = events[0];
@@ -320,7 +311,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     let mdip = doc?.mdip;
 
     if (!mdip) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
@@ -352,7 +343,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             const valid = await verifyUpdate(operation, doc);
 
             if (!valid) {
-                throw "Invalid update";
+                throw exceptions.INVALID_UPDATE;
             }
         }
 
@@ -380,7 +371,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
         else {
             if (verify) {
-                throw "Invalid operation";
+                throw exceptions.INVALID_OPERATION;
             }
 
             console.error(`unknown type ${operation.type}`);
@@ -493,7 +484,7 @@ export async function exportDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw "Invalid array";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     for (const did of dids) {
@@ -542,7 +533,7 @@ async function importUpdateEvent(event) {
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
-        throw "Invalid import";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let did;
@@ -556,11 +547,11 @@ export async function importEvent(event) {
         }
 
         if (!did) {
-            throw "Invalid operation";
+            throw exceptions.INVALID_OPERATION;
         }
     }
     catch {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     const current = await exportDID(did);
@@ -569,7 +560,7 @@ export async function importEvent(event) {
         const ok = await importCreateEvent(event);
 
         if (!ok) {
-            throw "Invalid operation";
+            throw exceptions.INVALID_OPERATION;
         }
 
         return true;
@@ -602,7 +593,7 @@ export async function importEvent(event) {
     const ok = await importUpdateEvent(event);
 
     if (!ok) {
-        throw "Invalid operation";
+        throw exceptions.INVALID_OPERATION;
     }
 
     delete confirmedCache[did];
@@ -612,7 +603,7 @@ export async function importEvent(event) {
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw "Invalid import";
+        throw exceptions.INVALID_PARAMETER;
     }
 
     let verified = 0;
@@ -647,18 +638,16 @@ export async function importBatch(batch) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
-    const queue = db.getQueue(registry);
-    return queue;
+    return db.getQueue(registry);
 }
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw exceptions.INVALID_REGISTRY;
     }
 
-    const ok = db.clearQueue(registry, events);
-    return ok;
+    return db.clearQueue(registry, events);
 }

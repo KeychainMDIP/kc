@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import config from './config.js';
+import * as exceptions from './exceptions.js';
 
 let client;
 let db;
@@ -21,7 +22,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const id = did.split(':').pop();
@@ -37,7 +38,7 @@ export async function addEvent(did, event) {
 
 export async function getEvents(did) {
     if (!did) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     try {
@@ -54,7 +55,7 @@ export async function getEvents(did) {
 
 export async function deleteEvents(did) {
     if (!did) {
-        throw "Invalid DID";
+        throw exceptions.INVALID_DID;
     }
 
     const id = did.split(':').pop();
@@ -63,8 +64,7 @@ export async function deleteEvents(did) {
 
 export async function getAllKeys() {
     const rows = await db.collection('dids').find().toArray();
-    const ids = rows.map(row => row.id);
-    return ids;
+    return rows.map(row => row.id);
 }
 
 export async function queueOperation(registry, op) {

@@ -2,6 +2,7 @@ import mockFs from 'mock-fs';
 import * as cipher from './cipher-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
+import * as exceptions from './exceptions.js';
 
 beforeEach(async () => {
     db_json.start();
@@ -89,7 +90,7 @@ async function createUpdateOp(keypair, did, doc) {
     const msgHash = cipher.hashJSON(operation);
     const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
-    const signed = {
+    return {
         ...operation,
         signature: {
             signer: did,
@@ -98,8 +99,6 @@ async function createUpdateOp(keypair, did, doc) {
             value: signature,
         }
     };
-
-    return signed;
 }
 
 async function createAssetOp(agent, keypair, registry = 'local') {
@@ -117,7 +116,8 @@ async function createAssetOp(agent, keypair, registry = 'local') {
 
     const msgHash = cipher.hashJSON(dataAnchor);
     const signature = cipher.signHash(msgHash, keypair.privateJwk);
-    const assetOp = {
+
+    return {
         ...dataAnchor,
         signature: {
             signer: agent,
@@ -126,8 +126,6 @@ async function createAssetOp(agent, keypair, registry = 'local') {
             value: signature,
         }
     };
-
-    return assetOp;
 }
 
 describe('createDID', () => {
@@ -165,9 +163,9 @@ describe('createDID', () => {
 
         try {
             await gatekeeper.createDID(agentOp);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error.startsWith('Valid versions include')).toBe(true);
+            expect(error).toBe(exceptions.INVALID_VERSION);
         }
     });
 
@@ -179,9 +177,82 @@ describe('createDID', () => {
 
         try {
             await gatekeeper.createDID(agentOp);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error.startsWith('Valid registries include')).toBe(true);
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
+        }
+    });
+
+    it('should throw exception on invalid type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'mockRegistry');
+        agentOp.mdip.type = 'mock';
+
+        try {
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_TYPE);
+        }
+    });
+
+    it('should throw exception on invalid agent operation', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.createDID();
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        const keypair = cipher.generateRandomJwk();
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.type = 'mock';
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.mdip = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.created = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.signature = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.publicJwk = null;
+            await gatekeeper.createDID(agentOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
         }
     });
 
@@ -197,8 +268,41 @@ describe('createDID', () => {
 
         expect(did.startsWith('did:test:')).toBe(true);
     });
-});
 
+    it('should throw exception on invalid asset operation', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            assetOp.controller = 'mock';
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            assetOp.signature = null;
+            await gatekeeper.createDID(assetOp);
+            throw exceptions.EXPECTED_EXCEPTION;
+        } catch (error) {
+            expect(error).toBe(exceptions.INVALID_OPERATION);
+        }
+    });
+});
 
 describe('resolveDID', () => {
 
@@ -214,9 +318,11 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
+            // eslint-disable-next-line
             "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
+                    // eslint-disable-next-line
                     "https://www.w3.org/ns/did/v1",
                 ],
                 authentication: [
@@ -506,7 +612,7 @@ describe('resolveDID', () => {
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
 
-            if (i == 5) {
+            if (i === 5) {
                 expected = update;
             }
 
@@ -533,7 +639,7 @@ describe('resolveDID', () => {
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
 
-            if (i == 5) {
+            if (i === 5) {
                 expected = update;
             }
 
@@ -581,65 +687,65 @@ describe('resolveDID', () => {
 
         try {
             await gatekeeper.resolveDID();
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID('');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID('mock');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID([]);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID([1, 2, 3]);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID({});
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID({ mock: 1 });
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:xxx');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
     });
 });
@@ -830,9 +936,9 @@ describe('removeDIDs', () => {
 
         try {
             await gatekeeper.resolveDID(did);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -841,9 +947,9 @@ describe('removeDIDs', () => {
 
         try {
             await gatekeeper.removeDIDs();
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid array');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1044,9 +1150,9 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch();
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1055,9 +1161,9 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch('mock');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1066,9 +1172,9 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch([]);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid import');
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1110,9 +1216,9 @@ describe('getQueue', () => {
 
         try {
             await gatekeeper.getQueue('mock');
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid registry');
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
         }
     });
 });
@@ -1207,9 +1313,9 @@ describe('clearQueue', () => {
 
         try {
             await gatekeeper.clearQueue('mock', []);
-            throw 'Expected to throw an exception';
+            throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe('Invalid registry');
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
         }
     });
 });

@@ -1,4 +1,5 @@
 import * as cipher from './cipher-lib.js';
+import * as exceptions from './exceptions.js';
 
 const walletName = 'mdip-keymaster';
 
@@ -19,7 +20,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite = false) {
     if (!overwrite && window.localStorage.getItem(walletName)) {
-        throw "Wallet already exists";
+        throw exceptions.UPDATE_FAILED;
     }
 
     try {
@@ -43,6 +44,6 @@ export function newWallet(mnemonic, overwrite = false) {
         return wallet;
     }
     catch (error) {
-        throw "Invalid mnemonic";
+        throw exceptions.INVALID_PARAMETER;
     }
 }
