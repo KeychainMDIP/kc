@@ -3115,7 +3115,7 @@ describe('createSchema', () => {
     });
 
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on create invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -3145,7 +3145,7 @@ describe('getSchema', () => {
         expect(schema).toStrictEqual(mockSchema);
     });
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on get invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -3177,7 +3177,7 @@ describe('setSchema', () => {
         expect(newSchema).toStrictEqual(mockSchema);
     });
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on set invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
