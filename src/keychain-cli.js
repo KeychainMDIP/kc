@@ -5,6 +5,9 @@ import * as keymaster from './keymaster-lib.js';
 import * as db_wallet from './db-wallet-json.js';
 import config from './config.js';
 
+const UPDATE_OK = "OK";
+const UPDATE_FAILED = "Update failed";
+
 program
     .version('1.0.0')
     .description('Keychain CLI tool')
@@ -153,7 +156,12 @@ program
     .action(async () => {
         try {
             const ok = await keymaster.backupId();
-            console.log(ok ? 'OK' : 'backup failed');
+            if (ok) {
+                console.log(UPDATE_OK);
+            }
+            else {
+                console.log(UPDATE_FAILED);
+            }
         }
         catch (error) {
             console.error(error.message);
@@ -165,8 +173,8 @@ program
     .description('Recovers the ID from the DID')
     .action(async (did) => {
         try {
-            const ok = await keymaster.recoverId(did);
-            console.log(ok);
+            const response = await keymaster.recoverId(did);
+            console.log(response);
         }
         catch (error) {
             console.error(error.message);
@@ -214,7 +222,7 @@ program
     .action(async (name) => {
         try {
             keymaster.setCurrentId(name);
-            console.log('OK');
+            console.log(UPDATE_OK);
         }
         catch (error) {
             console.error(error.message);
@@ -452,7 +460,12 @@ program
     .action(async (did) => {
         try {
             const ok = await keymaster.revokeCredential(did);
-            console.log(ok ? 'OK revoked' : 'Not revoked');
+            if (ok) {
+                console.log(UPDATE_OK);
+            }
+            else {
+                console.log(UPDATE_FAILED);
+            }
         }
         catch (error) {
             console.error(error.message);
@@ -467,14 +480,14 @@ program
             const ok = await keymaster.acceptCredential(did);
 
             if (ok) {
-                console.log('OK saved');
+                console.log(UPDATE_OK);
 
                 if (name) {
                     keymaster.addName(name, did);
                 }
             }
             else {
-                console.log('Not saved');
+                console.log(UPDATE_FAILED);
             }
         }
         catch (error) {
@@ -553,7 +566,7 @@ program
     .action(async (name, did) => {
         try {
             keymaster.addName(name, did);
-            console.log('OK');
+            console.log(UPDATE_OK);
         }
         catch (error) {
             console.error(error.message);
@@ -566,7 +579,7 @@ program
     .action(async (name) => {
         try {
             keymaster.removeName(name);
-            console.log('OK');
+            console.log(UPDATE_OK);
         }
         catch (error) {
             console.error(error.message);
@@ -784,10 +797,10 @@ program
         try {
             const ok = await keymaster.updatePoll(ballot);
             if (ok) {
-                console.log("OK");
+                console.log(UPDATE_OK);
             }
             else {
-                console.log("Update failed");
+                console.log(UPDATE_FAILED);
             }
         }
         catch (error) {
@@ -802,10 +815,10 @@ program
         try {
             const ok = await keymaster.publishPoll(poll);
             if (ok) {
-                console.log("OK");
+                console.log(UPDATE_OK);
             }
             else {
-                console.log("Update failed");
+                console.log(UPDATE_FAILED);
             }
         }
         catch (error) {
@@ -820,10 +833,10 @@ program
         try {
             const ok = await keymaster.publishPoll(poll, true);
             if (ok) {
-                console.log("OK");
+                console.log(UPDATE_OK);
             }
             else {
-                console.log("Update failed");
+                console.log(UPDATE_FAILED);
             }
         }
         catch (error) {
@@ -838,10 +851,10 @@ program
         try {
             const ok = await keymaster.unpublishPoll(poll);
             if (ok) {
-                console.log("OK");
+                console.log(UPDATE_OK);
             }
             else {
-                console.log("Update failed");
+                console.log(UPDATE_FAILED);
             }
         }
         catch (error) {
