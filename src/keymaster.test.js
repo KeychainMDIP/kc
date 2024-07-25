@@ -91,7 +91,7 @@ describe('newWallet', () => {
             throw exceptions.EXPECTED_EXCEPTION;;
         }
         catch (error) {
-            expect(error).toBe('Wallet already exists');
+            expect(error).toBe(exceptions.WALLET_ALREADY_EXISTS);
         }
     });
 
@@ -103,6 +103,18 @@ describe('newWallet', () => {
         const mnemonic2 = keymaster.decryptMnemonic();
 
         expect(mnemonic1 === mnemonic2).toBe(true);
+    });
+
+    it('should throw exception on invalid mnemonic', async () => {
+        mockFs({});
+
+        try {
+            keymaster.newWallet([]);
+            throw exceptions.EXPECTED_EXCEPTION;;
+        }
+        catch (error) {
+            expect(error).toBe(exceptions.INVALID_PARAMETER);
+        }
     });
 });
 
