@@ -118,7 +118,7 @@ v1router.get('/ids/current', async (req, res) => {
     }
 });
 
-v1router.put('/ids/:id', async (req, res) => {
+v1router.put('/ids/current', async (req, res) => {
     try {
         const { name } = req.body;
         keymaster.setCurrentId(name);

@@ -110,7 +110,7 @@ export async function getCurrentId() {
 
 export async function setCurrentId(name) {
     try {
-        const response = await axios.put(`/api/v1/ids`, { name: name });
+        const response = await axios.put(`/api/v1/ids/current`, { name: name });
         return response.data;
     }
     catch (error) {
