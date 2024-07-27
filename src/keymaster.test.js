@@ -1002,6 +1002,38 @@ describe('decrypt', () => {
         expect(decipher).toBe(msg);
     });
 
+    it('should decrypt a short message after rotating keys (confirmed)', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name, 'local');
+
+        const msg = 'Hi Bob!';
+        const doc1 = await keymaster.resolveDID(did);
+        const ok = await keymaster.rotateKeys();
+        const doc2 = await keymaster.resolveDID(did);
+        const encryptDid = await keymaster.encrypt(msg, did);
+        await keymaster.rotateKeys();
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
+        mockFs({});
+
+        const name = 'Bob';
+        const did = await keymaster.createId(name, 'hyperswarm');
+
+        const msg = 'Hi Bob!';
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did);
+        await keymaster.rotateKeys();
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
     it('should decrypt a short message encrypted by another ID', async () => {
         mockFs({});
 
