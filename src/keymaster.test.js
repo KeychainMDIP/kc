@@ -492,7 +492,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -513,15 +513,15 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
         const secrets = [];
         const msg = "Hi Bob!";
 
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encrypt(msg, bob);
+            const did = await keymaster.encrypt(msg, bob, true, 'local');
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -546,7 +546,7 @@ describe('rotateKeys', () => {
     it('should import DID with multiple key rotations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         const rotations = 10;
 
         for (let i = 0; i < rotations; i++) {
@@ -1005,14 +1005,10 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (confirmed)', async () => {
         mockFs({});
 
-        const name = 'Bob';
-        const did = await keymaster.createId(name, 'local');
-
+        const did = await keymaster.createId('Bob', 'local');
         const msg = 'Hi Bob!';
-        const doc1 = await keymaster.resolveDID(did);
-        const ok = await keymaster.rotateKeys();
-        const doc2 = await keymaster.resolveDID(did);
-        const encryptDid = await keymaster.encrypt(msg, did);
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'local');
         await keymaster.rotateKeys();
         const decipher = await keymaster.decrypt(encryptDid);
 
@@ -1022,12 +1018,10 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
         mockFs({});
 
-        const name = 'Bob';
-        const did = await keymaster.createId(name, 'hyperswarm');
-
+        const did = await keymaster.createId('Bob', 'hyperswarm');
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encrypt(msg, did);
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'hyperswarm');
         await keymaster.rotateKeys();
         const decipher = await keymaster.decrypt(encryptDid);
 

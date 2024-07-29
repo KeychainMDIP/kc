@@ -394,23 +394,36 @@ function hdKeyPair() {
     return cipher.generateJwk(hdkey.privateKey);
 }
 
-function fetchKeyPair(name = null) {
+async function fetchKeyPair(name = null) {
     const wallet = loadWallet();
     const id = fetchId(name);
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
-    const didkey = hdkey.derive(path);
+    const doc = await resolveDID(id.did, { confirm: true });
+    const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
 
-    return cipher.generateJwk(didkey.privateKey);
+    for (let i = id.index; i >= 0; i--) {
+        const path = `m/44'/0'/${id.account}'/0/${i}`;
+        const didkey = hdkey.derive(path);
+        const keypair = cipher.generateJwk(didkey.privateKey);
+
+        if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
+            keypair.publicJwk.y === confirmedPublicKeyJwk.y
+        )
+        {
+            return keypair;
+        }
+    }
+
+    return null;
 }
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
-    const keypair = fetchKeyPair();
-    const doc = await resolveDID(did);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
-    const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
+    const senderKeypair = await fetchKeyPair();
+    const doc = await resolveDID(did, { confirmed: true });
+    const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
     return await createAsset({
@@ -432,17 +445,18 @@ export async function decrypt(did) {
     }
 
     const doc = await resolveDID(crypt.sender, { atTime: crypt.created });
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
 
+    // Try all private keys for this ID, starting with the most recent and working backward
     let index = id.index;
     while (index >= 0) {
         const path = `m/44'/0'/${id.account}'/0/${index}`;
         const didkey = hdkey.derive(path);
-        const keypair = cipher.generateJwk(didkey.privateKey);
+        const receiverKeypair = cipher.generateJwk(didkey.privateKey);
         try {
-            return cipher.decryptMessage(publicJwk, keypair.privateJwk, ciphertext);
+            return cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
         }
         catch (error) {
             index -= 1;
@@ -465,7 +479,7 @@ export async function decryptJSON(did) {
 export async function addSignature(obj, controller = null) {
     // Fetches current ID if name is missing
     const id = fetchId(controller);
-    const keypair = fetchKeyPair(controller);
+    const keypair = await fetchKeyPair(controller);
 
     try {
         const msgHash = cipher.hashJSON(obj);

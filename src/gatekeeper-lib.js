@@ -265,7 +265,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { atTime: operation.signature.signed });
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirmed: true, atTime: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 
