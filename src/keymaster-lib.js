@@ -875,9 +875,9 @@ export async function testAgent(id) {
     return doc?.mdip?.type === 'agent';
 }
 
-export async function createCredential(schema) {
+export async function createCredential(schema, registry) {
     // TBD validate schema
-    return createAsset(schema);
+    return createAsset(schema, registry);
 }
 
 export async function bindCredential(schemaId, subjectId, validUntil = null) {
@@ -1024,7 +1024,7 @@ export async function unpublishCredential(did) {
     throw exceptions.INVALID_PARAMETER;
 }
 
-export async function createChallenge(challenge) {
+export async function createChallenge(challenge, registry = ephemeralRegistry) {
 
     if (!challenge) {
         challenge = { credentials: [] };
@@ -1044,7 +1044,7 @@ export async function createChallenge(challenge) {
         throw exceptions.INVALID_PARAMETER;
     }
 
-    return createAsset(challenge, ephemeralRegistry);
+    return createAsset(challenge, registry);
 }
 
 async function findMatchingCredential(credential) {
@@ -1089,7 +1089,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did) {
+export async function createResponse(did, registry = ephemeralRegistry) {
     const challenge = lookupDID(did);
 
     if (!challenge) {
@@ -1122,7 +1122,7 @@ export async function createResponse(did) {
 
     for (let vcDid of matches) {
         const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, requestor);
+        const vpDid = await encrypt(plaintext, requestor, true, registry);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -1141,7 +1141,7 @@ export async function createResponse(did) {
         ephemeral: { validUntil: expires.toISOString() }
     };
 
-    return await encryptJSON(response, requestor, true, ephemeralRegistry);
+    return await encryptJSON(response, requestor, true, registry);
 }
 
 export async function verifyResponse(responseDID, challengeDID) {

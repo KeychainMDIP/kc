@@ -1817,32 +1817,32 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
-        const carol = await keymaster.createId('Carol');
-        await keymaster.createId('Victor');
+        const alice = await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
+        const carol = await keymaster.createId('Carol', 'local');
+        await keymaster.createId('Victor', 'local');
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema);
-        const credential2 = await keymaster.createCredential(mockSchema);
+        const credential1 = await keymaster.createCredential(mockSchema, 'local');
+        const credential2 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const bc2 = await keymaster.bindCredential(credential2, carol);
 
-        const vc1 = await keymaster.issueCredential(bc1);
-        const vc2 = await keymaster.issueCredential(bc2);
+        const vc1 = await keymaster.issueCredential(bc1, 'local');
+        const vc2 = await keymaster.issueCredential(bc2, 'local');
 
         keymaster.setCurrentId('Bob');
 
-        const credential3 = await keymaster.createCredential(mockSchema);
-        const credential4 = await keymaster.createCredential(mockSchema);
+        const credential3 = await keymaster.createCredential(mockSchema, 'local');
+        const credential4 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc3 = await keymaster.bindCredential(credential3, carol);
         const bc4 = await keymaster.bindCredential(credential4, carol);
 
-        const vc3 = await keymaster.issueCredential(bc3);
-        const vc4 = await keymaster.issueCredential(bc4);
+        const vc3 = await keymaster.issueCredential(bc3, 'local');
+        const vc4 = await keymaster.issueCredential(bc4, 'local');
 
         keymaster.setCurrentId('Carol');
 
@@ -1873,10 +1873,10 @@ describe('verifyResponse', () => {
                 },
             ]
         };
-        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeDid = await keymaster.createChallenge(challenge, 'local');
 
         keymaster.setCurrentId('Carol');
-        const vpDid = await keymaster.createResponse(challengeDid);
+        const vpDid = await keymaster.createResponse(challengeDid, 'local');
         const data = await keymaster.decryptJSON(vpDid);
 
         expect(data.challenge).toBe(challengeDid);
