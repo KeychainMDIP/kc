@@ -492,7 +492,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -513,15 +513,15 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
         const secrets = [];
         const msg = "Hi Bob!";
 
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encrypt(msg, bob);
+            const did = await keymaster.encrypt(msg, bob, true, 'local');
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -546,7 +546,7 @@ describe('rotateKeys', () => {
     it('should import DID with multiple key rotations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         const rotations = 10;
 
         for (let i = 0; i < rotations; i++) {
@@ -560,6 +560,22 @@ describe('rotateKeys', () => {
         const { updated } = await keymaster.importDID(events);
 
         expect(updated).toBe(rotations + 1);
+    });
+
+
+    it('should raise an exception if latest version is not confirmed', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice', 'TESS');
+        await keymaster.rotateKeys();
+
+        try {
+            await keymaster.rotateKeys();
+            throw exceptions.EXPECTED_EXCEPTION;;
+        }
+        catch (error) {
+            expect(error.message).toBe('Cannot rotate keys');
+        }
     });
 });
 
@@ -997,6 +1013,31 @@ describe('decrypt', () => {
 
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encrypt(msg, did);
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a short message after rotating keys (confirmed)', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob', 'local');
+        const msg = 'Hi Bob!';
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'local');
+        await keymaster.rotateKeys();
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob', 'hyperswarm');
+        const msg = 'Hi Bob!';
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'hyperswarm');
         const decipher = await keymaster.decrypt(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -1792,32 +1833,32 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
-        const carol = await keymaster.createId('Carol');
-        await keymaster.createId('Victor');
+        const alice = await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
+        const carol = await keymaster.createId('Carol', 'local');
+        await keymaster.createId('Victor', 'local');
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema);
-        const credential2 = await keymaster.createCredential(mockSchema);
+        const credential1 = await keymaster.createCredential(mockSchema, 'local');
+        const credential2 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const bc2 = await keymaster.bindCredential(credential2, carol);
 
-        const vc1 = await keymaster.issueCredential(bc1);
-        const vc2 = await keymaster.issueCredential(bc2);
+        const vc1 = await keymaster.issueCredential(bc1, 'local');
+        const vc2 = await keymaster.issueCredential(bc2, 'local');
 
         keymaster.setCurrentId('Bob');
 
-        const credential3 = await keymaster.createCredential(mockSchema);
-        const credential4 = await keymaster.createCredential(mockSchema);
+        const credential3 = await keymaster.createCredential(mockSchema, 'local');
+        const credential4 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc3 = await keymaster.bindCredential(credential3, carol);
         const bc4 = await keymaster.bindCredential(credential4, carol);
 
-        const vc3 = await keymaster.issueCredential(bc3);
-        const vc4 = await keymaster.issueCredential(bc4);
+        const vc3 = await keymaster.issueCredential(bc3, 'local');
+        const vc4 = await keymaster.issueCredential(bc4, 'local');
 
         keymaster.setCurrentId('Carol');
 
@@ -1848,10 +1889,10 @@ describe('verifyResponse', () => {
                 },
             ]
         };
-        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeDid = await keymaster.createChallenge(challenge, 'local');
 
         keymaster.setCurrentId('Carol');
-        const vpDid = await keymaster.createResponse(challengeDid);
+        const vpDid = await keymaster.createResponse(challengeDid, 'local');
         const data = await keymaster.decryptJSON(vpDid);
 
         expect(data.challenge).toBe(challengeDid);

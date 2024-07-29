@@ -105,10 +105,10 @@ async function verifyCreateAsset(operation) {
         throw exceptions.INVALID_OPERATION;
     }
 
-    const doc = await resolveDID(operation.signature.signer, { atTime: operation.signature.signed });
+    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw exceptions.INVALID_OPERATION;
+        throw exceptions.INVALID_REGISTRY;
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -265,7 +265,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { atTime: operation.signature.signed });
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 

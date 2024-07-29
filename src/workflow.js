@@ -24,10 +24,10 @@ async function runWorkflow() {
     await gatekeeper.start(db_json);
     await keymaster.start(gatekeeper, db_wallet);
 
-    const alice = await keymaster.createId('Alice');
-    const bob = await keymaster.createId('Bob');
-    const carol = await keymaster.createId('Carol');
-    const victor = await keymaster.createId('Victor');
+    const alice = await keymaster.createId('Alice', 'local');
+    const bob = await keymaster.createId('Bob', 'local');
+    const carol = await keymaster.createId('Carol', 'local');
+    const victor = await keymaster.createId('Victor', 'local');
 
     console.log(`Created Alice  ${alice}`);
     console.log(`Created Bob    ${bob}`);
@@ -36,8 +36,8 @@ async function runWorkflow() {
 
     keymaster.setCurrentId('Alice');
 
-    const credential1 = await keymaster.createCredential(mockSchema);
-    const credential2 = await keymaster.createCredential(mockSchema);
+    const credential1 = await keymaster.createCredential(mockSchema, 'local');
+    const credential2 = await keymaster.createCredential(mockSchema, 'local');
 
     console.log(`Alice created credential1  ${credential1}`);
     console.log(`Alice created credential2  ${credential2}`);
@@ -45,16 +45,16 @@ async function runWorkflow() {
     const bc1 = await keymaster.bindCredential(credential1, carol);
     const bc2 = await keymaster.bindCredential(credential2, carol);
 
-    const vc1 = await keymaster.issueCredential(bc1);
-    const vc2 = await keymaster.issueCredential(bc2);
+    const vc1 = await keymaster.issueCredential(bc1, 'local');
+    const vc2 = await keymaster.issueCredential(bc2, 'local');
 
     console.log(`Alice issued vc1 for Carol ${vc1}`);
     console.log(`Alice issued vc2 for Carol ${vc2}`);
 
     keymaster.setCurrentId('Bob');
 
-    const credential3 = await keymaster.createCredential(mockSchema);
-    const credential4 = await keymaster.createCredential(mockSchema);
+    const credential3 = await keymaster.createCredential(mockSchema, 'local');
+    const credential4 = await keymaster.createCredential(mockSchema, 'local');
 
     console.log(`Bob created credential3  ${credential3}`);
     console.log(`Bob created credential4  ${credential4}`);
@@ -62,8 +62,8 @@ async function runWorkflow() {
     const bc3 = await keymaster.bindCredential(credential3, carol);
     const bc4 = await keymaster.bindCredential(credential4, carol);
 
-    const vc3 = await keymaster.issueCredential(bc3);
-    const vc4 = await keymaster.issueCredential(bc4);
+    const vc3 = await keymaster.issueCredential(bc3, 'local');
+    const vc4 = await keymaster.issueCredential(bc4, 'local');
 
     console.log(`Bob issued vc3 for Carol ${vc3}`);
     console.log(`Bob issued vc4 for Carol ${vc4}`);
@@ -99,11 +99,11 @@ async function runWorkflow() {
             },
         ]
     };
-    const challengeDid = await keymaster.createChallenge(mockChallenge);
+    const challengeDid = await keymaster.createChallenge(mockChallenge, 'local');
     console.log(`Victor created challenge ${challengeDid}`);
 
     keymaster.setCurrentId('Carol');
-    const vpDid = await keymaster.createResponse(challengeDid);
+    const vpDid = await keymaster.createResponse(challengeDid, 'local');
     console.log(`Carol created response for Victor ${vpDid}`);
 
     keymaster.setCurrentId('Victor');
@@ -145,7 +145,6 @@ async function runWorkflow() {
     console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
 
     keymaster.stop();
-
 }
 
 async function main() {

@@ -394,23 +394,36 @@ function hdKeyPair() {
     return cipher.generateJwk(hdkey.privateKey);
 }
 
-function fetchKeyPair(name = null) {
+async function fetchKeyPair(name = null) {
     const wallet = loadWallet();
     const id = fetchId(name);
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const path = `m/44'/0'/${id.account}'/0/${id.index}`;
-    const didkey = hdkey.derive(path);
+    const doc = await resolveDID(id.did, { confirm: true });
+    const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
 
-    return cipher.generateJwk(didkey.privateKey);
+    for (let i = id.index; i >= 0; i--) {
+        const path = `m/44'/0'/${id.account}'/0/${i}`;
+        const didkey = hdkey.derive(path);
+        const keypair = cipher.generateJwk(didkey.privateKey);
+
+        if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
+            keypair.publicJwk.y === confirmedPublicKeyJwk.y
+        )
+        {
+            return keypair;
+        }
+    }
+
+    return null;
 }
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
-    const keypair = fetchKeyPair();
-    const doc = await resolveDID(did);
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = encryptForSender ? cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg) : null;
-    const cipher_receiver = cipher.encryptMessage(publicJwk, keypair.privateJwk, msg);
+    const senderKeypair = await fetchKeyPair();
+    const doc = await resolveDID(did, { confirm: true });
+    const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
     return await createAsset({
@@ -431,18 +444,19 @@ export async function decrypt(did) {
         throw exceptions.INVALID_PARAMETER;
     }
 
-    const doc = await resolveDID(crypt.sender, { atTime: crypt.created });
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const doc = await resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
+    const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
 
+    // Try all private keys for this ID, starting with the most recent and working backward
     let index = id.index;
     while (index >= 0) {
         const path = `m/44'/0'/${id.account}'/0/${index}`;
         const didkey = hdkey.derive(path);
-        const keypair = cipher.generateJwk(didkey.privateKey);
+        const receiverKeypair = cipher.generateJwk(didkey.privateKey);
         try {
-            return cipher.decryptMessage(publicJwk, keypair.privateJwk, ciphertext);
+            return cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
         }
         catch (error) {
             index -= 1;
@@ -465,7 +479,7 @@ export async function decryptJSON(did) {
 export async function addSignature(obj, controller = null) {
     // Fetches current ID if name is missing
     const id = fetchId(controller);
-    const keypair = fetchKeyPair(controller);
+    const keypair = await fetchKeyPair(controller);
 
     try {
         const msgHash = cipher.hashJSON(obj);
@@ -861,9 +875,9 @@ export async function testAgent(id) {
     return doc?.mdip?.type === 'agent';
 }
 
-export async function createCredential(schema) {
+export async function createCredential(schema, registry) {
     // TBD validate schema
-    return createAsset(schema);
+    return createAsset(schema, registry);
 }
 
 export async function bindCredential(schemaId, subjectId, validUntil = null) {
@@ -1010,7 +1024,7 @@ export async function unpublishCredential(did) {
     throw exceptions.INVALID_PARAMETER;
 }
 
-export async function createChallenge(challenge) {
+export async function createChallenge(challenge, registry = ephemeralRegistry) {
 
     if (!challenge) {
         challenge = { credentials: [] };
@@ -1030,7 +1044,7 @@ export async function createChallenge(challenge) {
         throw exceptions.INVALID_PARAMETER;
     }
 
-    return createAsset(challenge, ephemeralRegistry);
+    return createAsset(challenge, registry);
 }
 
 async function findMatchingCredential(credential) {
@@ -1075,7 +1089,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did) {
+export async function createResponse(did, registry = ephemeralRegistry) {
     const challenge = lookupDID(did);
 
     if (!challenge) {
@@ -1108,7 +1122,7 @@ export async function createResponse(did) {
 
     for (let vcDid of matches) {
         const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, requestor);
+        const vpDid = await encrypt(plaintext, requestor, true, registry);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -1127,7 +1141,7 @@ export async function createResponse(did) {
         ephemeral: { validUntil: expires.toISOString() }
     };
 
-    return await encryptJSON(response, requestor, true, ephemeralRegistry);
+    return await encryptJSON(response, requestor, true, registry);
 }
 
 export async function verifyResponse(responseDID, challengeDID) {
