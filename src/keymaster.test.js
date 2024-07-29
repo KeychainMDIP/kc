@@ -561,6 +561,22 @@ describe('rotateKeys', () => {
 
         expect(updated).toBe(rotations + 1);
     });
+
+
+    it('should raise an exception if latest version is not confirmed', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice', 'TESS');
+        await keymaster.rotateKeys();
+
+        try {
+            await keymaster.rotateKeys();
+            throw exceptions.EXPECTED_EXCEPTION;;
+        }
+        catch (error) {
+            expect(error.message).toBe('Cannot rotate keys');
+        }
+    });
 });
 
 describe('addName', () => {
