@@ -1022,7 +1022,6 @@ describe('decrypt', () => {
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
         const encryptDid = await keymaster.encrypt(msg, did, true, 'hyperswarm');
-        await keymaster.rotateKeys();
         const decipher = await keymaster.decrypt(encryptDid);
 
         expect(decipher).toBe(msg);

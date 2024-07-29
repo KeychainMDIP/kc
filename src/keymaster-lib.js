@@ -420,7 +420,7 @@ async function fetchKeyPair(name = null) {
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
-    const doc = await resolveDID(did, { confirmed: true });
+    const doc = await resolveDID(did, { confirm: true });
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
@@ -444,7 +444,7 @@ export async function decrypt(did) {
         throw exceptions.INVALID_PARAMETER;
     }
 
-    const doc = await resolveDID(crypt.sender, { atTime: crypt.created });
+    const doc = await resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
     const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;

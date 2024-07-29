@@ -281,7 +281,8 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw exceptions.EXPECTED_EXCEPTION;
         } catch (error) {
-            expect(error).toBe(exceptions.INVALID_OPERATION);
+            // Can't let local IDs create assets on other registries
+            expect(error).toBe(exceptions.INVALID_REGISTRY);
         }
 
         try {
