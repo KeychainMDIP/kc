@@ -752,6 +752,11 @@ export async function rotateKeys() {
     const didkey = hdkey.derive(path);
     const keypair = cipher.generateJwk(didkey.privateKey);
     const doc = await resolveDID(id.did);
+
+    if (!doc.didDocumentMetadata.confirmed) {
+        throw new Error('Cannot rotate keys');
+    }
+
     const vmethod = doc.didDocument.verificationMethod[0];
 
     vmethod.id = `#key-${nextIndex + 1}`;
