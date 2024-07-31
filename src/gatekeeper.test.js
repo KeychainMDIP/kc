@@ -1552,4 +1552,25 @@ describe('verifyDb', () => {
 
         expect(invalid).toBe(0);
     });
+
+    it('should removed invalid DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const doc = await gatekeeper.resolveDID(assetDID);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, assetDID, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+        expect(ok).toBe(true);
+
+        // Can't verify a DID that has been updated if the controller is removed
+        await gatekeeper.removeDIDs([agentDID]);
+        const invalid = await gatekeeper.verifyDb(false);
+
+        expect(invalid).toBe(1);
+    });
 });
