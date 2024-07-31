@@ -20,7 +20,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite = false) {
     if (!overwrite && window.localStorage.getItem(walletName)) {
-        throw exceptions.UPDATE_FAILED;
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 
     try {
@@ -44,6 +44,6 @@ export function newWallet(mnemonic, overwrite = false) {
         return wallet;
     }
     catch (error) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 }

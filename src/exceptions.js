@@ -1,11 +1,11 @@
-export const INVALID_DID = new Error('Invalid DID');
-export const UNKNOWN_DID = new Error('Unknown DID');
-export const UNKNOWN_ID = new Error('Unknown ID');
-export const INVALID_UPDATE = new Error('Invalid update');
-export const INVALID_OPERATION = new Error('Invalid operation');
-export const INVALID_VERSION = new Error('Invalid version');
-export const INVALID_TYPE = new Error('Invalid type');
-export const INVALID_REGISTRY = new Error('Invalid registry');
-export const INVALID_PARAMETER = new Error('Invalid parameter');
-export const UPDATE_FAILED = new Error('Update failed');
-export const EXPECTED_EXCEPTION = new Error('Expected to throw an exception');
+export const INVALID_DID = 'Invalid DID';
+export const INVALID_OPERATION = 'Invalid operation';
+export const INVALID_VERSION = 'Invalid version';
+export const INVALID_TYPE = 'Invalid type';
+export const INVALID_REGISTRY = 'Invalid registry';
+
+export const UNKNOWN_ID = 'Unknown ID';
+export const NO_CURRENT_ID = 'No current ID';
+export const INVALID_PARAMETER = 'Invalid parameter';
+export const UPDATE_FAILED = 'Update failed';
+export const EXPECTED_EXCEPTION = 'Expected to throw an exception';

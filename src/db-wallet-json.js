@@ -26,7 +26,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite) {
     if (fs.existsSync(walletName) && !overwrite) {
-        throw exceptions.UPDATE_FAILED;
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 
     try {
@@ -50,6 +50,6 @@ export function newWallet(mnemonic, overwrite) {
         return wallet;
     }
     catch (error) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 }
