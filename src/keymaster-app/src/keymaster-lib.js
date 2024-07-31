@@ -376,7 +376,7 @@ function fetchId(id) {
         idInfo = wallet.ids[wallet.current];
 
         if (!idInfo) {
-            throw new Error(exceptions.UNKNOWN_ID);
+            throw new Error(exceptions.NO_CURRENT_ID);
         }
     }
 

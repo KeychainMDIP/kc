@@ -5,7 +5,8 @@
   "description": "",
   "main": "gatekeeper-api.js",
   "scripts": {
-    "start": "node gatekeeper-api.js",
+    "gatekeeper": "node src/gatekeeper-api.js",
+    "keymaster": "node src/keymaster-api.js",
     "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose --coverage",
     "lint": "eslint ."
   },

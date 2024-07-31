@@ -16,6 +16,7 @@ let ipfs = null;
 
 const confirmedCache = {};
 const unconfirmedCache = {};
+let eventsCache = {};
 
 export async function listRegistries() {
     return validRegistries;
@@ -64,6 +65,7 @@ export async function verifyDb(chatty = true) {
             }
             invalid += 1;
             await db.deleteEvents(did);
+            delete eventsCache[did];
         }
     }
 
@@ -77,6 +79,7 @@ export async function verifyDb(chatty = true) {
 // For testing purposes
 export async function resetDb() {
     await db.resetDb();
+    eventsCache = {};
 }
 
 export async function anchorSeed(seed) {
@@ -288,6 +291,20 @@ async function verifyUpdate(operation, doc) {
     return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
+async function getEvents(did) {
+    let events = eventsCache[did];
+
+    if (!events) {
+        events = await db.getEvents(did);
+
+        if (events.length > 0) {
+            eventsCache[did] = events;
+        }
+    }
+
+    return JSON.parse(JSON.stringify(events));
+}
+
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
     const confirmedCacheable = !!confirm && !atTime && !atVersion;
     const unconfirmedCacheable = !confirm && !atTime && !atVersion;
@@ -300,7 +317,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         return JSON.parse(JSON.stringify(unconfirmedCache[did]));
     }
 
-    const events = await db.getEvents(did);
+    const events = await getEvents(did);
 
     if (events.length === 0) {
         throw new Error(exceptions.INVALID_DID);
@@ -413,6 +430,7 @@ export async function updateDID(operation) {
 
         delete confirmedCache[operation.did];
         delete unconfirmedCache[operation.did];
+        delete eventsCache[operation.did];
 
         if (registry === 'local') {
             return true;
@@ -469,14 +487,14 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
 }
 
 export async function exportDID(did) {
-    return await db.getEvents(did);
+    return await getEvents(did);
 }
 
 export async function exportDIDs(dids) {
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await db.getEvents(did));
+        batch.push(await getEvents(did));
     }
 
     return batch;
@@ -489,6 +507,7 @@ export async function removeDIDs(dids) {
 
     for (const did of dids) {
         await db.deleteEvents(did);
+        delete eventsCache[did];
     }
 
     return true;
@@ -584,6 +603,7 @@ export async function importEvent(event) {
             db.setEvents(did, current);
             delete confirmedCache[did];
             delete unconfirmedCache[did];
+            delete eventsCache[did];
             return true;
         }
 
@@ -598,6 +618,8 @@ export async function importEvent(event) {
 
     delete confirmedCache[did];
     delete unconfirmedCache[did];
+    delete eventsCache[did];
+
     return true;
 }
 

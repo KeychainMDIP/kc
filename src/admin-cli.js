@@ -107,6 +107,10 @@ program
             await gatekeeper.getDIDs({ dids: batch, confirm: false, resolve: true });
             console.timeEnd('getDIDs({ dids: batch, confirm: false, resolve: true })');
 
+            console.time('exportDIDs');
+            await gatekeeper.exportDIDs(dids);
+            console.timeEnd('exportDIDs');
+
             if (full) {
                 console.time('resolveDID(did, { verify: true })');
                 for (const did of dids) {
