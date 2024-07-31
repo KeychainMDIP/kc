@@ -349,7 +349,7 @@ export function setCurrentId(name) {
         saveWallet(wallet);
     }
     else {
-        throw exceptions.UNKNOWN_ID;
+        throw new Error(exceptions.UNKNOWN_ID);
     }
 }
 
@@ -376,12 +376,12 @@ function fetchId(id) {
         idInfo = wallet.ids[wallet.current];
 
         if (!idInfo) {
-            throw exceptions.UNKNOWN_ID;
+            throw new Error(exceptions.UNKNOWN_ID);
         }
     }
 
     if (!idInfo) {
-        throw exceptions.UNKNOWN_ID;
+        throw new Error(exceptions.UNKNOWN_ID);
     }
 
     return idInfo;
@@ -408,8 +408,7 @@ async function fetchKeyPair(name = null) {
 
         if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
             keypair.publicJwk.y === confirmedPublicKeyJwk.y
-        )
-        {
+        ) {
             return keypair;
         }
     }
@@ -441,7 +440,7 @@ export async function decrypt(did) {
     const crypt = await resolveAsset(did);
 
     if (!crypt || !crypt.cipher_hash) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const doc = await resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
@@ -496,7 +495,7 @@ export async function addSignature(obj, controller = null) {
         };
     }
     catch (error) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 }
 
@@ -629,7 +628,7 @@ export async function resolveAsset(did) {
 export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const account = wallet.counter;
@@ -692,7 +691,7 @@ export function removeId(name) {
         return true;
     }
     else {
-        throw exceptions.UNKNOWN_ID;
+        throw new Error(exceptions.UNKNOWN_ID);
     }
 }
 
@@ -739,7 +738,7 @@ export async function recoverId(did) {
         return `Recovered ${data.name}!`;
     }
     catch {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 }
 
@@ -789,11 +788,11 @@ export function addName(name, did) {
     }
 
     if (Object.keys(wallet.names).includes(name)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (Object.keys(wallet.ids).includes(name)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     wallet.names[name] = did;
@@ -820,7 +819,7 @@ export function lookupDID(name) {
         }
     }
     catch {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const wallet = loadWallet();
@@ -833,7 +832,7 @@ export function lookupDID(name) {
         return wallet.ids[name].did;
     }
 
-    throw exceptions.UNKNOWN_DID;
+    throw new Error(exceptions.UNKNOWN_ID);
 }
 
 export async function createAsset(data, registry = defaultRegistry, owner = null) {
@@ -847,7 +846,7 @@ export async function createAsset(data, registry = defaultRegistry, owner = null
     }
 
     if (isEmpty(data)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const id = fetchId(owner);
@@ -911,7 +910,7 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     const id = fetchId();
 
     if (vc.issuer !== id.did) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     // Don't allow credentials that will be garbage-collected
@@ -959,7 +958,7 @@ export async function acceptCredential(did) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw exceptions.INVALID_PARAMETER;
+            throw new Error(exceptions.INVALID_PARAMETER);
         }
 
         return addToHeld(credential);
@@ -987,7 +986,7 @@ export async function publishCredential(did, reveal = false) {
     const vc = await decryptJSON(credential);
 
     if (vc.credentialSubject.id !== id.did) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const doc = await resolveDID(id.did);
@@ -1009,7 +1008,7 @@ export async function publishCredential(did, reveal = false) {
         return vc;
     }
     else {
-        throw exceptions.UPDATE_FAILED;
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 }
 
@@ -1026,7 +1025,7 @@ export async function unpublishCredential(did) {
         return `OK credential ${did} removed from manifest`;
     }
 
-    throw exceptions.INVALID_PARAMETER;
+    throw new Error(exceptions.INVALID_PARAMETER);
 }
 
 export async function createChallenge(challenge, registry = ephemeralRegistry) {
@@ -1042,11 +1041,11 @@ export async function createChallenge(challenge, registry = ephemeralRegistry) {
     }
 
     if (!challenge.credentials) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!Array.isArray(challenge.credentials)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     return createAsset(challenge, registry);
@@ -1098,7 +1097,7 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     const challenge = lookupDID(did);
 
     if (!challenge) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const doc = await resolveDID(challenge);
@@ -1106,7 +1105,7 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     const { credentials } = await resolveAsset(challenge);
 
     if (!credentials) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const matches = [];
@@ -1120,7 +1119,7 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     }
 
     if (!matches) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const pairs = [];
@@ -1154,7 +1153,7 @@ export async function verifyResponse(responseDID, challengeDID) {
     challengeDID = lookupDID(challengeDID);
 
     if (!responseDID) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const response = await decryptJSON(responseDID);
@@ -1232,7 +1231,7 @@ export async function getGroup(id) {
     const isGroup = await groupTest(id);
 
     if (!isGroup) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     return resolveAsset(id);
@@ -1244,7 +1243,7 @@ export async function groupAdd(groupId, memberId) {
     const data = doc.didDocumentData;
 
     if (!data.members || !Array.isArray(data.members)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const memberDID = lookupDID(memberId);
@@ -1254,7 +1253,7 @@ export async function groupAdd(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     // If already a member, return immediately
@@ -1264,14 +1263,14 @@ export async function groupAdd(groupId, memberId) {
 
     // Can't add a group to itself
     if (memberDID === groupDID) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     // Can't add a mutual membership relation
     const isMember = await groupTest(memberId, groupId);
 
     if (isMember) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const members = new Set(data.members);
@@ -1281,7 +1280,7 @@ export async function groupAdd(groupId, memberId) {
     const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw exceptions.UPDATE_FAILED;
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 
     return data;
@@ -1293,7 +1292,7 @@ export async function groupRemove(groupId, memberId) {
     const data = doc.didDocumentData;
 
     if (!data.members) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const memberDID = lookupDID(memberId);
@@ -1303,7 +1302,7 @@ export async function groupRemove(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     // If not already a member, return immediately
@@ -1318,7 +1317,7 @@ export async function groupRemove(groupId, memberId) {
     const ok = await updateDID(groupDID, doc);
 
     if (!ok) {
-        throw exceptions.UPDATE_FAILED;
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 
     return data;
@@ -1383,14 +1382,14 @@ export const defaultSchema = {
 function validateSchema(schema) {
     try {
         if (!Object.keys(schema).includes('$schema')) {
-            throw exceptions.INVALID_PARAMETER;
+            throw new Error(exceptions.INVALID_PARAMETER);
         }
 
         // Attempt to instantiate the schema
         JSONSchemaFaker.generate(schema);
     }
     catch {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     return true;
@@ -1438,7 +1437,7 @@ export async function createTemplate(id) {
     const isSchema = await testSchema(id);
 
     if (!isSchema) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const schemaDID = lookupDID(id);
@@ -1467,48 +1466,48 @@ export async function pollTemplate() {
 
 export async function createPoll(poll) {
     if (poll.type !== 'poll') {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (poll.version !== 1) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!poll.description) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!poll.options || !Array.isArray(poll.options) || poll.options.length < 2 || poll.options.length > 10) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!poll.roster) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     try {
         const isValidGroup = await groupTest(poll.roster);
 
         if (!isValidGroup) {
-            throw exceptions.INVALID_PARAMETER;
+            throw new Error(exceptions.INVALID_PARAMETER);
         }
     }
     catch {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!poll.deadline) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const deadline = new Date(poll.deadline);
 
     if (isNaN(deadline.getTime())) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (deadline < new Date()) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     return createAsset(poll);
@@ -1521,7 +1520,7 @@ export async function viewPoll(poll) {
     const data = doc.didDocumentData;
 
     if (!data || !data.options || !data.deadline) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let hasVoted = false;
@@ -1605,11 +1604,11 @@ export async function votePoll(poll, vote, spoil = false) {
     const owner = doc.didDocument.controller;
 
     if (!eligible) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (expired) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let ballot;
@@ -1625,7 +1624,7 @@ export async function votePoll(poll, vote, spoil = false) {
         vote = parseInt(vote);
 
         if (!Number.isInteger(vote) || vote < 1 || vote > max) {
-            throw exceptions.INVALID_PARAMETER;
+            throw new Error(exceptions.INVALID_PARAMETER);
         }
 
         ballot = {
@@ -1651,11 +1650,11 @@ export async function updatePoll(ballot) {
         dataBallot = await decryptJSON(didBallot);
 
         if (!dataBallot.poll || !dataBallot.vote) {
-            throw exceptions.INVALID_PARAMETER;
+            throw new Error(exceptions.INVALID_PARAMETER);
         }
     }
     catch {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const didPoll = lookupDID(dataBallot.poll);
@@ -1664,26 +1663,26 @@ export async function updatePoll(ballot) {
     const didOwner = docPoll.didDocument.controller;
 
     if (id.did !== didOwner) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const eligible = await groupTest(dataPoll.roster, didVoter);
 
     if (!eligible) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const expired = (Date(dataPoll.deadline) > new Date());
 
     if (expired) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const max = dataPoll.options.length;
     const vote = parseInt(dataBallot.vote);
 
     if (!vote || vote < 0 || vote > max) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!dataPoll.ballots) {
@@ -1705,13 +1704,13 @@ export async function publishPoll(poll, reveal = false) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const view = await viewPoll(poll);
 
     if (!view.results.final) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     if (!reveal) {
@@ -1730,7 +1729,7 @@ export async function unpublishPoll(poll) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     delete doc.didDocumentData.results;

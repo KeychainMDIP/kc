@@ -86,11 +86,11 @@ export async function anchorSeed(seed) {
 
 async function verifyCreateAgent(operation) {
     if (!operation.signature) {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.publicJwk) {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -102,13 +102,13 @@ async function verifyCreateAgent(operation) {
 
 async function verifyCreateAsset(operation) {
     if (operation.controller !== operation.signature?.signer) {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw exceptions.INVALID_REGISTRY;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -121,28 +121,28 @@ async function verifyCreateAsset(operation) {
 
 async function verifyCreate(operation) {
     if (operation?.type !== "create") {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.created) {
         // TBD ensure valid timestamp format
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.mdip) {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw exceptions.INVALID_VERSION;
+        throw new Error(exceptions.INVALID_VERSION);
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw exceptions.INVALID_TYPE;
+        throw new Error(exceptions.INVALID_TYPE);
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw exceptions.INVALID_REGISTRY;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     if (operation.mdip.type === 'agent') {
@@ -153,7 +153,7 @@ async function verifyCreate(operation) {
         return verifyCreateAsset(operation);
     }
 
-    throw exceptions.INVALID_OPERATION;
+    throw new Error(exceptions.INVALID_OPERATION);
 }
 
 export async function createDID(operation) {
@@ -183,7 +183,7 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 }
 
@@ -303,7 +303,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     const events = await db.getEvents(did);
 
     if (events.length === 0) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const anchor = events[0];
@@ -311,7 +311,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     let mdip = doc?.mdip;
 
     if (!mdip) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
@@ -343,7 +343,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             const valid = await verifyUpdate(operation, doc);
 
             if (!valid) {
-                throw exceptions.INVALID_UPDATE;
+                throw new Error(exceptions.INVALID_OPERATION);
             }
         }
 
@@ -371,7 +371,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
         else {
             if (verify) {
-                throw exceptions.INVALID_OPERATION;
+                throw new Error(exceptions.INVALID_OPERATION);
             }
 
             console.error(`unknown type ${operation.type}`);
@@ -484,7 +484,7 @@ export async function exportDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     for (const did of dids) {
@@ -533,7 +533,7 @@ async function importUpdateEvent(event) {
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let did;
@@ -547,11 +547,11 @@ export async function importEvent(event) {
         }
 
         if (!did) {
-            throw exceptions.INVALID_OPERATION;
+            throw new Error(exceptions.INVALID_OPERATION);
         }
     }
     catch {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     const current = await exportDID(did);
@@ -560,7 +560,7 @@ export async function importEvent(event) {
         const ok = await importCreateEvent(event);
 
         if (!ok) {
-            throw exceptions.INVALID_OPERATION;
+            throw new Error(exceptions.INVALID_OPERATION);
         }
 
         return true;
@@ -593,7 +593,7 @@ export async function importEvent(event) {
     const ok = await importUpdateEvent(event);
 
     if (!ok) {
-        throw exceptions.INVALID_OPERATION;
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     delete confirmedCache[did];
@@ -603,7 +603,7 @@ export async function importEvent(event) {
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw exceptions.INVALID_PARAMETER;
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let verified = 0;
@@ -638,7 +638,7 @@ export async function importBatch(batch) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw exceptions.INVALID_REGISTRY;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     return db.getQueue(registry);
@@ -646,7 +646,7 @@ export async function getQueue(registry) {
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw exceptions.INVALID_REGISTRY;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     return db.clearQueue(registry, events);

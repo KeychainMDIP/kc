@@ -40,7 +40,7 @@ export async function addEvent(did, event) {
     const db = loadDb();
 
     if (!did) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const suffix = did.split(':').pop();
@@ -75,7 +75,7 @@ export async function getEvents(did) {
 
 export async function setEvents(did, events) {
     if (!did) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const db = loadDb();

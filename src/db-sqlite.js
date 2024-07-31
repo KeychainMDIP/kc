@@ -35,7 +35,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const events = await getEvents(did);
@@ -50,7 +50,7 @@ export async function addEvent(did, event) {
 
 export async function getEvents(did) {
     if (!did) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     try {
@@ -67,7 +67,7 @@ export async function getEvents(did) {
 
 export async function deleteEvents(did) {
     if (!did) {
-        throw exceptions.INVALID_DID;
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const id = did.split(':').pop();
