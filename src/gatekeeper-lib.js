@@ -13,9 +13,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS'];
 let db = null;
 let helia = null;
 let ipfs = null;
-
-const confirmedCache = {};
-const unconfirmedCache = {};
 let eventsCache = {};
 
 export async function listRegistries() {
@@ -306,17 +303,6 @@ async function getEvents(did) {
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
-    const confirmedCacheable = !!confirm && !atTime && !atVersion;
-    const unconfirmedCacheable = !confirm && !atTime && !atVersion;
-
-    if (confirmedCacheable && !verify && confirmedCache[did]) {
-        return JSON.parse(JSON.stringify(confirmedCache[did]));
-    }
-
-    if (unconfirmedCacheable && !verify && unconfirmedCache[did]) {
-        return JSON.parse(JSON.stringify(unconfirmedCache[did]));
-    }
-
     const events = await getEvents(did);
 
     if (events.length === 0) {
@@ -399,14 +385,6 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
-    if (confirmedCacheable) {
-        confirmedCache[did] = doc;
-    }
-
-    if (unconfirmedCacheable) {
-        unconfirmedCache[did] = doc;
-    }
-
     return JSON.parse(JSON.stringify(doc));
 }
 
@@ -428,8 +406,6 @@ export async function updateDID(operation) {
             operation: operation
         });
 
-        delete confirmedCache[operation.did];
-        delete unconfirmedCache[operation.did];
         delete eventsCache[operation.did];
 
         if (registry === 'local') {
@@ -601,8 +577,6 @@ export async function importEvent(event) {
             current[index] = event;
 
             db.setEvents(did, current);
-            delete confirmedCache[did];
-            delete unconfirmedCache[did];
             delete eventsCache[did];
             return true;
         }
@@ -616,8 +590,6 @@ export async function importEvent(event) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    delete confirmedCache[did];
-    delete unconfirmedCache[did];
     delete eventsCache[did];
 
     return true;
