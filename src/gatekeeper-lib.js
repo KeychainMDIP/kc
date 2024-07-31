@@ -35,7 +35,6 @@ export async function stop() {
 
 export async function verifyDID(did) {
     await resolveDID(did, { verify: true });
-    await resolveDID(did, { confirm: true });
 }
 
 export async function verifyDb(chatty = true) {
