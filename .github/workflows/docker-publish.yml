@@ -47,19 +47,15 @@ jobs:
         include:
           - dockerfile: Dockerfile.gatekeeper
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:release
           - dockerfile: Dockerfile.keymaster
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:release
           - dockerfile: Dockerfile.hyperswarm
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           - dockerfile: Dockerfile.tess
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:release
     permissions:
       contents: read
