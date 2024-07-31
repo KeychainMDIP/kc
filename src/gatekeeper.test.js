@@ -128,6 +128,104 @@ async function createAssetOp(agent, keypair, registry = 'local') {
     };
 }
 
+describe('generateDoc', () => {
+    it('should generate an agent doc from a valid anchor', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const doc = await gatekeeper.generateDoc(agentOp);
+        const expected = {
+            // eslint-disable-next-line
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    // eslint-disable-next-line
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: expect.any(String),
+                verificationMethod: [
+                    {
+                        controller: expect.any(String),
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should generate an asset doc from a valid anchor', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agent, keypair);
+        const doc = await gatekeeper.generateDoc(assetOp);
+        const expected = {
+            // eslint-disable-next-line
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    // eslint-disable-next-line
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                id: expect.any(String),
+                controller: agent,
+            },
+            didDocumentData: assetOp.data,
+            didDocumentMetadata: {
+                created: expect.any(String),
+            },
+            mdip: assetOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should return an empty doc if mdip missing from anchor', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        delete agentOp.mdip;
+        const doc = await gatekeeper.generateDoc(agentOp);
+
+        expect(doc).toStrictEqual({});
+    });
+
+    it('should return an empty doc if mdip version invalid', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 0);
+        const doc = await gatekeeper.generateDoc(agentOp);
+
+        expect(doc).toStrictEqual({});
+    });
+
+    it('should return an empty doc if mdip type invalid', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        agentOp.mdip.type = 'mock';
+        const doc = await gatekeeper.generateDoc(agentOp);
+
+        expect(doc).toStrictEqual({});
+    });
+
+    it('should return an empty doc if mdip registry invalid', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'mock');
+        const doc = await gatekeeper.generateDoc(agentOp);
+
+        expect(doc).toStrictEqual({});
+    });
+});
+
 describe('createDID', () => {
     afterEach(() => {
         mockFs.restore();

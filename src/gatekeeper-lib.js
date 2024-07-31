@@ -186,7 +186,7 @@ export async function createDID(operation) {
     }
 }
 
-async function generateDoc(anchor) {
+export async function generateDoc(anchor) {
     let doc = {};
     try {
         if (!anchor?.mdip) {
