@@ -60,9 +60,9 @@ program
     });
 
 program
-    .command('perf-test')
+    .command('perf-test [full]')
     .description('DID resolution performance test')
-    .action(async () => {
+    .action(async (full) => {
         try {
             console.time('getDIDs');
             const dids = await gatekeeper.getDIDs();
@@ -76,17 +76,48 @@ program
             }
             console.timeEnd('resolveDID(did, { confirm: true })');
 
+            let batch = [];
+            console.time('getDIDs({ dids: batch, confirm: true, resolve: true })');
+            for (const did of dids) {
+                batch.push(did);
+
+                if (batch.length > 99) {
+                    await gatekeeper.getDIDs({ dids: batch, confirm: true, resolve: true });
+                    batch = [];
+                }
+            }
+            await gatekeeper.getDIDs({ dids: batch, confirm: true, resolve: true });
+            console.timeEnd('getDIDs({ dids: batch, confirm: true, resolve: true })');
+
             console.time('resolveDID(did, { confirm: false })');
             for (const did of dids) {
                 await gatekeeper.resolveDID(did, { confirm: false });
             }
             console.timeEnd('resolveDID(did, { confirm: false })');
 
-            console.time('resolveDID(did, { verify: true })');
+            console.time('getDIDs({ dids: batch, confirm: false, resolve: true })');
             for (const did of dids) {
-                await gatekeeper.resolveDID(did, { verify: true });
+                batch.push(did);
+
+                if (batch.length > 99) {
+                    await gatekeeper.getDIDs({ dids: batch, confirm: false, resolve: true });
+                    batch = [];
+                }
             }
-            console.timeEnd('resolveDID(did, { verify: true })');
+            await gatekeeper.getDIDs({ dids: batch, confirm: false, resolve: true });
+            console.timeEnd('getDIDs({ dids: batch, confirm: false, resolve: true })');
+
+            console.time('exportDIDs');
+            await gatekeeper.exportDIDs(dids);
+            console.timeEnd('exportDIDs');
+
+            if (full) {
+                console.time('resolveDID(did, { verify: true })');
+                for (const did of dids) {
+                    await gatekeeper.resolveDID(did, { verify: true });
+                }
+                console.timeEnd('resolveDID(did, { verify: true })');
+            }
         }
         catch (error) {
             console.error(error);
