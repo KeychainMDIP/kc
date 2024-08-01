@@ -16,6 +16,8 @@ RUN cd keymaster-app && npm ci
 
 COPY src/keymaster-app/public ./keymaster-app/public/
 COPY src/keymaster-app/src ./keymaster-app/src/
+COPY src/keymaster-lib.js ./keymaster-app/src/
+COPY src/exceptions.js ./keymaster-app/src/
 RUN cd keymaster-app && npm run build
 
 # Copy app

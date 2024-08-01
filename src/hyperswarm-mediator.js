@@ -101,11 +101,9 @@ async function createBatch() {
         return registry && registry !== 'local'
     });
 
-    const operations = nonlocalDIDs.flat()
+    return nonlocalDIDs.flat()
         .map(event => event.operation)
         .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
-
-    return operations;
 }
 
 function cacheBatch(batch) {

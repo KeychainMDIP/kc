@@ -1,4 +1,4 @@
-export default {
+const config = {
     transform: {},
     testEnvironment: 'node',
     moduleFileExtensions: ['js', 'mjs'],
@@ -8,3 +8,5 @@ export default {
         "/keymaster-app/"
     ],
 };
+
+export default config;

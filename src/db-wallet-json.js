@@ -1,5 +1,6 @@
 import fs from 'fs';
 import * as cipher from './cipher-lib.js';
+import * as exceptions from './exceptions.js';
 
 const dataFolder = 'data';
 const walletName = `${dataFolder}/wallet.json`;
@@ -25,7 +26,7 @@ export function loadWallet() {
 
 export function newWallet(mnemonic, overwrite) {
     if (fs.existsSync(walletName) && !overwrite) {
-        throw "Wallet already exists";
+        throw new Error(exceptions.UPDATE_FAILED);
     }
 
     try {
@@ -49,6 +50,6 @@ export function newWallet(mnemonic, overwrite) {
         return wallet;
     }
     catch (error) {
-        throw "Invalid mnemonic";
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 }

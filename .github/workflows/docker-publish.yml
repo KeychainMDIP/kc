@@ -47,19 +47,15 @@ jobs:
         include:
           - dockerfile: Dockerfile.gatekeeper
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:release
           - dockerfile: Dockerfile.keymaster
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:release
           - dockerfile: Dockerfile.hyperswarm
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
           - dockerfile: Dockerfile.tess
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:${{ needs.generate.outputs.CALVER }}
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tess-mediator:release
     permissions:
       contents: read
@@ -93,3 +89,13 @@ jobs:
           push: true
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ matrix.tags }}
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: ${{ matrix.tags }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'

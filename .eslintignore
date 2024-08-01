@@ -1,2 +1,3 @@
 data/
-keymaster-app/
+src/kc-app/build/
+src/keymaster-app/build/
