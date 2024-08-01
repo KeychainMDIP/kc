@@ -5,6 +5,7 @@ import * as gatekeeper from './gatekeeper-lib.js';
 import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
 import * as db_wallet from './db-wallet-json.js';
+import * as exceptions from './exceptions.js';
 
 beforeEach(async () => {
     db_json.start('mdip');
@@ -87,10 +88,10 @@ describe('newWallet', () => {
 
         try {
             keymaster.newWallet();
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Wallet already exists');
+            expect(error.message).toBe(exceptions.UPDATE_FAILED);
         }
     });
 
@@ -102,6 +103,18 @@ describe('newWallet', () => {
         const mnemonic2 = keymaster.decryptMnemonic();
 
         expect(mnemonic1 === mnemonic2).toBe(true);
+    });
+
+    it('should throw exception on invalid mnemonic', async () => {
+        mockFs({});
+
+        try {
+            keymaster.newWallet([]);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
     });
 });
 
@@ -206,9 +219,9 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Already have an ID named ${name}`);
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -259,9 +272,9 @@ describe('removeId', () => {
 
         try {
             keymaster.removeId(name2);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`No ID named ${name2}`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -294,10 +307,10 @@ describe('setCurrentId', () => {
 
         try {
             keymaster.setCurrentId('Alice');
-            throw "Expected to throw an exception";
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe(`Unknown ID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -395,10 +408,10 @@ describe('recoverId', () => {
 
         try {
             await keymaster.recoverId(did);
-            throw "Expected to throw an exception";
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Cannot recover ID');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -433,10 +446,10 @@ describe('testAgent', () => {
 
         try {
             await keymaster.testAgent();
-            throw "Expected to throw an exception";
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -445,10 +458,10 @@ describe('testAgent', () => {
 
         try {
             await keymaster.testAgent('mock');
-            throw "Expected to throw an exception";
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Unknown DID');
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -479,7 +492,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -500,15 +513,15 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
         const secrets = [];
         const msg = "Hi Bob!";
 
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encrypt(msg, bob);
+            const did = await keymaster.encrypt(msg, bob, true, 'local');
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -533,7 +546,7 @@ describe('rotateKeys', () => {
     it('should import DID with multiple key rotations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice', 'local');
         const rotations = 10;
 
         for (let i = 0; i < rotations; i++) {
@@ -547,6 +560,22 @@ describe('rotateKeys', () => {
         const { updated } = await keymaster.importDID(events);
 
         expect(updated).toBe(rotations + 1);
+    });
+
+
+    it('should raise an exception if latest version is not confirmed', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice', 'TESS');
+        await keymaster.rotateKeys();
+
+        try {
+            await keymaster.rotateKeys();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe('Cannot rotate keys');
+        }
     });
 });
 
@@ -576,10 +605,10 @@ describe('addName', () => {
         try {
             keymaster.addName('Jack', alice);
             keymaster.addName('Jack', bob);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Name already in use');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -590,10 +619,10 @@ describe('addName', () => {
 
         try {
             keymaster.addName('Alice', alice);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Name already in use');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -696,9 +725,9 @@ describe('resolveDID', () => {
 
         try {
             await keymaster.resolveDID('mock');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Unknown DID');
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -770,9 +799,9 @@ describe('createAsset', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
         }
     });
 
@@ -782,9 +811,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset();
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -794,9 +823,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -806,9 +835,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset([]);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -818,9 +847,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset({});
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -989,6 +1018,31 @@ describe('decrypt', () => {
         expect(decipher).toBe(msg);
     });
 
+    it('should decrypt a short message after rotating keys (confirmed)', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob', 'local');
+        const msg = 'Hi Bob!';
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'local');
+        await keymaster.rotateKeys();
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
+    it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob', 'hyperswarm');
+        const msg = 'Hi Bob!';
+        await keymaster.rotateKeys();
+        const encryptDid = await keymaster.encrypt(msg, did, true, 'hyperswarm');
+        const decipher = await keymaster.decrypt(encryptDid);
+
+        expect(decipher).toBe(msg);
+    });
+
     it('should decrypt a short message encrypted by another ID', async () => {
         mockFs({});
 
@@ -1095,9 +1149,9 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(mockJson);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
         }
     });
 
@@ -1108,9 +1162,9 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1281,10 +1335,10 @@ describe('issueCredential', () => {
 
         try {
             await keymaster.issueCredential(boundCredential);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid VC');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1376,10 +1430,10 @@ describe('revokeCredential', () => {
 
         try {
             await keymaster.revokeCredential(did);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Unknown ID');
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
 
     });
@@ -1526,26 +1580,26 @@ describe('createChallenge', () => {
 
         try {
             await keymaster.createChallenge([]);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             await keymaster.createChallenge({ credentials: 123 });
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             await keymaster.createChallenge({ mock: [] });
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid input');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -1779,32 +1833,32 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
-        const carol = await keymaster.createId('Carol');
-        await keymaster.createId('Victor');
+        const alice = await keymaster.createId('Alice', 'local');
+        const bob = await keymaster.createId('Bob', 'local');
+        const carol = await keymaster.createId('Carol', 'local');
+        await keymaster.createId('Victor', 'local');
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema);
-        const credential2 = await keymaster.createCredential(mockSchema);
+        const credential1 = await keymaster.createCredential(mockSchema, 'local');
+        const credential2 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const bc2 = await keymaster.bindCredential(credential2, carol);
 
-        const vc1 = await keymaster.issueCredential(bc1);
-        const vc2 = await keymaster.issueCredential(bc2);
+        const vc1 = await keymaster.issueCredential(bc1, 'local');
+        const vc2 = await keymaster.issueCredential(bc2, 'local');
 
         keymaster.setCurrentId('Bob');
 
-        const credential3 = await keymaster.createCredential(mockSchema);
-        const credential4 = await keymaster.createCredential(mockSchema);
+        const credential3 = await keymaster.createCredential(mockSchema, 'local');
+        const credential4 = await keymaster.createCredential(mockSchema, 'local');
 
         const bc3 = await keymaster.bindCredential(credential3, carol);
         const bc4 = await keymaster.bindCredential(credential4, carol);
 
-        const vc3 = await keymaster.issueCredential(bc3);
-        const vc4 = await keymaster.issueCredential(bc4);
+        const vc3 = await keymaster.issueCredential(bc3, 'local');
+        const vc4 = await keymaster.issueCredential(bc4, 'local');
 
         keymaster.setCurrentId('Carol');
 
@@ -1835,10 +1889,10 @@ describe('verifyResponse', () => {
                 },
             ]
         };
-        const challengeDid = await keymaster.createChallenge(challenge);
+        const challengeDid = await keymaster.createChallenge(challenge, 'local');
 
         keymaster.setCurrentId('Carol');
-        const vpDid = await keymaster.createResponse(challengeDid);
+        const vpDid = await keymaster.createResponse(challengeDid, 'local');
         const data = await keymaster.decryptJSON(vpDid);
 
         expect(data.challenge).toBe(challengeDid);
@@ -1956,10 +2010,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential('mock');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('No current ID');
+            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
         }
     });
 
@@ -1970,10 +2024,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential('did:test:mock');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Error: credential did:test:mock not found in manifest');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -1987,10 +2041,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential(did);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe(`Error: credential ${did} not found in manifest`);
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2075,10 +2129,10 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd(groupDid, 'mockAlias');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Unknown DID');
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -2112,10 +2166,10 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd('mockAlias', dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Unknown DID');
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -2190,42 +2244,42 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd(groupDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(groupDid, 100);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(groupDid, [1, 2, 3]);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(groupDid, { name: 'mock' });
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(groupDid, 'did:mock');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -2238,50 +2292,50 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd(null, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(100, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd([1, 2, 3], dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd({ name: 'mock' }, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupAdd(agentDid, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             await keymaster.groupAdd(dataDid, agentDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2293,10 +2347,10 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd(groupDid, groupDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid member');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2313,10 +2367,10 @@ describe('groupAdd', () => {
 
         try {
             await keymaster.groupAdd(group3Did, group1Did);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid member');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2416,42 +2470,42 @@ describe('groupRemove', () => {
 
         try {
             await keymaster.groupRemove(groupDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(groupDid, 100);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(groupDid, [1, 2, 3]);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(groupDid, { name: 'mock' });
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(groupDid, 'did:mock');
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -2464,58 +2518,58 @@ describe('groupRemove', () => {
 
         try {
             await keymaster.groupRemove();
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(null, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(100, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove([1, 2, 3], dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove({ name: 'mock' }, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
 
         try {
             await keymaster.groupRemove(agentDid, dataDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             await keymaster.groupRemove(dataDid, agentDid);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2632,10 +2686,10 @@ describe('getGroup', () => {
 
         try {
             await keymaster.getGroup();
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid DID');
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -2645,10 +2699,10 @@ describe('getGroup', () => {
         try {
             const agentDID = await keymaster.createId('Bob');
             await keymaster.getGroup(agentDID);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid group');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2711,100 +2765,100 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.type = "wrong type";
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll type');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.version = 0;
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll version');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.description;
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll description');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.roster;
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll roster');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.options;
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = ['one option'];
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = "not a list";
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll options');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.deadline;
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.deadline = "not a date";
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
 
         try {
@@ -2816,10 +2870,10 @@ describe('createPoll', () => {
 
             poll.deadline = lastWeek.toISOString();
             await keymaster.createPoll(poll);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid poll deadline');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2901,10 +2955,10 @@ describe('votePoll', () => {
 
         try {
             await keymaster.votePoll(pollDid, 5);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Vote must be a number between 1 and 3');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 
@@ -2921,10 +2975,10 @@ describe('votePoll', () => {
 
         try {
             await keymaster.votePoll(pollDid, 5);
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Not eligible to vote on this poll');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -2965,10 +3019,10 @@ describe('updatePoll', () => {
 
         try {
             await keymaster.updatePoll(pollDid)
-            throw 'Expected to throw an exception';
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
-            expect(error).toBe('Invalid ballot');
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3102,16 +3156,16 @@ describe('createSchema', () => {
     });
 
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on create invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Invalid schema`);
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3132,16 +3186,16 @@ describe('getSchema', () => {
         expect(schema).toStrictEqual(mockSchema);
     });
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on get invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
 
         try {
             await keymaster.getSchema('bogus');
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Unknown DID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -3164,7 +3218,7 @@ describe('setSchema', () => {
         expect(newSchema).toStrictEqual(mockSchema);
     });
 
-    it('should throw an exception on invalid schema', async () => {
+    it('should throw an exception on set invalid schema', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -3172,9 +3226,9 @@ describe('setSchema', () => {
 
         try {
             await keymaster.setSchema(did, { mock: 'not a schema' });
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Invalid schema`);
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3211,9 +3265,9 @@ describe('testSchema', () => {
 
         try {
             await keymaster.testSchema();
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Invalid DID`);
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 });
@@ -3245,9 +3299,9 @@ describe('createTemplate', () => {
 
         try {
             await keymaster.createTemplate();
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Invalid DID`);
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 });
@@ -3482,9 +3536,9 @@ describe('listCredentials', () => {
 
         try {
             await keymaster.listCredentials('mock');
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Unknown ID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -3510,9 +3564,9 @@ describe('getCredential', () => {
 
         try {
             await keymaster.getCredential('mock');
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Unknown DID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 
@@ -3522,9 +3576,9 @@ describe('getCredential', () => {
         try {
             const agentDID = await keymaster.createId('Rando');
             await keymaster.getCredential(agentDID);
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`DID is not encrypted`);
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
 });
@@ -3564,9 +3618,9 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential();
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Invalid DID`);
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 
@@ -3575,9 +3629,9 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential('mock');
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Unknown DID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });
@@ -3653,9 +3707,9 @@ describe('setCurrentId', () => {
 
         try {
             keymaster.setCurrentId('mock');
-            throw ('Expected to throw an exception');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
-            expect(error).toBe(`Unknown ID`);
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
     });
 });

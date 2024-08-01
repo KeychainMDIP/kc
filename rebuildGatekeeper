@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+
+cp src/exceptions.js src/keymaster-app/src
+cp src/keymaster-lib.js src/keymaster-app/src
+npm --prefix src/keymaster-app run build
+node src/gatekeeper-api.js

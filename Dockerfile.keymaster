@@ -16,6 +16,7 @@ RUN cd kc-app && npm ci
 
 COPY src/kc-app/public ./kc-app/public/
 COPY src/kc-app/src ./kc-app/src/
+COPY src/keymaster-sdk.js src/kc-app/src
 RUN cd kc-app && npm run build
 
 # Copy app

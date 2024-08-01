@@ -4,6 +4,7 @@ import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
 import * as cipher from './cipher-lib.js';
 import config from './config.js';
+import * as exceptions from './exceptions.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
@@ -12,9 +13,7 @@ const validRegistries = ['local', 'hyperswarm', 'TESS'];
 let db = null;
 let helia = null;
 let ipfs = null;
-
-const confirmedCache = {};
-const unconfirmedCache = {};
+let eventsCache = {};
 
 export async function listRegistries() {
     return validRegistries;
@@ -36,7 +35,6 @@ export async function stop() {
 
 export async function verifyDID(did) {
     await resolveDID(did, { verify: true });
-    await resolveDID(did, { confirm: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -63,6 +61,7 @@ export async function verifyDb(chatty = true) {
             }
             invalid += 1;
             await db.deleteEvents(did);
+            delete eventsCache[did];
         }
     }
 
@@ -76,41 +75,39 @@ export async function verifyDb(chatty = true) {
 // For testing purposes
 export async function resetDb() {
     await db.resetDb();
+    eventsCache = {};
 }
 
 export async function anchorSeed(seed) {
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    const did = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    return did;
+    return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
 async function verifyCreateAgent(operation) {
     if (!operation.signature) {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.publicJwk) {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
     delete operationCopy.signature;
 
     const msgHash = cipher.hashJSON(operationCopy);
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 }
 
 async function verifyCreateAsset(operation) {
-    if (operation.controller !== operation.signature.signer) {
-        throw "Invalid operation";
+    if (operation.controller !== operation.signature?.signer) {
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const doc = await resolveDID(operation.signature.signer, { atTime: operation.signature.signed });
+    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
     if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     const operationCopy = JSON.parse(JSON.stringify(operation));
@@ -118,35 +115,33 @@ async function verifyCreateAsset(operation) {
     const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, operation.signature.value, publicJwk);
-
-    return isValid;
+    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 }
 
 async function verifyCreate(operation) {
     if (operation?.type !== "create") {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.created) {
         // TBD ensure valid timestamp format
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!operation.mdip) {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw `Valid versions include: ${validVersions}`;
+        throw new Error(exceptions.INVALID_VERSION);
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw `Valid types include: ${validTypes}`;
+        throw new Error(exceptions.INVALID_TYPE);
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw `Valid registries include: ${validRegistries}`;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
     if (operation.mdip.type === 'agent') {
@@ -157,7 +152,7 @@ async function verifyCreate(operation) {
         return verifyCreateAsset(operation);
     }
 
-    throw "Invalid operation";
+    throw new Error(exceptions.INVALID_OPERATION);
 }
 
 export async function createDID(operation) {
@@ -187,11 +182,12 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 }
 
-async function generateDoc(anchor) {
+export async function generateDoc(anchor) {
+    let doc = {};
     try {
         if (!anchor?.mdip) {
             return {};
@@ -213,7 +209,7 @@ async function generateDoc(anchor) {
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -236,12 +232,10 @@ async function generateDoc(anchor) {
                 "didDocumentData": {},
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
 
         if (anchor.mdip.type === 'asset') {
-            const doc = {
+            doc = {
                 "@context": "https://w3id.org/did-resolution/v1",
                 "didDocument": {
                     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -254,15 +248,13 @@ async function generateDoc(anchor) {
                 "didDocumentData": anchor.data,
                 "mdip": anchor.mdip,
             };
-
-            return doc;
         }
     }
     catch (error) {
         // console.error(error);
     }
 
-    return {}; // TBD unknown type error
+    return doc;
 }
 
 async function verifyUpdate(operation, doc) {
@@ -272,7 +264,7 @@ async function verifyUpdate(operation, doc) {
     }
 
     if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { atTime: operation.signature.signed });
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
         return verifyUpdate(operation, controllerDoc);
     }
 
@@ -292,27 +284,28 @@ async function verifyUpdate(operation, doc) {
 
     // TBD get the right signature, not just the first one
     const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const isValid = cipher.verifySig(msgHash, signature.value, publicJwk);
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
+}
 
-    return isValid;
+async function getEvents(did) {
+    let events = eventsCache[did];
+
+    if (!events) {
+        events = await db.getEvents(did);
+
+        if (events.length > 0) {
+            eventsCache[did] = events;
+        }
+    }
+
+    return JSON.parse(JSON.stringify(events));
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
-    const confirmedCacheable = confirm && !atTime && !atVersion;
-    const unconfirmedCacheable = !confirm && !atTime && !atVersion;
-
-    if (confirmedCacheable && !verify && confirmedCache[did]) {
-        return JSON.parse(JSON.stringify(confirmedCache[did]));
-    }
-
-    if (unconfirmedCacheable && !verify && unconfirmedCache[did]) {
-        return JSON.parse(JSON.stringify(unconfirmedCache[did]));
-    }
-
-    const events = await db.getEvents(did);
+    const events = await getEvents(did);
 
     if (events.length === 0) {
-        throw "Invalid DID";
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const anchor = events[0];
@@ -320,7 +313,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     let mdip = doc?.mdip;
 
     if (!mdip) {
-        throw "Invalid DID";
+        throw new Error(exceptions.INVALID_DID);
     }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
@@ -352,7 +345,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             const valid = await verifyUpdate(operation, doc);
 
             if (!valid) {
-                throw "Invalid update";
+                throw new Error(exceptions.INVALID_OPERATION);
             }
         }
 
@@ -380,7 +373,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
         else {
             if (verify) {
-                throw "Invalid operation";
+                throw new Error(exceptions.INVALID_OPERATION);
             }
 
             console.error(`unknown type ${operation.type}`);
@@ -389,14 +382,6 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         if (atVersion && version === atVersion) {
             break;
         }
-    }
-
-    if (confirmedCacheable) {
-        confirmedCache[did] = doc;
-    }
-
-    if (unconfirmedCacheable) {
-        unconfirmedCache[did] = doc;
     }
 
     return JSON.parse(JSON.stringify(doc));
@@ -420,8 +405,7 @@ export async function updateDID(operation) {
             operation: operation
         });
 
-        delete confirmedCache[operation.did];
-        delete unconfirmedCache[operation.did];
+        delete eventsCache[operation.did];
 
         if (registry === 'local') {
             return true;
@@ -478,14 +462,14 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
 }
 
 export async function exportDID(did) {
-    return await db.getEvents(did);
+    return await getEvents(did);
 }
 
 export async function exportDIDs(dids) {
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await db.getEvents(did));
+        batch.push(await getEvents(did));
     }
 
     return batch;
@@ -493,11 +477,12 @@ export async function exportDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw "Invalid array";
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     for (const did of dids) {
         await db.deleteEvents(did);
+        delete eventsCache[did];
     }
 
     return true;
@@ -542,7 +527,7 @@ async function importUpdateEvent(event) {
 export async function importEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
-        throw "Invalid import";
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let did;
@@ -556,11 +541,11 @@ export async function importEvent(event) {
         }
 
         if (!did) {
-            throw "Invalid operation";
+            throw new Error(exceptions.INVALID_OPERATION);
         }
     }
     catch {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     const current = await exportDID(did);
@@ -569,7 +554,7 @@ export async function importEvent(event) {
         const ok = await importCreateEvent(event);
 
         if (!ok) {
-            throw "Invalid operation";
+            throw new Error(exceptions.INVALID_OPERATION);
         }
 
         return true;
@@ -591,8 +576,7 @@ export async function importEvent(event) {
             current[index] = event;
 
             db.setEvents(did, current);
-            delete confirmedCache[did];
-            delete unconfirmedCache[did];
+            delete eventsCache[did];
             return true;
         }
 
@@ -602,17 +586,17 @@ export async function importEvent(event) {
     const ok = await importUpdateEvent(event);
 
     if (!ok) {
-        throw "Invalid operation";
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    delete confirmedCache[did];
-    delete unconfirmedCache[did];
+    delete eventsCache[did];
+
     return true;
 }
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw "Invalid import";
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let verified = 0;
@@ -647,18 +631,16 @@ export async function importBatch(batch) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    const queue = db.getQueue(registry);
-    return queue;
+    return db.getQueue(registry);
 }
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw `Invalid registry`;
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    const ok = db.clearQueue(registry, events);
-    return ok;
+    return db.clearQueue(registry, events);
 }

@@ -1,5 +1,6 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
+import * as exceptions from './exceptions.js';
 
 const dataFolder = 'data';
 
@@ -34,7 +35,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw "Invalid DID";
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const events = await getEvents(did);
@@ -49,7 +50,7 @@ export async function addEvent(did, event) {
 
 export async function getEvents(did) {
     if (!did) {
-        throw "Invalid DID";
+        throw new Error(exceptions.INVALID_DID);
     }
 
     try {
@@ -57,8 +58,7 @@ export async function getEvents(did) {
         console.time("SELECT");
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
         console.timeEnd("SELECT");
-        const events = JSON.parse(row.events);
-        return events;
+        return JSON.parse(row.events);
     }
     catch {
         return [];
@@ -67,7 +67,7 @@ export async function getEvents(did) {
 
 export async function deleteEvents(did) {
     if (!did) {
-        throw "Invalid DID";
+        throw new Error(exceptions.INVALID_DID);
     }
 
     const id = did.split(':').pop();
@@ -90,8 +90,7 @@ export async function getQueue(registry) {
             return [];
         }
 
-        const ops = JSON.parse(row.ops);
-        return ops;
+        return JSON.parse(row.ops);
     }
     catch {
         return [];
@@ -114,6 +113,5 @@ export async function clearQueue(registry, batch) {
 
 export async function getAllKeys() {
     const rows = await db.all('SELECT id FROM dids');
-    const ids = rows.map(row => row.id);
-    return ids;
+    return rows.map(row => row.id);
 }
