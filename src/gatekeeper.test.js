@@ -1616,6 +1616,54 @@ describe('getDids', () => {
     });
 });
 
+describe('initRegistries', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should default to valid registries', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries();
+
+        expect(registries.length).toBe(3);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+
+    it('should parse supported registries', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries("local, hyperswarm");
+
+        expect(registries.length).toBe(2);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+    });
+
+    it('should parse supported registries with extra whitespace', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries("   local,    hyperswarm    ");
+
+        expect(registries.length).toBe(2);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+    });
+
+    it('should throw an exception on invalid registries', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.initRegistries("local, hyperswarm, mock");
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        } catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+        }
+    });
+});
+
 describe('listRegistries', () => {
     afterEach(() => {
         mockFs.restore();
@@ -1624,9 +1672,22 @@ describe('listRegistries', () => {
     it('should return list of valid registries', async () => {
         mockFs({});
 
+        await gatekeeper.initRegistries();
         const registries = await gatekeeper.listRegistries();
 
+        expect(registries.length).toBe(3);
         expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+
+    it('should return list of configured registries', async () => {
+        mockFs({});
+
+        await gatekeeper.initRegistries("hyperswarm, TESS");
+        const registries = await gatekeeper.listRegistries();
+
+        expect(registries.length).toBe(2);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
     });
