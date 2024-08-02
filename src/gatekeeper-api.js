@@ -235,6 +235,8 @@ gatekeeper.verifyDb().then((invalid) => {
         console.log(`${invalid} invalid DIDs removed from MDIP db`);
     }
 
+    gatekeeper.initRegistries(config.gatekeeperRegistries);
+
     const port = config.gatekeeperPort;
     const db = config.gatekeeperDb;
 

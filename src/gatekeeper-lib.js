@@ -9,15 +9,12 @@ import * as exceptions from './exceptions.js';
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
 const validRegistries = ['local', 'hyperswarm', 'TESS'];
+let supportedRegistries = null;
 
 let db = null;
 let helia = null;
 let ipfs = null;
 let eventsCache = {};
-
-export async function listRegistries() {
-    return validRegistries;
-}
 
 export async function start(injectedDb) {
     if (!ipfs) {
@@ -70,6 +67,31 @@ export async function verifyDb(chatty = true) {
     }
 
     return invalid;
+}
+
+export async function initRegistries(csvRegistries) {
+    if (!csvRegistries) {
+        supportedRegistries = validRegistries;
+    }
+    else {
+        const registries = csvRegistries.split(',').map(registry => registry.trim());
+        supportedRegistries = [];
+
+        for (const registry of registries) {
+            if (validRegistries.includes(registry)) {
+                supportedRegistries.push(registry);
+            }
+            else {
+                throw new Error(exceptions.INVALID_REGISTRY);
+            }
+        }
+    }
+
+    return supportedRegistries;
+}
+
+export async function listRegistries() {
+    return supportedRegistries || validRegistries;
 }
 
 // For testing purposes

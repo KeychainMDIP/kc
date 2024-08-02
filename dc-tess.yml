@@ -12,6 +12,7 @@ services:
     image: keychainmdip/gatekeeper
     environment:
       - KC_GATEKEEPER_DB=json
+      - KC_GATEKEEPER_REGISTRIES=hyperswarm,TESS
       - KC_MONGODB_URL=mongodb://mongodb:27017
     volumes:
       - ./data:/app/data

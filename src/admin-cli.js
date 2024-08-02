@@ -306,6 +306,19 @@ program
         }
     });
 
+program
+    .command('list-registries')
+    .description('List supported registries')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.listRegistries();
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await keymaster.start(gatekeeper, db_wallet);
