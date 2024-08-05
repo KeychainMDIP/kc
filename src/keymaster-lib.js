@@ -1210,14 +1210,6 @@ export async function verifyResponse(responseDID, challengeDID) {
     return response;
 }
 
-export async function exportDID(did) {
-    return gatekeeper.exportDID(lookupDID(did));
-}
-
-export async function importDID(events) {
-    return gatekeeper.importBatch(events);
-}
-
 export async function createGroup(name, registry) {
     const group = {
         name: name,

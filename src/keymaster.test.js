@@ -543,26 +543,6 @@ describe('rotateKeys', () => {
         }
     });
 
-    it('should import DID with multiple key rotations', async () => {
-        mockFs({});
-
-        const alice = await keymaster.createId('Alice', 'local');
-        const rotations = 10;
-
-        for (let i = 0; i < rotations; i++) {
-            await keymaster.rotateKeys();
-        }
-
-        const events = await keymaster.exportDID(alice);
-
-        await gatekeeper.resetDb();
-
-        const { updated } = await keymaster.importDID(events);
-
-        expect(updated).toBe(rotations + 1);
-    });
-
-
     it('should raise an exception if latest version is not confirmed', async () => {
         mockFs({});
 
@@ -1436,27 +1416,6 @@ describe('revokeCredential', () => {
             expect(error.message).toBe(exceptions.UNKNOWN_ID);
         }
 
-    });
-
-    it('should import a revoked credential', async () => {
-        mockFs({});
-
-        const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
-        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
-        const did = await keymaster.issueCredential(boundCredential);
-        const ok = await keymaster.revokeCredential(did);
-        expect(ok).toBe(true);
-
-        const userExport = await keymaster.exportDID(userDid);
-        const credentialExport = await keymaster.exportDID(did);
-
-        await gatekeeper.resetDb();
-
-        await keymaster.importDID(userExport);
-        const { updated } = await keymaster.importDID(credentialExport);
-
-        expect(updated).toBe(2);
     });
 });
 
