@@ -86,24 +86,13 @@ function shortName(name) {
 }
 
 async function createBatch() {
-    console.time('getDIDs');
-    const didList = await gatekeeper.getDIDs();
-    console.timeEnd('getDIDs');
+    console.time('exportBatch');
+    const allEvents = await gatekeeper.exportBatch();
+    console.timeEnd('exportBatch');
+    console.log(`${allEvents.length} events fetched`);
 
-    console.time('exportDIDs');
-    const allDIDs = await gatekeeper.exportDIDs(didList);
-    console.timeEnd('exportDIDs');
-    console.log(`${allDIDs.length} DIDs fetched`);
-
-    const nonlocalDIDs = allDIDs.filter(events => {
-        const create = events[0];
-        const registry = create.operation?.mdip?.registry;
-        return registry && registry !== 'local'
-    });
-
-    return nonlocalDIDs.flat()
-        .map(event => event.operation)
-        .sort((a, b) => new Date(a.signature.signed) - new Date(b.signature.signed));
+    // hyperswarm distributes only operations
+    return allEvents.map(event => event.operation);
 }
 
 function cacheBatch(batch) {
@@ -126,7 +115,6 @@ function logBatch(batch, name) {
     const hash = shortName(cipher.hashJSON(batch));
     const batchfile = `${debugFolder}/${hash}-${name}.json`;
     const batchJSON = JSON.stringify(batch, null, 4);
-    console.log(`writing to ${batchfile}: ${batchJSON}`);
     fs.writeFileSync(batchfile, batchJSON);
 }
 
