@@ -943,6 +943,7 @@ describe('exportDID', () => {
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
+    // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
@@ -957,7 +958,7 @@ describe('exportDIDs', () => {
         mockFs.restore();
     });
 
-    it('should export a valid DID', async () => {
+    it('should export valid DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -978,7 +979,7 @@ describe('exportDIDs', () => {
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
-        for(let i = 0; i < 5; i++) {
+        for (let i = 0; i < 5; i++) {
             const assetOp = await createAssetOp(agentDID, keypair);
             await gatekeeper.createDID(assetOp);
         }
@@ -1005,7 +1006,7 @@ describe('exportDIDs', () => {
         expect(exports[1][0].operation).toStrictEqual(agentOp);
     });
 
-    it('should export a valid updated DID', async () => {
+    it('should export valid updated DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1023,6 +1024,7 @@ describe('exportDIDs', () => {
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
+    // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
@@ -1110,7 +1112,7 @@ describe('exportBatch', () => {
         mockFs.restore();
     });
 
-    it('should export a valid DID', async () => {
+    it('should export a valid batch', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1123,14 +1125,14 @@ describe('exportBatch', () => {
         expect(exports[0].operation).toStrictEqual(agentOp);
     });
 
-    it('should export all DIDs', async () => {
+    it('should export batch with all DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
         const agentDID = await gatekeeper.createDID(agentOp);
 
-        for(let i = 0; i < 5; i++) {
+        for (let i = 0; i < 5; i++) {
             const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
             await gatekeeper.createDID(assetOp);
         }
@@ -1140,7 +1142,7 @@ describe('exportBatch', () => {
         expect(exports.length).toBe(6);
     });
 
-    it('should export a valid updated DID', async () => {
+    it('should export a valid updated batch', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1157,6 +1159,7 @@ describe('exportBatch', () => {
         expect(exports[1].operation).toStrictEqual(updateOp);
     });
 
+    // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
