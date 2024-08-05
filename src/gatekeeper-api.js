@@ -142,9 +142,9 @@ v1router.post('/dids/remove', async (req, res) => {
 
 v1router.post('/dids/export', async (req, res) => {
     try {
-        const dids = req.body;
-        const ops = await gatekeeper.exportDIDs(dids);
-        res.json(ops);
+        const { dids } = req.body;
+        const response = await gatekeeper.exportDIDs(dids);
+        res.json(response);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -153,9 +153,31 @@ v1router.post('/dids/export', async (req, res) => {
 
 v1router.post('/dids/import', async (req, res) => {
     try {
+        const dids = req.body;
+        const response = await gatekeeper.importDIDs(dids);
+        res.json(response);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/batch/export', async (req, res) => {
+    try {
+        const { dids } = req.body;
+        const response = await gatekeeper.exportBatch(dids);
+        res.json(response);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/batch/import', async (req, res) => {
+    try {
         const batch = req.body;
-        const did = await gatekeeper.importBatch(batch);
-        res.json(did);
+        const response = await gatekeeper.importBatch(batch);
+        res.json(response);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
