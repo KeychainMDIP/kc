@@ -336,9 +336,9 @@ async function flushQueue() {
             node: config.nodeName,
         };
 
+        await gatekeeper.clearQueue(REGISTRY, batch);
         await relayMsg(msg);
         await importBatch(batch);
-        await gatekeeper.clearQueue(REGISTRY, batch);
     }
 }
 
