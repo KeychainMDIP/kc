@@ -971,6 +971,22 @@ describe('exportDIDs', () => {
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
+    it('should export all DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        for(let i = 0; i < 5; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            await gatekeeper.createDID(assetOp);
+        }
+
+        const exports = await gatekeeper.exportDIDs();
+
+        expect(exports.length).toBe(6);
+    });
 
     it('should export a DIDs in order requested', async () => {
         mockFs({});
@@ -1013,6 +1029,26 @@ describe('exportDIDs', () => {
         const exports = await gatekeeper.exportDIDs(['mockDID']);
         const ops = exports[0];
         expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('importDIDs', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should import a valid agent DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDIDs([did]);
+
+        const { verified } = await gatekeeper.importDIDs(ops);
+
+        expect(verified).toBe(1);
     });
 });
 
@@ -1064,6 +1100,68 @@ describe('removeDIDs', () => {
 
         const ok = await gatekeeper.removeDIDs(['did:test:mock']);
         expect(ok).toBe(true);
+    });
+});
+
+describe('exportBatch', () => {
+    // local DIDs are excluded from exportBatch so we'll create on hyperswarm
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should export a valid DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const did = await gatekeeper.createDID(agentOp);
+
+        const exports = await gatekeeper.exportBatch([did]);
+
+        expect(exports.length).toBe(1);
+        expect(exports[0].operation).toStrictEqual(agentOp);
+    });
+
+    it('should export all DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        for(let i = 0; i < 5; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+            await gatekeeper.createDID(assetOp);
+        }
+
+        const exports = await gatekeeper.exportBatch();
+
+        expect(exports.length).toBe(6);
+    });
+
+    it('should export a valid updated DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const exports = await gatekeeper.exportBatch([did]);
+
+        expect(exports.length).toBe(2);
+        expect(exports[0].operation).toStrictEqual(agentOp);
+        expect(exports[1].operation).toStrictEqual(updateOp);
+    });
+
+    it('should return empty array on an invalid DID', async () => {
+        mockFs({});
+
+        const exports = await gatekeeper.exportBatch(['mockDID']);
+        expect(exports).toStrictEqual([]);
     });
 });
 

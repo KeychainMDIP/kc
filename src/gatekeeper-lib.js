@@ -659,9 +659,12 @@ export async function importBatch(batch) {
 export async function exportBatch(dids) {
     const allDIDs = await exportDIDs(dids);
     const nonlocalDIDs = allDIDs.filter(events => {
-        const create = events[0];
-        const registry = create.operation?.mdip?.registry;
-        return registry && registry !== 'local'
+        if (events.length > 0) {
+            const create = events[0];
+            const registry = create.operation?.mdip?.registry;
+            return registry && registry !== 'local'
+        }
+        return false;
     });
 
     const events = nonlocalDIDs.flat();
