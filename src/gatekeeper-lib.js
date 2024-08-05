@@ -484,17 +484,25 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
 }
 
 export async function exportDID(did) {
-    return await getEvents(did);
+    return getEvents(did);
 }
 
 export async function exportDIDs(dids) {
+    if (!dids) {
+        dids = await getDIDs();
+    }
+
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await getEvents(did));
+        batch.push(await exportDID(did));
     }
 
     return batch;
+}
+
+export async function importDIDs(dids) {
+    return importBatch(dids.flat());
 }
 
 export async function removeDIDs(dids) {
@@ -626,7 +634,6 @@ export async function importBatch(batch) {
     let failed = 0;
 
     for (const event of batch) {
-        //console.time('importEvent');
         try {
             const imported = await importEvent(event);
 
@@ -638,10 +645,8 @@ export async function importBatch(batch) {
             }
         }
         catch (error) {
-            //console.error(error);
             failed += 1;
         }
-        //console.timeEnd('importEvent');
     }
 
     return {
@@ -649,6 +654,18 @@ export async function importBatch(batch) {
         updated: updated,
         failed: failed,
     };
+}
+
+export async function exportBatch(dids) {
+    const allDIDs = await exportDIDs(dids);
+    const nonlocalDIDs = allDIDs.filter(events => {
+        const create = events[0];
+        const registry = create.operation?.mdip?.registry;
+        return registry && registry !== 'local'
+    });
+
+    const events = nonlocalDIDs.flat();
+    return events.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 }
 
 export async function getQueue(registry) {

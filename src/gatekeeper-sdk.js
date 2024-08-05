@@ -152,9 +152,9 @@ export async function getDIDs(options = {}) {
     }
 }
 
-export async function exportDID(did) {
+export async function exportDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/export`, [did]);
+        const response = await axios.post(`${URL}/api/v1/dids/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -162,9 +162,19 @@ export async function exportDID(did) {
     }
 }
 
-export async function exportDIDs(dids) {
+export async function importDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/export`, dids);
+        const response = await axios.post(`${URL}/api/v1/dids/import`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function exportBatch(dids) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/batch/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -174,7 +184,7 @@ export async function exportDIDs(dids) {
 
 export async function importBatch(batch) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/import`, batch);
+        const response = await axios.post(`${URL}/api/v1/batch/import`, batch);
         return response.data;
     }
     catch (error) {
