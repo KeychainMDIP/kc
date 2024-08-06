@@ -146,9 +146,6 @@ v1router.get('/ids', async (req, res) => {
 v1router.post('/ids/new', async (req, res) => {
     try {
         const { name, registry } = req.body;
-        if (!name || !registry) {
-            return res.status(400).send({ error: 'Name and registry are required' });
-        }
         const did = await keymaster.createId(name, registry);
         res.json(did);
     } catch (error) {
@@ -208,9 +205,6 @@ v1router.get('/names', async (req, res) => {
 v1router.post('/names', async (req, res) => {
     try {
         const { name, did } = req.body;
-        if (!name || !did) {
-            return res.status(400).send({ error: 'Name and DID are required' });
-        }
         const response = keymaster.addName(name, did);
         res.json(response);
     } catch (error) {
@@ -280,9 +274,6 @@ v1router.post('/response/verify', async (req, res) => {
 v1router.post('/groups', async (req, res) => {
     try {
         const { name, registry } = req.body;
-        if (!name || !registry) {
-            return res.status(400).send({ error: 'Name and registry are required' });
-        }
         const response = await keymaster.createGroup(name, registry);
         res.json(response);
     } catch (error) {
@@ -335,9 +326,6 @@ v1router.post('/groups/:name/test', async (req, res) => {
 v1router.post('/schemas', async (req, res) => {
     try {
         const { schema, registry } = req.body;
-        if (!schema || !registry) {
-            return res.status(400).send({ error: 'Schema and registry are required' });
-        }
         const response = await keymaster.createSchema(schema, registry);
         res.json(response);
     } catch (error) {
