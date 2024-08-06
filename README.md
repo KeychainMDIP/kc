@@ -49,14 +49,12 @@ Commands:
   decrypt-json <did>                         Decrypt an encrypted JSON DID
   encrypt-file <file> <did>                  Encrypt a file for a DID
   encrypt-msg <msg> <did>                    Encrypt a message for a DID
-  export-did <did>                           Export DID to file
   fix-wallet                                 Remove invalid DIDs from the wallet
   group-add <group> <member>                 Add a member to a group
   group-create <name>                        Create a new group
   group-remove <group> <member>              Remove a member from a group
   group-test <group> [member]                Determine if a member is in a group
   help [command]                             display help for command
-  import-did <file>                          Import DID from file
   import-wallet <recovery-phrase>            Create new wallet from a recovery phrase
   issue-credential <file> [registry] [name]  Sign and encrypt a bound credential file
   list-ids                                   List IDs and show current ID
