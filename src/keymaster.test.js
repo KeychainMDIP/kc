@@ -192,6 +192,32 @@ describe('recoverWallet', () => {
 
         expect(wallet).toStrictEqual(recovered);
     });
+
+    it('should do nothing if wallet was not backed up', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mnemonic = keymaster.decryptMnemonic();
+
+        // Recover wallet from mnemonic
+        keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(recovered.ids).toStrictEqual({});
+    });
+
+    it('should do nothing if backup DID is invalid', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const mnemonic = keymaster.decryptMnemonic();
+
+        // Recover wallet from mnemonic
+        keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet(agentDID);
+
+        expect(recovered.ids).toStrictEqual({});
+    });
 });
 
 describe('createId', () => {
