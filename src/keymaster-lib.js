@@ -316,20 +316,24 @@ export async function backupWallet(registry = defaultRegistry) {
 }
 
 export async function recoverWallet(did) {
-    const keypair = hdKeyPair();
+    try {
+        if (!did) {
+            const seedBank = await resolveSeedBank();
+            did = seedBank.didDocumentData.wallet;
+        }
 
-    if (!did) {
-        const seedBank = await resolveSeedBank();
-        did = seedBank.didDocumentData.wallet;
+        const keypair = hdKeyPair();
+        const data = await resolveAsset(did);
+        const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
+        const wallet = JSON.parse(backup);
+
+        saveWallet(wallet);
+        return wallet;
     }
-
-    const data = await resolveAsset(did);
-    const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
-    const wallet = JSON.parse(backup);
-
-    saveWallet(wallet);
-
-    return wallet;
+    catch (error) {
+        // If we can't recover the wallet, just return the current one
+        return loadWallet();
+    }
 }
 
 export function listIds() {
