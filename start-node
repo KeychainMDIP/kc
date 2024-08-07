@@ -26,7 +26,7 @@ done
 if [ "$RUNTIME" = "BTC" ]; then
     COMPOSE_FILE="dc-btc.yml"
 elif [ "$RUNTIME" = "TESS" ]; then
-    COMPOSE_FILE="dc-tess.yml"
+    COMPOSE_FILE="dc-tess2.yml"
 elif [ "$RUNTIME" = "FTC" ]; then
     COMPOSE_FILE="dc-ftc.yml"
 fi
