@@ -3,33 +3,33 @@ import BtcClient from 'bitcoin-core';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
 import * as db_wallet from './db-wallet-json.js';
-import config from './config.js';
+import mainConfig from './config.js';
 
-const localConfig = {
-    satChain: process.env.KC_SAT_CHAIN || 'BTC',
-    satNetwork: process.env.KC_SAT_NETWORK || 'mainnet',
-    satHost: process.env.KC_SAT_HOST || 'localhost',
-    satPort: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
-    satWallet: process.env.KC_SAT_WALLET,
-    satUser: process.env.KC_SAT_USER,
-    satPass: process.env.KC_SAT_PASS,
-    satImportInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 1,
-    satExportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 60,
-    satFeeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
-    satFeeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00010,
-    satFeeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00002,
-    satStartBlock:  process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
+const config = {
+    chain: process.env.KC_SAT_CHAIN || 'BTC',
+    network: process.env.KC_SAT_NETWORK || 'mainnet',
+    host: process.env.KC_SAT_HOST || 'localhost',
+    port: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
+    wallet: process.env.KC_SAT_WALLET,
+    user: process.env.KC_SAT_USER,
+    pass: process.env.KC_SAT_PASS,
+    importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
+    exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
+    feeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
+    feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00010,
+    feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00002,
+    startBlock:  process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
 };
 
-const REGISTRY = localConfig.satChain;
+const REGISTRY = config.chain;
 
 const client = new BtcClient({
-    network: localConfig.satNetwork,
-    username: localConfig.satUser,
-    password: localConfig.satPass,
-    host: localConfig.satHost,
-    port: localConfig.satPort,
-    wallet: localConfig.satWallet,
+    network: config.network,
+    username: config.user,
+    password: config.pass,
+    host: config.host,
+    port: config.port,
+    wallet: config.wallet,
 });
 
 const dbName = `data/${REGISTRY}-mediator.json`;
@@ -98,7 +98,7 @@ async function fetchBlock(height, blockCount) {
         const db = loadDb();
         db.height = height;
         db.time = timestamp;
-        db.blocksScanned = height - localConfig.satStartBlock + 1;
+        db.blocksScanned = height - config.startBlock + 1;
         db.txnsScanned = db.txnsScanned + block.nTx;
         db.blockCount = blockCount;
         db.blocksPending = blockCount - height;
@@ -110,7 +110,7 @@ async function fetchBlock(height, blockCount) {
 }
 
 async function scanBlocks() {
-    let start = localConfig.satStartBlock;
+    let start = config.startBlock;
     let blockCount = await client.getBlockCount();
 
     console.log(`current block height: ${blockCount}`);
@@ -163,7 +163,7 @@ async function importBatch() {
 }
 
 export async function createOpReturnTxn(opReturnData) {
-    const txnfee = localConfig.satFeeMin;
+    const txnfee = config.feeMin;
     const utxos = await client.listUnspent();
     const utxo = utxos.find(utxo => utxo.amount > txnfee);
 
@@ -223,14 +223,14 @@ async function replaceByFee() {
 
     const mempoolEntry = await client.getMempoolEntry(db.pendingTxid);
 
-    if (mempoolEntry && mempoolEntry.fee >= localConfig.satFeeMax) {
+    if (mempoolEntry && mempoolEntry.fee >= config.feeMax) {
         return true;
     }
 
     const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
     const address = tx.vout[1].scriptPubKey.address;
-    const amountBack = tx.vout[1].value - localConfig.satFeeInc;
+    const amountBack = tx.vout[1].value - config.feeInc;
 
     if (amountBack < 0) {
         // TBD add additional inputs and continue if possible
@@ -270,7 +270,7 @@ function checkExportInterval() {
     const now = new Date();
     const elapsedMinutes = (now - lastExport) / (60 * 1000);
 
-    return (elapsedMinutes < localConfig.satExportInterval);
+    return (elapsedMinutes < config.exportInterval);
 }
 
 async function anchorBatch() {
@@ -286,14 +286,14 @@ async function anchorBatch() {
     try {
         const walletInfo = await client.getWalletInfo();
 
-        if (walletInfo.balance < localConfig.satFeeMax) {
+        if (walletInfo.balance < config.feeMax) {
             const address = await client.getNewAddress('funds', 'bech32');
-            console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${localConfig.satChain} to ${address}`);
+            console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
             return;
         }
     }
     catch {
-        console.log(`${localConfig.satChain} node not accessible`);
+        console.log(`${config.chain} node not accessible`);
         return;
     }
 
@@ -301,7 +301,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const did = await keymaster.createAsset(batch, REGISTRY, config.nodeID);
+        const did = await keymaster.createAsset(batch, REGISTRY, mainConfig.nodeID);
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
@@ -335,27 +335,27 @@ async function importLoop() {
     try {
         await scanBlocks();
         await importBatch();
-        console.log(`import loop waiting ${localConfig.satImportInterval} minute(s)...`);
+        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in importLoop: ${error}`);
     }
-    setTimeout(importLoop, localConfig.satImportInterval * 60 * 1000);
+    setTimeout(importLoop, config.importInterval * 60 * 1000);
 }
 
 async function exportLoop() {
     try {
         await anchorBatch();
-        console.log(`export loop waiting ${localConfig.satExportInterval} minute(s)...`);
+        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, localConfig.satExportInterval * 60 * 1000);
+    setTimeout(exportLoop, config.exportInterval * 60 * 1000);
 }
 
 async function waitForChain() {
     let isReady = false;
 
-    console.log(`Connecting to ${localConfig.satChain} node on ${localConfig.satHost}:${localConfig.satPort} using wallet '${localConfig.satWallet}'`);
+    console.log(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
 
     while (!isReady) {
         try {
@@ -363,12 +363,12 @@ async function waitForChain() {
             console.log(JSON.stringify(walletInfo, null, 4));
 
             const address = await client.getNewAddress('funds', 'bech32');
-            console.log(`Send ${localConfig.satChain} to ${address}`);
+            console.log(`Send ${config.chain} to ${address}`);
 
             isReady = true;
         }
         catch {
-            console.log(`Waiting for ${localConfig.satChain} node...`);
+            console.log(`Waiting for ${config.chain} node...`);
         }
 
         if (!isReady) {
@@ -378,40 +378,45 @@ async function waitForChain() {
 }
 
 async function main() {
-    if (!config.nodeID) {
+    if (!mainConfig.nodeID) {
         console.log('sat-mediator must have a KC_NODE_ID configured');
         return;
     }
 
     await waitForChain();
 
-    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
+    gatekeeper.setURL(`${mainConfig.gatekeeperURL}:${mainConfig.gatekeeperPort}`);
 
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper, db_wallet);
 
     try {
-        await keymaster.resolveDID(config.nodeID);
-        console.log(`Using node ID '${config.nodeID}'`);
+        await keymaster.resolveDID(mainConfig.nodeID);
+        console.log(`Using node ID '${mainConfig.nodeID}'`);
     }
     catch {
         try {
-            await keymaster.createId(config.nodeID);
-            console.log(`Created node ID '${config.nodeID}'`);
+            await keymaster.createId(mainConfig.nodeID);
+            console.log(`Created node ID '${mainConfig.nodeID}'`);
         }
         catch (error) {
-            console.log(`Cannot create node ID '${config.nodeID}'`, error);
+            console.log(`Cannot create node ID '${mainConfig.nodeID}'`, error);
             return;
         }
     }
 
-    console.log(`Using keymaster ID ${config.nodeID}`);
-    console.log(`Importing operations every ${localConfig.satImportInterval} minute(s)`);
-    console.log(`Exporting operations every ${localConfig.satExportInterval} minute(s)`);
-    console.log(`Txn fee minimum: ${localConfig.satFeeMin} SAT, maximum: ${localConfig.satFeeMax} SAT, increment ${localConfig.satFeeInc} SAT`);
+    console.log(`Using keymaster ID ${mainConfig.nodeID}`);
 
-    importLoop();
-    exportLoop();
+    if (config.importInterval > 0) {
+        console.log(`Importing operations every ${config.importInterval} minute(s)`);
+        importLoop();
+    }
+
+    if (config.exportInterval > 0) {
+        console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
+        console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
+        exportLoop();
+    }
 
     await keymaster.stop();
 }
