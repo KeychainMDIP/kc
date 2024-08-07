@@ -286,9 +286,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const saveName = keymaster.getCurrentId();
-        keymaster.setCurrentId(config.nodeID);
-        const did = await keymaster.createAsset(batch);
+        const did = await keymaster.createAsset(batch, REGISTRY, config.nodeID);
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
@@ -312,8 +310,6 @@ async function anchorBatch() {
                 writeDb(db);
             }
         }
-
-        keymaster.setCurrentId(saveName);
     }
     else {
         console.log('empty batch');
