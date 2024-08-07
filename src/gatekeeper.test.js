@@ -943,6 +943,7 @@ describe('exportDID', () => {
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
+    // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
@@ -957,7 +958,7 @@ describe('exportDIDs', () => {
         mockFs.restore();
     });
 
-    it('should export a valid DID', async () => {
+    it('should export valid DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -971,6 +972,22 @@ describe('exportDIDs', () => {
         expect(ops[0].operation).toStrictEqual(agentOp);
     });
 
+    it('should export all DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        for (let i = 0; i < 5; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair);
+            await gatekeeper.createDID(assetOp);
+        }
+
+        const exports = await gatekeeper.exportDIDs();
+
+        expect(exports.length).toBe(6);
+    });
 
     it('should export a DIDs in order requested', async () => {
         mockFs({});
@@ -989,7 +1006,7 @@ describe('exportDIDs', () => {
         expect(exports[1][0].operation).toStrictEqual(agentOp);
     });
 
-    it('should export a valid updated DID', async () => {
+    it('should export valid updated DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1007,12 +1024,33 @@ describe('exportDIDs', () => {
         expect(ops[1].operation).toStrictEqual(updateOp);
     });
 
+    // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
         mockFs({});
 
         const exports = await gatekeeper.exportDIDs(['mockDID']);
         const ops = exports[0];
         expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('importDIDs', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should import a valid agent DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDIDs([did]);
+
+        const { verified } = await gatekeeper.importDIDs(ops);
+
+        expect(verified).toBe(1);
     });
 });
 
@@ -1064,6 +1102,69 @@ describe('removeDIDs', () => {
 
         const ok = await gatekeeper.removeDIDs(['did:test:mock']);
         expect(ok).toBe(true);
+    });
+});
+
+describe('exportBatch', () => {
+    // local DIDs are excluded from exportBatch so we'll create on hyperswarm
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should export a valid batch', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const did = await gatekeeper.createDID(agentOp);
+
+        const exports = await gatekeeper.exportBatch([did]);
+
+        expect(exports.length).toBe(1);
+        expect(exports[0].operation).toStrictEqual(agentOp);
+    });
+
+    it('should export batch with all DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        for (let i = 0; i < 5; i++) {
+            const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+            await gatekeeper.createDID(assetOp);
+        }
+
+        const exports = await gatekeeper.exportBatch();
+
+        expect(exports.length).toBe(6);
+    });
+
+    it('should export a valid updated batch', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const exports = await gatekeeper.exportBatch([did]);
+
+        expect(exports.length).toBe(2);
+        expect(exports[0].operation).toStrictEqual(agentOp);
+        expect(exports[1].operation).toStrictEqual(updateOp);
+    });
+
+    // eslint-disable-next-line
+    it('should return empty array on an invalid DID', async () => {
+        mockFs({});
+
+        const exports = await gatekeeper.exportBatch(['mockDID']);
+        expect(exports).toStrictEqual([]);
     });
 });
 
@@ -1616,6 +1717,54 @@ describe('getDids', () => {
     });
 });
 
+describe('initRegistries', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should default to valid registries', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries();
+
+        expect(registries.length).toBe(3);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+
+    it('should parse supported registries', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries("local, hyperswarm");
+
+        expect(registries.length).toBe(2);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+    });
+
+    it('should parse supported registries with extra whitespace', async () => {
+        mockFs({});
+
+        const registries = await gatekeeper.initRegistries("   local,    hyperswarm    ");
+
+        expect(registries.length).toBe(2);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+    });
+
+    it('should throw an exception on invalid registries', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.initRegistries("local, hyperswarm, mock");
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        } catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+        }
+    });
+});
+
 describe('listRegistries', () => {
     afterEach(() => {
         mockFs.restore();
@@ -1624,9 +1773,22 @@ describe('listRegistries', () => {
     it('should return list of valid registries', async () => {
         mockFs({});
 
+        await gatekeeper.initRegistries();
         const registries = await gatekeeper.listRegistries();
 
+        expect(registries.length).toBe(3);
         expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TESS')).toBe(true);
+    });
+
+    it('should return list of configured registries', async () => {
+        mockFs({});
+
+        await gatekeeper.initRegistries("hyperswarm, TESS");
+        const registries = await gatekeeper.listRegistries();
+
+        expect(registries.length).toBe(2);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
     });

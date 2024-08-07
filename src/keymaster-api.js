@@ -480,24 +480,6 @@ v1router.delete('/issued/:did', async (req, res) => {
     }
 });
 
-v1router.get('/dids/:did/export', async (req, res) => {
-    try {
-        const response = await keymaster.exportDID(req.params.did);
-        res.json(response);
-    } catch (error) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-v1router.post('/batch/import', async (req, res) => {
-    try {
-        const response = await keymaster.importBatch(req.body.ops);
-        res.json(response);
-    } catch (error) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
 v1router.post('/keys/rotate', async (req, res) => {
     try {
         const response = await keymaster.rotateKeys();

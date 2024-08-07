@@ -606,34 +606,6 @@ program
     });
 
 program
-    .command('export-did <did>')
-    .description('Export DID to file')
-    .action(async (did) => {
-        try {
-            const ops = await keymaster.exportDID(did);
-            console.log(JSON.stringify(ops, null, 4));
-        }
-        catch (error) {
-            console.error(error.message);
-        }
-    });
-
-program
-    .command('import-did <file>')
-    .description('Import DID from file')
-    .action(async (file) => {
-        try {
-            const contents = fs.readFileSync(file).toString();
-            const ops = JSON.parse(contents);
-            const did = await keymaster.importBatch(ops);
-            console.log(did);
-        }
-        catch (error) {
-            console.error(error.message);
-        }
-    });
-
-program
     .command('group-create <name>')
     .description('Create a new group')
     .action(async (name) => {

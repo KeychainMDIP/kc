@@ -32,7 +32,7 @@ export async function listRegistries() {
 
 export async function resetDb() {
     try {
-        const response = await axios.get(`${URL}/api/v1/reset-db`);
+        const response = await axios.get(`${URL}/api/v1/db/reset`);
         return response.data;
     }
     catch (error) {
@@ -152,19 +152,9 @@ export async function getDIDs(options = {}) {
     }
 }
 
-export async function exportDID(did) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/export/${did}`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
 export async function exportDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/export-dids`, dids);
+        const response = await axios.post(`${URL}/api/v1/dids/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -172,9 +162,19 @@ export async function exportDIDs(dids) {
     }
 }
 
-export async function removeDIDs(dids) {
+export async function importDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/remove-dids`, dids);
+        const response = await axios.post(`${URL}/api/v1/dids/import`, dids);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function exportBatch(dids) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/batch/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -184,7 +184,17 @@ export async function removeDIDs(dids) {
 
 export async function importBatch(batch) {
     try {
-        const response = await axios.post(`${URL}/api/v1/import-batch/`, batch);
+        const response = await axios.post(`${URL}/api/v1/batch/import`, batch);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function removeDIDs(dids) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/dids/remove`, dids);
         return response.data;
     }
     catch (error) {
