@@ -60,6 +60,8 @@ services:
       - KC_GATEKEEPER_PORT=4224
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=FTC
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_START_BLOCK=5290000
       - KC_SAT_HOST=${KC_SAT_HOST}
       - KC_SAT_PORT=${KC_SAT_PORT}
       - KC_SAT_USER=${KC_SAT_USER}

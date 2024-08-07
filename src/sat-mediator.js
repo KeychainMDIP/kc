@@ -7,6 +7,7 @@ import config from './config.js';
 
 const localConfig = {
     satChain: process.env.KC_SAT_CHAIN || 'BTC',
+    satNetwork: process.env.KC_SAT_NETWORK || 'mainnet',
     satHost: process.env.KC_SAT_HOST || 'localhost',
     satPort: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
     satWallet: process.env.KC_SAT_WALLET,
@@ -17,13 +18,13 @@ const localConfig = {
     satFeeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
     satFeeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00010,
     satFeeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00002,
+    satStartBlock:  process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
 };
 
 const REGISTRY = localConfig.satChain;
-const FIRST = 5290000;
 
 const client = new BtcClient({
-    network: 'mainnet',
+    network: localConfig.satNetwork,
     username: localConfig.satUser,
     password: localConfig.satPass,
     host: localConfig.satHost,
@@ -97,7 +98,7 @@ async function fetchBlock(height, blockCount) {
         const db = loadDb();
         db.height = height;
         db.time = timestamp;
-        db.blocksScanned = height - FIRST + 1;
+        db.blocksScanned = height - localConfig.satStartBlock + 1;
         db.txnsScanned = db.txnsScanned + block.nTx;
         db.blockCount = blockCount;
         db.blocksPending = blockCount - height;
@@ -109,7 +110,7 @@ async function fetchBlock(height, blockCount) {
 }
 
 async function scanBlocks() {
-    let start = FIRST;
+    let start = localConfig.satStartBlock;
     let blockCount = await client.getBlockCount();
 
     console.log(`current block height: ${blockCount}`);
