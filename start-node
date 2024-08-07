@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE="docker-compose.hyperswarm.yml"
 DOCKER_OPTIONS=""
 
 while [[ $# -gt 0 ]]; do
@@ -24,11 +24,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$RUNTIME" = "BTC" ]; then
-    COMPOSE_FILE="dc-btc.yml"
+    COMPOSE_FILE="docker-compose.btc.yml"
 elif [ "$RUNTIME" = "TESS" ]; then
-    COMPOSE_FILE="dc-tess2.yml"
+    COMPOSE_FILE="docker-compose.tess.yml"
 elif [ "$RUNTIME" = "FTC" ]; then
-    COMPOSE_FILE="dc-ftc.yml"
+    COMPOSE_FILE="docker-compose.ftc.yml"
 fi
 
 echo "$COMPOSE_FILE" > last-compose-file.txt
