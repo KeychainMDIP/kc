@@ -282,6 +282,20 @@ async function anchorBatch() {
         return;
     }
 
+    try {
+        const walletInfo = await client.getWalletInfo();
+
+        if (walletInfo.balance < localConfig.satFeeMax) {
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${localConfig.satChain} to ${address}`);
+            return;
+        }
+    }
+    catch {
+        console.log(`${localConfig.satChain} node not accessible`);
+        return;
+    }
+
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(JSON.stringify(batch, null, 4));
 
@@ -337,27 +351,43 @@ async function exportLoop() {
     setTimeout(exportLoop, localConfig.satExportInterval * 60 * 1000);
 }
 
-// eslint-disable-next-line no-unused-vars
-async function main() {
-    console.log(`Connecting to SAT on ${localConfig.satHost} on port ${localConfig.satPort} using wallet '${localConfig.satWallet}'`);
+async function waitForChain() {
+    let isReady = false;
 
-    try {
-        const walletInfo = await client.getWalletInfo();
-        console.log(JSON.stringify(walletInfo, null, 4));
+    console.log(`Connecting to ${localConfig.satChain} node on ${localConfig.satHost}:${localConfig.satPort} using wallet '${localConfig.satWallet}'`);
+
+    while (!isReady) {
+        try {
+            const walletInfo = await client.getWalletInfo();
+            console.log(JSON.stringify(walletInfo, null, 4));
+
+            const address = await client.getNewAddress('funds', 'bech32');
+            console.log(`Send ${localConfig.satChain} to ${address}`);
+
+            isReady = true;
+        }
+        catch {
+            console.log(`Waiting for ${localConfig.satChain} node...`);
+        }
+
+        if (!isReady) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
     }
-    catch (error) {
-        console.log('Cannot connect to SAT node', error);
+}
+
+async function main() {
+    if (!config.nodeID) {
+        console.log('sat-mediator must have a KC_NODE_ID configured');
         return;
     }
+
+    await waitForChain();
 
     gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
 
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper, db_wallet);
-
-    if (!config.nodeID) {
-        console.log('sat-mediator must have a KC_NODE_ID configured');
-    }
 
     try {
         await keymaster.resolveDID(config.nodeID);
