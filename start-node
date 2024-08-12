@@ -23,9 +23,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$RUNTIME" = "BTC" ]; then
-    COMPOSE_FILE="docker-compose.btc.yml"
-elif [ "$RUNTIME" = "TESS" ]; then
+if [ "$RUNTIME" = "TESS" ]; then
     COMPOSE_FILE="docker-compose.tess.yml"
 elif [ "$RUNTIME" = "TBTC" ]; then
     COMPOSE_FILE="docker-compose.tbtc.yml"

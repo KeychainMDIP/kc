@@ -98,7 +98,7 @@ services:
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
-      - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
+      - KC_SAT_START_BLOCK=38000
       - KC_SAT_HOST=${KC_TBTC_HOST}
       - KC_SAT_PORT=${KC_TBTC_PORT}
       - KC_SAT_USER=${KC_TBTC_USER}

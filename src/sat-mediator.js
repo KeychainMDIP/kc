@@ -16,8 +16,8 @@ const config = {
     importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
     exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
     feeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
-    feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00010,
-    feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00002,
+    feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
+    feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00000,
     startBlock:  process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
 };
 
@@ -219,10 +219,16 @@ async function replaceByFee() {
         return false;
     }
 
+    // Assigning zero to the fee increment will disable RBF
+    if (config.feeInc === 0) {
+        return true;
+    }
+
     console.log(JSON.stringify(tx, null, 4));
 
     const mempoolEntry = await client.getMempoolEntry(db.pendingTxid);
 
+    // If we're already at the maximum fee, wait it out
     if (mempoolEntry && mempoolEntry.fee >= config.feeMax) {
         return true;
     }
