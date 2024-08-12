@@ -18,7 +18,7 @@ const config = {
     feeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
     feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
     feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00000,
-    startBlock:  process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
+    startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
 };
 
 const REGISTRY = config.chain;
@@ -190,7 +190,14 @@ export async function createOpReturnTxn(opReturnData) {
     });
 
     // Sign the raw transaction
-    const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+    let signedTxn;
+    try {
+        signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+    }
+    catch {
+        // fall back to older version of the method
+        signedTxn = await client.signRawTransaction(rawTxn);
+    }
 
     console.log(JSON.stringify(signedTxn, null, 4));
     console.log(amountBack);
@@ -198,7 +205,7 @@ export async function createOpReturnTxn(opReturnData) {
     // Broadcast the transaction
     const txid = await client.sendRawTransaction(signedTxn.hex);
 
-    console.log(`Transaction broadcasted with txid: ${txid}`);
+    console.log(`Transaction broadcast with txid: ${txid}`);
     return txid;
 }
 
@@ -235,6 +242,7 @@ async function replaceByFee() {
 
     const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
+    // TBD TESS has an addresses array here instead
     const address = tx.vout[1].scriptPubKey.address;
     const amountBack = tx.vout[1].value - config.feeInc;
 
@@ -248,7 +256,14 @@ async function replaceByFee() {
         [address]: amountBack.toFixed(8)
     });
 
-    const signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+    let signedTxn;
+    try {
+        signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+    }
+    catch {
+        // fall back to older version of the method
+        signedTxn = await client.signRawTransaction(rawTxn);
+    }
 
     console.log(JSON.stringify(signedTxn, null, 4));
     console.log(amountBack);
