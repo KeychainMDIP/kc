@@ -27,8 +27,8 @@ if [ "$RUNTIME" = "BTC" ]; then
     COMPOSE_FILE="docker-compose.btc.yml"
 elif [ "$RUNTIME" = "TESS" ]; then
     COMPOSE_FILE="docker-compose.tess.yml"
-elif [ "$RUNTIME" = "FTC" ]; then
-    COMPOSE_FILE="docker-compose.ftc.yml"
+elif [ "$RUNTIME" = "TBTC" ]; then
+    COMPOSE_FILE="docker-compose.tbtc.yml"
 fi
 
 echo "$COMPOSE_FILE" > last-compose-file.txt

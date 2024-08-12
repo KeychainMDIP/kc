@@ -1731,7 +1731,7 @@ describe('initRegistries', () => {
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
-        expect(registries.includes('FTC')).toBe(true);
+        expect(registries.includes('TBTC')).toBe(true);
     });
 
     it('should parse supported registries', async () => {
@@ -1781,7 +1781,7 @@ describe('listRegistries', () => {
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
-        expect(registries.includes('FTC')).toBe(true);
+        expect(registries.includes('TBTC')).toBe(true);
     });
 
     it('should return list of configured registries', async () => {
