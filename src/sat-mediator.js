@@ -242,8 +242,8 @@ async function replaceByFee() {
 
     const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
-    // TBD TESS has an addresses array here instead
-    const address = tx.vout[1].scriptPubKey.address;
+    // TESS has an addresses array here instead
+    const address = tx.vout[1].scriptPubKey.address || tx.vout[1].scriptPubKey.addresses[0];
     const amountBack = tx.vout[1].value - config.feeInc;
 
     if (amountBack < 0) {
