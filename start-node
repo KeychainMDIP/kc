@@ -9,7 +9,7 @@ while [[ $# -gt 0 ]]; do
 
     case $key in
         -r|--registry)
-        RUNTIME="$2"
+        REGISTRY="$2"
         shift # past argument
         shift # past value
         ;;
@@ -23,9 +23,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$RUNTIME" = "TESS" ]; then
+if [ "$REGISTRY" = "TESS" ]; then
     COMPOSE_FILE="docker-compose.tess.yml"
-elif [ "$RUNTIME" = "TBTC" ]; then
+elif [ "$REGISTRY" = "TBTC" ]; then
     COMPOSE_FILE="docker-compose.tbtc.yml"
 fi
 
