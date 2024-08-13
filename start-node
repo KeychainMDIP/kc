@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE="docker-compose.hyperswarm.yml"
 DOCKER_OPTIONS=""
 
 while [[ $# -gt 0 ]]; do
@@ -9,7 +9,7 @@ while [[ $# -gt 0 ]]; do
 
     case $key in
         -r|--registry)
-        RUNTIME="$2"
+        REGISTRY="$2"
         shift # past argument
         shift # past value
         ;;
@@ -23,10 +23,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$RUNTIME" = "BTC" ]; then
-    COMPOSE_FILE="dc-btc.yml"
-elif [ "$RUNTIME" = "TESS" ]; then
-    COMPOSE_FILE="dc-tess.yml"
+if [ "$REGISTRY" = "TESS" ]; then
+    COMPOSE_FILE="docker-compose.tess.yml"
+elif [ "$REGISTRY" = "TBTC" ]; then
+    COMPOSE_FILE="docker-compose.tbtc.yml"
 fi
 
 echo "$COMPOSE_FILE" > last-compose-file.txt

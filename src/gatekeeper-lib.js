@@ -8,7 +8,7 @@ import * as exceptions from './exceptions.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm', 'TESS'];
+const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC'];
 let supportedRegistries = null;
 
 let db = null;

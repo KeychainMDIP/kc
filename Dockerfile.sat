@@ -14,4 +14,4 @@ RUN npm ci
 COPY src/*.js ./
 
 # Run...
-CMD ["node", "tess-mediator.js"]
+CMD ["node", "sat-mediator.js"]
