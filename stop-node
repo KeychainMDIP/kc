@@ -1,31 +1,6 @@
 #!/usr/bin/env bash
 
-# Default to docker-compose.yml or the last used compose file if it exists
-if [ -f last-compose-file.txt ]; then
-    COMPOSE_FILE=$(cat last-compose-file.txt)
-else
-    COMPOSE_FILE="docker-compose.hyperswarm.yml"
-fi
-
-while [[ $# -gt 0 ]]; do
-    key="$1"
-
-    case $key in
-        -r|--runtime)
-        REGISTRY="$2"
-        shift # past argument
-        shift # past value
-        ;;
-        *)    # unknown option
-        shift # past argument
-        ;;
-    esac
-done
-
-if [ "$REGISTRY" = "TESS" ]; then
-    COMPOSE_FILE="docker-compose.tess.yml"
-elif [ "$REGISTRY" = "TBTC" ]; then
-    COMPOSE_FILE="docker-compose.tbtc.yml"
-fi
-
-docker compose -f $COMPOSE_FILE down
+docker compose -p tess -f docker-compose.tess.yml down
+docker compose -p tftc -f docker-compose.tftc.yml down
+docker compose -p tbtc -f docker-compose.tbtc.yml down
+docker compose down
