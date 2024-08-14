@@ -1727,11 +1727,12 @@ describe('initRegistries', () => {
 
         const registries = await gatekeeper.initRegistries();
 
-        expect(registries.length).toBe(4);
+        expect(registries.length).toBe(5);
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
         expect(registries.includes('TBTC')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
     });
 
     it('should parse supported registries', async () => {
@@ -1777,11 +1778,12 @@ describe('listRegistries', () => {
         await gatekeeper.initRegistries();
         const registries = await gatekeeper.listRegistries();
 
-        expect(registries.length).toBe(4);
+        expect(registries.length).toBe(5);
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TESS')).toBe(true);
         expect(registries.includes('TBTC')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
     });
 
     it('should return list of configured registries', async () => {
