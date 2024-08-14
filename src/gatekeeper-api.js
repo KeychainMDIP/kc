@@ -252,21 +252,25 @@ app.use((req, res) => {
     }
 });
 
-gatekeeper.verifyDb().then((invalid) => {
+async function main() {
+    const invalid = await gatekeeper.verifyDb();
+
     if (invalid > 0) {
         console.log(`${invalid} invalid DIDs removed from MDIP db`);
     }
 
-    gatekeeper.initRegistries(config.gatekeeperRegistries);
-
+    const registries = await gatekeeper.initRegistries(config.gatekeeperRegistries);
     const port = config.gatekeeperPort;
     const db = config.gatekeeperDb;
 
     app.listen(port, () => {
         console.log(`Server is running on port ${port}, persisting with ${db}`);
+        console.log(`Supported registries: ${registries}`);
         serverReady = true;
     });
-});
+}
+
+main();
 
 process.on('uncaughtException', (error) => {
     console.error('Unhandled exception caught', error);
