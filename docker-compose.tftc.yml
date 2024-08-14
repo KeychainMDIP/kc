@@ -24,9 +24,9 @@ services:
       - KC_SAT_START_BLOCK=0
       - KC_SAT_HOST=localhost
       - KC_SAT_PORT=19337
-      - KC_SAT_USER=feathercoin
-      - KC_SAT_PASS=feathercoin
-      - KC_SAT_WALLET=mdip
+      - KC_SAT_USER=${KC_TFTC_USER}
+      - KC_SAT_PASS=${KC_TFTC_PASS}
+      - KC_SAT_WALLET=${KC_TFTC_WALLET}
       - KC_SAT_IMPORT_INTERVAL=${KC_TFTC_IMPORT_INTERVAL}
       - KC_SAT_EXPORT_INTERVAL=${KC_TFTC_EXPORT_INTERVAL}
       - KC_SAT_FEE_MIN=${KC_TFTC_FEE_MIN}
