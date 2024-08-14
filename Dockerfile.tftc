@@ -12,7 +12,4 @@ RUN wget https://github.com/FeatherCoin/Feathercoin/releases/download/v0.19.1/fe
 WORKDIR /root
 RUN mkdir -p /root/.feathercoin
 
-EXPOSE 19336
-EXPOSE 19337
-
 CMD ["feathercoind", "-printtoconsole"]
