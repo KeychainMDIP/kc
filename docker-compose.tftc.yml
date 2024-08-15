@@ -2,12 +2,12 @@ services:
   tftc-node:
     build:
       context: .
-      dockerfile: Dockerfile.tftc
+      dockerfile: Dockerfile.ftc
     ports:
       - "19336:19336"
       - "19337:19337"
     volumes:
-      - ./data/feathercoin:/root/.feathercoin
+      - ./data/tftc:/root/.feathercoin
 
   tftc-mediator:
     build:
