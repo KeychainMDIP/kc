@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-docker compose exec -p tess -f docker-compose.tess.yml -it tess-node tc "$@"
+docker compose -p tess -f docker-compose.tess.yml exec -it tess-node tc "$@"
