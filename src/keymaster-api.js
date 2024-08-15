@@ -47,9 +47,6 @@ v1router.get('/wallet', async (req, res) => {
 v1router.put('/wallet', async (req, res) => {
     try {
         const { wallet } = req.body;
-        if (!wallet) {
-            return res.status(400).send({ error: 'Wallet data is required' });
-        }
         const response = keymaster.saveWallet(wallet);
         res.json(response);
     } catch (error) {
@@ -60,9 +57,6 @@ v1router.put('/wallet', async (req, res) => {
 v1router.post('/wallet/new', async (req, res) => {
     try {
         const { mnemonic, overwrite } = req.body;
-        if (!mnemonic) {
-            return res.status(400).send({ error: 'Mnemonic is required' });
-        }
         const wallet = keymaster.newWallet(mnemonic, overwrite);
         res.json(wallet);
     } catch (error) {
