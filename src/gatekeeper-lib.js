@@ -409,7 +409,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
                 throw new Error(exceptions.INVALID_OPERATION);
             }
 
-            console.error(`unknown type ${operation.type}`);
+            // console.error(`unknown type ${operation.type}`);
         }
 
         if (atVersion && version === atVersion) {
@@ -453,7 +453,7 @@ export async function updateDID(operation) {
         return true;
     }
     catch (error) {
-        console.error(error);
+        // console.error(error);
         return false;
     }
 }
@@ -560,7 +560,7 @@ async function importUpdateEvent(event) {
         return true;
     }
     catch (error) {
-        //console.error(error);
+        // console.error(error);
         return false;
     }
 }
