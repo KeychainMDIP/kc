@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+docker compose -p tftc -f docker-compose.tftc.yml logs -f
