@@ -16,6 +16,10 @@ let helia = null;
 let ipfs = null;
 let eventsCache = {};
 
+function copyJSON(json) {
+    return JSON.parse(JSON.stringify(json))
+}
+
 export async function start(injectedDb) {
     if (!ipfs) {
         helia = await createHelia();
@@ -114,7 +118,7 @@ async function verifyCreateAgent(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const operationCopy = JSON.parse(JSON.stringify(operation));
+    const operationCopy = copyJSON(operation);
     delete operationCopy.signature;
 
     const msgHash = cipher.hashJSON(operationCopy);
@@ -132,7 +136,7 @@ async function verifyCreateAsset(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    const operationCopy = JSON.parse(JSON.stringify(operation));
+    const operationCopy = copyJSON(operation);
     delete operationCopy.signature;
     const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
@@ -294,7 +298,7 @@ async function verifyUpdate(operation, doc) {
         return false;
     }
 
-    const jsonCopy = JSON.parse(JSON.stringify(operation));
+    const jsonCopy = copyJSON(operation);
 
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
@@ -320,7 +324,7 @@ async function getEvents(did) {
         }
     }
 
-    return JSON.parse(JSON.stringify(events));
+    return copyJSON(events);
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
@@ -348,7 +352,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     doc.didDocumentMetadata.version = version;
     doc.didDocumentMetadata.confirmed = confirmed;
 
-    for (const { time, operation, registry } of events) {
+    for (const { time, operation, registry, blockchain } of events) {
         if (operation.type === 'create') {
             continue;
         }
@@ -385,6 +389,13 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
             doc.mdip = mdip;
+
+            if (blockchain) {
+                doc.mdip.registration = blockchain;
+            }
+            else {
+                delete doc.mdip.registration;
+            }
         }
         else if (operation.type === 'delete') {
             doc.didDocument = {};
@@ -398,7 +409,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
                 throw new Error(exceptions.INVALID_OPERATION);
             }
 
-            console.error(`unknown type ${operation.type}`);
+            // console.error(`unknown type ${operation.type}`);
         }
 
         if (atVersion && version === atVersion) {
@@ -406,7 +417,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
-    return JSON.parse(JSON.stringify(doc));
+    return copyJSON(doc);
 }
 
 export async function updateDID(operation) {
@@ -442,7 +453,7 @@ export async function updateDID(operation) {
         return true;
     }
     catch (error) {
-        console.error(error);
+        // console.error(error);
         return false;
     }
 }
@@ -549,7 +560,7 @@ async function importUpdateEvent(event) {
         return true;
     }
     catch (error) {
-        //console.error(error);
+        // console.error(error);
         return false;
     }
 }
