@@ -522,7 +522,7 @@ v1router.post('/signature/verify', async (req, res) => {
 
 v1router.post('/credentials/create', async (req, res) => {
     try {
-        const response = await keymaster.createCredential(req.body.schema);
+        const response = await keymaster.createCredential(req.body.schema, req.body.registry);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });

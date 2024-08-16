@@ -1,5 +1,6 @@
 import axios from 'axios';
 
+const defaultRegistry = 'TESS';
 let URL = '';
 
 function throwError(error) {
@@ -8,6 +9,12 @@ function throwError(error) {
     }
 
     throw error.message;
+}
+
+export function start() {
+}
+
+export function stop() {
 }
 
 export function setURL(url) {
@@ -111,6 +118,16 @@ export async function checkWallet() {
 export async function fixWallet() {
     try {
         const response = await axios.post(`${URL}/api/v1/wallet/fix`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function rotateKeys() {
+    try {
+        const response = await axios.post(`${URL}/api/v1/keys/rotate`);
         return response.data;
     }
     catch (error) {
@@ -288,7 +305,7 @@ export async function verifyResponse(responseDID, challengeDID) {
     }
 }
 
-export async function createGroup(name, registry) {
+export async function createGroup(name, registry=defaultRegistry) {
     try {
         const response = await axios.post(`${URL}/api/v1/groups`, { name, registry });
         return response.data;
@@ -338,7 +355,7 @@ export async function groupTest(group, member) {
     }
 }
 
-export async function createSchema(schema, registry) {
+export async function createSchema(schema, registry=defaultRegistry) {
     try {
         const response = await axios.post(`${URL}/api/v1/schemas`, { schema, registry });
         return response.data;
@@ -381,6 +398,26 @@ export async function testSchema(id) {
 export async function testAgent(id) {
     try {
         const response = await axios.post(`${URL}/api/v1/agents/${id}/test`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createAsset(asset, registry=defaultRegistry) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/asset/create`, { asset, registry });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function createCredential(schema, registry=defaultRegistry) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/credentials/create`, { schema, registry });
         return response.data;
     }
     catch (error) {
