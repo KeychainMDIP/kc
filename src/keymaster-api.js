@@ -22,7 +22,7 @@ v1router.get('/ready', async (req, res) => {
     try {
         res.json('ready');
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -31,7 +31,7 @@ v1router.get('/registries', async (req, res) => {
         const registries = await keymaster.listRegistries();
         res.json(registries);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -40,7 +40,7 @@ v1router.get('/wallet', async (req, res) => {
         const wallet = keymaster.loadWallet();
         res.json(wallet);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -50,7 +50,7 @@ v1router.put('/wallet', async (req, res) => {
         const response = keymaster.saveWallet(wallet);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -60,7 +60,7 @@ v1router.post('/wallet/new', async (req, res) => {
         const wallet = keymaster.newWallet(mnemonic, overwrite);
         res.json(wallet);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -69,7 +69,7 @@ v1router.post('/wallet/backup', async (req, res) => {
         const response = await keymaster.backupWallet();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -78,7 +78,7 @@ v1router.post('/wallet/recover', async (req, res) => {
         const response = await keymaster.recoverWallet();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -87,7 +87,7 @@ v1router.post('/wallet/check', async (req, res) => {
         const response = await keymaster.checkWallet();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -96,7 +96,7 @@ v1router.post('/wallet/fix', async (req, res) => {
         const response = await keymaster.fixWallet();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -105,7 +105,7 @@ v1router.get('/mnemonic', async (req, res) => {
         const mnemonic = keymaster.decryptMnemonic();
         res.json(mnemonic);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -114,7 +114,7 @@ v1router.get('/ids/current', async (req, res) => {
         const current = keymaster.getCurrentId();
         res.json(current);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -124,7 +124,7 @@ v1router.put('/ids/current', async (req, res) => {
         keymaster.setCurrentId(name);
         res.json("OK");
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -133,7 +133,7 @@ v1router.get('/ids', async (req, res) => {
         const ids = keymaster.listIds();
         res.json(ids);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -143,16 +143,19 @@ v1router.post('/ids/new', async (req, res) => {
         const did = await keymaster.createId(name, registry);
         res.json(did);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
 v1router.get('/ids/:id', async (req, res) => {
     try {
         const doc = await keymaster.resolveId(req.params.id);
+        if (!doc) {
+            return res.status(404).send({ error: 'ID not found' });
+        }
         res.json(doc);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -161,7 +164,7 @@ v1router.delete('/ids/:id', async (req, res) => {
         const response = keymaster.removeId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -170,7 +173,7 @@ v1router.post('/ids/:id/backup', async (req, res) => {
         const response = await keymaster.backupId(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -180,7 +183,7 @@ v1router.post('/ids/recover', async (req, res) => {
         const response = await keymaster.recoverId(did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -189,7 +192,7 @@ v1router.get('/names', async (req, res) => {
         const names = keymaster.listNames();
         res.json(names);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -199,16 +202,19 @@ v1router.post('/names', async (req, res) => {
         const response = keymaster.addName(name, did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
 v1router.get('/names/:name', async (req, res) => {
     try {
         const doc = await keymaster.resolveDID(req.params.name);
+        if (!doc) {
+            return res.status(404).send({ error: 'Name not found' });
+        }
         res.json(doc);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -217,7 +223,7 @@ v1router.delete('/names/:name', async (req, res) => {
         const response = keymaster.removeName(req.params.name);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -226,7 +232,7 @@ v1router.get('/challenge', async (req, res) => {
         const did = await keymaster.createChallenge();
         res.json(did);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -235,7 +241,7 @@ v1router.post('/challenge', async (req, res) => {
         const did = await keymaster.createChallenge(req.body);
         res.json(did);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -245,7 +251,7 @@ v1router.post('/response', async (req, res) => {
         const did = await keymaster.createResponse(challenge);
         res.json(did);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -255,7 +261,7 @@ v1router.post('/response/verify', async (req, res) => {
         const verify = await keymaster.verifyResponse(response, challenge);
         res.json(verify);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -265,16 +271,19 @@ v1router.post('/groups', async (req, res) => {
         const response = await keymaster.createGroup(name, registry);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
 v1router.get('/groups/:name', async (req, res) => {
     try {
         const group = await keymaster.getGroup(req.params.name);
+        if (!group) {
+            return res.status(404).send({ error: 'Group not found' });
+        }
         res.json(group);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -284,7 +293,7 @@ v1router.post('/groups/:name/add', async (req, res) => {
         const response = await keymaster.groupAdd(req.params.name, member);
         res.json(response);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -294,7 +303,7 @@ v1router.post('/groups/:name/remove', async (req, res) => {
         const response = await keymaster.groupRemove(req.params.name, member);
         res.json(response);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -304,7 +313,7 @@ v1router.post('/groups/:name/test', async (req, res) => {
         const response = await keymaster.groupTest(req.params.name, member);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -314,16 +323,19 @@ v1router.post('/schemas', async (req, res) => {
         const response = await keymaster.createSchema(schema, registry);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
 v1router.get('/schemas/:id', async (req, res) => {
     try {
         const schema = await keymaster.getSchema(req.params.id);
+        if (!schema) {
+            return res.status(404).send({ error: 'Schema not found' });
+        }
         res.json(schema);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -333,7 +345,7 @@ v1router.put('/schemas/:id', async (req, res) => {
         const response = await keymaster.setSchema(req.params.id, schema);
         res.json(response.data);
     } catch (error) {
-        res.status(404).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -342,7 +354,7 @@ v1router.post('/schemas/:id/test', async (req, res) => {
         const response = await keymaster.testSchema(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -351,7 +363,7 @@ v1router.post('/agents/:id/test', async (req, res) => {
         const response = await keymaster.testAgent(req.params.id);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -361,7 +373,7 @@ v1router.post('/credentials/bind', async (req, res) => {
         const response = await keymaster.bindCredential(schema, subject);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -371,7 +383,7 @@ v1router.post('/credentials/issue', async (req, res) => {
         const response = await keymaster.issueCredential(credential, registry);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -380,7 +392,7 @@ v1router.get('/credentials', async (req, res) => {
         const response = await keymaster.listCredentials();
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -390,7 +402,7 @@ v1router.post('/credentials', async (req, res) => {
         const response = await keymaster.acceptCredential(did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -399,7 +411,7 @@ v1router.get('/credentials/:did', async (req, res) => {
         const response = await keymaster.getCredential(req.params.did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -408,7 +420,7 @@ v1router.delete('/credentials/:did', async (req, res) => {
         const response = await keymaster.removeCredential(req.params.did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -419,7 +431,7 @@ v1router.post('/credentials/:did/publish', async (req, res) => {
         const response = await keymaster.publishCredential(did, reveal);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -429,7 +441,7 @@ v1router.post('/credentials/:did/unpublish', async (req, res) => {
         const response = await keymaster.unpublishCredential(did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -438,7 +450,7 @@ v1router.get('/issued', async (req, res) => {
         const response = await keymaster.listIssued();
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -448,7 +460,7 @@ v1router.get('/issued/:did', async (req, res) => {
         const response = await keymaster.getCredential(did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -458,7 +470,7 @@ v1router.delete('/issued/:did', async (req, res) => {
         const response = await keymaster.revokeCredential(did);
         res.json(response);
     } catch (error) {
-        res.status(400).send(error.toString());
+        res.status(400).send({ error: error.toString() });
     }
 });
 
@@ -467,7 +479,7 @@ v1router.post('/keys/rotate', async (req, res) => {
         const response = await keymaster.rotateKeys();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -477,7 +489,7 @@ v1router.post('/encrypt', async (req, res) => {
         const response = await keymaster.encrypt(msg, did);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -486,7 +498,7 @@ v1router.post('/decrypt', async (req, res) => {
         const response = await keymaster.decrypt(req.body.did);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -495,7 +507,7 @@ v1router.post('/signature/add', async (req, res) => {
         const response = await keymaster.addSignature(JSON.parse(req.body.contents));
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -504,7 +516,7 @@ v1router.post('/signature/verify', async (req, res) => {
         const response = await keymaster.verifySignature(req.body.json);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -513,7 +525,7 @@ v1router.post('/credentials/create', async (req, res) => {
         const response = await keymaster.createCredential(req.body.schema);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -522,7 +534,7 @@ v1router.post('/template/create', async (req, res) => {
         const response = await keymaster.createTemplate(req.body.schema);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -531,7 +543,7 @@ v1router.post('/asset/create', async (req, res) => {
         const response = await keymaster.createAsset(req.body.asset);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -540,7 +552,7 @@ v1router.get('/templates/poll', async (req, res) => {
         const response = await keymaster.pollTemplate();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -549,7 +561,7 @@ v1router.post('/poll/create', async (req, res) => {
         const response = await keymaster.createPoll(req.body.poll);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -558,7 +570,7 @@ v1router.get('/poll/:poll/view', async (req, res) => {
         const response = await keymaster.viewPoll(req.params.poll);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -568,7 +580,7 @@ v1router.post('/poll/vote', async (req, res) => {
         const response = await keymaster.votePoll(poll, vote, spoil);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -577,7 +589,7 @@ v1router.put('/poll/update', async (req, res) => {
         const response = await keymaster.updatePoll(req.body.ballot);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -587,7 +599,7 @@ v1router.post('/poll/:poll/publish', async (req, res) => {
         const response = await keymaster.publishPoll(req.params.poll, reveal);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
@@ -596,7 +608,7 @@ v1router.delete('/poll/:poll/unpublish', async (req, res) => {
         const response = await keymaster.unpublishPoll(req.params.poll);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 
