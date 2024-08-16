@@ -1,6 +1,8 @@
 import fs from 'fs';
-import * as keymaster from './keymaster-sdk.js';
-import * as gatekeeper from './gatekeeper-lib.js';
+import * as keymaster_lib from './keymaster-lib.js';
+import * as keymaster_sdk from './keymaster-sdk.js';
+import * as gatekeeper_lib from './gatekeeper-lib.js';
+import * as gatekeeper_sdk from './gatekeeper-sdk.js';
 import * as db_json from './db-json.js';
 import * as db_wallet from './db-wallet-json.js';
 
@@ -18,11 +20,35 @@ const mockSchema = {
     "type": "object"
 };
 
+let keymaster;
+let gatekeeper;
+
+async function setup1() {
+    gatekeeper = gatekeeper_lib;
+    keymaster = keymaster_lib;
+
+    await db_json.start('mdip');
+    await gatekeeper.start(db_json);
+    await keymaster.start(gatekeeper, db_wallet);
+}
+
+async function setup2() {
+    gatekeeper = gatekeeper_sdk;
+    keymaster = keymaster_lib;
+
+    gatekeeper.setURL('http://localhost:4224');
+    await gatekeeper.waitUntilReady();
+    await keymaster.start(gatekeeper, db_wallet);
+}
+
+async function setup3() {
+    keymaster = keymaster_sdk;
+    keymaster.setURL('http://localhost:4224');
+    await keymaster.waitUntilReady();
+}
+
 async function runWorkflow() {
     const registry = 'hyperswarm';
-
-    keymaster.setURL('http://localhost:4226');
-    await keymaster.waitUntilReady();
 
     const alice = await keymaster.createId('Alice', registry);
     const bob = await keymaster.createId('Bob', registry);
@@ -148,6 +174,10 @@ async function runWorkflow() {
 }
 
 async function main() {
+    await setup1();
+    // await setup2();
+    // await setup3();
+
     const walletFile = 'data/wallet.json';
     const backupFile = 'data/workflow-backup.json';
 
