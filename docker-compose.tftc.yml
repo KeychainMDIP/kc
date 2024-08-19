@@ -1,0 +1,36 @@
+services:
+  tftc-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.ftc
+    ports:
+      - "19336:19336"
+      - "19337:19337"
+    volumes:
+      - ./data/tftc:/root/.feathercoin
+
+  tftc-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.sat
+    image: keychainmdip/sat-mediator
+    network_mode: host
+    environment:
+      - KC_GATEKEEPER_URL=http://localhost
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=TFTC
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_START_BLOCK=0
+      - KC_SAT_HOST=localhost
+      - KC_SAT_PORT=19337
+      - KC_SAT_USER=${KC_TFTC_USER}
+      - KC_SAT_PASS=${KC_TFTC_PASS}
+      - KC_SAT_WALLET=${KC_TFTC_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_TFTC_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_TFTC_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_TFTC_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
+    volumes:
+      - ./data:/app/data

@@ -125,13 +125,40 @@ program
     });
 
 program
+    .command('export-did <did>')
+    .description('Export DID to file')
+    .action(async (did) => {
+        try {
+            const ops = await gatekeeper.exportDIDs([did]);
+            console.log(JSON.stringify(ops, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('import-did <file>')
+    .description('Import DID from file')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const did = JSON.parse(contents);
+            const response = await gatekeeper.importDIDs(did);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
     .command('export-dids')
     .description('Export all DIDs')
     .action(async () => {
         try {
-            const dids = await gatekeeper.getDIDs();
-            const data = await gatekeeper.exportDIDs(dids);
-            console.log(JSON.stringify(data, null, 4));
+            const response = await gatekeeper.exportDIDs();
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -140,32 +167,64 @@ program
 
 program
     .command('import-dids <file>')
-    .description('Import batch of DIDs')
+    .description('Import DIDs from file')
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const batch = JSON.parse(contents);
-
-            // Import DIDs by creation time order to avoid dependency errors
-            batch.sort((a, b) => a[0].time - b[0].time);
-
+            const dids = JSON.parse(contents);
             let chunk = [];
-            for (const events of batch) {
-                chunk.push(events);
 
-                if (chunk.length >= 10) {
-                    console.time('importBatch');
-                    const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
-                    console.timeEnd('importBatch');
-                    console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+            for (const did of dids) {
+                chunk.push(did);
+
+                if (chunk.length > 100) {
+                    const response = await gatekeeper.importDIDs(chunk);
+                    console.log(response);
                     chunk = [];
                 }
             }
 
-            console.time('importBatch');
-            const { verified, updated, failed } = await gatekeeper.importBatch(chunk);
-            console.timeEnd('importBatch');
-            console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+            const response = await gatekeeper.importDIDs(chunk);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('export-batch')
+    .description('Export all events in a batch')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.exportBatch();
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('import-batch <file>')
+    .description('Import batch of events')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const batch = JSON.parse(contents);
+            let chunk = [];
+
+            for (const events of batch) {
+                chunk.push(events);
+
+                if (chunk.length >= 100) {
+                    const response = await gatekeeper.importBatch(chunk);
+                    console.log(response);
+                    chunk = [];
+                }
+            }
+            const response = await gatekeeper.importBatch(chunk);
+            console.log(response);
         }
         catch (error) {
             console.error(error);
@@ -300,6 +359,19 @@ program
         try {
             const doc = await keymaster.resolveSeedBank();
             console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('list-registries')
+    .description('List supported registries')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.listRegistries();
+            console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
             console.error(error);

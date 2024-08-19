@@ -8,15 +8,16 @@ import * as exceptions from './exceptions.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
-const validRegistries = ['local', 'hyperswarm', 'TESS'];
+const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
+let supportedRegistries = null;
 
 let db = null;
 let helia = null;
 let ipfs = null;
 let eventsCache = {};
 
-export async function listRegistries() {
-    return validRegistries;
+function copyJSON(json) {
+    return JSON.parse(JSON.stringify(json))
 }
 
 export async function start(injectedDb) {
@@ -72,6 +73,31 @@ export async function verifyDb(chatty = true) {
     return invalid;
 }
 
+export async function initRegistries(csvRegistries) {
+    if (!csvRegistries) {
+        supportedRegistries = validRegistries;
+    }
+    else {
+        const registries = csvRegistries.split(',').map(registry => registry.trim());
+        supportedRegistries = [];
+
+        for (const registry of registries) {
+            if (validRegistries.includes(registry)) {
+                supportedRegistries.push(registry);
+            }
+            else {
+                throw new Error(exceptions.INVALID_REGISTRY);
+            }
+        }
+    }
+
+    return supportedRegistries;
+}
+
+export async function listRegistries() {
+    return supportedRegistries || validRegistries;
+}
+
 // For testing purposes
 export async function resetDb() {
     await db.resetDb();
@@ -92,7 +118,7 @@ async function verifyCreateAgent(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const operationCopy = JSON.parse(JSON.stringify(operation));
+    const operationCopy = copyJSON(operation);
     delete operationCopy.signature;
 
     const msgHash = cipher.hashJSON(operationCopy);
@@ -110,7 +136,7 @@ async function verifyCreateAsset(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    const operationCopy = JSON.parse(JSON.stringify(operation));
+    const operationCopy = copyJSON(operation);
     delete operationCopy.signature;
     const msgHash = cipher.hashJSON(operationCopy);
     // TBD select the right key here, not just the first one
@@ -272,7 +298,7 @@ async function verifyUpdate(operation, doc) {
         return false;
     }
 
-    const jsonCopy = JSON.parse(JSON.stringify(operation));
+    const jsonCopy = copyJSON(operation);
 
     const signature = jsonCopy.signature;
     delete jsonCopy.signature;
@@ -298,7 +324,7 @@ async function getEvents(did) {
         }
     }
 
-    return JSON.parse(JSON.stringify(events));
+    return copyJSON(events);
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
@@ -326,7 +352,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
     doc.didDocumentMetadata.version = version;
     doc.didDocumentMetadata.confirmed = confirmed;
 
-    for (const { time, operation, registry } of events) {
+    for (const { time, operation, registry, blockchain } of events) {
         if (operation.type === 'create') {
             continue;
         }
@@ -363,6 +389,13 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
             doc.mdip = mdip;
+
+            if (blockchain) {
+                doc.mdip.registration = blockchain;
+            }
+            else {
+                delete doc.mdip.registration;
+            }
         }
         else if (operation.type === 'delete') {
             doc.didDocument = {};
@@ -376,7 +409,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
                 throw new Error(exceptions.INVALID_OPERATION);
             }
 
-            console.error(`unknown type ${operation.type}`);
+            // console.error(`unknown type ${operation.type}`);
         }
 
         if (atVersion && version === atVersion) {
@@ -384,7 +417,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
     }
 
-    return JSON.parse(JSON.stringify(doc));
+    return copyJSON(doc);
 }
 
 export async function updateDID(operation) {
@@ -420,7 +453,7 @@ export async function updateDID(operation) {
         return true;
     }
     catch (error) {
-        console.error(error);
+        // console.error(error);
         return false;
     }
 }
@@ -462,17 +495,25 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
 }
 
 export async function exportDID(did) {
-    return await getEvents(did);
+    return getEvents(did);
 }
 
 export async function exportDIDs(dids) {
+    if (!dids) {
+        dids = await getDIDs();
+    }
+
     const batch = [];
 
     for (const did of dids) {
-        batch.push(await getEvents(did));
+        batch.push(await exportDID(did));
     }
 
     return batch;
+}
+
+export async function importDIDs(dids) {
+    return importBatch(dids.flat());
 }
 
 export async function removeDIDs(dids) {
@@ -519,7 +560,7 @@ async function importUpdateEvent(event) {
         return true;
     }
     catch (error) {
-        //console.error(error);
+        // console.error(error);
         return false;
     }
 }
@@ -604,7 +645,6 @@ export async function importBatch(batch) {
     let failed = 0;
 
     for (const event of batch) {
-        //console.time('importEvent');
         try {
             const imported = await importEvent(event);
 
@@ -616,10 +656,8 @@ export async function importBatch(batch) {
             }
         }
         catch (error) {
-            //console.error(error);
             failed += 1;
         }
-        //console.timeEnd('importEvent');
     }
 
     return {
@@ -627,6 +665,21 @@ export async function importBatch(batch) {
         updated: updated,
         failed: failed,
     };
+}
+
+export async function exportBatch(dids) {
+    const allDIDs = await exportDIDs(dids);
+    const nonlocalDIDs = allDIDs.filter(events => {
+        if (events.length > 0) {
+            const create = events[0];
+            const registry = create.operation?.mdip?.registry;
+            return registry && registry !== 'local'
+        }
+        return false;
+    });
+
+    const events = nonlocalDIDs.flat();
+    return events.sort((a, b) => new Date(a.operation.signature.signed) - new Date(b.operation.signature.signed));
 }
 
 export async function getQueue(registry) {

@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 set -e
+source .env
+set +a
 
-COMPOSE_FILE="docker-compose.yml"
 DOCKER_OPTIONS=""
 
 while [[ $# -gt 0 ]]; do
     key="$1"
 
     case $key in
-        -r|--registry)
-        RUNTIME="$2"
-        shift # past argument
-        shift # past value
-        ;;
         -d)
         DOCKER_OPTIONS="$DOCKER_OPTIONS -d"
         shift # past argument
@@ -23,13 +19,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$RUNTIME" = "BTC" ]; then
-    COMPOSE_FILE="dc-btc.yml"
-elif [ "$RUNTIME" = "TESS" ]; then
-    COMPOSE_FILE="dc-tess.yml"
+docker compose build
+
+if [ "$KC_TESS_ENABLED" = "true" ]; then
+    echo "Starting Tesseract (TESS) mediator"
+    docker compose -p tess -f docker-compose.tess.yml up -d
+else
+    echo "TESS mediator disabled"
 fi
 
-echo "$COMPOSE_FILE" > last-compose-file.txt
+if [ "$KC_TFTC_ENABLED" = "true" ]; then
+    echo "Starting Feathercoin testnet (TFTC) mediator"
+    docker compose -p tftc -f docker-compose.tftc.yml up -d
+else
+    echo "TFTC mediator disabled"
+fi
 
-docker compose -f $COMPOSE_FILE build
-docker compose -f $COMPOSE_FILE up $DOCKER_OPTIONS
+if [ "$KC_TBTC_ENABLED" = "true" ]; then
+    echo "Starting Bitcoin testnet4 (TBTC) mediator"
+    docker compose -p tbtc -f docker-compose.tbtc.yml up -d
+else
+    echo "TBTC mediator disabled"
+fi
+
+docker compose up $DOCKER_OPTIONS
