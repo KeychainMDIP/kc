@@ -2,6 +2,7 @@ import * as uuid from 'uuid';
 import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
 import * as db_mongodb from './db-mongodb.js';
+import * as db_redis from './db-redis.js';
 
 async function importDIDs(db) {
 
@@ -82,14 +83,17 @@ async function runBenchmark(db) {
 }
 
 async function main() {
-    console.log('>> db_json');
-    await runBenchmark(db_json);
+    // console.log('>> db_json');
+    // await runBenchmark(db_json);
 
-    console.log('>> db_sqlite');
-    await runBenchmark(db_sqlite);
+    // console.log('>> db_sqlite');
+    // await runBenchmark(db_sqlite);
 
-    console.log('>> db_mongodb');
-    await runBenchmark(db_mongodb);
+    // console.log('>> db_mongodb');
+    // await runBenchmark(db_mongodb);
+
+    console.log('>> db_redis');
+    await runBenchmark(db_redis);
 }
 
 main();
