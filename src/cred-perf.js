@@ -4,6 +4,7 @@ import * as keymaster_sdk from './keymaster-sdk.js';
 import * as gatekeeper_lib from './gatekeeper-lib.js';
 import * as gatekeeper_sdk from './gatekeeper-sdk.js';
 import * as db_json from './db-json.js';
+import * as db_redis from './db-redis.js';
 import * as db_wallet from './db-wallet-json.js';
 
 const mockSchema = {
@@ -27,8 +28,8 @@ async function setup1() {
     gatekeeper = gatekeeper_lib;
     keymaster = keymaster_lib;
 
-    await db_json.start('mdip');
-    await gatekeeper.start(db_json);
+    await db_redis.start();
+    await gatekeeper.start(db_redis);
     await keymaster.start(gatekeeper, db_wallet);
 }
 
@@ -80,13 +81,13 @@ async function runWorkflow() {
         const vc1 = await keymaster.issueCredential(bc1, registry);
         console.timeEnd('issueCredential');
 
-        console.time('setCurrentId');
-        keymaster.setCurrentId('Carol');
-        console.timeEnd('setCurrentId');
+        // console.time('setCurrentId');
+        // keymaster.setCurrentId('Carol');
+        // console.timeEnd('setCurrentId');
 
-        console.time('acceptCredential');
-        await keymaster.acceptCredential(vc1);
-        console.timeEnd('acceptCredential');
+        // console.time('acceptCredential');
+        // await keymaster.acceptCredential(vc1);
+        // console.timeEnd('acceptCredential');
     }
     console.timeEnd('loop');
 

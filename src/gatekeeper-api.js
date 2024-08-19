@@ -7,13 +7,15 @@ import config from './config.js';
 import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
 import * as db_mongodb from './db-mongodb.js';
+import * as db_redis from './db-redis.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
 const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
     : (config.gatekeeperDb === 'mongodb') ? db_mongodb
-        : db_json;
+        : (config.gatekeeperDb === 'redis') ? db_redis
+            : db_json;
 
 await db.start();
 await gatekeeper.start(db);

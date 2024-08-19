@@ -83,14 +83,14 @@ async function runBenchmark(db) {
 }
 
 async function main() {
-    // console.log('>> db_json');
-    // await runBenchmark(db_json);
+    console.log('>> db_json');
+    await runBenchmark(db_json);
 
-    // console.log('>> db_sqlite');
-    // await runBenchmark(db_sqlite);
+    console.log('>> db_sqlite');
+    await runBenchmark(db_sqlite);
 
-    // console.log('>> db_mongodb');
-    // await runBenchmark(db_mongodb);
+    console.log('>> db_mongodb');
+    await runBenchmark(db_mongodb);
 
     console.log('>> db_redis');
     await runBenchmark(db_redis);

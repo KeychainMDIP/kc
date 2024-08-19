@@ -48,6 +48,11 @@ export async function verifyDb(chatty = true) {
     let n = 0;
     let invalid = 0;
 
+    // prime the cache
+    for (const did of dids) {
+        await getEvents(did);
+    }
+
     for (const did of dids) {
         n += 1;
         try {

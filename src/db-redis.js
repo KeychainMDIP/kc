@@ -27,34 +27,17 @@ export async function addEvent(did, event) {
 
     const id = did.split(':').pop();
 
-    console.time('rpush');
-    await redis.rpush(`dids:${id}`, JSON.stringify(event));
-    console.timeEnd('rpush');
+    //console.time('rpush');
+    await redis.rpush(`dids/${id}`, JSON.stringify(event));
+    //console.timeEnd('rpush');
 }
 
 export async function setEvents(did, events) {
-    if (!did) {
-        throw new Error(exceptions.INVALID_DID);
-    }
+    deleteEvents(did);
 
-    const id = did.split(':').pop();
-
-    try {
-        // Remove any existing events
-        console.time('del');
-        const deleted = await redis.del(`dids:${id}`);
-        console.timeEnd('del');
-        console.log(`deleted ${deleted}`);
-
-        // Add new events
-        for (const event of events) {
-            console.time('rpush');
-            await redis.rpush(`dids:${id}`, JSON.stringify(event));
-            console.timeEnd('rpush');
-        }
-    }
-    catch (error) {
-        console.error(error);
+    // Add new events
+    for (const event of events) {
+        addEvent(did, event);
     }
 }
 
@@ -63,15 +46,12 @@ export async function getEvents(did) {
         throw new Error(exceptions.INVALID_DID);
     }
 
-    try {
-        const id = did.split(':').pop();
-        console.time('lrange');
-        const events = await redis.lrange(`dids:${id}`, 0, -1);
-        console.timeEnd('lrange');
-        return events.map(event => JSON.parse(event));
-    } catch {
-        return [];
-    }
+    console.log(`${did}`);
+    const id = did.split(':').pop();
+    console.time('lrange');
+    const events = await redis.lrange(`dids/${id}`, 0, -1);
+    console.timeEnd('lrange');
+    return events.map(event => JSON.parse(event));
 }
 
 export async function deleteEvents(did) {
@@ -84,8 +64,8 @@ export async function deleteEvents(did) {
 }
 
 export async function getAllKeys() {
-    const keys = await redis.keys('dids:*');
-    return keys.map(key => key.split(':')[1]); // Extract the id part from the key
+    const keys = await redis.keys('dids/*');
+    return keys.map(key => key.split('/')[1]); // Extract the id part from the key
 }
 
 export async function queueOperation(registry, op) {
