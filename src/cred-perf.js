@@ -54,40 +54,29 @@ async function runWorkflow() {
     console.time('create IDs');
     const alice = await keymaster.createId('Alice', registry);
     const bob = await keymaster.createId('Bob', registry);
-    const carol = await keymaster.createId('Carol', registry);
-    const victor = await keymaster.createId('Victor', registry);
     console.timeEnd('create IDs');
 
     console.log(`Created Alice  ${alice}`);
     console.log(`Created Bob    ${bob}`);
-    console.log(`Created Carol  ${carol}`);
-    console.log(`Created Victor ${victor}`);
+
+    console.time('setCurrentId');
+    keymaster.setCurrentId('Alice');
+    console.timeEnd('setCurrentId');
+
+    console.time('createCredential');
+    const credential1 = await keymaster.createCredential(mockSchema, registry);
+    console.timeEnd('createCredential');
 
     console.time('loop');
     for (let i = 0; i < 10; i++) {
-        console.time('setCurrentId');
-        keymaster.setCurrentId('Alice');
-        console.timeEnd('setCurrentId');
-
-        console.time('createCredential');
-        const credential1 = await keymaster.createCredential(mockSchema, registry);
-        console.timeEnd('createCredential');
 
         console.time('bindCredential');
-        const bc1 = await keymaster.bindCredential(credential1, carol);
+        const bc1 = await keymaster.bindCredential(credential1, bob);
         console.timeEnd('bindCredential');
 
         console.time('issueCredential');
         const vc1 = await keymaster.issueCredential(bc1, registry);
         console.timeEnd('issueCredential');
-
-        // console.time('setCurrentId');
-        // keymaster.setCurrentId('Carol');
-        // console.timeEnd('setCurrentId');
-
-        // console.time('acceptCredential');
-        // await keymaster.acceptCredential(vc1);
-        // console.timeEnd('acceptCredential');
     }
     console.timeEnd('loop');
 

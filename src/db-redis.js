@@ -69,7 +69,7 @@ export async function getAllKeys() {
 }
 
 export async function queueOperation(registry, op) {
-    await redis.lpush(`queue:${registry}`, JSON.stringify(op));
+    await redis.rpush(`queue:${registry}`, JSON.stringify(op));
 }
 
 export async function getQueue(registry) {
