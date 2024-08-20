@@ -1,9 +1,11 @@
 
 import * as db_json from './db-json.js';
 import * as db_redis from './db-redis.js';
+import * as gatekeeper from './gatekeeper-lib.js';
 
 await db_json.start('mdip');
 await db_redis.start('mdip');
+//await gatekeeper.start(db_redis);
 
 async function copyDIDs() {
     const ids = await db_json.getAllKeys();
@@ -21,34 +23,26 @@ async function copyDIDs() {
 
 async function dumpDIDs() {
     const ids = await db_redis.getAllKeys();
+    let cache = {};
     console.log(`${ids.length} keys`);
     for (const i in ids) {
         const id = ids[i];
-        const events = await db_redis.getEvents(id);
+        cache[id] = await db_redis.getEvents(id);
         console.log(`${i} ${id} retrieved`);
     }
+    return cache;
 }
 
 async function deleteDIDs() {
     let ids = await db_redis.getAllKeys();
-    let cache = {};
 
     while (ids.length > 0) {
-        // Select a random index
         const i = Math.floor(Math.random() * ids.length);
-
-        // Get the DID at the random index
         const id = ids[i];
-
-        cache[id] = await db_redis.getEvents(id);
         await db_redis.deleteEvents(id);
         console.log(`deleted ${id} ${i}`);
-
-        // Remove the DID from the ids array
         ids.splice(i, 1);
     }
-
-    return cache;
 }
 
 async function restoreDIDs(cache) {
@@ -60,16 +54,16 @@ async function restoreDIDs(cache) {
     }
 }
 
-console.time('copyDIDs');
-await copyDIDs();
-console.timeEnd('copyDIDs');
+// console.time('copyDIDs');
+// await copyDIDs();
+// console.timeEnd('copyDIDs');
 
 console.time('dumpDIDs');
-await dumpDIDs();
+const cache = await dumpDIDs();
 console.timeEnd('dumpDIDs');
 
 console.time('deleteDIDs');
-const cache = await deleteDIDs();
+await deleteDIDs();
 console.timeEnd('deleteDIDs');
 
 console.time('restoreDIDs');
@@ -77,4 +71,5 @@ await restoreDIDs(cache);
 console.timeEnd('restoreDIDs');
 
 await db_json.stop();
-await db_redis.stop();
+//await db_redis.stop();
+await gatekeeper.stop();
