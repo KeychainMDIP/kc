@@ -28,16 +28,11 @@ async function setup1() {
     gatekeeper = gatekeeper_lib;
     keymaster = keymaster_lib;
 
-    await db_redis.start('cred-perf');
+    await db_redis.start('mdip');
     await gatekeeper.start(db_redis, ipfs_lib);
     await keymaster.start(gatekeeper, db_wallet);
 }
 
-async function teardown1() {
-    db_redis.resetDb();
-    gatekeeper.stop();
-    keymaster.stop();
-}
 
 // eslint-disable-next-line
 async function setup2() {
@@ -57,7 +52,7 @@ async function setup3() {
 }
 
 async function runWorkflow() {
-    const registry = 'hyperswarm';
+    const registry = 'local';
 
     console.time('create IDs');
     const alice = await keymaster.createId('Alice', registry);
@@ -76,7 +71,7 @@ async function runWorkflow() {
     console.timeEnd('createCredential');
 
     console.time('loop');
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 100; i++) {
 
         console.time('bindCredential');
         const bc = await keymaster.bindCredential(credential1, bob);
@@ -117,7 +112,6 @@ async function main() {
         fs.renameSync(backupFile, walletFile);
     }
 
-    await teardown1();
     process.exit();
 }
 

@@ -54,19 +54,22 @@ export async function verifyDb(chatty = true) {
     for (const did of dids) {
         n += 1;
         const currentN = n;
-        const promise = verifyDID(did).then(() => {
-            if (chatty) {
-                console.log(`${currentN}/${totalN} ${did} OK`);
-            }
-        })
-        .catch(async (error) => {
-            if (chatty) {
-                console.log(`${currentN} ${did} ${error}`);
-            }
-            invalid += 1;
-            await db.deleteEvents(did);
-            delete eventsCache[did];
-        });
+        const promise = verifyDID(did)
+            .then(() => {
+                if (chatty) {
+                    console.log(`${currentN}/${totalN} ${did} OK`);
+                }
+            })
+            // TBD revisit
+            // eslint-disable-next-line
+            .catch(async error => {
+                if (chatty) {
+                    console.log(`${currentN} ${did} ${error}`);
+                }
+                invalid += 1;
+                await db.deleteEvents(did);
+                delete eventsCache[did];
+            });
         promises.push(promise);
     }
 

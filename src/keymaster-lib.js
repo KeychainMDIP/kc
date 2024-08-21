@@ -429,7 +429,7 @@ export async function encrypt(msg, did, encryptForSender = true, registry = defa
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
-    return await createAsset({
+    return createAsset({
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
@@ -632,7 +632,7 @@ export async function resolveAsset(did) {
 export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        throw new Error(`Name ${name} already in use.`);
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const account = wallet.counter;
@@ -868,14 +868,15 @@ export async function createAsset(data, registry = defaultRegistry, owner = null
     };
 
     const signed = await addSignature(operation, owner);
-    const did = await gatekeeper.createDID(signed);
 
-    // Keep assets that will be garbage-collected out of the owned list
-    if (registry !== 'hyperswarm') {
-        addToOwned(did);
-    }
+    return gatekeeper.createDID(signed).then(did => {
+        // Keep assets that will be garbage-collected out of the owned list
+        if (registry !== 'hyperswarm') {
+            addToOwned(did);
+        }
 
-    return did;
+        return did;
+    });
 }
 
 export async function testAgent(id) {
@@ -923,9 +924,11 @@ export async function issueCredential(vc, registry = defaultRegistry) {
     // }
 
     const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
-    addToOwned(cipherDid);
-    return cipherDid;
+
+    return encryptJSON(signed, vc.credentialSubject.id, true, registry).then(cipherDID => {
+        addToOwned(cipherDID);
+        return cipherDID;
+    });
 }
 
 export async function listIssued(issuer) {
