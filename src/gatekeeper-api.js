@@ -53,169 +53,156 @@ v1router.get('/version', async (req, res) => {
 
 // TBD temporary
 v1router.get('/db/reset', async (req, res) => {
-    try {
-        await gatekeeper.resetDb();
-        res.json(true);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
+    return gatekeeper.resetDb()
+        .then(() => res.json(true))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/did', async (req, res) => {
-    try {
-        const operation = req.body;
-        const did = await gatekeeper.createDID(operation);
-        res.json(did);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const operation = req.body;
+    return gatekeeper.createDID(operation)
+        .then(did => res.json(did))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.get('/did/:did', async (req, res) => {
-    try {
-        const options = {};
+    const options = {};
 
-        if (req.query.atTime) {
-            options.atTime = req.query.atTime;
-        }
-
-        if (req.query.atVersion) {
-            options.atVersion = parseInt(req.query.atVersion);
-        }
-
-        if (req.query.confirm) {
-            options.confirm = req.query.confirm === 'true';
-        }
-
-        if (req.query.verify) {
-            options.verify = req.query.verify === 'true';
-        }
-
-        const doc = await gatekeeper.resolveDID(req.params.did, options);
-        res.json(doc);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
+    if (req.query.atTime) {
+        options.atTime = req.query.atTime;
     }
+
+    if (req.query.atVersion) {
+        options.atVersion = parseInt(req.query.atVersion);
+    }
+
+    if (req.query.confirm) {
+        options.confirm = req.query.confirm === 'true';
+    }
+
+    if (req.query.verify) {
+        options.verify = req.query.verify === 'true';
+    }
+
+    return gatekeeper.resolveDID(req.params.did, options)
+        .then(doc => res.json(doc))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/did/:did', async (req, res) => {
-    try {
-        const operation = req.body;
-        const ok = await gatekeeper.updateDID(operation);
-        res.json(ok);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const operation = req.body;
+    return gatekeeper.updateDID(operation)
+        .then(ok => res.json(ok))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.delete('/did/:did', async (req, res) => {
-    try {
-        const operation = req.body;
-        const ok = await gatekeeper.deleteDID(operation);
-        res.json(ok);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const operation = req.body;
+    return gatekeeper.deleteDID(operation)
+        .then(ok => res.json(ok))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/dids/', async (req, res) => {
-    try {
-        const dids = await gatekeeper.getDIDs(req.body);
-        res.json(dids);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    return gatekeeper.getDIDs(req.body)
+        .then(dids => res.json(dids))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/dids/remove', async (req, res) => {
-    try {
-        const dids = req.body;
-        const response = await gatekeeper.removeDIDs(dids);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const dids = req.body;
+    return gatekeeper.removeDIDs(dids)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/dids/export', async (req, res) => {
-    try {
-        const { dids } = req.body;
-        const response = await gatekeeper.exportDIDs(dids);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const { dids } = req.body;
+    return gatekeeper.exportDIDs(dids)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/dids/import', async (req, res) => {
-    try {
-        const dids = req.body;
-        const response = await gatekeeper.importDIDs(dids);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const dids = req.body;
+    return gatekeeper.importDIDs(dids)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/batch/export', async (req, res) => {
-    try {
-        const { dids } = req.body;
-        const response = await gatekeeper.exportBatch(dids);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const { dids } = req.body;
+    return gatekeeper.exportBatch(dids)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/batch/import', async (req, res) => {
-    try {
-        const batch = req.body;
-        const response = await gatekeeper.importBatch(batch);
-        res.json(response);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const batch = req.body;
+    return gatekeeper.importBatch(batch)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.get('/queue/:registry', async (req, res) => {
-    try {
-        const queue = await gatekeeper.getQueue(req.params.registry);
-        res.json(queue);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    gatekeeper.getQueue(req.params.registry)
+        .then(queue => res.json(queue))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.post('/queue/:registry/clear', async (req, res) => {
-    try {
-        const events = req.body;
-        const queue = await gatekeeper.clearQueue(req.params.registry, events);
-        res.json(queue);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    const events = req.body;
+    return gatekeeper.clearQueue(req.params.registry, events)
+        .then(queue => res.json(queue))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 v1router.get('/registries', async (req, res) => {
-    try {
-        const registries = await gatekeeper.listRegistries();
-        res.json(registries);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
+    return gatekeeper.listRegistries()
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send(error.toString());
+        });
 });
 
 app.get('/explore/:did', async (req, res) => {

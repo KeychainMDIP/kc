@@ -5,6 +5,7 @@ import * as gatekeeper_lib from './gatekeeper-lib.js';
 import * as gatekeeper_sdk from './gatekeeper-sdk.js';
 import * as db_redis from './db-redis.js';
 import * as db_wallet from './db-wallet-json.js';
+import * as ipfs_lib from './helia-lib.js';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -27,9 +28,15 @@ async function setup1() {
     gatekeeper = gatekeeper_lib;
     keymaster = keymaster_lib;
 
-    await db_redis.start();
-    await gatekeeper.start(db_redis);
+    await db_redis.start('cred-perf');
+    await gatekeeper.start(db_redis, ipfs_lib);
     await keymaster.start(gatekeeper, db_wallet);
+}
+
+async function teardown1() {
+    db_redis.resetDb();
+    gatekeeper.stop();
+    keymaster.stop();
 }
 
 // eslint-disable-next-line
@@ -72,12 +79,13 @@ async function runWorkflow() {
     for (let i = 0; i < 10; i++) {
 
         console.time('bindCredential');
-        const bc1 = await keymaster.bindCredential(credential1, bob);
+        const bc = await keymaster.bindCredential(credential1, bob);
         console.timeEnd('bindCredential');
 
         console.time('issueCredential');
-        await keymaster.issueCredential(bc1, registry);
+        const vc = await keymaster.issueCredential(bc, registry);
         console.timeEnd('issueCredential');
+        console.log(`${i} ${vc}`);
     }
     console.timeEnd('loop');
 
@@ -109,6 +117,7 @@ async function main() {
         fs.renameSync(backupFile, walletFile);
     }
 
+    await teardown1();
     process.exit();
 }
 

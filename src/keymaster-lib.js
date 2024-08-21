@@ -632,7 +632,7 @@ export async function resolveAsset(did) {
 export async function createId(name, registry = defaultRegistry) {
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new Error(`Name ${name} already in use.`);
     }
 
     const account = wallet.counter;
