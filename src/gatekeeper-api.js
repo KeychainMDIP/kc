@@ -8,6 +8,7 @@ import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
 import * as db_mongodb from './db-mongodb.js';
 import * as db_redis from './db-redis.js';
+import * as helia from './helia-lib.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
@@ -17,8 +18,8 @@ const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
         : (config.gatekeeperDb === 'redis') ? db_redis
             : db_json;
 
-await db.start();
-await gatekeeper.start(db);
+await db.start('mdip');
+await gatekeeper.start(db, helia);
 
 const app = express();
 const v1router = express.Router();

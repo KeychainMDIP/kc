@@ -2,11 +2,12 @@ import mockFs from 'mock-fs';
 import * as cipher from './cipher-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
+import * as ipfs from './helia-lib.js';
 import * as exceptions from './exceptions.js';
 
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start(db_json);
+    await gatekeeper.start(db_json, ipfs);
 });
 
 afterEach(async () => {

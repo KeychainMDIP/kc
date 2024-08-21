@@ -1,7 +1,5 @@
-import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
-import { createHelia } from 'helia';
 import * as cipher from './cipher-lib.js';
 import config from './config.js';
 import * as exceptions from './exceptions.js';
@@ -12,7 +10,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let helia = null;
 let ipfs = null;
 let eventsCache = {};
 
@@ -20,18 +17,16 @@ function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
 }
 
-export async function start(injectedDb) {
-    if (!ipfs) {
-        helia = await createHelia();
-        ipfs = json(helia);
-    }
-
+export async function start(injectedDb, injectedHelia) {
     db = injectedDb;
+    ipfs = injectedHelia;
+
+    await ipfs.start();
 }
 
 export async function stop() {
-    helia.stop();
     await db.stop();
+    await ipfs.stop();
 }
 
 export async function verifyDID(did) {
@@ -110,6 +105,11 @@ export async function resetDb() {
 }
 
 export async function anchorSeed(seed) {
+    // ipfs.add(JSON.parse(canonicalize(seed))).then((cid) => {
+    //     const anchor = `${config.didPrefix}:${cid.toString(base58btc)}`;
+    //     //console.log(`anchorSeed ${anchor}`);
+    //     return anchor;
+    // });
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }

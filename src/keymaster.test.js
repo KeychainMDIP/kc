@@ -5,11 +5,12 @@ import * as gatekeeper from './gatekeeper-lib.js';
 import * as cipher from './cipher-lib.js';
 import * as db_json from './db-json.js';
 import * as db_wallet from './db-wallet-json.js';
+import * as ipfs from './helia-lib.js';
 import * as exceptions from './exceptions.js';
 
 beforeEach(async () => {
     db_json.start('mdip');
-    await gatekeeper.start(db_json);
+    await gatekeeper.start(db_json, ipfs);
     await keymaster.start(gatekeeper, db_wallet);
 });
 
