@@ -398,44 +398,48 @@ function hdKeyPair() {
     return cipher.generateJwk(hdkey.privateKey);
 }
 
-async function fetchKeyPair(name = null) {
+export async function fetchKeyPair(name = null) {
     const wallet = loadWallet();
     const id = fetchId(name);
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
-    const doc = await resolveDID(id.did, { confirm: true });
-    const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
 
-    for (let i = id.index; i >= 0; i--) {
-        const path = `m/44'/0'/${id.account}'/0/${i}`;
-        const didkey = hdkey.derive(path);
-        const keypair = cipher.generateJwk(didkey.privateKey);
+    return resolveDID(id.did, { confirm: true }).then(doc => {
+        const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
 
-        if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
-            keypair.publicJwk.y === confirmedPublicKeyJwk.y
-        ) {
-            return keypair;
+        for (let i = id.index; i >= 0; i--) {
+            const path = `m/44'/0'/${id.account}'/0/${i}`;
+            const didkey = hdkey.derive(path);
+            const keypair = cipher.generateJwk(didkey.privateKey);
+
+            if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
+                keypair.publicJwk.y === confirmedPublicKeyJwk.y
+            ) {
+                return keypair;
+            }
         }
-    }
 
-    return null;
+        return null;
+    });
 }
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
-    const senderKeypair = await fetchKeyPair();
-    const doc = await resolveDID(did, { confirm: true });
-    const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
-    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
-    const msgHash = cipher.hashMessage(msg);
+    return fetchKeyPair().then(senderKeypair => {
+        return resolveDID(did, { confirm: true }).then(doc => {
+            const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+            const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
+            const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+            const msgHash = cipher.hashMessage(msg);
 
-    return createAsset({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
-    }, registry);
+            return createAsset({
+                sender: id.did,
+                created: new Date().toISOString(),
+                cipher_hash: msgHash,
+                cipher_sender: cipher_sender,
+                cipher_receiver: cipher_receiver,
+            }, registry);
+        });
+    });
 }
 
 export async function decrypt(did) {
@@ -482,25 +486,25 @@ export async function decryptJSON(did) {
 export async function addSignature(obj, controller = null) {
     // Fetches current ID if name is missing
     const id = fetchId(controller);
-    const keypair = await fetchKeyPair(controller);
+    return fetchKeyPair(controller).then(keypair => {
+        try {
+            const msgHash = cipher.hashJSON(obj);
+            const signature = cipher.signHash(msgHash, keypair.privateJwk);
 
-    try {
-        const msgHash = cipher.hashJSON(obj);
-        const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-        return {
-            ...obj,
-            signature: {
-                signer: id.did,
-                signed: new Date().toISOString(),
-                hash: msgHash,
-                value: signature,
-            }
-        };
-    }
-    catch (error) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
+            return {
+                ...obj,
+                signature: {
+                    signer: id.did,
+                    signed: new Date().toISOString(),
+                    hash: msgHash,
+                    value: signature,
+                }
+            };
+        }
+        catch (error) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    });
 }
 
 export async function verifySignature(obj) {
@@ -867,15 +871,15 @@ export async function createAsset(data, registry = defaultRegistry, owner = null
         data: data,
     };
 
-    const signed = await addSignature(operation, owner);
+    return addSignature(operation, owner).then(signed => {
+        return gatekeeper.createDID(signed).then(did => {
+            // Keep assets that will be garbage-collected out of the owned list
+            if (registry !== 'hyperswarm') {
+                addToOwned(did);
+            }
 
-    return gatekeeper.createDID(signed).then(did => {
-        // Keep assets that will be garbage-collected out of the owned list
-        if (registry !== 'hyperswarm') {
-            addToOwned(did);
-        }
-
-        return did;
+            return did;
+        });
     });
 }
 
@@ -918,16 +922,11 @@ export async function issueCredential(vc, registry = defaultRegistry) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // Don't allow credentials that will be garbage-collected
-    // if (registry === 'hyperswarm') {
-    //     throw 'Invalid VC';
-    // }
-
-    const signed = await addSignature(vc);
-
-    return encryptJSON(signed, vc.credentialSubject.id, true, registry).then(cipherDID => {
-        addToOwned(cipherDID);
-        return cipherDID;
+    return addSignature(vc).then(signed => {
+        return encryptJSON(signed, vc.credentialSubject.id, true, registry).then(did => {
+            addToOwned(did);
+            return did;
+        });
     });
 }
 

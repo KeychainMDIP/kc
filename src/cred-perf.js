@@ -52,7 +52,7 @@ async function setup3() {
 }
 
 async function runWorkflow() {
-    const registry = 'local';
+    const registry = 'hyperswarm';
 
     console.time('create IDs');
     const alice = await keymaster.createId('Alice', registry);
@@ -77,10 +77,39 @@ async function runWorkflow() {
         const bc = await keymaster.bindCredential(credential1, bob);
         console.timeEnd('bindCredential');
 
-        console.time('issueCredential');
-        const vc = await keymaster.issueCredential(bc, registry);
-        console.timeEnd('issueCredential');
-        console.log(`${i} ${vc}`);
+        console.time('fetchKeyPair');
+        const keypair = await keymaster.fetchKeyPair();
+        console.timeEnd('fetchKeyPair');
+
+        const operation = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                version: 1,
+                type: "asset",
+                registry: registry,
+            },
+            controller: alice,
+            data: { keypair },
+        };
+
+        console.time('addSignature');
+        const signed = await keymaster.addSignature(operation);
+        console.timeEnd('addSignature');
+
+        console.time('createDID');
+        const did = await gatekeeper.createDID(signed);
+        console.timeEnd('createDID');
+
+
+        // console.time('createAsset');
+        // const asset = await keymaster.createAsset({ keypair });
+        // console.timeEnd('createAsset');
+
+        // console.time('issueCredential');
+        // const vc = await keymaster.issueCredential(bc, registry);
+        // console.timeEnd('issueCredential');
+        // console.log(`${i} ${vc}`);
     }
     console.timeEnd('loop');
 

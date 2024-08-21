@@ -140,18 +140,18 @@ async function verifyCreateAsset(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+    return resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed }).then(doc => {
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
 
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
-    }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    });
 }
 
 async function verifyCreate(operation) {
@@ -192,34 +192,35 @@ async function verifyCreate(operation) {
 }
 
 export async function createDID(operation) {
-    const valid = await verifyCreate(operation);
+    return verifyCreate(operation).then(valid => {
 
-    if (valid) {
-        const did = await anchorSeed(operation);
-        const ops = await exportDID(did);
-
-        // Check to see if we already have this DID in the db
-        if (ops.length === 0) {
-            await db.addEvent(did, {
-                registry: 'local',
-                time: operation.created,
-                ordinal: 0,
-                operation: operation
-            });
-
-            // Create events are distributed only by hyperswarm
-            // (because the DID's registry specifies where to look for *update* events)
-            // Don't distribute local DIDs
-            if (operation.mdip.registry !== 'local') {
-                await db.queueOperation('hyperswarm', operation);
-            }
+        if (!valid) {
+            throw new Error(exceptions.INVALID_OPERATION);
         }
 
-        return did;
-    }
-    else {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
+        return anchorSeed(operation).then(did => {
+            return exportDID(did).then(ops => {
+                // Check to see if we already have this DID in the db
+                if (ops.length === 0) {
+                    db.addEvent(did, {
+                        registry: 'local',
+                        time: operation.created,
+                        ordinal: 0,
+                        operation: operation
+                    });
+
+                    // Create events are distributed only by hyperswarm
+                    // (because the DID's registry specifies where to look for *update* events)
+                    // Don't distribute local DIDs
+                    if (operation.mdip.registry !== 'local') {
+                        db.queueOperation('hyperswarm', operation);
+                    }
+                }
+
+                return did;
+            });
+        });
+    });
 }
 
 export async function generateDoc(anchor) {
