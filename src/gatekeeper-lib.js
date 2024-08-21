@@ -48,23 +48,30 @@ export async function verifyDb(chatty = true) {
         await getEvents(did);
     }
 
+    const totalN = dids.length;
+    const promises = [];
+
     for (const did of dids) {
         n += 1;
-        try {
-            await verifyDID(did);
+        const currentN = n;
+        const promise = verifyDID(did).then(() => {
             if (chatty) {
-                console.log(`${n} ${did} OK`);
+                console.log(`${currentN}/${totalN} ${did} OK`);
             }
-        }
-        catch (error) {
+        })
+        .catch(async (error) => {
             if (chatty) {
-                console.log(`${n} ${did} ${error}`);
+                console.log(`${currentN} ${did} ${error}`);
             }
             invalid += 1;
             await db.deleteEvents(did);
             delete eventsCache[did];
-        }
+        });
+        promises.push(promise);
     }
+
+    // Wait for all verifyDID calls to complete
+    await Promise.all(promises);
 
     if (chatty) {
         console.timeEnd('verifyDb');
@@ -105,13 +112,8 @@ export async function resetDb() {
 }
 
 export async function anchorSeed(seed) {
-    // ipfs.add(JSON.parse(canonicalize(seed))).then((cid) => {
-    //     const anchor = `${config.didPrefix}:${cid.toString(base58btc)}`;
-    //     //console.log(`anchorSeed ${anchor}`);
-    //     return anchor;
-    // });
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    return `${config.didPrefix}:${cid.toString(base58btc)}`;
+    return ipfs.add(JSON.parse(canonicalize(seed)))
+        .then(cid => `${config.didPrefix}:${cid.toString(base58btc)}`);
 }
 
 async function verifyCreateAgent(operation) {

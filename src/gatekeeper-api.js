@@ -8,7 +8,7 @@ import * as db_json from './db-json.js';
 import * as db_sqlite from './db-sqlite.js';
 import * as db_mongodb from './db-mongodb.js';
 import * as db_redis from './db-redis.js';
-import * as helia from './helia-lib.js';
+import * as helia from './helia-sdk.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
