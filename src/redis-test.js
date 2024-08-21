@@ -22,7 +22,7 @@ async function populate(n) {
 async function dump() {
     const keys = await db.getAllKeys();
     for (const key of keys) {
-        const events = await db.getEvents(key);
+        await db.getEvents(key);
         //console.log(`${key} ${JSON.stringify(events)}`);
     }
 }

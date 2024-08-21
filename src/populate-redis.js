@@ -1,12 +1,11 @@
 
 import * as db_json from './db-json.js';
 import * as db_redis from './db-redis.js';
-import * as gatekeeper from './gatekeeper-lib.js';
 
 await db_json.start('mdip');
 await db_redis.start('mdip');
-//await gatekeeper.start(db_redis);
 
+// eslint-disable-next-line
 async function copyDIDs() {
     const ids = await db_json.getAllKeys();
     const deleted = await db_redis.resetDb();
@@ -71,5 +70,4 @@ await restoreDIDs(cache);
 console.timeEnd('restoreDIDs');
 
 await db_json.stop();
-//await db_redis.stop();
-await gatekeeper.stop();
+await db_redis.stop();

@@ -3,7 +3,6 @@ import * as keymaster_lib from './keymaster-lib.js';
 import * as keymaster_sdk from './keymaster-sdk.js';
 import * as gatekeeper_lib from './gatekeeper-lib.js';
 import * as gatekeeper_sdk from './gatekeeper-sdk.js';
-import * as db_json from './db-json.js';
 import * as db_redis from './db-redis.js';
 import * as db_wallet from './db-wallet-json.js';
 
@@ -33,6 +32,7 @@ async function setup1() {
     await keymaster.start(gatekeeper, db_wallet);
 }
 
+// eslint-disable-next-line
 async function setup2() {
     gatekeeper = gatekeeper_sdk;
     keymaster = keymaster_lib;
@@ -42,6 +42,7 @@ async function setup2() {
     await keymaster.start(gatekeeper, db_wallet);
 }
 
+// eslint-disable-next-line
 async function setup3() {
     keymaster = keymaster_sdk;
     keymaster.setURL('http://localhost:4224');
@@ -75,7 +76,7 @@ async function runWorkflow() {
         console.timeEnd('bindCredential');
 
         console.time('issueCredential');
-        const vc1 = await keymaster.issueCredential(bc1, registry);
+        await keymaster.issueCredential(bc1, registry);
         console.timeEnd('issueCredential');
     }
     console.timeEnd('loop');
