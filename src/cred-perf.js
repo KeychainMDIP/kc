@@ -67,90 +67,36 @@ async function runWorkflow() {
     console.timeEnd('setCurrentId');
 
     console.time('createCredential');
-    const credential1 = await keymaster.createCredential(mockSchema, registry);
+    const credential = await keymaster.createCredential(mockSchema, registry);
     console.timeEnd('createCredential');
 
-    console.time('loop');
+    console.time('issue 100 credentials');
     const promises = Array.from({ length: 100 }, async (_, i) => {
-
-        //console.time('bindCredential');
-        const bc = await keymaster.bindCredential(credential1, bob);
-        //console.timeEnd('bindCredential');
-
-        //console.time('fetchKeyPair');
-        const keypair = await keymaster.fetchKeyPair();
-        //console.timeEnd('fetchKeyPair');
-
-        const operation = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                version: 1,
-                type: "asset",
-                registry: registry,
-            },
-            controller: alice,
-            data: { keypair },
-        };
-
-        //console.time('addSignature');
-        const signed = await keymaster.addSignature(operation);
-        //console.timeEnd('addSignature');
-
-        //console.time('anchorSeed');
-        const did = await gatekeeper.anchorSeed(signed);
-        //console.timeEnd('anchorSeed');
-
-        //console.time('getEvents');
-        const events = await db_redis.getEvents(did);
-        //console.timeEnd('getEvents');
-
-        // console.log(JSON.stringify(events));
-
-        // console.time('exportDID');
-        const ops = await gatekeeper.exportDID(did);
-        // console.timeEnd('exportDID');
-
-        // console.time('createDID');
-        const did2 = await gatekeeper.createDID(signed);
-        // console.timeEnd('createDID');
-
-        // console.time('createAsset');
-        const asset = await keymaster.createAsset({ keypair });
-        // console.timeEnd('createAsset');
-
-        // console.time('issueCredential');
+        keymaster.setCurrentId('Alice');
+        const bc = await keymaster.bindCredential(credential, bob);
         const vc = await keymaster.issueCredential(bc, registry);
-        // console.timeEnd('issueCredential');
+        keymaster.setCurrentId('Bob');
+        await keymaster.acceptCredential(vc);
         console.log(`${i} ${vc}`);
     });
-
     await Promise.all(promises);
-    console.timeEnd('loop');
-}
+    console.timeEnd('issue 100 credentials');
 
-async function exportDIDs(db) {
-    const ids = await db.getAllKeys();
+    console.time('verify 100 challenges');
+    const promises2 = Array.from({ length: 100 }, async (_, i) => {
+        keymaster.setCurrentId('Alice');
+        const challenge = await keymaster.createChallenge({ credentials: [{ schema: credential }] });
 
-    for (const i in ids) {
-        const id = ids[i];
-        console.time('getEvents');
-        const events = await db.getEvents(id);
-        console.timeEnd('getEvents');
-        console.log(i, id, events.length);
-    }
-}
+        keymaster.setCurrentId('Bob');
+        const response = await keymaster.createResponse(challenge);
 
-async function exportDIDs2(db) {
-    const ids = await db.getAllKeys();
-    const promises = ids.map(async (id, i) => {
-        console.time(`getEvents ${i}`);
-        const events = await db.getEvents(id);
-        console.timeEnd(`getEvents ${i}`);
-        console.log(i, id, events.length);
+        keymaster.setCurrentId('Alice');
+        const verify = await keymaster.verifyResponse(response, challenge);
+
+        console.log(`${i} ${verify.match}`);
     });
-
-    await Promise.all(promises);
+    await Promise.all(promises2);
+    console.timeEnd('verify 100 challenges');
 }
 
 async function main() {
@@ -159,7 +105,7 @@ async function main() {
     // await setup3();
 
     const walletFile = 'data/wallet.json';
-    const backupFile = 'data/workflow-backup.json';
+    const backupFile = 'data/perf-backup.json';
 
     if (fs.existsSync(walletFile)) {
         fs.renameSync(walletFile, backupFile);

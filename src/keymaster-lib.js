@@ -1152,7 +1152,7 @@ export async function createResponse(did, registry = ephemeralRegistry) {
         ephemeral: { validUntil: expires.toISOString() }
     };
 
-    return await encryptJSON(response, requestor, true, registry);
+    return encryptJSON(response, requestor, true, registry);
 }
 
 export async function verifyResponse(responseDID, challengeDID) {
