@@ -418,7 +418,7 @@ v1router.get('/credentials/held/:did', async (req, res) => {
 v1router.delete('/credentials/held/:did', async (req, res) => {
     try {
         const response = await keymaster.removeCredential(req.params.did);
-        res.json(response);/credentials/
+        res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
     }
