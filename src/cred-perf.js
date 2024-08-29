@@ -71,15 +71,15 @@ async function runWorkflow() {
     console.timeEnd('createCredential');
 
     console.time('loop');
-    for (let i = 0; i < 100; i++) {
+    const promises = Array.from({ length: 100 }, async (_, i) => {
 
-        console.time('bindCredential');
+        //console.time('bindCredential');
         const bc = await keymaster.bindCredential(credential1, bob);
-        console.timeEnd('bindCredential');
+        //console.timeEnd('bindCredential');
 
-        console.time('fetchKeyPair');
+        //console.time('fetchKeyPair');
         const keypair = await keymaster.fetchKeyPair();
-        console.timeEnd('fetchKeyPair');
+        //console.timeEnd('fetchKeyPair');
 
         const operation = {
             type: "create",
@@ -93,27 +93,64 @@ async function runWorkflow() {
             data: { keypair },
         };
 
-        console.time('addSignature');
+        //console.time('addSignature');
         const signed = await keymaster.addSignature(operation);
-        console.timeEnd('addSignature');
+        //console.timeEnd('addSignature');
 
-        console.time('createDID');
-        const did = await gatekeeper.createDID(signed);
-        console.timeEnd('createDID');
+        //console.time('anchorSeed');
+        const did = await gatekeeper.anchorSeed(signed);
+        //console.timeEnd('anchorSeed');
 
+        //console.time('getEvents');
+        const events = await db_redis.getEvents(did);
+        //console.timeEnd('getEvents');
+
+        // console.log(JSON.stringify(events));
+
+        // console.time('exportDID');
+        const ops = await gatekeeper.exportDID(did);
+        // console.timeEnd('exportDID');
+
+        // console.time('createDID');
+        const did2 = await gatekeeper.createDID(signed);
+        // console.timeEnd('createDID');
 
         // console.time('createAsset');
-        // const asset = await keymaster.createAsset({ keypair });
+        const asset = await keymaster.createAsset({ keypair });
         // console.timeEnd('createAsset');
 
         // console.time('issueCredential');
-        // const vc = await keymaster.issueCredential(bc, registry);
+        const vc = await keymaster.issueCredential(bc, registry);
         // console.timeEnd('issueCredential');
-        // console.log(`${i} ${vc}`);
-    }
-    console.timeEnd('loop');
+        console.log(`${i} ${vc}`);
+    });
 
-    keymaster.stop();
+    await Promise.all(promises);
+    console.timeEnd('loop');
+}
+
+async function exportDIDs(db) {
+    const ids = await db.getAllKeys();
+
+    for (const i in ids) {
+        const id = ids[i];
+        console.time('getEvents');
+        const events = await db.getEvents(id);
+        console.timeEnd('getEvents');
+        console.log(i, id, events.length);
+    }
+}
+
+async function exportDIDs2(db) {
+    const ids = await db.getAllKeys();
+    const promises = ids.map(async (id, i) => {
+        console.time(`getEvents ${i}`);
+        const events = await db.getEvents(id);
+        console.timeEnd(`getEvents ${i}`);
+        console.log(i, id, events.length);
+    });
+
+    await Promise.all(promises);
 }
 
 async function main() {
@@ -135,12 +172,11 @@ async function main() {
         console.log(error);
     }
 
-    fs.rmSync(walletFile);
-
     if (fs.existsSync(backupFile)) {
-        fs.renameSync(backupFile, walletFile);
+        fs.copyFileSync(backupFile, walletFile);
     }
 
+    keymaster.stop();
     process.exit();
 }
 

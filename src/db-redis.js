@@ -54,16 +54,14 @@ export async function setEvents(did, events) {
 }
 
 export async function getEvents(did) {
-    if (!did) {
-        throw new Error(exceptions.INVALID_DID);
-    }
+    // if (!did) {
+    //     throw new Error(exceptions.INVALID_DID);
+    // }
 
-    //console.log(`${did}`);
     const id = did.split(':').pop();
-    //console.time('lrange');
-    const events = await redis.lrange(`${DB}/dids/${id}`, 0, -1);
-    //console.timeEnd('lrange');
-    return events.map(event => JSON.parse(event));
+    return redis.lrange(`${DB}/dids/${id}`, 0, -1).then(events => {
+        return events.map(event => JSON.parse(event));
+    });
 }
 
 export async function deleteEvents(did) {

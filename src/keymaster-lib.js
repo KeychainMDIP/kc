@@ -667,20 +667,21 @@ export async function createId(name, registry = defaultRegistry) {
             value: signature
         }
     }
-    const did = await gatekeeper.createDID(signed);
 
-    const newId = {
-        did: did,
-        account: account,
-        index: index,
-    };
+    return gatekeeper.createDID(signed).then(did => {
+        const newId = {
+            did: did,
+            account: account,
+            index: index,
+        };
 
-    wallet.ids[name] = newId;
-    wallet.counter += 1;
-    wallet.current = name;
-    saveWallet(wallet);
+        wallet.ids[name] = newId;
+        wallet.counter += 1;
+        wallet.current = name;
+        saveWallet(wallet);
 
-    return did;
+        return did;
+    });
 }
 
 export function removeId(name) {

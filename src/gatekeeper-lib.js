@@ -327,15 +327,17 @@ async function verifyUpdate(operation, doc) {
 async function getEvents(did) {
     let events = eventsCache[did];
 
-    if (!events) {
-        events = await db.getEvents(did);
+    if (events) {
+        return copyJSON(events);
+    }
 
+    return db.getEvents(did).then(events => {
         if (events.length > 0) {
             eventsCache[did] = events;
         }
-    }
 
-    return copyJSON(events);
+        return copyJSON(events);
+    });
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
