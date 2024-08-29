@@ -100,7 +100,7 @@ v1router.post('/wallet/fix', async (req, res) => {
     }
 });
 
-v1router.get('/mnemonic', async (req, res) => {
+v1router.get('/wallet/mnemonic', async (req, res) => {
     try {
         const mnemonic = keymaster.decryptMnemonic();
         res.json(mnemonic);
@@ -177,7 +177,7 @@ v1router.post('/ids/:id/backup', async (req, res) => {
     }
 });
 
-v1router.post('/ids/recover', async (req, res) => {
+v1router.post('/ids/:id/recover', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.recoverId(did);
@@ -387,7 +387,7 @@ v1router.post('/credentials/issue', async (req, res) => {
     }
 });
 
-v1router.get('/credentials', async (req, res) => {
+v1router.get('/credentials/held', async (req, res) => {
     try {
         const response = await keymaster.listCredentials();
         res.json(response);
@@ -396,7 +396,7 @@ v1router.get('/credentials', async (req, res) => {
     }
 });
 
-v1router.post('/credentials', async (req, res) => {
+v1router.post('/credentials/held', async (req, res) => {
     try {
         const { did } = req.body;
         const response = await keymaster.acceptCredential(did);
@@ -406,7 +406,7 @@ v1router.post('/credentials', async (req, res) => {
     }
 });
 
-v1router.get('/credentials/:did', async (req, res) => {
+v1router.get('/credentials/held/:did', async (req, res) => {
     try {
         const response = await keymaster.getCredential(req.params.did);
         res.json(response);
@@ -415,7 +415,7 @@ v1router.get('/credentials/:did', async (req, res) => {
     }
 });
 
-v1router.delete('/credentials/:did', async (req, res) => {
+v1router.delete('/credentials/held/:did', async (req, res) => {
     try {
         const response = await keymaster.removeCredential(req.params.did);
         res.json(response);
@@ -424,7 +424,7 @@ v1router.delete('/credentials/:did', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/:did/publish', async (req, res) => {
+v1router.post('/credentials/held/:did/publish', async (req, res) => {
     try {
         const did = req.params.did;
         const { reveal } = req.body;
@@ -435,7 +435,7 @@ v1router.post('/credentials/:did/publish', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/:did/unpublish', async (req, res) => {
+v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
     try {
         const did = req.params.did;
         const response = await keymaster.unpublishCredential(did);
@@ -445,7 +445,7 @@ v1router.post('/credentials/:did/unpublish', async (req, res) => {
     }
 });
 
-v1router.get('/issued', async (req, res) => {
+v1router.get('/credentials/issued', async (req, res) => {
     try {
         const response = await keymaster.listIssued();
         res.json(response);
@@ -454,7 +454,7 @@ v1router.get('/issued', async (req, res) => {
     }
 });
 
-v1router.get('/issued/:did', async (req, res) => {
+v1router.get('/credentials/issued/:did', async (req, res) => {
     try {
         const did = req.params.did;
         const response = await keymaster.getCredential(did);
@@ -464,7 +464,7 @@ v1router.get('/issued/:did', async (req, res) => {
     }
 });
 
-v1router.delete('/issued/:did', async (req, res) => {
+v1router.delete('/credentials/issued/:did', async (req, res) => {
     try {
         const did = req.params.did;
         const response = await keymaster.revokeCredential(did);
@@ -483,7 +483,7 @@ v1router.post('/keys/rotate', async (req, res) => {
     }
 });
 
-v1router.post('/encrypt', async (req, res) => {
+v1router.post('/keys/encrypt', async (req, res) => {
     try {
         const { msg, did } = req.body;
         const response = await keymaster.encrypt(msg, did);
@@ -493,7 +493,7 @@ v1router.post('/encrypt', async (req, res) => {
     }
 });
 
-v1router.post('/decrypt', async (req, res) => {
+v1router.post('/keys/decrypt', async (req, res) => {
     try {
         const response = await keymaster.decrypt(req.body.did);
         res.json(response);
@@ -502,7 +502,7 @@ v1router.post('/decrypt', async (req, res) => {
     }
 });
 
-v1router.post('/signature/add', async (req, res) => {
+v1router.post('/keys/sign', async (req, res) => {
     try {
         const response = await keymaster.addSignature(JSON.parse(req.body.contents));
         res.json(response);
@@ -511,7 +511,7 @@ v1router.post('/signature/add', async (req, res) => {
     }
 });
 
-v1router.post('/signature/verify', async (req, res) => {
+v1router.post('/keys/verify', async (req, res) => {
     try {
         const response = await keymaster.verifySignature(req.body.json);
         res.json(response);
@@ -520,7 +520,7 @@ v1router.post('/signature/verify', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/create', async (req, res) => {
+v1router.post('/credentials/new', async (req, res) => {
     try {
         const response = await keymaster.createCredential(req.body.schema);
         res.json(response);
@@ -529,7 +529,7 @@ v1router.post('/credentials/create', async (req, res) => {
     }
 });
 
-v1router.post('/template/create', async (req, res) => {
+v1router.post('/schemas/:id/template/new', async (req, res) => {
     try {
         const response = await keymaster.createTemplate(req.body.schema);
         res.json(response);
@@ -556,7 +556,7 @@ v1router.get('/templates/poll', async (req, res) => {
     }
 });
 
-v1router.post('/poll/create', async (req, res) => {
+v1router.post('/poll/new', async (req, res) => {
     try {
         const response = await keymaster.createPoll(req.body.poll);
         res.json(response);

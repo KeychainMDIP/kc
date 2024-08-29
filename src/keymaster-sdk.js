@@ -120,7 +120,7 @@ export async function fixWallet() {
 
 export async function decryptMnemonic() {
     try {
-        const response = await axios.get(`${URL}/api/v1/mnemonic`);
+        const response = await axios.get(`${URL}/api/v1/wallet/mnemonic`);
         return response.data;
     }
     catch (error) {
@@ -210,7 +210,7 @@ export async function backupId(id) {
 
 export async function recoverId(did) {
     try {
-        const response = await axios.post(`${URL}/api/v1/ids/recover`, { did });
+        const response = await axios.post(`${URL}/api/v1/ids/${did}/recover`);
         return response.data;
     }
     catch (error) {
@@ -410,7 +410,7 @@ export async function issueCredential(credential, registry) {
 
 export async function listCredentials() {
     try {
-        const response = await axios.get(`${URL}/api/v1/credentials`);
+        const response = await axios.get(`${URL}/api/v1/credentials/held`);
         return response.data;
     }
     catch (error) {
@@ -420,7 +420,7 @@ export async function listCredentials() {
 
 export async function acceptCredential(did) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials`, { did });
+        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}`);
         return response.data;
     }
     catch (error) {
@@ -430,7 +430,7 @@ export async function acceptCredential(did) {
 
 export async function getCredential(did) {
     try {
-        const response = await axios.get(`${URL}/api/v1/credentials/${did}`);
+        const response = await axios.get(`${URL}/api/v1/credentials/held/${did}`);
         return response.data;
     }
     catch (error) {
@@ -440,7 +440,7 @@ export async function getCredential(did) {
 
 export async function removeCredential(did) {
     try {
-        const response = await axios.delete(`${URL}/api/v1/credentials/${did}`);
+        const response = await axios.delete(`${URL}/api/v1/credentials/held/${did}`);
         return response.data;
     }
     catch (error) {
@@ -450,7 +450,7 @@ export async function removeCredential(did) {
 
 export async function publishCredential(did, reveal) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/${did}/publish`, { reveal });
+        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/publish`, { reveal });
         return response.data;
     }
     catch (error) {
@@ -460,7 +460,7 @@ export async function publishCredential(did, reveal) {
 
 export async function unpublishCredential(did) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/${did}/unpublish`);
+        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/unpublish`);
         return response.data;
     }
     catch (error) {
@@ -470,7 +470,7 @@ export async function unpublishCredential(did) {
 
 export async function listIssued() {
     try {
-        const response = await axios.get(`${URL}/api/v1/issued`);
+        const response = await axios.get(`${URL}/api/v1/credentials/issued`);
         return response.data;
     }
     catch (error) {
@@ -480,7 +480,7 @@ export async function listIssued() {
 
 export async function revokeCredential(did) {
     try {
-        const response = await axios.delete(`${URL}/api/v1/issued/${did}`);
+        const response = await axios.delete(`${URL}/api/v1/credentials/issued/${did}`);
         return response.data;
     }
     catch (error) {
