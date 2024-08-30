@@ -43,15 +43,9 @@ export async function verifyDb(chatty = true) {
     let n = 0;
     let invalid = 0;
 
-    // prime the cache
-    if (chatty) {
-        console.time('prime the cache');
-    }
+    // // prime the cache
     let promises = dids.map(did => getEvents(did));
     await Promise.all(promises);
-    if (chatty) {
-        console.timeEnd('prime the cache');
-    }
 
     const totalN = dids.length;
     promises = [];
