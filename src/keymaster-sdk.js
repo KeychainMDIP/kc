@@ -305,7 +305,7 @@ export async function verifyResponse(responseDID, challengeDID) {
     }
 }
 
-export async function createGroup(name, registry=defaultRegistry) {
+export async function createGroup(name, registry = defaultRegistry) {
     try {
         const response = await axios.post(`${URL}/api/v1/groups`, { name, registry });
         return response.data;
@@ -355,7 +355,7 @@ export async function groupTest(group, member) {
     }
 }
 
-export async function createSchema(schema, registry=defaultRegistry) {
+export async function createSchema(schema, registry = defaultRegistry) {
     try {
         const response = await axios.post(`${URL}/api/v1/schemas`, { schema, registry });
         return response.data;
@@ -405,7 +405,7 @@ export async function testAgent(id) {
     }
 }
 
-export async function createAsset(asset, registry=defaultRegistry) {
+export async function createAsset(asset, registry = defaultRegistry) {
     try {
         const response = await axios.post(`${URL}/api/v1/asset/create`, { asset, registry });
         return response.data;
@@ -415,9 +415,9 @@ export async function createAsset(asset, registry=defaultRegistry) {
     }
 }
 
-export async function createCredential(schema, registry=defaultRegistry) {
+export async function createCredential(schema, registry = defaultRegistry) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/create`, { schema, registry });
+        const response = await axios.post(`${URL}/api/v1/credentials/new`, { schema, registry });
         return response.data;
     }
     catch (error) {
@@ -457,7 +457,7 @@ export async function listCredentials() {
 
 export async function acceptCredential(did) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}`);
+        const response = await axios.post(`${URL}/api/v1/credentials/held`, { did });
         return response.data;
     }
     catch (error) {
