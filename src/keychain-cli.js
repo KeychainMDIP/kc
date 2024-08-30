@@ -3,6 +3,7 @@ import fs from 'fs';
 import * as gatekeeper from './gatekeeper-sdk.js';
 import * as keymaster from './keymaster-lib.js';
 import * as db_wallet from './db-wallet-json.js';
+import * as exceptions from './exceptions.js';
 import config from './config.js';
 
 const UPDATE_OK = "OK";
@@ -133,7 +134,12 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            if (error.message === exceptions.INVALID_PARAMETER) {
+                console.error(`Name ${name} is already taken.`);
+            }
+            else {
+                console.error(error.message);
+            }
         }
     });
 

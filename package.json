@@ -30,6 +30,7 @@
     "hdkey": "^2.1.0",
     "helia": "^3.0.0",
     "hyperswarm": "^4.7.14",
+    "ioredis": "^5.4.1",
     "json-schema-faker": "^0.5.5",
     "mongodb": "^6.5.0",
     "morgan": "^1.10.0",

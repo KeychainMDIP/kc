@@ -70,11 +70,13 @@ program
 
             console.log(`${dids.length} DIDs`);
 
-            console.time('resolveDID(did, { confirm: true })');
-            for (const did of dids) {
-                await gatekeeper.resolveDID(did, { confirm: true });
+            if (full) {
+                console.time('resolveDID(did, { confirm: true })');
+                for (const did of dids) {
+                    await gatekeeper.resolveDID(did, { confirm: true });
+                }
+                console.timeEnd('resolveDID(did, { confirm: true })');
             }
-            console.timeEnd('resolveDID(did, { confirm: true })');
 
             let batch = [];
             console.time('getDIDs({ dids: batch, confirm: true, resolve: true })');
@@ -89,11 +91,13 @@ program
             await gatekeeper.getDIDs({ dids: batch, confirm: true, resolve: true });
             console.timeEnd('getDIDs({ dids: batch, confirm: true, resolve: true })');
 
-            console.time('resolveDID(did, { confirm: false })');
-            for (const did of dids) {
-                await gatekeeper.resolveDID(did, { confirm: false });
+            if (full) {
+                console.time('resolveDID(did, { confirm: false })');
+                for (const did of dids) {
+                    await gatekeeper.resolveDID(did, { confirm: false });
+                }
+                console.timeEnd('resolveDID(did, { confirm: false })');
             }
-            console.timeEnd('resolveDID(did, { confirm: false })');
 
             console.time('getDIDs({ dids: batch, confirm: false, resolve: true })');
             for (const did of dids) {
@@ -110,14 +114,6 @@ program
             console.time('exportDIDs');
             await gatekeeper.exportDIDs(dids);
             console.timeEnd('exportDIDs');
-
-            if (full) {
-                console.time('resolveDID(did, { verify: true })');
-                for (const did of dids) {
-                    await gatekeeper.resolveDID(did, { verify: true });
-                }
-                console.timeEnd('resolveDID(did, { verify: true })');
-            }
         }
         catch (error) {
             console.error(error);

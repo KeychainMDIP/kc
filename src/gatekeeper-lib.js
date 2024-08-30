@@ -1,7 +1,5 @@
-import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
-import { createHelia } from 'helia';
 import * as cipher from './cipher-lib.js';
 import config from './config.js';
 import * as exceptions from './exceptions.js';
@@ -12,7 +10,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let helia = null;
 let ipfs = null;
 let eventsCache = {};
 
@@ -20,22 +17,20 @@ function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
 }
 
-export async function start(injectedDb) {
-    if (!ipfs) {
-        helia = await createHelia();
-        ipfs = json(helia);
-    }
-
+export async function start(injectedDb, injectedHelia) {
     db = injectedDb;
+    ipfs = injectedHelia;
+
+    await ipfs.start();
 }
 
 export async function stop() {
-    helia.stop();
     await db.stop();
+    await ipfs.stop();
 }
 
 export async function verifyDID(did) {
-    await resolveDID(did, { verify: true });
+    return resolveDID(did, { verify: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -48,23 +43,43 @@ export async function verifyDb(chatty = true) {
     let n = 0;
     let invalid = 0;
 
+    // prime the cache
+    if (chatty) {
+        console.time('prime the cache');
+    }
+    let promises = dids.map(did => getEvents(did));
+    await Promise.all(promises);
+    if (chatty) {
+        console.timeEnd('prime the cache');
+    }
+
+    const totalN = dids.length;
+    promises = [];
+
     for (const did of dids) {
         n += 1;
-        try {
-            await verifyDID(did);
-            if (chatty) {
-                console.log(`${n} ${did} OK`);
-            }
-        }
-        catch (error) {
-            if (chatty) {
-                console.log(`${n} ${did} ${error}`);
-            }
-            invalid += 1;
-            await db.deleteEvents(did);
-            delete eventsCache[did];
-        }
+        const currentN = n;
+        const promise = verifyDID(did)
+            .then(() => {
+                if (chatty) {
+                    console.log(`${currentN}/${totalN} ${did} OK`);
+                }
+            })
+            // TBD revisit
+            // eslint-disable-next-line
+            .catch(async error => {
+                if (chatty) {
+                    console.log(`${currentN} ${did} ${error}`);
+                }
+                invalid += 1;
+                await db.deleteEvents(did);
+                delete eventsCache[did];
+            });
+        promises.push(promise);
     }
+
+    // Wait for all verifyDID calls to complete
+    await Promise.all(promises);
 
     if (chatty) {
         console.timeEnd('verifyDb');
@@ -105,8 +120,8 @@ export async function resetDb() {
 }
 
 export async function anchorSeed(seed) {
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    return `${config.didPrefix}:${cid.toString(base58btc)}`;
+    return ipfs.add(JSON.parse(canonicalize(seed)))
+        .then(cid => `${config.didPrefix}:${cid.toString(base58btc)}`);
 }
 
 async function verifyCreateAgent(operation) {
@@ -130,18 +145,18 @@ async function verifyCreateAsset(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+    return resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed }).then(doc => {
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
 
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
-    }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    });
 }
 
 async function verifyCreate(operation) {
@@ -182,34 +197,35 @@ async function verifyCreate(operation) {
 }
 
 export async function createDID(operation) {
-    const valid = await verifyCreate(operation);
+    return verifyCreate(operation).then(valid => {
 
-    if (valid) {
-        const did = await anchorSeed(operation);
-        const ops = await exportDID(did);
-
-        // Check to see if we already have this DID in the db
-        if (ops.length === 0) {
-            await db.addEvent(did, {
-                registry: 'local',
-                time: operation.created,
-                ordinal: 0,
-                operation: operation
-            });
-
-            // Create events are distributed only by hyperswarm
-            // (because the DID's registry specifies where to look for *update* events)
-            // Don't distribute local DIDs
-            if (operation.mdip.registry !== 'local') {
-                await db.queueOperation('hyperswarm', operation);
-            }
+        if (!valid) {
+            throw new Error(exceptions.INVALID_OPERATION);
         }
 
-        return did;
-    }
-    else {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
+        return anchorSeed(operation).then(did => {
+            return exportDID(did).then(ops => {
+                // Check to see if we already have this DID in the db
+                if (ops.length === 0) {
+                    db.addEvent(did, {
+                        registry: 'local',
+                        time: operation.created,
+                        ordinal: 0,
+                        operation: operation
+                    });
+
+                    // Create events are distributed only by hyperswarm
+                    // (because the DID's registry specifies where to look for *update* events)
+                    // Don't distribute local DIDs
+                    if (operation.mdip.registry !== 'local') {
+                        db.queueOperation('hyperswarm', operation);
+                    }
+                }
+
+                return did;
+            });
+        });
+    });
 }
 
 export async function generateDoc(anchor) {
@@ -316,15 +332,17 @@ async function verifyUpdate(operation, doc) {
 async function getEvents(did) {
     let events = eventsCache[did];
 
-    if (!events) {
-        events = await db.getEvents(did);
+    if (events) {
+        return copyJSON(events);
+    }
 
+    return db.getEvents(did).then(events => {
         if (events.length > 0) {
             eventsCache[did] = events;
         }
-    }
 
-    return copyJSON(events);
+        return copyJSON(events);
+    });
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {

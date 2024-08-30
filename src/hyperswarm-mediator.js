@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.08.14';
+const PROTOCOL = '/MDIP/v24.08.16';
 
 const nodes = {};
 const batchesSeen = {};
