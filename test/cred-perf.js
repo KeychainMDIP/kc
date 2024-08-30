@@ -1,11 +1,11 @@
 import fs from 'fs';
-import * as keymaster_lib from './keymaster-lib.js';
-import * as keymaster_sdk from './keymaster-sdk.js';
-import * as gatekeeper_lib from './gatekeeper-lib.js';
-import * as gatekeeper_sdk from './gatekeeper-sdk.js';
-import * as db_redis from './db-redis.js';
-import * as db_wallet from './db-wallet-json.js';
-import * as ipfs_lib from './helia-lib.js';
+import * as keymaster_lib from '../src/keymaster-lib.js';
+import * as keymaster_sdk from '../src/keymaster-sdk.js';
+import * as gatekeeper_lib from '../src/gatekeeper-lib.js';
+import * as gatekeeper_sdk from '../src/gatekeeper-sdk.js';
+import * as db_redis from '../src/db-redis.js';
+import * as db_wallet from '../src/db-wallet-json.js';
+import * as ipfs_lib from '../src/helia-lib.js';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",

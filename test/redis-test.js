@@ -1,7 +1,4 @@
-import * as db from './db-redis.js';
-
-await db.start();
-await db.resetDb();
+import * as db from '../src/db-redis.js';
 
 async function populate(n) {
     for (let i = 0; i < n; i++) {
@@ -17,6 +14,8 @@ async function populate(n) {
             await db.addEvent(did, event);
         }
     }
+
+    console.log(`${n} DIDs added with 10 events`);
 }
 
 async function dump() {
@@ -27,6 +26,8 @@ async function dump() {
     }
 }
 
+await db.start('test');
+
 console.time('populate');
 await populate(10000);
 console.timeEnd('populate');
@@ -35,4 +36,5 @@ console.time('dump');
 await dump();
 console.timeEnd('dump');
 
+await db.resetDb();
 await db.stop();

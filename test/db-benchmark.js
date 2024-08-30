@@ -1,8 +1,8 @@
 import * as uuid from 'uuid';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
-import * as db_mongodb from './db-mongodb.js';
-import * as db_redis from './db-redis.js';
+import * as db_json from '../src/db-json.js';
+import * as db_sqlite from '../src/db-sqlite.js';
+import * as db_mongodb from '../src/db-mongodb.js';
+import * as db_redis from '../src/db-redis.js';
 
 async function importDIDs(db) {
 

@@ -1,4 +1,4 @@
-import * as helia from './helia-sdk.js';
+import * as helia from '../src/helia-sdk.js';
 
 await helia.waitUntilReady();
 
