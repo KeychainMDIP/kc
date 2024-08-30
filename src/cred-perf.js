@@ -47,7 +47,7 @@ async function setup2() {
 // eslint-disable-next-line
 async function setup3() {
     keymaster = keymaster_sdk;
-    keymaster.setURL('http://localhost:4224');
+    keymaster.setURL('http://localhost:4226');
     await keymaster.waitUntilReady();
 }
 
@@ -70,39 +70,52 @@ async function runWorkflow() {
     const credential = await keymaster.createCredential(mockSchema, registry);
     console.timeEnd('createCredential');
 
-    console.time('issue 100 credentials');
-    const promises = Array.from({ length: 100 }, async (_, i) => {
+    let vcs = [];
+    let promises;
+    const count = 10;
+
+    console.time('issue credentials');
+    promises = Array.from({ length: count }, async (_, i) => {
         keymaster.setCurrentId('Alice');
         const bc = await keymaster.bindCredential(credential, bob);
         const vc = await keymaster.issueCredential(bc, registry);
-        keymaster.setCurrentId('Bob');
-        await keymaster.acceptCredential(vc);
+        vcs.push(vc);
         console.log(`${i} ${vc}`);
     });
     await Promise.all(promises);
-    console.timeEnd('issue 100 credentials');
+    console.timeEnd('issue credentials');
+    console.log(`${count} credentials issued`);
 
-    console.time('verify 100 challenges');
-    const promises2 = Array.from({ length: 100 }, async (_, i) => {
-        keymaster.setCurrentId('Alice');
-        const challenge = await keymaster.createChallenge({ credentials: [{ schema: credential }] });
+    console.time(`accept vcs`);
+    keymaster.setCurrentId('Bob');
+    for (const vc of vcs) {
+        promises.push(keymaster.acceptCredential(vc));
+    }
+    await Promise.all(promises);
+    console.timeEnd('accept vcs');
+    console.log(`${vcs.length} accepted`);
 
-        keymaster.setCurrentId('Bob');
-        const response = await keymaster.createResponse(challenge);
+    // console.time('verify 100 challenges');
+    // const promises2 = Array.from({ length: 100 }, async (_, i) => {
+    //     keymaster.setCurrentId('Alice');
+    //     const challenge = await keymaster.createChallenge({ credentials: [{ schema: credential }] });
 
-        keymaster.setCurrentId('Alice');
-        const verify = await keymaster.verifyResponse(response, challenge);
+    //     keymaster.setCurrentId('Bob');
+    //     const response = await keymaster.createResponse(challenge);
 
-        console.log(`${i} ${verify.match}`);
-    });
-    await Promise.all(promises2);
-    console.timeEnd('verify 100 challenges');
+    //     keymaster.setCurrentId('Alice');
+    //     const verify = await keymaster.verifyResponse(response, challenge);
+
+    //     console.log(`${i} ${verify.match}`);
+    // });
+    // await Promise.all(promises2);
+    // console.timeEnd('verify 100 challenges');
 }
 
 async function main() {
-    await setup1();
+    // await setup1();
     // await setup2();
-    // await setup3();
+    await setup3();
 
     const walletFile = 'data/wallet.json';
     const backupFile = 'data/perf-backup.json';

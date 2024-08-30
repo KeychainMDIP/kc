@@ -30,7 +30,7 @@ export async function stop() {
 }
 
 export async function verifyDID(did) {
-    await resolveDID(did, { verify: true });
+    return resolveDID(did, { verify: true });
 }
 
 export async function verifyDb(chatty = true) {
@@ -44,12 +44,17 @@ export async function verifyDb(chatty = true) {
     let invalid = 0;
 
     // prime the cache
-    for (const did of dids) {
-        await getEvents(did);
+    if (chatty) {
+        console.time('prime the cache');
+    }
+    let promises = dids.map(did => getEvents(did));
+    await Promise.all(promises);
+    if (chatty) {
+        console.timeEnd('prime the cache');
     }
 
     const totalN = dids.length;
-    const promises = [];
+    promises = [];
 
     for (const did of dids) {
         n += 1;
