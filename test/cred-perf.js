@@ -66,17 +66,14 @@ async function runWorkflow() {
     let promises;
     const count = 10;
 
-    for (let i = 0; i < 1; i++) {
-        console.time('resolve id');
-        promises = Array.from({ length: 1000 }, async (_, i) => {
-            await keymaster.resolveDID(alice, { confirm: true });
-            await keymaster.resolveDID(bob, { confirm: true });
-            //console.log(`doc ${i} ${alice}`);
-        });
-        await Promise.all(promises);
-        console.timeEnd('resolve id');
-        console.log(`1000 DIDs resolved`);
-    }
+    console.time('resolve id');
+    promises = Array.from({ length: 1000 }, async (_, i) => {
+        await keymaster.resolveDID(alice, { confirm: true });
+        await keymaster.resolveDID(bob, { confirm: true });
+    });
+    await Promise.all(promises);
+    console.timeEnd('resolve id');
+    console.log(`1000 DIDs resolved`);
 
     console.time('create assets');
     promises = Array.from({ length: count }, async (_, i) => {
