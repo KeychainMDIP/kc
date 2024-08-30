@@ -24,6 +24,7 @@ const mockSchema = {
 let keymaster;
 let gatekeeper;
 
+// eslint-disable-next-line
 async function setup1() {
     gatekeeper = gatekeeper_lib;
     keymaster = keymaster_lib;
@@ -32,7 +33,6 @@ async function setup1() {
     await gatekeeper.start(db_redis, ipfs_lib);
     await keymaster.start(gatekeeper, db_wallet);
 }
-
 
 // eslint-disable-next-line
 async function setup2() {
@@ -117,12 +117,8 @@ async function main() {
     // await setup2();
     await setup3();
 
-    const walletFile = 'data/wallet.json';
-    const backupFile = 'data/perf-backup.json';
-
-    if (fs.existsSync(walletFile)) {
-        fs.renameSync(walletFile, backupFile);
-    }
+    const backup = await keymaster.loadWallet();
+    await keymaster.newWallet(null, true);
 
     try {
         await runWorkflow();
@@ -131,9 +127,7 @@ async function main() {
         console.log(error);
     }
 
-    if (fs.existsSync(backupFile)) {
-        fs.copyFileSync(backupFile, walletFile);
-    }
+    await keymaster.saveWallet(backup);
 
     keymaster.stop();
     process.exit();
