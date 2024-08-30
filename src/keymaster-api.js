@@ -378,13 +378,14 @@ v1router.post('/credentials/bind', async (req, res) => {
 });
 
 v1router.post('/credentials/issue', async (req, res) => {
-    try {
-        const { credential, registry } = req.body;
-        const response = await keymaster.issueCredential(credential, registry);
-        res.json(response);
-    } catch (error) {
-        res.status(400).send({ error: error.toString() });
-    }
+    const { credential, registry } = req.body;
+
+    return keymaster.issueCredential(credential, registry)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(400).send({ error: error.toString() });
+        });
 });
 
 v1router.get('/credentials/held', async (req, res) => {
@@ -521,12 +522,14 @@ v1router.post('/keys/verify', async (req, res) => {
 });
 
 v1router.post('/credentials/new', async (req, res) => {
-    try {
-        const response = await keymaster.createCredential(req.body.schema, req.body.registry);
-        res.json(response);
-    } catch (error) {
-        res.status(500).send({ error: error.toString() });
-    }
+    const { schema, registry } = req.body;
+
+    return keymaster.createCredential(schema, registry)
+        .then(response => res.json(response))
+        .catch((error) => {
+            console.error(error);
+            res.status(500).send({ error: error.toString() });
+        });
 });
 
 v1router.post('/schemas/:id/template/new', async (req, res) => {

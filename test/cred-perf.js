@@ -72,7 +72,7 @@ async function runWorkflow() {
 
     let vcs = [];
     let promises;
-    const count = 10;
+    const count = 20;
 
     console.time('issue credentials');
     promises = Array.from({ length: count }, async (_, i) => {
