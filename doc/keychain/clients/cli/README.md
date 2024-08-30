@@ -15,6 +15,58 @@ The Keychain CLI brings together functionality from three important sub-componen
 1. Verifiable Credential (VC) credential and management as defined by W3C VC Data Model.
 1. Crypto keys and wallet management.
 
+### Installation
+
+Keychain is provided as a set of docker containers and scripts:
+
+1. From your terminal, download the repository and move to it:
+
+    ```sh
+    # SSH
+    git@github.com:KeychainMDIP/kc.git
+    #HTTPS
+    https://github.com/KeychainMDIP/kc.git
+
+    cd kc
+    ```
+
+1. Copy `sample.env` to `.env`:
+
+    ```env
+    cp sample.env .env
+    ```
+
+1. Edit the `KC_NODE_ID` and `KC_NODE_NAME` with unique values. The remaining values will be covered in futher documentation:
+
+    ```sh title=".env" {2-3}
+    # Gatekeeper
+    KC_DEBUG=false
+    KC_NODE_NAME=mynode
+    KC_NODE_ID=mynodeID
+    KC_GATEKEEPER_DB=json
+    KC_GATEKEEPER_REGISTRIES=hyperswarm,TESS,TBTC,TFTC
+
+    ...
+    ```
+
+1. Run the keychain start script:
+
+    ```sh
+    # Tied to the shell session:
+    ./start-node
+
+    # Daemonized:
+    ./start-node -d
+    ```
+
+1. There's also a script to stop Keychain:
+
+    ```sh
+    ./stop-node
+    ```
+
+### CLI
+
 All the CLI commands are self-documented using the `--help` flag, or by running `kc` with no flags:
 
 <details>
