@@ -85,41 +85,35 @@ export async function getVersion() {
 }
 
 export async function createDID(operation) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/did/`, operation);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
+    return axios.post(`${URL}/api/v1/did/`, operation)
+        .then(response => response.data)
+        .catch(error => throwError(error));
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
-    try {
-        let params = '';
+    let params = '';
 
-        if (atTime) {
-            params += `atTime=${atTime}&`;
-        }
-
-        if (atVersion) {
-            params += `atVersion=${atVersion}&`;
-        }
-
-        if (confirm) {
-            params += `confirm=${confirm}&`;
-        }
-
-        if (verify) {
-            params += `verify=${verify}&`;
-        }
-
-        const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);
-        return response.data;
+    if (atTime) {
+        params += `atTime=${atTime}&`;
     }
-    catch (error) {
-        throwError(error);
+
+    if (atVersion) {
+        params += `atVersion=${atVersion}&`;
     }
+
+    if (confirm) {
+        params += `confirm=${confirm}&`;
+    }
+
+    if (verify) {
+        params += `verify=${verify}&`;
+    }
+
+    return axios.get(`${URL}/api/v1/did/${did}?${params}`)
+        .then(response => {
+            return response.data;
+        })
+        .catch(error => throwError(error));
 }
 
 export async function updateDID(operation) {
