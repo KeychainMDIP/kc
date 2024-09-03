@@ -83,7 +83,7 @@ async function runWorkflow() {
     console.timeEnd('create assets');
     console.log(`${count} assets issued`);
 
-    keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Alice');
 
     console.time('encrypt message');
     promises = Array.from({ length: count }, async (_, i) => {

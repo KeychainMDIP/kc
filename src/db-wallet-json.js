@@ -1,32 +1,52 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import * as cipher from './cipher-lib.js';
 import * as exceptions from './exceptions.js';
 
 const dataFolder = 'data';
 const walletName = `${dataFolder}/wallet.json`;
 
-export function saveWallet(wallet) {
+export async function saveWallet(wallet) {
     // TBD validate wallet before saving
 
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
+    try {
+        await fs.mkdir(dataFolder, { recursive: true });
+    } catch (error) {
+        if (error.code !== 'EEXIST') {
+            throw error;
+        }
+        // If the error is 'EEXIST', the directory already exists, so we can ignore it.
     }
 
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+    await fs.writeFile(walletName, JSON.stringify(wallet, null, 4), 'utf-8');
+    return loadWallet();
 }
 
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
+export async function loadWallet() {
+    let walletJson;
+    try {
+        walletJson = await fs.readFile(walletName, 'utf-8');
         return JSON.parse(walletJson);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            // If the error is 'ENOENT', the file does not exist, so return a new wallet.
+            return newWallet();
+        }
+        // If the error is anything else, rethrow it.
+        throw error;
     }
-
-    return newWallet();
 }
 
-export function newWallet(mnemonic, overwrite) {
-    if (fs.existsSync(walletName) && !overwrite) {
-        throw new Error(exceptions.UPDATE_FAILED);
+export async function newWallet(mnemonic, overwrite) {
+    try {
+        await fs.access(walletName);
+        if (!overwrite) {
+            throw new Error(exceptions.UPDATE_FAILED);
+        }
+    } catch (error) {
+        if (error.code !== 'ENOENT') {
+            throw error;
+        }
+        // If the error is 'ENOENT', the file does not exist, so we can ignore it.
     }
 
     try {
@@ -46,7 +66,7 @@ export function newWallet(mnemonic, overwrite) {
             ids: {},
         }
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return wallet;
     }
     catch (error) {
