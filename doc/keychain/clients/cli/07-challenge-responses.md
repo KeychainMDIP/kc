@@ -80,12 +80,12 @@ The command above mapped the Challenge with previously received VCs and found on
 
 ## Verifying a VP Response
 
-To verify the response received to a challenge, a user simply passes the DID of the VP received from the VC Holder being challenged.
+To verify the response received to a challenge, a user passes the DID of the VP received from the VC Holder being challenged, as well as the challenge DID:
 
 ```json
 $ kc use-id Alice
 OK
-kc verify-response did:mdip:test:z3v8AuadZ56m4x2UTpeY3HhSFvFQnrCUyASBYA77vqrqQr9SR99
+kc verify-response did:mdip:test:z3v8AuadZ56m4x2UTpeY3HhSFvFQnrCUyASBYA77vqrqQr9SR99 did:mdip:test:z3v8AuaaxRxwZCPUnpCc4RoV5CZjeYVJepmJTVeJrpvyyB6LmwN
 [
     {
         "@context": [
