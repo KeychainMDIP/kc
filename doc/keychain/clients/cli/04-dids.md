@@ -1,5 +1,6 @@
 ---
 title: Working with DIDs
+experimental: true
 sidebar_label: DIDs
 slug: dids
 ---

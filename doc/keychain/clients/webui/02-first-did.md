@@ -1,5 +1,6 @@
 ---
 title: Creating your first DID
+experimental: true
 sidebar_label: 'Your First DID'
 author: Christian
 ---
