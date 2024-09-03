@@ -1649,7 +1649,7 @@ describe('verifyResponse', () => {
         mockFs({});
 
         await keymaster.createId('Alice');
-        await keymaster.createId('Bob');
+        const bob = await keymaster.createId('Bob');
 
         keymaster.setCurrentId('Alice');
         const challenge = { credentials: [] };
@@ -1668,6 +1668,7 @@ describe('verifyResponse', () => {
             fulfilled: 0,
             match: true,
             vps: [],
+            responder: bob,
             ephemeral: {
                 validUntil: expect.any(String),
             },
@@ -1921,6 +1922,25 @@ describe('verifyResponse', () => {
         const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
         expect(verify4.match).toBe(false);
         expect(verify4.vps.length).toBe(2);
+    });
+
+    it('should raise exception on invalid parameter', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        keymaster.setCurrentId('Alice');
+        const challenge = { credentials: [] };
+        const challengeDid = await keymaster.createChallenge(challenge);
+
+        try {
+            await keymaster.verifyResponse(alice, challengeDid);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
     });
 });
 

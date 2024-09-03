@@ -1160,6 +1160,7 @@ export async function verifyResponse(responseDID, challengeDID) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    const responseDoc = await resolveDID(responseDID);
     const response = await decryptJSON(responseDID);
     const challenge = await resolveAsset(challengeDID);
 
@@ -1210,6 +1211,7 @@ export async function verifyResponse(responseDID, challengeDID) {
 
     response.vps = vps;
     response.match = vps.length === challenge.credentials.length;
+    response.responder = responseDoc.didDocument.controller;
 
     return response;
 }
