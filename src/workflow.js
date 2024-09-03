@@ -1,4 +1,3 @@
-import fs from 'fs';
 import * as keymaster from './keymaster-lib.js';
 import * as gatekeeper from './gatekeeper-lib.js';
 import * as db_json from './db-json.js';
@@ -19,10 +18,6 @@ const mockSchema = {
 };
 
 async function runWorkflow() {
-
-    await db_json.start('mdip-workflow');
-    await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper, db_wallet);
 
     const alice = await keymaster.createId('Alice', 'local');
     const bob = await keymaster.createId('Bob', 'local');
@@ -148,12 +143,12 @@ async function runWorkflow() {
 }
 
 async function main() {
-    const walletFile = 'data/wallet.json';
-    const backupFile = 'data/workflow-backup.json';
+    await db_json.start('mdip-workflow');
+    await gatekeeper.start(db_json);
+    await keymaster.start(gatekeeper, db_wallet);
 
-    if (fs.existsSync(walletFile)) {
-        fs.renameSync(walletFile, backupFile);
-    }
+    const backup = keymaster.loadWallet();
+    keymaster.newWallet(null, true);
 
     try {
         await runWorkflow();
@@ -162,12 +157,7 @@ async function main() {
         console.log(error);
     }
 
-    fs.rmSync(walletFile);
-
-    if (fs.existsSync(backupFile)) {
-        fs.renameSync(backupFile, walletFile);
-    }
-
+    keymaster.saveWallet(backup);
     process.exit();
 }
 
