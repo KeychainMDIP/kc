@@ -423,23 +423,58 @@ export async function fetchKeyPair(name = null) {
 }
 
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
-    const id = fetchId();
-    return fetchKeyPair().then(senderKeypair => {
-        return resolveDID(did, { confirm: true }).then(doc => {
-            const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-            const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
-            const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
-            const msgHash = cipher.hashMessage(msg);
 
-            return createAsset({
-                sender: id.did,
-                created: new Date().toISOString(),
-                cipher_hash: msgHash,
-                cipher_sender: cipher_sender,
-                cipher_receiver: cipher_receiver,
-            }, registry);
-        });
-    });
+    const id = fetchId();
+
+    const rando = Math.random().toFixed(6);
+    const label1 = `fetchKeyPair ${rando}`;
+    const label2 = `resolveDID   ${rando}`;
+    const label3 = `prep msg     ${rando}`;
+    const label4 = `createAsset  ${rando}`;
+
+    //console.time(label1);
+    const senderKeypair = await fetchKeyPair();
+    //console.timeEnd(label1);
+
+    //console.time(label2);
+    const doc = await resolveDID(did, { confirm: true });
+    //console.timeEnd(label2);
+
+    //console.time(label3);
+    const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+    const msgHash = cipher.hashMessage(msg);
+    //console.timeEnd(label3);
+
+    //console.time(label4);
+    const asset = await createAsset({
+        sender: id.did,
+        created: new Date().toISOString(),
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
+    }, registry);
+    //console.timeEnd(label4);
+
+    return asset;
+
+    // return fetchKeyPair().then(senderKeypair => {
+    //     return resolveDID(did, { confirm: true }).then(doc => {
+    //         const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    //         const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
+    //         const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+    //         const msgHash = cipher.hashMessage(msg);
+
+    //         return createAsset({
+    //             sender: id.did,
+    //             created: new Date().toISOString(),
+    //             cipher_hash: msgHash,
+    //             cipher_sender: cipher_sender,
+    //             cipher_receiver: cipher_receiver,
+    //         }, registry);
+    //     });
+    // });
 }
 
 export async function decrypt(did) {
@@ -620,7 +655,7 @@ function removeFromHeld(did) {
 }
 
 export async function resolveDID(did, options = {}) {
-    return await gatekeeper.resolveDID(lookupDID(did), options);
+    return gatekeeper.resolveDID(lookupDID(did), options);
 }
 
 export async function resolveAsset(did) {
@@ -872,16 +907,15 @@ export async function createAsset(data, registry = defaultRegistry, owner = null
         data: data,
     };
 
-    return addSignature(operation, owner).then(signed => {
-        return gatekeeper.createDID(signed).then(did => {
-            // Keep assets that will be garbage-collected out of the owned list
-            if (registry !== 'hyperswarm') {
-                addToOwned(did);
-            }
+    const signed = await addSignature(operation, owner);
+    const did = await gatekeeper.createDID(signed);
 
-            return did;
-        });
-    });
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
+    return did;
 }
 
 export async function testAgent(id) {

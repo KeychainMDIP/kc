@@ -85,9 +85,13 @@ export async function getVersion() {
 }
 
 export async function createDID(operation) {
-    return axios.post(`${URL}/api/v1/did/`, operation)
-        .then(response => response.data)
-        .catch(error => throwError(error));
+    try {
+        const response = await axios.post(`${URL}/api/v1/did/`, operation);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
 }
 
 export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
@@ -109,11 +113,13 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         params += `verify=${verify}&`;
     }
 
-    return axios.get(`${URL}/api/v1/did/${did}?${params}`)
-        .then(response => {
-            return response.data;
-        })
-        .catch(error => throwError(error));
+    try {
+        const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
 }
 
 export async function updateDID(operation) {

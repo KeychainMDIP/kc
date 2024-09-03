@@ -70,6 +70,11 @@ export async function verifyDb(chatty = true) {
                 delete eventsCache[did];
             });
         promises.push(promise);
+
+        if (promises.length > 99) {
+            await Promise.all(promises);
+            promises = [];
+        }
     }
 
     // Wait for all verifyDID calls to complete
