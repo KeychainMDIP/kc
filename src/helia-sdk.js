@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export let URL = 'http://localhost:4228';
+export let URL = process.env.KC_IPFS_URL || 'http://localhost:4228';
 
 function throwError(error) {
     if (error.response) {

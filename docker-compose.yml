@@ -1,9 +1,17 @@
 services:
 
-  mongodb:
-    image: mongo:latest
+  redis:
+    image: redis
+    command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
-      - ./data/db:/data/db
+      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./data/redis:/data
+
+  helia:
+    build:
+      context: .
+      dockerfile: Dockerfile.helia
+    image: keychainmdip/helia
 
   gatekeeper:
     build:
@@ -13,13 +21,14 @@ services:
     environment:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
+      - KC_IPFS_URL=http://helia:4228
     volumes:
       - ./data:/app/data
     ports:
       - "4224:4224"
     depends_on:
-      - mongodb
+      - redis
 
   keymaster:
     build:
