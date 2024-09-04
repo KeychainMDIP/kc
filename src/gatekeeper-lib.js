@@ -71,7 +71,7 @@ export async function verifyDb(chatty = true) {
             });
         promises.push(promise);
 
-        if (promises.length > 99) {
+        if (promises.length > 999) {
             await Promise.all(promises);
             promises = [];
         }
