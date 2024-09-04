@@ -1378,13 +1378,42 @@ describe('listIssued', () => {
     });
 });
 
+describe('updateCredential', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update a valid verifiable credential', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.issueCredential(boundCredential);
+        const vc = await keymaster.getCredential(did);
+
+        const validUntilDate = new Date();
+        validUntilDate.setHours(validUntilDate.getHours() + 24);
+        vc.validUntil = validUntilDate.toISOString();
+        const ok = await keymaster.updateCredential(did, vc);
+        expect(ok).toBe(true);
+
+        const updated = await keymaster.getCredential(did);
+        expect(updated.validUntil).toBe(vc.validUntil);
+
+        const doc = await keymaster.resolveDID(did);
+        expect(doc.didDocumentMetadata.version).toBe(2);
+    });
+});
+
 describe('revokeCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
     });
 
-    it('should revoke an valid verifiable credential', async () => {
+    it('should revoke a valid verifiable credential', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');

@@ -917,15 +917,43 @@ export async function issueCredential(vc, registry = defaultRegistry) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // Don't allow credentials that will be garbage-collected
-    // if (registry === 'hyperswarm') {
-    //     throw 'Invalid VC';
-    // }
-
     const signed = await addSignature(vc);
     const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function updateCredential(credential, vc) {
+    const did = lookupDID(credential);
+    const doc = await resolveDID(did);
+
+    delete vc.signature;
+    const signed = await addSignature(vc);
+    const msg = JSON.stringify(signed);
+
+    const id = fetchId();
+    const senderKeypair = await fetchKeyPair();
+    const holder = vc.credentialSubject.id;
+    const holderDoc = await resolveDID(holder, { confirm: true });
+    const receivePublicJwk = holderDoc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+    const msgHash = cipher.hashMessage(msg);
+
+    doc.didDocumentData = {
+        sender: id.did,
+        created: new Date().toISOString(),
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
+    };
+
+    return updateDID(did, doc);
+}
+
+export async function revokeCredential(credential) {
+    const did = lookupDID(credential);
+    return revokeDID(did);
 }
 
 export async function listIssued(issuer) {
@@ -948,11 +976,6 @@ export async function listIssued(issuer) {
     }
 
     return issued;
-}
-
-export async function revokeCredential(did) {
-    const credential = lookupDID(did);
-    return revokeDID(credential);
 }
 
 export async function acceptCredential(did) {
