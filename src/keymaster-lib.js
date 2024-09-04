@@ -422,44 +422,6 @@ export async function fetchKeyPair(name = null) {
     });
 }
 
-export async function encrypt2(msg, did, encryptForSender = true, registry = defaultRegistry) {
-
-    const id = await fetchId();
-
-    const rando = Math.random().toFixed(6);
-    const label1 = `fetchKeyPair ${rando}`;
-    const label2 = `resolveDID   ${rando}`;
-    const label3 = `prep msg     ${rando}`;
-    const label4 = `createAsset  ${rando}`;
-
-    console.time(label1);
-    const senderKeypair = await fetchKeyPair();
-    console.timeEnd(label1);
-
-    console.time(label2);
-    const doc = await resolveDID(did, { confirm: true });
-    console.timeEnd(label2);
-
-    console.time(label3);
-    const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
-    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
-    const msgHash = cipher.hashMessage(msg);
-    console.timeEnd(label3);
-
-    console.time(label4);
-    const asset = await createAsset({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
-    }, registry);
-    console.timeEnd(label4);
-
-    return asset;
-}
-
 export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
 
     const id = await fetchId();

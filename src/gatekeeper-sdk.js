@@ -40,7 +40,7 @@ export async function resetDb() {
     }
 }
 
-export async function waitUntilReady(intervalSeconds = 1, chatty = true) {
+export async function waitUntilReady(intervalSeconds = 5, chatty = true) {
     let ready = false;
 
     if (chatty) {
