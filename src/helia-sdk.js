@@ -46,32 +46,20 @@ export function setURL(url) {
     URL = url;
 }
 
-export async function isReady() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ready`);
-        return response.data;
-    }
-    catch (error) {
-        return false;
-    }
+export function isReady() {
+    return axios.get(`${URL}/api/v1/ready`)
+        .then(response => response.data)
+        .catch(error => false);
 }
 
-export async function add(json) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/ipfs`, json);
-        return response.data.cid;
-    }
-    catch (error) {
-        throwError(error);
-    }
+export function add(json) {
+    return axios.post(`${URL}/api/v1/ipfs`, json)
+        .then(response => response.data.cid)
+        .catch(error => throwError(error));
 }
 
-export async function get(cid) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ipfs/${cid}`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
+export function get(cid) {
+    return axios.get(`${URL}/api/v1/ipfs/${cid}`)
+        .then(response => response.data)
+        .catch(error => throwError(error));
 }
