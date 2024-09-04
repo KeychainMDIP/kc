@@ -17,9 +17,9 @@ program
 program
     .command('create-wallet')
     .description('Create new wallet (or show existing wallet)')
-    .action(() => {
+    .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -63,9 +63,9 @@ program
 program
     .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
-    .action((recoveryPhrase) => {
+    .action(async (recoveryPhrase) => {
         try {
-            const wallet = keymaster.newWallet(recoveryPhrase);
+            const wallet = await keymaster.newWallet(recoveryPhrase);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -76,9 +76,9 @@ program
 program
     .command('show-wallet')
     .description('Show wallet')
-    .action(() => {
+    .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -89,9 +89,9 @@ program
 program
     .command('show-mnemonic')
     .description('Show recovery phrase for wallet')
-    .action(() => {
+    .action(async () => {
         try {
-            const mnenomic = keymaster.decryptMnemonic();
+            const mnenomic = await keymaster.decryptMnemonic();
             console.log(mnenomic);
         }
         catch (error) {
@@ -192,7 +192,7 @@ program
     .description('Deletes named ID')
     .action(async (name) => {
         try {
-            keymaster.removeId(name);
+            await keymaster.removeId(name);
             console.log(`ID ${name} removed`);
         }
         catch (error) {
@@ -205,8 +205,8 @@ program
     .description('List IDs and show current ID')
     .action(async () => {
         try {
-            const current = keymaster.getCurrentId();
-            const ids = keymaster.listIds();
+            const current = await keymaster.getCurrentId();
+            const ids = await keymaster.listIds();
 
             for (let id of ids) {
                 if (id === current) {
@@ -227,7 +227,7 @@ program
     .description('Set the current ID')
     .action(async (name) => {
         try {
-            keymaster.setCurrentId(name);
+            await keymaster.setCurrentId(name);
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -365,7 +365,7 @@ program
             const did = await keymaster.createCredential(schema);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -384,7 +384,7 @@ program
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -399,12 +399,12 @@ program
     .description('Create challenge from a credential DID')
     .action(async (credentialDID, name) => {
         try {
-            const credential = keymaster.lookupDID(credentialDID);
+            const credential = await keymaster.lookupDID(credentialDID);
             const challenge = { credentials: [{ schema: credential }] };
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -436,7 +436,7 @@ program
             const did = await keymaster.issueCredential(vc, registry);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -489,7 +489,7 @@ program
                 console.log(UPDATE_OK);
 
                 if (name) {
-                    keymaster.addName(name, did);
+                    await keymaster.addName(name, did);
                 }
             }
             else {
@@ -571,7 +571,7 @@ program
     .description('Adds a name for a DID')
     .action(async (name, did) => {
         try {
-            keymaster.addName(name, did);
+            await keymaster.addName(name, did);
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -584,7 +584,7 @@ program
     .description('Removes a name for a DID')
     .action(async (name) => {
         try {
-            keymaster.removeName(name);
+            await keymaster.removeName(name);
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -618,7 +618,7 @@ program
         try {
             const did = await keymaster.createGroup(name);
             console.log(did);
-            keymaster.addName(name, did);
+            await keymaster.addName(name, did);
         }
         catch (error) {
             console.error(error.message);
@@ -673,7 +673,7 @@ program
             const did = await keymaster.createSchema(schema);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -732,7 +732,7 @@ program
             const did = await keymaster.createPoll(poll);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
