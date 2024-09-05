@@ -3,8 +3,8 @@ import axios from 'axios';
 let URL = '';
 
 function throwError(error) {
-    if (error.response) {
-        throw error.response.data;
+    if (error.response?.data?.error) {
+        throw error.response.data.error;
     }
 
     throw error.message;
