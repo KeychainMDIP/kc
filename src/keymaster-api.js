@@ -377,16 +377,6 @@ v1router.post('/credentials/bind', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/issued', async (req, res) => {
-    try {
-        const { credential, registry } = req.body;
-        const response = await keymaster.issueCredential(credential, registry);
-        res.json(response);
-    } catch (error) {
-        res.status(400).send({ error: error.toString() });
-    }
-});
-
 v1router.get('/credentials/held', async (req, res) => {
     try {
         const response = await keymaster.listCredentials();
@@ -454,6 +444,17 @@ v1router.get('/credentials/issued', async (req, res) => {
     }
 });
 
+v1router.post('/credentials/issued', async (req, res) => {
+    try {
+        const { credential, registry } = req.body;
+        const response = await keymaster.issueCredential(credential, registry);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+// eslint-disable-next-line
 v1router.get('/credentials/issued/:did', async (req, res) => {
     try {
         const did = req.params.did;
