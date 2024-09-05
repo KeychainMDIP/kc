@@ -926,6 +926,15 @@ export async function issueCredential(vc, registry = defaultRegistry) {
 export async function updateCredential(credential, vc) {
     const did = lookupDID(credential);
     const doc = await resolveDID(did);
+    const originalVC = await decryptJSON(did);
+
+    if (!originalVC.credential) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!vc?.credential || !vc?.credentialSubject?.id) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 
     delete vc.signature;
     const signed = await addSignature(vc);

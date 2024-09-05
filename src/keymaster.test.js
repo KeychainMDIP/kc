@@ -1405,6 +1405,69 @@ describe('updateCredential', () => {
         const doc = await keymaster.resolveDID(did);
         expect(doc.didDocumentMetadata.version).toBe(2);
     });
+
+    it('should throw exception on invalid parameters', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createCredential(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const did = await keymaster.issueCredential(boundCredential);
+        const vc = await keymaster.getCredential(did);
+
+        try {
+            await keymaster.updateCredential();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
+            // Pass agent DID instead of credential DID
+            await keymaster.updateCredential(userDid, vc);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.updateCredential(did);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.updateCredential(did, {});
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            const vc2 = gatekeeper.copyJSON(vc);
+            delete vc2.credential;
+            await keymaster.updateCredential(did, vc2);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            const vc2 = gatekeeper.copyJSON(vc);
+            delete vc2.credentialSubject;
+            await keymaster.updateCredential(did, vc2);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
 });
 
 describe('revokeCredential', () => {

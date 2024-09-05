@@ -16,7 +16,7 @@ let helia = null;
 let ipfs = null;
 let eventsCache = {};
 
-function copyJSON(json) {
+export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
 }
 
