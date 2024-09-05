@@ -1378,7 +1378,7 @@ function KeymasterUI({ keymaster, title }) {
                                                                     </Button>
                                                                 </Grid>
                                                                 <Grid item>
-                                                                    <Button variant="contained" color="primary" onClick={() => updateIssued(did)} disabled={!issuedEdit || issuedString === issuedStringOriginal}>
+                                                                    <Button variant="contained" color="primary" onClick={() => updateIssued(did)} disabled={did !== selectedIssued || !issuedEdit || issuedString === issuedStringOriginal}>
                                                                         Update
                                                                     </Button>
                                                                 </Grid>
