@@ -377,7 +377,7 @@ v1router.post('/credentials/bind', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/issue', async (req, res) => {
+v1router.post('/credentials/issued', async (req, res) => {
     try {
         const { credential, registry } = req.body;
         const response = await keymaster.issueCredential(credential, registry);
@@ -461,6 +461,17 @@ v1router.get('/credentials/issued/:did', async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/credentials/issued/:did', async (req, res) => {
+    try {
+        const did = req.params.did;
+        const { credential } = req.body;
+        const response = await keymaster.updateCredential(did, credential);
+        res.json(response);
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
     }
 });
 

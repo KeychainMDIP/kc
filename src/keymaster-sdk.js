@@ -400,7 +400,17 @@ export async function bindCredential(schema, subject) {
 
 export async function issueCredential(credential, registry) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/issue`, { credential, registry });
+        const response = await axios.post(`${URL}/api/v1/credentials/issued`, { credential, registry });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function updateCredential(did, credential) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/credentials/issued/${did}`, { credential });
         return response.data;
     }
     catch (error) {

@@ -910,45 +910,45 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
     };
 }
 
-export async function issueCredential(vc, registry = defaultRegistry) {
+export async function issueCredential(credential, registry = defaultRegistry) {
     const id = fetchId();
 
-    if (vc.issuer !== id.did) {
+    if (credential.issuer !== id.did) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
+    const signed = await addSignature(credential);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
 }
 
-export async function updateCredential(credential, vc) {
-    const did = lookupDID(credential);
-    const doc = await resolveDID(did);
+export async function updateCredential(did, credential) {
+    did = lookupDID(did);
     const originalVC = await decryptJSON(did);
 
     if (!originalVC.credential) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!vc?.credential || !vc?.credentialSubject?.id) {
+    if (!credential?.credential || !credential?.credentialSubject?.id) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    delete vc.signature;
-    const signed = await addSignature(vc);
+    delete credential.signature;
+    const signed = await addSignature(credential);
     const msg = JSON.stringify(signed);
 
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
-    const holder = vc.credentialSubject.id;
+    const holder = credential.credentialSubject.id;
     const holderDoc = await resolveDID(holder, { confirm: true });
     const receivePublicJwk = holderDoc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
+    const doc = await resolveDID(did);
     doc.didDocumentData = {
         sender: id.did,
         created: new Date().toISOString(),
