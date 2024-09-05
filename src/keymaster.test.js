@@ -547,7 +547,7 @@ describe('rotateKeys', () => {
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encrypt(msg, bob, true, 'local');
+            const did = await keymaster.encryptMessage(msg, bob, true, 'local');
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -559,12 +559,12 @@ describe('rotateKeys', () => {
         for (let secret of secrets) {
             keymaster.setCurrentId('Alice');
 
-            const decipher1 = await keymaster.decrypt(secret);
+            const decipher1 = await keymaster.decryptMessage(secret);
             expect(decipher1).toBe(msg);
 
             keymaster.setCurrentId('Bob');
 
-            const decipher2 = await keymaster.decrypt(secret);
+            const decipher2 = await keymaster.decryptMessage(secret);
             expect(decipher2).toBe(msg);
         }
     });
@@ -980,7 +980,7 @@ describe('encrypt', () => {
         const did = await keymaster.createId(name);
 
         const msg = 'Hi Bob!';
-        const encryptDid = await keymaster.encrypt(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did);
         const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
@@ -996,7 +996,7 @@ describe('encrypt', () => {
         const did = await keymaster.createId(name);
 
         const msg = generateRandomString(1024);
-        const encryptDid = await keymaster.encrypt(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did);
         const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
@@ -1018,8 +1018,8 @@ describe('decrypt', () => {
         const did = await keymaster.createId(name);
 
         const msg = 'Hi Bob!';
-        const encryptDid = await keymaster.encrypt(msg, did);
-        const decipher = await keymaster.decrypt(encryptDid);
+        const encryptDid = await keymaster.encryptMessage(msg, did);
+        const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
     });
@@ -1030,9 +1030,9 @@ describe('decrypt', () => {
         const did = await keymaster.createId('Bob', 'local');
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encrypt(msg, did, true, 'local');
+        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'local');
         await keymaster.rotateKeys();
-        const decipher = await keymaster.decrypt(encryptDid);
+        const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
     });
@@ -1043,8 +1043,8 @@ describe('decrypt', () => {
         const did = await keymaster.createId('Bob', 'hyperswarm');
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encrypt(msg, did, true, 'hyperswarm');
-        const decipher = await keymaster.decrypt(encryptDid);
+        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'hyperswarm');
+        const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
     });
@@ -1061,10 +1061,10 @@ describe('decrypt', () => {
         keymaster.setCurrentId(name1);
 
         const msg = 'Hi Bob!';
-        const encryptDid = await keymaster.encrypt(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did);
 
         keymaster.setCurrentId(name2);
-        const decipher = await keymaster.decrypt(encryptDid);
+        const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
     });
@@ -1081,10 +1081,10 @@ describe('decrypt', () => {
         keymaster.setCurrentId(name1);
 
         const msg = generateRandomString(1024);
-        const encryptDid = await keymaster.encrypt(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did);
 
         keymaster.setCurrentId(name2);
-        const decipher = await keymaster.decrypt(encryptDid);
+        const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
     });
@@ -1434,7 +1434,7 @@ describe('updateCredential', () => {
 
         try {
             // Pass cipher DID instead of credential DID
-            const cipherDID = await keymaster.encrypt('mock', bob);
+            const cipherDID = await keymaster.encryptMessage('mock', bob);
             await keymaster.updateCredential(cipherDID, vc);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
