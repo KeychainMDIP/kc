@@ -1434,6 +1434,16 @@ describe('updateCredential', () => {
 
         try {
             // Pass cipher DID instead of credential DID
+            const cipherDID = await keymaster.encrypt('mock', bob);
+            await keymaster.updateCredential(cipherDID, vc);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            // Pass cipher DID instead of credential DID
             const cipherDID = await keymaster.encryptJSON({ bob }, bob);
             await keymaster.updateCredential(cipherDID, vc);
             throw new Error(exceptions.EXPECTED_EXCEPTION);

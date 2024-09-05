@@ -476,7 +476,13 @@ export async function encryptJSON(json, did, encryptForSender = true, registry =
 
 export async function decryptJSON(did) {
     const plaintext = await decrypt(did);
-    return JSON.parse(plaintext);
+
+    try {
+        return JSON.parse(plaintext);
+    }
+    catch (error) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 }
 
 export async function addSignature(obj, controller = null) {
