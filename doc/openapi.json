@@ -1435,50 +1435,9 @@
         }
       }
     },
-    "/credentials/issue": {
-      "post": {
-        "summary": "Issue a credential",
-        "tags": [
-          "Credential"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "credential": {
-                    "type": "object"
-                  },
-                  "registry": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request"
-          }
-        }
-      }
-    },
     "/credentials/held": {
       "get": {
-        "summary": "List all credentials",
+        "summary": "List all held credentials",
         "tags": [
           "Credential"
         ],
@@ -1709,9 +1668,97 @@
         }
       }
     },
+    "post": {
+      "summary": "Issue a credential",
+      "tags": [
+        "Credential"
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "credential": {
+                  "type": "object"
+                },
+                "registry": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Successful response",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request"
+        }
+      }
+    },
     "/credentials/issued/{did}": {
       "get": {
         "summary": "Get an issued credential",
+        "tags": [
+          "Credential"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "did",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credential": {
+                    "type": "object"
+                  },
+                  "registry": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request"
+          }
+        }
+      },
+      "post": {
+        "summary": "Update an issued credential",
         "tags": [
           "Credential"
         ],

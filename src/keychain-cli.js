@@ -273,7 +273,7 @@ program
     .description('Encrypt a message for a DID')
     .action(async (msg, did) => {
         try {
-            const cipherDid = await keymaster.encrypt(msg, did);
+            const cipherDid = await keymaster.encryptMessage(msg, did);
             console.log(cipherDid);
         }
         catch (error) {
@@ -287,7 +287,7 @@ program
     .action(async (file, did) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const cipherDid = await keymaster.encrypt(contents, did);
+            const cipherDid = await keymaster.encryptMessage(contents, did);
             console.log(cipherDid);
         }
         catch (error) {
@@ -300,7 +300,7 @@ program
     .description('Decrypt an encrypted message DID')
     .action(async (did) => {
         try {
-            const plaintext = await keymaster.decrypt(did);
+            const plaintext = await keymaster.decryptMessage(did);
             console.log(plaintext);
         }
         catch (error) {
@@ -313,8 +313,7 @@ program
     .description('Decrypt an encrypted JSON DID')
     .action(async (did) => {
         try {
-            const plaintext = await keymaster.decrypt(did);
-            const json = JSON.parse(plaintext);
+            const json = await keymaster.decryptJSON(did);
             console.log(JSON.stringify(json, null, 4));
         }
         catch (error) {

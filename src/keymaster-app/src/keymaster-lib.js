@@ -316,20 +316,24 @@ export async function backupWallet(registry = defaultRegistry) {
 }
 
 export async function recoverWallet(did) {
-    const keypair = hdKeyPair();
+    try {
+        if (!did) {
+            const seedBank = await resolveSeedBank();
+            did = seedBank.didDocumentData.wallet;
+        }
 
-    if (!did) {
-        const seedBank = await resolveSeedBank();
-        did = seedBank.didDocumentData.wallet;
+        const keypair = hdKeyPair();
+        const data = await resolveAsset(did);
+        const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
+        const wallet = JSON.parse(backup);
+
+        saveWallet(wallet);
+        return wallet;
     }
-
-    const data = await resolveAsset(did);
-    const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
-    const wallet = JSON.parse(backup);
-
-    saveWallet(wallet);
-
-    return wallet;
+    catch (error) {
+        // If we can't recover the wallet, just return the current one
+        return loadWallet();
+    }
 }
 
 export function listIds() {
@@ -906,22 +910,59 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
     };
 }
 
-export async function issueCredential(vc, registry = defaultRegistry) {
+export async function issueCredential(credential, registry = defaultRegistry) {
     const id = fetchId();
 
-    if (vc.issuer !== id.did) {
+    if (credential.issuer !== id.did) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // Don't allow credentials that will be garbage-collected
-    // if (registry === 'hyperswarm') {
-    //     throw 'Invalid VC';
-    // }
-
-    const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
+    const signed = await addSignature(credential);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function updateCredential(did, credential) {
+    did = lookupDID(did);
+    const originalVC = await decryptJSON(did);
+
+    if (!originalVC.credential) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!credential?.credential || !credential?.credentialSubject?.id) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    delete credential.signature;
+    const signed = await addSignature(credential);
+    const msg = JSON.stringify(signed);
+
+    const id = fetchId();
+    const senderKeypair = await fetchKeyPair();
+    const holder = credential.credentialSubject.id;
+    const holderDoc = await resolveDID(holder, { confirm: true });
+    const receivePublicJwk = holderDoc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+    const msgHash = cipher.hashMessage(msg);
+
+    const doc = await resolveDID(did);
+    doc.didDocumentData = {
+        sender: id.did,
+        created: new Date().toISOString(),
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
+    };
+
+    return updateDID(did, doc);
+}
+
+export async function revokeCredential(credential) {
+    const did = lookupDID(credential);
+    return revokeDID(did);
 }
 
 export async function listIssued(issuer) {
@@ -944,11 +985,6 @@ export async function listIssued(issuer) {
     }
 
     return issued;
-}
-
-export async function revokeCredential(did) {
-    const credential = lookupDID(did);
-    return revokeDID(credential);
 }
 
 export async function acceptCredential(did) {
@@ -1156,6 +1192,7 @@ export async function verifyResponse(responseDID, challengeDID) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    const responseDoc = await resolveDID(responseDID);
     const response = await decryptJSON(responseDID);
     const challenge = await resolveAsset(challengeDID);
 
@@ -1206,6 +1243,7 @@ export async function verifyResponse(responseDID, challengeDID) {
 
     response.vps = vps;
     response.match = vps.length === challenge.credentials.length;
+    response.responder = responseDoc.didDocument.controller;
 
     return response;
 }

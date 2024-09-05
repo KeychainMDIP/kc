@@ -420,7 +420,7 @@ async function fetchKeyPair(name = null) {
     return null;
 }
 
-export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
+export async function encryptMessage(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
     const doc = await resolveDID(did, { confirm: true });
@@ -438,7 +438,7 @@ export async function encrypt(msg, did, encryptForSender = true, registry = defa
     }, registry);
 }
 
-export async function decrypt(did) {
+export async function decryptMessage(did) {
     const wallet = loadWallet();
     const id = fetchId();
     const crypt = await resolveAsset(did);
@@ -471,12 +471,18 @@ export async function decrypt(did) {
 
 export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
-    return encrypt(plaintext, did, encryptForSender, registry);
+    return encryptMessage(plaintext, did, encryptForSender, registry);
 }
 
 export async function decryptJSON(did) {
-    const plaintext = await decrypt(did);
-    return JSON.parse(plaintext);
+    const plaintext = await decryptMessage(did);
+
+    try {
+        return JSON.parse(plaintext);
+    }
+    catch (error) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 }
 
 export async function addSignature(obj, controller = null) {
@@ -910,22 +916,59 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
     };
 }
 
-export async function issueCredential(vc, registry = defaultRegistry) {
+export async function issueCredential(credential, registry = defaultRegistry) {
     const id = fetchId();
 
-    if (vc.issuer !== id.did) {
+    if (credential.issuer !== id.did) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // Don't allow credentials that will be garbage-collected
-    // if (registry === 'hyperswarm') {
-    //     throw 'Invalid VC';
-    // }
-
-    const signed = await addSignature(vc);
-    const cipherDid = await encryptJSON(signed, vc.credentialSubject.id, true, registry);
+    const signed = await addSignature(credential);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, true, registry);
     addToOwned(cipherDid);
     return cipherDid;
+}
+
+export async function updateCredential(did, credential) {
+    did = lookupDID(did);
+    const originalVC = await decryptJSON(did);
+
+    if (!originalVC.credential) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!credential?.credential || !credential?.credentialSubject?.id) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    delete credential.signature;
+    const signed = await addSignature(credential);
+    const msg = JSON.stringify(signed);
+
+    const id = fetchId();
+    const senderKeypair = await fetchKeyPair();
+    const holder = credential.credentialSubject.id;
+    const holderDoc = await resolveDID(holder, { confirm: true });
+    const receivePublicJwk = holderDoc.didDocument.verificationMethod[0].publicKeyJwk;
+    const cipher_sender = cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
+    const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+    const msgHash = cipher.hashMessage(msg);
+
+    const doc = await resolveDID(did);
+    doc.didDocumentData = {
+        sender: id.did,
+        created: new Date().toISOString(),
+        cipher_hash: msgHash,
+        cipher_sender: cipher_sender,
+        cipher_receiver: cipher_receiver,
+    };
+
+    return updateDID(did, doc);
+}
+
+export async function revokeCredential(credential) {
+    const did = lookupDID(credential);
+    return revokeDID(did);
 }
 
 export async function listIssued(issuer) {
@@ -948,11 +991,6 @@ export async function listIssued(issuer) {
     }
 
     return issued;
-}
-
-export async function revokeCredential(did) {
-    const credential = lookupDID(did);
-    return revokeDID(credential);
 }
 
 export async function acceptCredential(did) {
@@ -1129,8 +1167,8 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     const pairs = [];
 
     for (let vcDid of matches) {
-        const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, requestor, true, registry);
+        const plaintext = await decryptMessage(vcDid);
+        const vpDid = await encryptMessage(plaintext, requestor, true, registry);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 

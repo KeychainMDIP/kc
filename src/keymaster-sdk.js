@@ -3,8 +3,8 @@ import axios from 'axios';
 let URL = '';
 
 function throwError(error) {
-    if (error.response) {
-        throw error.response.data;
+    if (error.response?.data?.error) {
+        throw error.response.data.error;
     }
 
     throw error.message;
@@ -400,7 +400,17 @@ export async function bindCredential(schema, subject) {
 
 export async function issueCredential(credential, registry) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/issue`, { credential, registry });
+        const response = await axios.post(`${URL}/api/v1/credentials/issued`, { credential, registry });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function updateCredential(did, credential) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/credentials/issued/${did}`, { credential });
         return response.data;
     }
     catch (error) {
@@ -420,7 +430,7 @@ export async function listCredentials() {
 
 export async function acceptCredential(did) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}`);
+        const response = await axios.post(`${URL}/api/v1/credentials/held/`, { did });
         return response.data;
     }
     catch (error) {

@@ -47,7 +47,9 @@ function KeymasterUI({ keymaster, title }) {
     const [selectedHeld, setSelectedHeld] = useState('');
     const [issuedList, setIssuedList] = useState(null);
     const [selectedIssued, setSelectedIssued] = useState('');
+    const [issuedStringOriginal, setIssuedStringOriginal] = useState('');
     const [issuedString, setIssuedString] = useState('');
+    const [issuedEdit, setIssuedEdit] = useState(false);
     const [mnemonicString, setMnemonicString] = useState('');
     const [walletString, setWalletString] = useState('');
     const [manifest, setManifest] = useState(null);
@@ -586,6 +588,7 @@ function KeymasterUI({ keymaster, title }) {
             const doc = await keymaster.resolveDID(did);
             setSelectedIssued(did);
             setIssuedString(JSON.stringify(doc, null, 4));
+            setIssuedEdit(false);
         } catch (error) {
             window.alert(error);
         }
@@ -595,7 +598,20 @@ function KeymasterUI({ keymaster, title }) {
         try {
             const doc = await keymaster.getCredential(did);
             setSelectedIssued(did);
-            setIssuedString(JSON.stringify(doc, null, 4));
+            const issued = JSON.stringify(doc, null, 4);
+            setIssuedStringOriginal(issued);
+            setIssuedString(issued);
+            setIssuedEdit(true);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function updateIssued(did) {
+        try {
+            const credential = JSON.parse(issuedString);
+            await keymaster.updateCredential(did, credential);
+            decryptIssued(did);
         } catch (error) {
             window.alert(error);
         }
@@ -1362,6 +1378,11 @@ function KeymasterUI({ keymaster, title }) {
                                                                     </Button>
                                                                 </Grid>
                                                                 <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => updateIssued(did)} disabled={did !== selectedIssued || !issuedEdit || issuedString === issuedStringOriginal}>
+                                                                        Update
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
                                                                     <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
                                                                         Revoke
                                                                     </Button>
@@ -1374,11 +1395,20 @@ function KeymasterUI({ keymaster, title }) {
                                         </Table>
                                     </TableContainer>
                                     <p>{selectedIssued}</p>
-                                    <textarea
-                                        value={issuedString}
-                                        readOnly
-                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                    />
+                                    {issuedEdit ? (
+                                        <textarea
+                                            value={issuedString}
+                                            onChange={(e) => setIssuedString(e.target.value.trim())}
+                                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                        />
+
+                                    ) : (
+                                        <textarea
+                                            value={issuedString}
+                                            readOnly
+                                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                        />
+                                    )}
                                 </Box>
                             }
                         </Box>
