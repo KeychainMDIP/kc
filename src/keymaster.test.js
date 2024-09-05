@@ -1409,9 +1409,9 @@ describe('updateCredential', () => {
     it('should throw exception on invalid parameters', async () => {
         mockFs({});
 
-        const userDid = await keymaster.createId('Bob');
+        const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createCredential(mockSchema);
-        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
         const vc = await keymaster.getCredential(did);
 
@@ -1425,7 +1425,17 @@ describe('updateCredential', () => {
 
         try {
             // Pass agent DID instead of credential DID
-            await keymaster.updateCredential(userDid, vc);
+            await keymaster.updateCredential(bob, vc);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            // Pass cipher DID instead of credential DID
+            const cipherDID = await keymaster.encryptJSON({ bob }, bob);
+            await keymaster.updateCredential(cipherDID, vc);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
