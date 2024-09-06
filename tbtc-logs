@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-docker compose -p tbtc -f docker-compose.tbtc.yml logs -f
+docker compose logs -f tbtc-node tbtc-mediator
