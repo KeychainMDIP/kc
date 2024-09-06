@@ -1,9 +1,8 @@
 services:
-
   mongodb:
     image: mongo:latest
     volumes:
-      - ./data/db:/data/db
+      - ./data/mongodb:/data/db
 
   gatekeeper:
     build:
@@ -16,6 +15,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"
     depends_on:
@@ -31,6 +31,7 @@ services:
       - KC_GATEKEEPER_PORT=4224
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
     ports:
       - "4226:4226"
     depends_on:
@@ -47,5 +48,6 @@ services:
       - KC_NODE_NAME=${KC_NODE_NAME}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper

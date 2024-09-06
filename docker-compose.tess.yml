@@ -1,5 +1,4 @@
 services:
-
   tess-node:
     image: macterra/tesseract-node:v21.08.03
     ports:
@@ -33,5 +32,6 @@ services:
       - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tess-node

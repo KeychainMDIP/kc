@@ -32,3 +32,6 @@ services:
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tbtc-node

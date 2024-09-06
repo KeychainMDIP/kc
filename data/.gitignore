@@ -1,7 +1,7 @@
 *.json
 *.db
 ipfs/
-db/
+mongodb/
 tesseract/
 tftc/
 tbtc/
