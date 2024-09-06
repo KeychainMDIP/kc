@@ -18,8 +18,6 @@ services:
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"
-    depends_on:
-      - mongodb
 
   keymaster:
     build:
@@ -51,3 +49,116 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
+
+  tess-node:
+    image: macterra/tesseract-node:v21.08.03
+    ports:
+      - "7333:7333"
+      - "8333:8333"
+    volumes:
+      - ./data/tesseract:/data
+
+  tess-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.sat
+    image: keychainmdip/sat-mediator
+    network_mode: host
+    environment:
+      - KC_GATEKEEPER_URL=http://localhost
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=TESS
+      - KC_SAT_NETWORK=mainnet
+      - KC_SAT_START_BLOCK=142865
+      - KC_SAT_HOST=localhost
+      - KC_SAT_PORT=8333
+      - KC_SAT_USER=${KC_TESS_USER}
+      - KC_SAT_PASS=${KC_TESS_PASS}
+      - KC_SAT_WALLET=${KC_TESS_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_TESS_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_TESS_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_TESS_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_TESS_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
+    volumes:
+      - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tess-node
+
+  tftc-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.ftc
+    ports:
+      - "19336:19336"
+      - "19337:19337"
+    volumes:
+      - ./data/tftc:/root/.feathercoin
+
+  tftc-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.sat
+    image: keychainmdip/sat-mediator
+    network_mode: host
+    environment:
+      - KC_GATEKEEPER_URL=http://localhost
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=TFTC
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_START_BLOCK=0
+      - KC_SAT_HOST=localhost
+      - KC_SAT_PORT=19337
+      - KC_SAT_USER=${KC_TFTC_USER}
+      - KC_SAT_PASS=${KC_TFTC_PASS}
+      - KC_SAT_WALLET=${KC_TFTC_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_TFTC_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_TFTC_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_TFTC_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
+    volumes:
+      - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tftc-node
+
+  tbtc-node:
+    image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
+    volumes:
+      - ./data/tbtc:/root/.bitcoin
+    ports:
+      - "48333:48333"
+      - "48332:48332"
+
+  tbtc-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.sat
+    image: keychainmdip/sat-mediator
+    network_mode: host
+    environment:
+      - KC_GATEKEEPER_URL=http://localhost
+      - KC_GATEKEEPER_PORT=4224
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=TBTC
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_HOST=localhost
+      - KC_SAT_PORT=48332
+      - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
+      - KC_SAT_USER=${KC_TBTC_USER}
+      - KC_SAT_PASS=${KC_TBTC_PASS}
+      - KC_SAT_WALLET=${KC_TBTC_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_TBTC_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_TBTC_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_TBTC_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
+    volumes:
+      - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tbtc-node

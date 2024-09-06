@@ -1,6 +1,2 @@
 #!/usr/bin/env bash
-
-docker compose -p tess -f docker-compose.tess.yml down
-docker compose -p tftc -f docker-compose.tftc.yml down
-docker compose -p tbtc -f docker-compose.tbtc.yml down
 docker compose down
