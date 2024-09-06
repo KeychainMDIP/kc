@@ -1,10 +1,8 @@
 services:
-
   mongodb:
     image: mongo:latest
     volumes:
       - ./data/mongodb:/data/db
-    user: "${KC_UID}:${KC_GID}"
 
   gatekeeper:
     build:

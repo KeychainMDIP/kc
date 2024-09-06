@@ -1,5 +1,4 @@
 services:
-
   tess-node:
     image: macterra/tesseract-node:v21.08.03
     ports:
@@ -7,7 +6,6 @@ services:
       - "8333:8333"
     volumes:
       - ./data/tesseract:/data
-    user: "${KC_UID}:${KC_GID}"
 
   tess-mediator:
     build:

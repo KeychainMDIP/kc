@@ -8,7 +8,6 @@ services:
       - "19337:19337"
     volumes:
       - ./data/tftc:/root/.feathercoin
-    user: "${KC_UID}:${KC_GID}"
 
   tftc-mediator:
     build:
