@@ -7,6 +7,7 @@ services:
       - "8333:8333"
     volumes:
       - ./data/tesseract:/data
+    user: "${KC_UID}:${KC_GID}"
 
   tess-mediator:
     build:
@@ -33,5 +34,6 @@ services:
       - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tess-node

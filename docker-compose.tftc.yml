@@ -8,6 +8,7 @@ services:
       - "19337:19337"
     volumes:
       - ./data/tftc:/root/.feathercoin
+    user: "${KC_UID}:${KC_GID}"
 
   tftc-mediator:
     build:
@@ -34,3 +35,6 @@ services:
       - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tftc-node

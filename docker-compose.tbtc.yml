@@ -3,6 +3,7 @@ services:
     image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
     volumes:
       - ./data/tbtc:/root/.bitcoin
+    user: "${KC_UID}:${KC_GID}"
     ports:
       - "48333:48333"
       - "48332:48332"
@@ -32,3 +33,6 @@ services:
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
     volumes:
       - ./data:/app/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tbtc-node
