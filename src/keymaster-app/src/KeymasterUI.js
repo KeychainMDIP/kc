@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
 import './App.css';
 
 function KeymasterUI({ keymaster, title }) {
@@ -12,7 +13,10 @@ function KeymasterUI({ keymaster, title }) {
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
     const [idList, setIdList] = useState(null);
-    const [challenge, setChallenge] = useState(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [challenge, setChallenge] = useState(searchParams.get("challenge"));
+    const [callback, setCallback] = useState(searchParams.get("callback"));
+    const [widget, setWidget] = useState(searchParams.get("widget"));
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState('');
@@ -42,7 +46,7 @@ function KeymasterUI({ keymaster, title }) {
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
     const [heldList, setHeldList] = useState(null);
-    const [heldDID, setHeldDID] = useState('');
+    const [heldDID, setHeldDID] = useState(searchParams.get("credential"));
     const [heldString, setHeldString] = useState('');
     const [selectedHeld, setSelectedHeld] = useState('');
     const [issuedList, setIssuedList] = useState(null);
@@ -81,8 +85,16 @@ function KeymasterUI({ keymaster, title }) {
                 refreshNames();
                 refreshHeld();
                 refreshIssued();
-
-                setTab('identity');
+                
+                if (!challenge) { 
+                    if (!credentialDID) {
+                       setTab('identity'); //default tab
+                    } else {
+                       setTab('credentials'); //if credential in URL
+                    }
+                } else {
+                    setTab('auth'); //if challenge in URL
+                }
                 setCredentialTab('held');
             }
             else {
@@ -129,6 +141,8 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.createId(newName, registry);
             refreshAll();
+	    // The backup forces a change, triggering registration
+            const ok = await keymaster.backupId(currentId);
         } catch (error) {
             window.alert(error);
         }
@@ -199,6 +213,19 @@ function KeymasterUI({ keymaster, title }) {
             const response = await keymaster.createResponse(challenge);
             setResponse(response);
         } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function sendResponse() {
+        try {
+            var xhr = new XMLHttpRequest();
+            xhr.addEventListener('load', () => {
+               window.alert(xhr.responseText)
+            });
+            xhr.open('GET', callback + "?response=" + response + "&challenge=" + challenge);
+            xhr.send();
+        } catch (error) { 
             window.alert(error);
         }
     }
@@ -588,7 +615,6 @@ function KeymasterUI({ keymaster, title }) {
             const doc = await keymaster.resolveDID(did);
             setSelectedIssued(did);
             setIssuedString(JSON.stringify(doc, null, 4));
-            setIssuedEdit(false);
         } catch (error) {
             window.alert(error);
         }
@@ -812,16 +838,16 @@ function KeymasterUI({ keymaster, title }) {
                         {currentId &&
                             <Tab key="identity" value="identity" label={'Identities'} />
                         }
-                        {currentId &&
+                        {currentId && !widget &&
                             <Tab key="names" value="names" label={'DIDs'} />
                         }
-                        {currentId &&
+                        {currentId && !widget &&
                             <Tab key="groups" value="groups" label={'Groups'} />
                         }
-                        {currentId &&
+                        {currentId && !widget &&
                             <Tab key="schemas" value="schemas" label={'Schemas'} />
                         }
-                        {currentId &&
+                        {currentId && !widget &&
                             <Tab key="credentials" value="credentials" label={'Credentials'} />
                         }
                         {currentId &&
@@ -879,6 +905,7 @@ function KeymasterUI({ keymaster, title }) {
                                 </Grid>
                             </Grid>
                             <p />
+                          {!widget &&
                             <Box>
                                 <textarea
                                     value={docsString}
@@ -886,6 +913,7 @@ function KeymasterUI({ keymaster, title }) {
                                     style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                 />
                             </Box>
+                          }
                         </Box>
                     }
                     {tab === 'names' &&
@@ -1508,6 +1536,28 @@ function KeymasterUI({ keymaster, title }) {
                                             <Grid item>
                                                 <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
                                                     Clear
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+                                    </TableCell>
+                                </TableRow>
+                                <TableRow>
+                                    <TableCell style={{ width: '10%' }}>Callback URL</TableCell>
+                                    <TableCell style={{ width: '60%' }}>
+                                        <TextField
+                                            label=""
+                                            value={callback}
+                                            onChange={(e) => setCallback(e.target.value.trim())}
+                                            fullWidth
+                                            margin="normal"
+                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                        />
+                                    </TableCell>
+                                    <TableCell style={{ width: '30%' }}>
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={sendResponse} disabled={!callback}>
+                                                    Send Response
                                                 </Button>
                                             </Grid>
                                         </Grid>
