@@ -113,6 +113,9 @@ $ kc recover-wallet did:mdip:z3v8AuaXcTg74E4nWXDkX3wtZXjGjvp55z7QYixWSUHyG89qFTy
 }
 ```
 
+> [!NOTE]
+> You can also run `kc recover-wallet` Without specifying a backup DID, and `kc` will choose the most recent backup.
+
 `recover-wallet` does not overwrite the existing wallet, it only prints the contents of the backup. The output should be redirected to a temporary `wallet.json` file, which can then be copied over the existing wallet in the `./data` folder.
 
 Do not redirect or pipe the output directly to the existing `wallet.json` file, which will cause an error.
