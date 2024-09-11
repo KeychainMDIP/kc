@@ -13,10 +13,9 @@ function KeymasterUI({ keymaster, title }) {
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
     const [idList, setIdList] = useState(null);
-    const [searchParams, setSearchParams] = useSearchParams();
-    const [challenge, setChallenge] = useState(searchParams.get("challenge"));
-    const [callback, setCallback] = useState(searchParams.get("callback"));
-    const [widget, setWidget] = useState(searchParams.get("widget"));
+    const [challenge, setChallenge] = useState(null);
+    const [callback, setCallback] = useState(null);
+    const [widget, setWidget] = useState(false);
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState('');
@@ -46,7 +45,7 @@ function KeymasterUI({ keymaster, title }) {
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
     const [heldList, setHeldList] = useState(null);
-    const [heldDID, setHeldDID] = useState(searchParams.get("credential"));
+    const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
     const [selectedHeld, setSelectedHeld] = useState('');
     const [issuedList, setIssuedList] = useState(null);
@@ -58,11 +57,22 @@ function KeymasterUI({ keymaster, title }) {
     const [walletString, setWalletString] = useState('');
     const [manifest, setManifest] = useState(null);
     const [checkingWallet, setCheckingWallet] = useState(false);
+    const [searchParams] = useSearchParams();
 
     useEffect(() => {
+        const paramChallenge = searchParams.get('challenge');
+
+        if (paramChallenge) {
+            setChallenge(paramChallenge);
+            setWidget(true);
+
+            keymaster.resolveAsset(paramChallenge).then(details => {
+                setCallback(details?.callback);
+            });
+        }
+
         refreshAll();
-        // eslint-disable-next-line
-    }, []);
+    }, [searchParams]);
 
     async function refreshAll() {
         try {
@@ -85,12 +95,12 @@ function KeymasterUI({ keymaster, title }) {
                 refreshNames();
                 refreshHeld();
                 refreshIssued();
-                
-                if (!challenge) { 
+
+                if (!challenge) {
                     if (!credentialDID) {
-                       setTab('identity'); //default tab
+                        setTab('identity'); //default tab
                     } else {
-                       setTab('credentials'); //if credential in URL
+                        setTab('credentials'); //if credential in URL
                     }
                 } else {
                     setTab('auth'); //if challenge in URL
@@ -141,8 +151,9 @@ function KeymasterUI({ keymaster, title }) {
         try {
             await keymaster.createId(newName, registry);
             refreshAll();
-	    // The backup forces a change, triggering registration
-            const ok = await keymaster.backupId(currentId);
+            // TBD this should be done in keymaster?
+            // The backup forces a change, triggering registration
+            // const ok = await keymaster.backupId(currentId);
         } catch (error) {
             window.alert(error);
         }
@@ -221,11 +232,11 @@ function KeymasterUI({ keymaster, title }) {
         try {
             var xhr = new XMLHttpRequest();
             xhr.addEventListener('load', () => {
-               window.alert(xhr.responseText)
+                window.alert(xhr.responseText)
             });
             xhr.open('GET', callback + "?response=" + response + "&challenge=" + challenge);
             xhr.send();
-        } catch (error) { 
+        } catch (error) {
             window.alert(error);
         }
     }
@@ -905,15 +916,15 @@ function KeymasterUI({ keymaster, title }) {
                                 </Grid>
                             </Grid>
                             <p />
-                          {!widget &&
-                            <Box>
-                                <textarea
-                                    value={docsString}
-                                    readOnly
-                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                />
-                            </Box>
-                          }
+                            {!widget &&
+                                <Box>
+                                    <textarea
+                                        value={docsString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
                         </Box>
                     }
                     {tab === 'names' &&

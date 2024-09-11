@@ -420,7 +420,7 @@ async function fetchKeyPair(name = null) {
     return null;
 }
 
-export async function encrypt(msg, did, encryptForSender = true, registry = defaultRegistry) {
+export async function encryptMessage(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
     const doc = await resolveDID(did, { confirm: true });
@@ -438,7 +438,7 @@ export async function encrypt(msg, did, encryptForSender = true, registry = defa
     }, registry);
 }
 
-export async function decrypt(did) {
+export async function decryptMessage(did) {
     const wallet = loadWallet();
     const id = fetchId();
     const crypt = await resolveAsset(did);
@@ -471,12 +471,18 @@ export async function decrypt(did) {
 
 export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
     const plaintext = JSON.stringify(json);
-    return encrypt(plaintext, did, encryptForSender, registry);
+    return encryptMessage(plaintext, did, encryptForSender, registry);
 }
 
 export async function decryptJSON(did) {
-    const plaintext = await decrypt(did);
-    return JSON.parse(plaintext);
+    const plaintext = await decryptMessage(did);
+
+    try {
+        return JSON.parse(plaintext);
+    }
+    catch (error) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 }
 
 export async function addSignature(obj, controller = null) {
@@ -1161,8 +1167,8 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     const pairs = [];
 
     for (let vcDid of matches) {
-        const plaintext = await decrypt(vcDid);
-        const vpDid = await encrypt(plaintext, requestor, true, registry);
+        const plaintext = await decryptMessage(vcDid);
+        const vpDid = await encryptMessage(plaintext, requestor, true, registry);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
