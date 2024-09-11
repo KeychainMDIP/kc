@@ -18,9 +18,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, 'kc-app/build')));
 
+let serverReady = false;
+
 v1router.get('/ready', async (req, res) => {
     try {
-        res.json('ready');
+        res.json(serverReady);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -659,6 +661,7 @@ app.listen(port, async () => {
 
         console.log(`current ID: ${currentId}`);
         console.log(JSON.stringify(doc, null, 4));
+        serverReady = true;
     }
     catch (error) {
         console.log(error);
