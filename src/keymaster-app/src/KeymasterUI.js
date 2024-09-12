@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import './App.css';
 
 function KeymasterUI({ keymaster, title }) {
@@ -57,6 +58,7 @@ function KeymasterUI({ keymaster, title }) {
     const [walletString, setWalletString] = useState('');
     const [manifest, setManifest] = useState(null);
     const [checkingWallet, setCheckingWallet] = useState(false);
+    const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [searchParams] = useSearchParams();
 
     useEffect(() => {
@@ -223,12 +225,25 @@ function KeymasterUI({ keymaster, title }) {
             await clearResponse();
             const response = await keymaster.createResponse(challenge);
             setResponse(response);
+
+            if (callback) {
+                setDisableSendResponse(false);
+            }
         } catch (error) {
             window.alert(error);
         }
     }
 
     async function sendResponse() {
+        try {
+            await axios.get(`${callback}?response=${response}`);
+            setDisableSendResponse(true);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function oldsendResponse() {
         try {
             var xhr = new XMLHttpRequest();
             xhr.addEventListener('load', () => {
@@ -243,7 +258,7 @@ function KeymasterUI({ keymaster, title }) {
 
     async function verifyResponse() {
         try {
-            const verify = await keymaster.verifyResponse(response, challenge);
+            const verify = await keymaster.verifyResponse(response);
 
             if (verify.match) {
                 window.alert("Response is VALID");
@@ -1567,7 +1582,7 @@ function KeymasterUI({ keymaster, title }) {
                                     <TableCell style={{ width: '30%' }}>
                                         <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                             <Grid item>
-                                                <Button variant="contained" color="primary" onClick={sendResponse} disabled={!callback}>
+                                                <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
                                                     Send Response
                                                 </Button>
                                             </Grid>

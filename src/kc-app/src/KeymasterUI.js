@@ -205,7 +205,7 @@ function KeymasterUI({ keymaster, title }) {
 
     async function verifyResponse() {
         try {
-            const verify = await keymaster.verifyResponse(response, challenge);
+            const verify = await keymaster.verifyResponse(response);
 
             if (verify.match) {
                 window.alert("Response is VALID");

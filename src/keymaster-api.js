@@ -259,8 +259,8 @@ v1router.post('/response', async (req, res) => {
 
 v1router.post('/response/verify', async (req, res) => {
     try {
-        const { response, challenge } = req.body;
-        const verify = await keymaster.verifyResponse(response, challenge);
+        const { response } = req.body;
+        const verify = await keymaster.verifyResponse(response);
         res.json(verify);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
