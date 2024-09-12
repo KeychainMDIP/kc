@@ -1073,7 +1073,15 @@ export async function unpublishCredential(did) {
 export async function createChallenge(challenge, registry = ephemeralRegistry) {
 
     if (!challenge) {
-        challenge = { credentials: [] };
+        challenge = {};
+    }
+
+    if (typeof challenge !== 'object' || Array.isArray(challenge)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!challenge.challenge) {
+        challenge.challenge = {};
     }
 
     if (!challenge.ephemeral) {
@@ -1082,11 +1090,11 @@ export async function createChallenge(challenge, registry = ephemeralRegistry) {
         challenge.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!challenge.credentials) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+    if (!challenge.challenge.credentials) {
+        challenge.challenge.credentials = [];
     }
 
-    if (!Array.isArray(challenge.credentials)) {
+    if (!Array.isArray(challenge.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
@@ -1140,15 +1148,17 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry)
 
     const doc = await resolveDID(challengeDID);
     const requestor = doc.didDocument.controller;
-    const { credentials } = await resolveAsset(challengeDID);
+    const { challenge } = await resolveAsset(challengeDID);
 
-    if (!credentials) {
+    if (!challenge.credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    // TBD check challenge.ephemeral for expired?
+
     const matches = [];
 
-    for (let credential of credentials) {
+    for (let credential of challenge.credentials) {
         const vc = await findMatchingCredential(credential);
 
         if (vc) {
@@ -1168,7 +1178,7 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry)
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
-    const requested = credentials.length;
+    const requested = challenge.credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
     const expires = new Date();
@@ -1195,7 +1205,7 @@ export async function verifyResponse(responseDID) {
 
     const responseDoc = await resolveDID(responseDID);
     const { response } = await decryptJSON(responseDID);
-    const challenge = await resolveAsset(response.challenge);
+    const { challenge } = await resolveAsset(response.challenge);
 
     const vps = [];
 
