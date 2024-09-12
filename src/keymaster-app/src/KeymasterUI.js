@@ -236,21 +236,10 @@ function KeymasterUI({ keymaster, title }) {
 
     async function sendResponse() {
         try {
-            await axios.get(`${callback}?response=${response}`);
             setDisableSendResponse(true);
-        } catch (error) {
-            window.alert(error);
-        }
-    }
-
-    async function oldsendResponse() {
-        try {
-            var xhr = new XMLHttpRequest();
-            xhr.addEventListener('load', () => {
-                window.alert(xhr.responseText)
-            });
-            xhr.open('GET', callback + "?response=" + response + "&challenge=" + challenge);
-            xhr.send();
+            await axios.post(callback, { response });
+            // This would also work:
+            //await axios.get(`${callback}?response=${response}`);
         } catch (error) {
             window.alert(error);
         }
