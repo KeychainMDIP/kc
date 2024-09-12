@@ -1135,16 +1135,12 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did, registry = ephemeralRegistry) {
-    const challenge = lookupDID(did);
-
-    if (!challenge) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    const doc = await resolveDID(challenge);
+export async function createResponse(challengeDID, registry = ephemeralRegistry) {
+    challengeDID = lookupDID(challengeDID);
+    
+    const doc = await resolveDID(challengeDID);
     const requestor = doc.didDocument.controller;
-    const { credentials } = await resolveAsset(challenge);
+    const { credentials } = await resolveAsset(challengeDID);
 
     if (!credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1179,7 +1175,7 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
-        challenge: challenge,
+        challenge: challengeDID,
         credentials: pairs,
         requested: requested,
         fulfilled: fulfilled,
@@ -1192,10 +1188,6 @@ export async function createResponse(did, registry = ephemeralRegistry) {
 
 export async function verifyResponse(responseDID) {
     responseDID = lookupDID(responseDID);
-
-    if (!responseDID) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
 
     const responseDoc = await resolveDID(responseDID);
     const response = await decryptJSON(responseDID);

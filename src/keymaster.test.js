@@ -1986,6 +1986,14 @@ describe('verifyResponse', () => {
         const challengeDid = await keymaster.createChallenge(challenge);
 
         try {
+            await keymaster.verifyResponse();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
             await keymaster.verifyResponse(alice);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
