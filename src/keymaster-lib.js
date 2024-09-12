@@ -1137,7 +1137,7 @@ async function findMatchingCredential(credential) {
 
 export async function createResponse(challengeDID, registry = ephemeralRegistry) {
     challengeDID = lookupDID(challengeDID);
-    
+
     const doc = await resolveDID(challengeDID);
     const requestor = doc.didDocument.controller;
     const { credentials } = await resolveAsset(challengeDID);
@@ -1175,12 +1175,16 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry)
     expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
-        challenge: challengeDID,
-        credentials: pairs,
-        requested: requested,
-        fulfilled: fulfilled,
-        match: match,
-        ephemeral: { validUntil: expires.toISOString() }
+        response: {
+            challenge: challengeDID,
+            credentials: pairs,
+            requested: requested,
+            fulfilled: fulfilled,
+            match: match,
+        },
+        ephemeral: {
+            validUntil: expires.toISOString()
+        }
     };
 
     return await encryptJSON(response, requestor, true, registry);
@@ -1190,7 +1194,7 @@ export async function verifyResponse(responseDID) {
     responseDID = lookupDID(responseDID);
 
     const responseDoc = await resolveDID(responseDID);
-    const response = await decryptJSON(responseDID);
+    const { response } = await decryptJSON(responseDID);
     const challenge = await resolveAsset(response.challenge);
 
     const vps = [];
