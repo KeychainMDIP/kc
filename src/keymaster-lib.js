@@ -1240,7 +1240,6 @@ export async function verifyResponse(responseDID) {
     response.vps = vps;
     response.match = vps.length === challenge.credentials.length;
     response.responder = responseDoc.didDocument.controller;
-    response.challenge = response.challenge;
 
     return response;
 }

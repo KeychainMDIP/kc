@@ -1976,11 +1976,6 @@ describe('verifyResponse', () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
-        await keymaster.createId('Bob');
-
-        keymaster.setCurrentId('Alice');
-        const challenge = { credentials: [] };
-        const challengeDid = await keymaster.createChallenge(challenge);
 
         try {
             await keymaster.verifyResponse();

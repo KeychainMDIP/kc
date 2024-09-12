@@ -1135,16 +1135,12 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did, registry = ephemeralRegistry) {
-    const challenge = lookupDID(did);
+export async function createResponse(challengeDID, registry = ephemeralRegistry) {
+    challengeDID = lookupDID(challengeDID);
 
-    if (!challenge) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    const doc = await resolveDID(challenge);
+    const doc = await resolveDID(challengeDID);
     const requestor = doc.didDocument.controller;
-    const { credentials } = await resolveAsset(challenge);
+    const { credentials } = await resolveAsset(challengeDID);
 
     if (!credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1179,12 +1175,16 @@ export async function createResponse(did, registry = ephemeralRegistry) {
     expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
-        challenge: challenge,
-        credentials: pairs,
-        requested: requested,
-        fulfilled: fulfilled,
-        match: match,
-        ephemeral: { validUntil: expires.toISOString() }
+        response: {
+            challenge: challengeDID,
+            credentials: pairs,
+            requested: requested,
+            fulfilled: fulfilled,
+            match: match,
+        },
+        ephemeral: {
+            validUntil: expires.toISOString()
+        }
     };
 
     return await encryptJSON(response, requestor, true, registry);
@@ -1193,12 +1193,8 @@ export async function createResponse(did, registry = ephemeralRegistry) {
 export async function verifyResponse(responseDID) {
     responseDID = lookupDID(responseDID);
 
-    if (!responseDID) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
     const responseDoc = await resolveDID(responseDID);
-    const response = await decryptJSON(responseDID);
+    const { response } = await decryptJSON(responseDID);
     const challenge = await resolveAsset(response.challenge);
 
     const vps = [];
@@ -1244,7 +1240,6 @@ export async function verifyResponse(responseDID) {
     response.vps = vps;
     response.match = vps.length === challenge.credentials.length;
     response.responder = responseDoc.didDocument.controller;
-    response.challenge = response.challenge;
 
     return response;
 }

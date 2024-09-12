@@ -74,6 +74,7 @@ function KeymasterUI({ keymaster, title }) {
         }
 
         refreshAll();
+        // eslint-disable-next-line
     }, [searchParams]);
 
     async function refreshAll() {
