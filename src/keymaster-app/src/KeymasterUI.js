@@ -76,9 +76,6 @@ function KeymasterUI({ keymaster, title }) {
             if (challengeDID) {
                 setChallenge(challengeDID);
                 setWidget(true);
-
-                const challenge = await keymaster.resolveAsset(challengeDID);
-                setCallback(challenge.callback);
             }
         } catch (error) {
             window.alert(error);
@@ -231,7 +228,7 @@ function KeymasterUI({ keymaster, title }) {
         }
     }
 
-    async function resolveChallenge(did = challenge) {
+    async function resolveChallenge(did) {
         try {
             const asset = await keymaster.resolveAsset(did);
             setAuthDID(did);
@@ -247,6 +244,11 @@ function KeymasterUI({ keymaster, title }) {
             const response = await keymaster.createResponse(challenge);
             setResponse(response);
 
+            const asset = await keymaster.resolveAsset(challenge);
+            const callback = asset.challenge.callback;
+
+            setCallback(callback);
+
             if (callback) {
                 setDisableSendResponse(false);
             }
@@ -260,7 +262,7 @@ function KeymasterUI({ keymaster, title }) {
         setChallenge('');
     }
 
-    async function decryptResponse(did = response) {
+    async function decryptResponse(did) {
         try {
             const decrypted = await keymaster.decryptJSON(did);
             setAuthDID(did);
@@ -1558,7 +1560,7 @@ function KeymasterUI({ keymaster, title }) {
                                                     </Button>
                                                 </Grid>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={resolveChallenge} disabled={!challenge || challenge === authDID}>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveChallenge(challenge)} disabled={!challenge || challenge === authDID}>
                                                         Resolve
                                                     </Button>
                                                 </Grid>
@@ -1589,7 +1591,7 @@ function KeymasterUI({ keymaster, title }) {
                                             <br/>
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={decryptResponse} disabled={!response || response === authDID}>
+                                                    <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>
                                                         Decrypt
                                                     </Button>
                                                 </Grid>
