@@ -253,10 +253,12 @@ app.use((req, res) => {
 });
 
 async function main() {
-    const invalid = await gatekeeper.verifyDb();
+    if (config.gatekeeperVerifyDb) {
+        const invalid = await gatekeeper.verifyDb();
 
-    if (invalid > 0) {
-        console.log(`${invalid} invalid DIDs removed from MDIP db`);
+        if (invalid > 0) {
+            console.log(`${invalid} invalid DIDs removed from MDIP db`);
+        }
     }
 
     const registries = await gatekeeper.initRegistries(config.gatekeeperRegistries);
