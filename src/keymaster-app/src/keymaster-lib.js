@@ -1070,35 +1070,35 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(challenge, registry = ephemeralRegistry) {
+export async function createChallenge(asset, registry = ephemeralRegistry) {
 
-    if (!challenge) {
-        challenge = {};
+    if (!asset) {
+        asset = {};
     }
 
-    if (typeof challenge !== 'object' || Array.isArray(challenge)) {
+    if (typeof asset !== 'object' || Array.isArray(asset)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!challenge.challenge) {
-        challenge.challenge = {};
+    if (!asset.challenge) {
+        asset.challenge = {};
     }
 
-    if (!challenge.ephemeral) {
+    if (!asset.ephemeral) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        challenge.ephemeral = { validUntil: expires.toISOString() };
+        asset.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!challenge.challenge.credentials) {
-        challenge.challenge.credentials = [];
+    if (!asset.challenge.credentials) {
+        asset.challenge.credentials = [];
     }
 
-    if (!Array.isArray(challenge.challenge.credentials)) {
+    if (!Array.isArray(asset.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challenge, registry);
+    return createAsset(asset, registry);
 }
 
 async function findMatchingCredential(credential) {

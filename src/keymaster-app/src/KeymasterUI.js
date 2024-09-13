@@ -59,23 +59,31 @@ function KeymasterUI({ keymaster, title }) {
     const [manifest, setManifest] = useState(null);
     const [checkingWallet, setCheckingWallet] = useState(false);
     const [disableSendResponse, setDisableSendResponse] = useState(true);
+    const [authDID, setAuthDID] = useState('');
+    const [authString, setAuthString] = useState('');
     const [searchParams] = useSearchParams();
 
     useEffect(() => {
-        const paramChallenge = searchParams.get('challenge');
-
-        if (paramChallenge) {
-            setChallenge(paramChallenge);
-            setWidget(true);
-
-            keymaster.resolveAsset(paramChallenge).then(details => {
-                setCallback(details?.callback);
-            });
-        }
-
+        checkForChallenge();
         refreshAll();
         // eslint-disable-next-line
-    }, [searchParams]);
+    }, []);
+
+    async function checkForChallenge() {
+        try {
+            const challengeDID = searchParams.get('challenge');
+
+            if (challengeDID) {
+                setChallenge(challengeDID);
+                setWidget(true);
+
+                const challenge = await keymaster.resolveAsset(challengeDID);
+                setCallback(challenge.callback);
+            }
+        } catch (error) {
+            window.alert(error);
+        }
+    }
 
     async function refreshAll() {
         try {
@@ -99,15 +107,16 @@ function KeymasterUI({ keymaster, title }) {
                 refreshHeld();
                 refreshIssued();
 
-                if (!challenge) {
-                    if (!credentialDID) {
-                        setTab('identity'); //default tab
-                    } else {
-                        setTab('credentials'); //if credential in URL
-                    }
-                } else {
-                    setTab('auth'); //if challenge in URL
-                }
+                setTab('identity');
+                // if (!challenge) {
+                //     if (!credentialDID) {
+                //         setTab('identity'); //default tab
+                //     } else {
+                //         setTab('credentials'); //if credential in URL
+                //     }
+                // } else {
+                //     setTab('auth'); //if challenge in URL
+                // }
                 setCredentialTab('held');
             }
             else {
@@ -216,6 +225,17 @@ function KeymasterUI({ keymaster, title }) {
         try {
             const challenge = await keymaster.createChallenge();
             setChallenge(challenge);
+            resolveChallenge(challenge);
+        } catch (error) {
+            window.alert(error);
+        }
+    }
+
+    async function resolveChallenge(did = challenge) {
+        try {
+            const asset = await keymaster.resolveAsset(did);
+            setAuthDID(did);
+            setAuthString(JSON.stringify(asset, null, 4));
         } catch (error) {
             window.alert(error);
         }
@@ -230,17 +250,21 @@ function KeymasterUI({ keymaster, title }) {
             if (callback) {
                 setDisableSendResponse(false);
             }
+            decryptResponse(response);
         } catch (error) {
             window.alert(error);
         }
     }
 
-    async function sendResponse() {
+    async function clearChallenge() {
+        setChallenge('');
+    }
+
+    async function decryptResponse(did = response) {
         try {
-            setDisableSendResponse(true);
-            await axios.post(callback, { response });
-            // This would also work:
-            //await axios.get(`${callback}?response=${response}`);
+            const decrypted = await keymaster.decryptJSON(did);
+            setAuthDID(did);
+            setAuthString(JSON.stringify(decrypted, null, 4));
         } catch (error) {
             window.alert(error);
         }
@@ -266,6 +290,17 @@ function KeymasterUI({ keymaster, title }) {
     async function clearResponse() {
         setResponse('');
         setAccessGranted(false);
+    }
+
+    async function sendResponse() {
+        try {
+            setDisableSendResponse(true);
+            await axios.post(callback, { response });
+            // This would also work:
+            //await axios.get(`${callback}?response=${response}`);
+        } catch (error) {
+            window.alert(error);
+        }
     }
 
     async function refreshNames() {
@@ -1501,86 +1536,90 @@ function KeymasterUI({ keymaster, title }) {
                         </Grid>
                     }
                     {tab === 'auth' &&
-                        <Table style={{ width: '800px' }}>
-                            <TableBody>
-                                <TableRow>
-                                    <TableCell style={{ width: '10%' }}>Challenge</TableCell>
-                                    <TableCell style={{ width: '60%' }}>
-                                        <TextField
-                                            label=""
-                                            value={challenge}
-                                            onChange={(e) => setChallenge(e.target.value.trim())}
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
-                                        />
-                                    </TableCell>
-                                    <TableCell style={{ width: '30%' }}>
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={newChallenge}>
-                                                    New
-                                                </Button>
+                        <Box>
+                            <Table style={{ width: '800px' }}>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell style={{ width: '20%' }}>Challenge</TableCell>
+                                        <TableCell style={{ width: '80%' }}>
+                                            <TextField
+                                                label=""
+                                                value={challenge}
+                                                onChange={(e) => setChallenge(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                            />
+                                            <br/>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={newChallenge}>
+                                                        New
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={resolveChallenge} disabled={!challenge || challenge === authDID}>
+                                                        Resolve
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
+                                                        Respond
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={clearChallenge} disabled={!challenge}>
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
                                             </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
-                                                    Respond
-                                                </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell style={{ width: '20%' }}>Response</TableCell>
+                                        <TableCell style={{ width: '80%' }}>
+                                            <TextField
+                                                label=""
+                                                value={response}
+                                                onChange={(e) => setResponse(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                            />
+                                            <br/>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={decryptResponse} disabled={!response || response === authDID}>
+                                                        Decrypt
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={verifyResponse} disabled={!response}>
+                                                        Verify
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
+                                                        Send
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
                                             </Grid>
-                                        </Grid>
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '10%' }}>Response</TableCell>
-                                    <TableCell style={{ width: '60%' }}>
-                                        <TextField
-                                            label=""
-                                            value={response}
-                                            onChange={(e) => setResponse(e.target.value.trim())}
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
-                                        />
-                                    </TableCell>
-                                    <TableCell style={{ width: '30%' }}>
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={verifyResponse} disabled={!response}>
-                                                    Verify
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
-                                                    Clear
-                                                </Button>
-                                            </Grid>
-                                        </Grid>
-                                    </TableCell>
-                                </TableRow>
-                                <TableRow>
-                                    <TableCell style={{ width: '10%' }}>Callback URL</TableCell>
-                                    <TableCell style={{ width: '60%' }}>
-                                        <TextField
-                                            label=""
-                                            value={callback}
-                                            onChange={(e) => setCallback(e.target.value.trim())}
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
-                                        />
-                                    </TableCell>
-                                    <TableCell style={{ width: '30%' }}>
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
-                                                    Send Response
-                                                </Button>
-                                            </Grid>
-                                        </Grid>
-                                    </TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                            <p>{authDID}</p>
+                            <textarea
+                                value={authString}
+                                readOnly
+                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                            />
+                        </Box>
                     }
                     {tab === 'wallet' &&
                         <Box>
