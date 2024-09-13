@@ -1070,27 +1070,35 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(challenge, registry = ephemeralRegistry) {
+export async function createChallenge(asset, registry = ephemeralRegistry) {
 
-    if (!challenge) {
-        challenge = { credentials: [] };
+    if (!asset) {
+        asset = {};
     }
 
-    if (!challenge.ephemeral) {
+    if (typeof asset !== 'object' || Array.isArray(asset)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!asset.challenge) {
+        asset.challenge = {};
+    }
+
+    if (!asset.ephemeral) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        challenge.ephemeral = { validUntil: expires.toISOString() };
+        asset.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!challenge.credentials) {
+    if (!asset.challenge.credentials) {
+        asset.challenge.credentials = [];
+    }
+
+    if (!Array.isArray(asset.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!Array.isArray(challenge.credentials)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    return createAsset(challenge, registry);
+    return createAsset(asset, registry);
 }
 
 async function findMatchingCredential(credential) {
@@ -1135,24 +1143,22 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(did, registry = ephemeralRegistry) {
-    const challenge = lookupDID(did);
+export async function createResponse(challengeDID, registry = ephemeralRegistry) {
+    challengeDID = lookupDID(challengeDID);
 
-    if (!challenge) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    const doc = await resolveDID(challenge);
+    const doc = await resolveDID(challengeDID);
     const requestor = doc.didDocument.controller;
-    const { credentials } = await resolveAsset(challenge);
+    const { challenge } = await resolveAsset(challengeDID);
 
-    if (!credentials) {
+    if (!challenge.credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
+
+    // TBD check challenge.ephemeral for expired?
 
     const matches = [];
 
-    for (let credential of credentials) {
+    for (let credential of challenge.credentials) {
         const vc = await findMatchingCredential(credential);
 
         if (vc) {
@@ -1172,40 +1178,34 @@ export async function createResponse(did, registry = ephemeralRegistry) {
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
-    const requested = credentials.length;
+    const requested = challenge.credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
     const expires = new Date();
     expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
-        challenge: challenge,
-        credentials: pairs,
-        requested: requested,
-        fulfilled: fulfilled,
-        match: match,
-        ephemeral: { validUntil: expires.toISOString() }
+        response: {
+            challenge: challengeDID,
+            credentials: pairs,
+            requested: requested,
+            fulfilled: fulfilled,
+            match: match,
+        },
+        ephemeral: {
+            validUntil: expires.toISOString()
+        }
     };
 
     return await encryptJSON(response, requestor, true, registry);
 }
 
-export async function verifyResponse(responseDID, challengeDID) {
+export async function verifyResponse(responseDID) {
     responseDID = lookupDID(responseDID);
-    challengeDID = lookupDID(challengeDID);
-
-    if (!responseDID) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
 
     const responseDoc = await resolveDID(responseDID);
-    const response = await decryptJSON(responseDID);
-    const challenge = await resolveAsset(challengeDID);
-
-    if (response.challenge !== challengeDID) {
-        response.match = false;
-        return response;
-    }
+    const { response } = await decryptJSON(responseDID);
+    const { challenge } = await resolveAsset(response.challenge);
 
     const vps = [];
 

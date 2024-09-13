@@ -535,7 +535,7 @@ program
 
 program
     .command('create-response <challenge>')
-    .description('Create a Verifiable Presentation from a challenge')
+    .description('Create a response to a challenge')
     .action(async (challenge) => {
         try {
             const did = await keymaster.createResponse(challenge);
@@ -547,11 +547,11 @@ program
     });
 
 program
-    .command('verify-response <response> <challenge>')
-    .description('Decrypt and validate a Verifiable Presentation')
-    .action(async (response, challenge) => {
+    .command('verify-response <response>')
+    .description('Decrypt and validate a response to a challenge')
+    .action(async (response) => {
         try {
-            const vp = await keymaster.verifyResponse(response, challenge);
+            const vp = await keymaster.verifyResponse(response);
             console.log(JSON.stringify(vp, null, 4));
         }
         catch (error) {

@@ -75,24 +75,26 @@ async function runWorkflow() {
     keymaster.setCurrentId('Victor');
 
     const mockChallenge = {
-        credentials: [
-            {
-                schema: credential1,
-                issuers: [alice]
-            },
-            {
-                schema: credential2,
-                issuers: [alice]
-            },
-            {
-                schema: credential3,
-                issuers: [bob]
-            },
-            {
-                schema: credential4,
-                issuers: [bob]
-            },
-        ]
+        challenge: {
+            credentials: [
+                {
+                    schema: credential1,
+                    issuers: [alice]
+                },
+                {
+                    schema: credential2,
+                    issuers: [alice]
+                },
+                {
+                    schema: credential3,
+                    issuers: [bob]
+                },
+                {
+                    schema: credential4,
+                    issuers: [bob]
+                },
+            ]
+        }
     };
     const challengeDid = await keymaster.createChallenge(mockChallenge, 'local');
     console.log(`Victor created challenge ${challengeDid}`);
