@@ -1097,9 +1097,6 @@
                 "properties": {
                   "response": {
                     "type": "object"
-                  },
-                  "challenge": {
-                    "type": "object"
                   }
                 }
               }
