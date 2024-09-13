@@ -105,15 +105,6 @@ function KeymasterUI({ keymaster, title }) {
                 refreshIssued();
 
                 setTab('identity');
-                // if (!challenge) {
-                //     if (!credentialDID) {
-                //         setTab('identity'); //default tab
-                //     } else {
-                //         setTab('credentials'); //if credential in URL
-                //     }
-                // } else {
-                //     setTab('auth'); //if challenge in URL
-                // }
                 setCredentialTab('held');
             }
             else {

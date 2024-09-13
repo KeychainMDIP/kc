@@ -258,9 +258,9 @@ export async function resolveDID(name) {
     }
 }
 
-export async function createChallenge() {
+export async function createChallenge(challenge) {
     try {
-        const response = await axios.get(`${URL}/api/v1/challenge`);
+        const response = await axios.post(`${URL}/api/v1/challenge`, challenge);
         return response.data;
     }
     catch (error) {
@@ -278,9 +278,9 @@ export async function createResponse(challengeDID) {
     }
 }
 
-export async function verifyResponse(responseDID, challengeDID) {
+export async function verifyResponse(responseDID) {
     try {
-        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID, challenge: challengeDID });
+        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID });
         return response.data;
     }
     catch (error) {
