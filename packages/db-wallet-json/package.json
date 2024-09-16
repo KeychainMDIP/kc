@@ -1,0 +1,16 @@
+{
+  "name": "@mdip/db-wallet-json",
+  "version": "1.0.0",
+  "description": "MDIP JSON wallet",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@mdip/cipher": "^1.0.0"
+  }
+}

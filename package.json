@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "gatekeeper-api.js",
+  "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
     "gatekeeper": "node src/gatekeeper-api.js",
     "keymaster": "node src/keymaster-api.js",
