@@ -1,6 +1,6 @@
 import { JSONSchemaFaker } from "json-schema-faker";
 import * as cipher from '@macterra/cipher';
-import * as exceptions from './exceptions.js';
+import * as exceptions from '@macterra/exceptions';
 
 let gatekeeper = null;
 let db = null;

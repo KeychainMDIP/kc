@@ -1,9 +1,12 @@
 {
-  "name": "@macterra/keymaster-lib",
-  "version": "1.0.1",
-  "description": "MDIP Keymaster lib",
+  "name": "@macterra/keymaster",
+  "version": "1.0.3",
+  "description": "MDIP Keymaster",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    "./lib": "./src/keymaster-lib.js",
+    "./sdk": "./src/keymaster-sdk.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -12,6 +15,8 @@
   "license": "MIT",
   "dependencies": {
     "@macterra/cipher": "1.0.0",
+    "@macterra/exceptions": "1.0.0",
+    "axios": "^1.7.7",
     "json-schema-faker": "^0.5.6"
   }
 }

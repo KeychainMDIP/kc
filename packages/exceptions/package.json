@@ -1,7 +1,7 @@
 {
-  "name": "@macterra/keymaster-sdk",
+  "name": "@macterra/exceptions",
   "version": "1.0.0",
-  "description": "MDIP Keymaster SDK",
+  "description": "MDIP exceptions",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -11,6 +11,5 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.7.7"
   }
 }
