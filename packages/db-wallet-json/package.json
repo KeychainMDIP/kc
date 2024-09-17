@@ -1,5 +1,5 @@
 {
-  "name": "@mdip/db-wallet-json",
+  "name": "@macterra/db-wallet-json",
   "version": "1.0.0",
   "description": "MDIP JSON wallet",
   "type": "module",
@@ -8,9 +8,9 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
   "dependencies": {
-    "@mdip/cipher": "^1.0.0"
+    "@macterra/cipher": "^1.0.0"
   }
 }

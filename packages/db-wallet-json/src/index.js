@@ -1,5 +1,5 @@
 import fs from 'fs';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@macterra/cipher';
 import * as exceptions from './exceptions.js';
 
 const dataFolder = 'data';

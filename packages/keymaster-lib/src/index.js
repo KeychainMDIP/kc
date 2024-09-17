@@ -1,5 +1,5 @@
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@macterra/cipher';
 import * as exceptions from './exceptions.js';
 
 let gatekeeper = null;

@@ -1,6 +1,6 @@
 {
-  "name": "@mdip/keymaster-lib",
-  "version": "1.0.0",
+  "name": "@macterra/keymaster-lib",
+  "version": "1.0.1",
   "description": "MDIP Keymaster lib",
   "type": "module",
   "main": "src/index.js",
@@ -8,9 +8,10 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
   "dependencies": {
-    "@mdip/cipher": "1.0.0"
+    "@macterra/cipher": "1.0.0",
+    "json-schema-faker": "^0.5.6"
   }
 }
