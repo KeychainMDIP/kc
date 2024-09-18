@@ -1,9 +1,12 @@
 {
   "name": "@macterra/cipher",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MDIP cipher lib",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    ".": "./src/cipher-lib.js",
+    "./web": "./src/cipher-web.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,6 +18,8 @@
     "@noble/hashes": "^1.3.3",
     "@noble/secp256k1": "^2.0.0",
     "bip39": "^3.1.0",
+    "browser-hdkey": "github:KeychainMDIP/browser-hdkey",
+    "buffer": "^6.0.3",
     "canonicalize": "^2.0.0",
     "hdkey": "^2.1.0",
     "multiformats": "^13.0.0"
