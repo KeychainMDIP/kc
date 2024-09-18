@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import * as gatekeeper from '@macterra/gatekeeper/sdk';
 import * as keymaster from '@macterra/keymaster/lib';
 import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as cipher from '@macterra/cipher';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();
@@ -652,7 +653,7 @@ const port = config.keymasterPort;
 app.listen(port, async () => {
     gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
     await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet, cipher);
     console.log(`keymaster server running on port ${port}`);
 
     try {

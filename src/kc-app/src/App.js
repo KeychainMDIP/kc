@@ -1,4 +1,4 @@
-import * as keymaster from './keymaster-sdk.js';
+import * as keymaster from '@macterra/keymaster/sdk';
 import KeymasterUI from './KeymasterUI.js';
 import './App.css';
 

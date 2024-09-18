@@ -3,6 +3,7 @@ import BtcClient from 'bitcoin-core';
 import * as gatekeeper from '@macterra/gatekeeper/sdk';
 import * as keymaster from '@macterra/keymaster/lib';
 import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as cipher from '@macterra/cipher';
 import mainConfig from './config.js';
 
 const config = {
@@ -409,7 +410,7 @@ async function main() {
     gatekeeper.setURL(`${mainConfig.gatekeeperURL}:${mainConfig.gatekeeperPort}`);
 
     await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet, cipher);
 
     try {
         await keymaster.resolveDID(mainConfig.nodeID);

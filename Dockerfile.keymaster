@@ -5,7 +5,8 @@ FROM node:18.15.0
 WORKDIR /app
 
 # Copy package.json and package-lock.json to the working directory
-COPY package*.json ./
+COPY package*.json .
+COPY packages/ ./packages/
 
 # Install dependencies
 RUN npm ci
@@ -16,11 +17,10 @@ RUN cd kc-app && npm ci
 
 COPY src/kc-app/public ./kc-app/public/
 COPY src/kc-app/src ./kc-app/src/
-COPY src/keymaster-sdk.js src/kc-app/src
 RUN cd kc-app && npm run build
 
 # Copy app
-COPY src/*.js ./
+COPY src/*.js .
 
 # Run...
 CMD ["node", "keymaster-api.js"]

@@ -1,7 +1,8 @@
-import * as keymaster from './keymaster-lib.js';
-import * as gatekeeper from './gatekeeper-lib.js';
-import * as db_json from './db-json.js';
-import * as db_wallet from './db-wallet-json.js';
+import * as keymaster from '@macterra/keymaster/lib';
+import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as gatekeeper from '@macterra/gatekeeper/lib';
+import * as db_json from '@macterra/gatekeeper/db/json';
+import * as cipher from '@macterra/cipher';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -147,7 +148,7 @@ async function runWorkflow() {
 async function main() {
     await db_json.start('mdip-workflow');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet, cipher);
 
     const backup = keymaster.loadWallet();
     keymaster.newWallet(null, true);
