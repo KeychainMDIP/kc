@@ -1,9 +1,17 @@
 import { program } from 'commander';
 import fs from 'fs';
-import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster-lib.js';
-import * as db_wallet from './db-wallet-json.js';
-import config from './config.js';
+import dotenv from 'dotenv';
+
+import * as gatekeeper_sdk from '@macterra/gatekeeper/sdk';
+import * as keymaster_lib from '@macterra/keymaster/lib';
+import * as keymaster_sdk from '@macterra/keymaster/sdk';
+import * as db_wallet from '@macterra/keymaster/wallet/json';
+
+dotenv.config();
+
+let keymaster;
+const gatekeeperURL = process.env.KC_CLI_GATEKEEPER_URL || 'http://localhost:4224';
+const keymasterURL = process.env.KC_CLI_KEYMASTER_URL;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -16,9 +24,9 @@ program
 program
     .command('create-wallet')
     .description('Create new wallet (or show existing wallet)')
-    .action(() => {
+    .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -62,9 +70,9 @@ program
 program
     .command('import-wallet <recovery-phrase>')
     .description('Create new wallet from a recovery phrase')
-    .action((recoveryPhrase) => {
+    .action(async (recoveryPhrase) => {
         try {
-            const wallet = keymaster.newWallet(recoveryPhrase);
+            const wallet = await keymaster.newWallet(recoveryPhrase);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -75,9 +83,9 @@ program
 program
     .command('show-wallet')
     .description('Show wallet')
-    .action(() => {
+    .action(async () => {
         try {
-            const wallet = keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -88,9 +96,9 @@ program
 program
     .command('show-mnemonic')
     .description('Show recovery phrase for wallet')
-    .action(() => {
+    .action(async () => {
         try {
-            const mnenomic = keymaster.decryptMnemonic();
+            const mnenomic = await keymaster.decryptMnemonic();
             console.log(mnenomic);
         }
         catch (error) {
@@ -199,8 +207,8 @@ program
     .description('List IDs and show current ID')
     .action(async () => {
         try {
-            const current = keymaster.getCurrentId();
-            const ids = keymaster.listIds();
+            const current = await keymaster.getCurrentId();
+            const ids = await keymaster.listIds();
 
             for (let id of ids) {
                 if (id === current) {
@@ -392,7 +400,7 @@ program
     .description('Create challenge from a credential DID')
     .action(async (credentialDID, name) => {
         try {
-            const credential = keymaster.lookupDID(credentialDID);
+            const credential = await keymaster.lookupDID(credentialDID);
             const challenge = { credentials: [{ schema: credential }] };
             const did = await keymaster.createChallenge(challenge);
 
@@ -834,10 +842,20 @@ program
     });
 
 async function run() {
-    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
-    await keymaster.start(gatekeeper, db_wallet);
-    program.parse(process.argv);
-    await keymaster.stop();
+    if (keymasterURL) {
+        keymaster = keymaster_sdk;
+        keymaster.setURL(keymasterURL);
+        await keymaster.waitUntilReady();
+        program.parse(process.argv);
+    }
+    else {
+        keymaster = keymaster_lib;
+        gatekeeper_sdk.setURL(gatekeeperURL);
+        await gatekeeper_sdk.waitUntilReady();
+        await keymaster.start(gatekeeper_sdk, db_wallet);
+        program.parse(process.argv);
+        await keymaster.stop();
+    }
 }
 
 run();
