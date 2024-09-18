@@ -25,8 +25,7 @@ export function generateMnemonic() {
 
 export function generateHDKey(mnemonic) {
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const hdkey = HDKey.fromMasterSeed(seed);
-    return hdkey;
+    return HDKey.fromMasterSeed(seed);
 }
 
 export function generateHDKeyJSON(json) {
@@ -78,8 +77,7 @@ export function convertJwkToCompressedBytes(jwk) {
 
 export function hashMessage(msg) {
     const hash = sha256(msg);
-    const msgHash = Buffer.from(hash).toString('hex');
-    return msgHash;
+    return Buffer.from(hash).toString('hex');
 }
 
 export function hashJSON(json) {
@@ -89,15 +87,15 @@ export function hashJSON(json) {
 export function signHash(msgHash, privateJwk) {
     const privKey = base64url.baseDecode(privateJwk.d);
     const signature = secp.sign(msgHash, privKey);
-    const sigHex = signature.toCompactHex();
-    return sigHex;
+
+    return signature.toCompactHex();
 }
 
 export function verifySig(msgHash, sigHex, publicJwk) {
     const compressedPublicKeyBytes = convertJwkToCompressedBytes(publicJwk);
     const signature = secp.Signature.fromCompact(sigHex);
-    const isValid = secp.verify(signature, msgHash, compressedPublicKeyBytes);
-    return isValid;
+
+    return secp.verify(signature, msgHash, compressedPublicKeyBytes);
 }
 
 export function encryptMessage(pubKey, privKey, message) {
