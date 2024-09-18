@@ -1,10 +1,14 @@
 import { program } from 'commander';
 import fs from 'fs';
-import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster-lib.js';
-import * as cipher from './cipher-lib.js';
-import * as db_wallet from './db-wallet-json.js';
-import config from './config.js';
+import dotenv from 'dotenv';
+
+import * as gatekeeper from '@macterra/gatekeeper/sdk';
+import * as keymaster from '@macterra/keymaster/lib';
+import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as cipher from '@macterra/cipher';
+
+dotenv.config();
+const gatekeeperURL = process.env.KC_CLI_GATEKEEPER_URL || 'http://localhost:4224';
 
 program
     .version('1.0.0')
@@ -379,8 +383,8 @@ program
     });
 
 async function run() {
-    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
-    await keymaster.start(gatekeeper, db_wallet);
+    gatekeeper.setURL(gatekeeperURL);
+    await keymaster.start(gatekeeper, db_wallet, cipher);
     program.parse(process.argv);
     await keymaster.stop();
 }

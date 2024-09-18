@@ -6,6 +6,7 @@ import * as gatekeeper_sdk from '@macterra/gatekeeper/sdk';
 import * as keymaster_lib from '@macterra/keymaster/lib';
 import * as keymaster_sdk from '@macterra/keymaster/sdk';
 import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as cipher from '@macterra/cipher';
 
 dotenv.config();
 
@@ -852,7 +853,7 @@ async function run() {
         keymaster = keymaster_lib;
         gatekeeper_sdk.setURL(gatekeeperURL);
         await gatekeeper_sdk.waitUntilReady();
-        await keymaster.start(gatekeeper_sdk, db_wallet);
+        await keymaster.start(gatekeeper_sdk, db_wallet, cipher);
         program.parse(process.argv);
         await keymaster.stop();
     }

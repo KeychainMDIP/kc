@@ -1,16 +1,21 @@
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as cipher from '@macterra/cipher';
 import * as exceptions from '@macterra/exceptions';
 
 let gatekeeper = null;
 let db = null;
+let cipher = null;
 
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start(gatekeeperDep, dbDep) {
+export async function start(gatekeeperDep, dbDep, cipherDep) {
+    if (!gatekeeperDep?.createDID || !dbDep?.loadWallet || !cipherDep?.verifySig) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
     gatekeeper = gatekeeperDep;
     db = dbDep;
+    cipher = cipherDep;
 }
 
 export async function stop() {

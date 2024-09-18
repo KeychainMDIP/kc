@@ -10,9 +10,6 @@ import canonicalize from 'canonicalize';
 
 // vv Browser specific modifications
 import HDKey from 'browser-hdkey';
-import { Buffer } from 'buffer';
-
-global.Buffer = Buffer;
 // ^^ Browser specific modifications
 
 // Polyfill for synchronous signatures

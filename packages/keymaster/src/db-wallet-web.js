@@ -1,4 +1,4 @@
-import * as cipher from '@macterra/cipher';
+import * as cipher from '@macterra/cipher/web';
 import * as exceptions from '@macterra/exceptions';
 
 const walletName = 'mdip-keymaster';
