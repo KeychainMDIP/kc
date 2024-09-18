@@ -1,16 +1,17 @@
 import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
-import * as keymaster from './keymaster-lib.js';
-import * as gatekeeper from './gatekeeper-lib.js';
-import * as cipher from './cipher-lib.js';
-import * as db_json from './db-json.js';
-import * as db_wallet from './db-wallet-json.js';
-import * as exceptions from './exceptions.js';
+
+import * as keymaster from '@macterra/keymaster/lib';
+import * as gatekeeper from '@macterra/gatekeeper/lib';
+import * as cipher from '@macterra/cipher';
+import * as db_json from '@macterra/gatekeeper/db/json';
+import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as exceptions from '@macterra/exceptions';
 
 beforeEach(async () => {
     db_json.start('mdip');
     await gatekeeper.start(db_json);
-    await keymaster.start(gatekeeper, db_wallet);
+    await keymaster.start(gatekeeper, db_wallet, cipher);
 });
 
 afterEach(async () => {

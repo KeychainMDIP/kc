@@ -1,8 +1,8 @@
 import mockFs from 'mock-fs';
-import * as cipher from './cipher-lib.js';
-import * as gatekeeper from './gatekeeper-lib.js';
-import * as db_json from './db-json.js';
-import * as exceptions from './exceptions.js';
+import * as cipher from '@macterra/cipher';
+import * as gatekeeper from '@macterra/gatekeeper/lib';
+import * as db_json from '@macterra/gatekeeper/db/json';
+import * as exceptions from '@macterra/exceptions';
 
 beforeEach(async () => {
     db_json.start();

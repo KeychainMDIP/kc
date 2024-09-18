@@ -1,7 +1,7 @@
 import * as uuid from 'uuid';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
-import * as db_mongodb from './db-mongodb.js';
+import * as db_json from '@macterra/gatekeeper/db/json';
+import * as db_sqlite from '@macterra/gatekeeper/db/sqlite';
+import * as db_mongodb from '@macterra/gatekeeper/db/mongodb';
 
 async function importDIDs(db) {
 
