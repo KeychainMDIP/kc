@@ -1,8 +1,8 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
-import * as gatekeeper from './gatekeeper-sdk.js';
-import * as keymaster from './keymaster-lib.js';
-import * as db_wallet from './db-wallet-json.js';
+import * as gatekeeper from '@macterra/gatekeeper/sdk';
+import * as keymaster from '@macterra/keymaster/lib';
+import * as db_wallet from '@macterra/keymaster/wallet/json';
 import mainConfig from './config.js';
 
 const config = {

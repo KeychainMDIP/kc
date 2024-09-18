@@ -2,11 +2,11 @@ import express from 'express';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as gatekeeper from './gatekeeper-lib.js';
+import * as gatekeeper from '@macterra/gatekeeper/lib';
+import * as db_json from '@macterra/gatekeeper/db/json';
+import * as db_sqlite from '@macterra/gatekeeper/db/sqlite';
+import * as db_mongodb from '@macterra/gatekeeper/db/mongodb';
 import config from './config.js';
-import * as db_json from './db-json.js';
-import * as db_sqlite from './db-sqlite.js';
-import * as db_mongodb from './db-mongodb.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
@@ -259,6 +259,10 @@ async function main() {
         if (invalid > 0) {
             console.log(`${invalid} invalid DIDs removed from MDIP db`);
         }
+    }
+    else {
+        const dids = await gatekeeper.getDIDs();
+        console.log(`Skipping db verification (${dids.length} DIDs)`);
     }
 
     const registries = await gatekeeper.initRegistries(config.gatekeeperRegistries);
