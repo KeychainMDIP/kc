@@ -10,11 +10,12 @@ services:
       dockerfile: Dockerfile.gatekeeper
     image: keychainmdip/gatekeeper
     environment:
+      - KC_GATEKEEPER_PORT=4224
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
       - KC_MONGODB_URL=mongodb://mongodb:27017
     volumes:
-      - ./data:/app/data
+      - ./src/gatekeeper/data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"

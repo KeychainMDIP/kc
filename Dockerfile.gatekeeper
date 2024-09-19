@@ -11,16 +11,12 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-# Copy the client build to the keymaster-app directory
-COPY src/keymaster-app/package*.json ./keymaster-app/
-RUN cd keymaster-app && npm ci
+COPY src/gatekeeper ./gatekeeper/
 
-COPY src/keymaster-app/public ./keymaster-app/public/
-COPY src/keymaster-app/src ./keymaster-app/src/
-RUN cd keymaster-app && npm run build
+RUN cd gatekeeper/client && npm ci && npm run build
+RUN cd gatekeeper/server && npm ci
 
-# Copy app
-COPY src/*.js .
+WORKDIR /app/gatekeeper
 
 # Run...
-CMD ["node", "gatekeeper-api.js"]
+CMD ["node", "server/src/index.js"]
