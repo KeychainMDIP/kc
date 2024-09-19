@@ -16,5 +16,5 @@ export function loadWallet() {
         return JSON.parse(walletJson);
     }
 
-    return newWallet();
+    return null;
 }
