@@ -5,7 +5,7 @@ const config = {
     testPathIgnorePatterns: [
         "/node_modules/",
         "/kc-app/",
-        "/keymaster-app/"
+        "/client/"
     ],
 };
 
