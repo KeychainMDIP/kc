@@ -1,5 +1,5 @@
 import * as keymaster from '@macterra/keymaster/lib';
-import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as db_wallet from '@macterra/keymaster/db/json';
 import * as gatekeeper from '@macterra/gatekeeper/lib';
 import * as db_json from '@macterra/gatekeeper/db/json';
 import * as cipher from '@macterra/cipher';

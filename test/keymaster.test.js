@@ -5,7 +5,7 @@ import * as keymaster from '@macterra/keymaster/lib';
 import * as gatekeeper from '@macterra/gatekeeper/lib';
 import * as cipher from '@macterra/cipher';
 import * as db_json from '@macterra/gatekeeper/db/json';
-import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as db_wallet from '@macterra/keymaster/db/json';
 import * as exceptions from '@macterra/exceptions';
 
 beforeEach(async () => {

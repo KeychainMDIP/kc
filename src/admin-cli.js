@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import * as gatekeeper from '@macterra/gatekeeper/sdk';
 import * as keymaster from '@macterra/keymaster/lib';
-import * as db_wallet from '@macterra/keymaster/wallet/json';
+import * as db_wallet from '@macterra/keymaster/db/json';
 import * as cipher from '@macterra/cipher';
 
 dotenv.config();

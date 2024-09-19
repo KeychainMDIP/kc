@@ -6,8 +6,8 @@
   "exports": {
     "./lib": "./src/keymaster-lib.js",
     "./sdk": "./src/keymaster-sdk.js",
-    "./wallet/json": "./src/db-wallet-json.js",
-    "./wallet/web": "./src/db-wallet-web.js"
+    "./db/json": "./src/db-wallet-json.js",
+    "./db/web": "./src/db-wallet-web.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
