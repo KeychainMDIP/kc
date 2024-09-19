@@ -48,6 +48,19 @@ export async function verifyDb(chatty = true) {
     let n = 0;
     let invalid = 0;
 
+    // prime the cache
+    try {
+        const allEvents = await db.getAllEvents();
+        for (const key of Object.keys(allEvents)) {
+            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
+        }
+    }
+    catch (error) {
+        if (chatty) {
+            console.error(error);
+        }
+    }
+
     for (const did of dids) {
         n += 1;
         try {
