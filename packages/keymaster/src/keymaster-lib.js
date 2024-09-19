@@ -27,15 +27,43 @@ export async function listRegistries() {
 }
 
 export function loadWallet() {
-    return db.loadWallet();
+    return db.loadWallet() || newWallet();
 }
 
 export function saveWallet(wallet) {
-    return db.saveWallet(wallet);
+    // TBD validate wallet before saving
+    return db.saveWallet(wallet, true);
 }
 
 export function newWallet(mnemonic, overwrite = false) {
-    return db.newWallet(mnemonic, overwrite);
+    let wallet;
+
+    try {
+        if (!mnemonic) {
+            mnemonic = cipher.generateMnemonic();
+        }
+        const hdkey = cipher.generateHDKey(mnemonic);
+        const keypair = cipher.generateJwk(hdkey.privateKey);
+        const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
+
+        wallet = {
+            seed: {
+                mnemonic: backup,
+                hdkey: hdkey.toJSON(),
+            },
+            counter: 0,
+            ids: {},
+        }
+    }
+    catch (error) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (!db.saveWallet(wallet, overwrite)) {
+        throw new Error(exceptions.UPDATE_FAILED);
+    }
+
+    return wallet;
 }
 
 export function decryptMnemonic() {
