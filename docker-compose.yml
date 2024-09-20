@@ -84,7 +84,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TESS_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./mediators/sat/data:/app/sat/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tess-node
@@ -123,7 +123,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./mediators/sat/data:/app/sat/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
@@ -160,7 +160,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./mediators/sat/data:/app/sat/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tbtc-node

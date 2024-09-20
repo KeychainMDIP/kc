@@ -4,23 +4,7 @@ import * as gatekeeper from '@macterra/gatekeeper/sdk';
 import * as keymaster from '@macterra/keymaster/lib';
 import * as db_wallet from '@macterra/keymaster/db/json';
 import * as cipher from '@macterra/cipher';
-import mainConfig from './config.js';
-
-const config = {
-    chain: process.env.KC_SAT_CHAIN || 'BTC',
-    network: process.env.KC_SAT_NETWORK || 'mainnet',
-    host: process.env.KC_SAT_HOST || 'localhost',
-    port: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
-    wallet: process.env.KC_SAT_WALLET,
-    user: process.env.KC_SAT_USER,
-    pass: process.env.KC_SAT_PASS,
-    importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
-    exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
-    feeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
-    feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
-    feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00000,
-    startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
-};
+import config from './config.js';
 
 const REGISTRY = config.chain;
 
@@ -323,7 +307,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const did = await keymaster.createAsset(batch, REGISTRY, mainConfig.nodeID);
+        const did = await keymaster.createAsset(batch, REGISTRY, config.nodeID);
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
@@ -400,34 +384,34 @@ async function waitForChain() {
 }
 
 async function main() {
-    if (!mainConfig.nodeID) {
+    if (!config.nodeID) {
         console.log('sat-mediator must have a KC_NODE_ID configured');
         return;
     }
 
     await waitForChain();
 
-    gatekeeper.setURL(`${mainConfig.gatekeeperURL}:${mainConfig.gatekeeperPort}`);
+    gatekeeper.setURL(`${config.gatekeeperURL}:${config.gatekeeperPort}`);
 
     await gatekeeper.waitUntilReady();
     await keymaster.start(gatekeeper, db_wallet, cipher);
 
     try {
-        await keymaster.resolveDID(mainConfig.nodeID);
-        console.log(`Using node ID '${mainConfig.nodeID}'`);
+        await keymaster.resolveDID(config.nodeID);
+        console.log(`Using node ID '${config.nodeID}'`);
     }
     catch {
         try {
-            await keymaster.createId(mainConfig.nodeID);
-            console.log(`Created node ID '${mainConfig.nodeID}'`);
+            await keymaster.createId(config.nodeID);
+            console.log(`Created node ID '${config.nodeID}'`);
         }
         catch (error) {
-            console.log(`Cannot create node ID '${mainConfig.nodeID}'`, error);
+            console.log(`Cannot create node ID '${config.nodeID}'`, error);
             return;
         }
     }
 
-    console.log(`Using keymaster ID ${mainConfig.nodeID}`);
+    console.log(`Using keymaster ID ${config.nodeID}`);
 
     if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);
