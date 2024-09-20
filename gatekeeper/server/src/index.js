@@ -2,10 +2,10 @@ import express from 'express';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as gatekeeper from '@macterra/gatekeeper/lib';
-import * as db_json from '@macterra/gatekeeper/db/json';
-import * as db_sqlite from '@macterra/gatekeeper/db/sqlite';
-import * as db_mongodb from '@macterra/gatekeeper/db/mongodb';
+import * as gatekeeper from '@mdip/gatekeeper/lib';
+import * as db_json from '@mdip/gatekeeper/db/json';
+import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
+import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
 import config from './config.js';
 
 import { EventEmitter } from 'events';

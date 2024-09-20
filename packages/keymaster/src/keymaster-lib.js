@@ -1,5 +1,5 @@
 import { JSONSchemaFaker } from "json-schema-faker";
-import * as exceptions from '@macterra/exceptions';
+import * as exceptions from '@mdip/exceptions';
 
 let gatekeeper = null;
 let db = null;

@@ -6,8 +6,8 @@ import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
-import * as gatekeeper from '@macterra/gatekeeper/sdk';
-import * as cipher from '@macterra/cipher';
+import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import * as cipher from '@mdip/cipher';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;

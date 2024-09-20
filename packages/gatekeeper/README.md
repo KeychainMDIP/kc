@@ -3,5 +3,5 @@
 ## Installation
 
 ```bash
-npm install @macterra/gatekeeper
+npm install @mdip/gatekeeper
 ```

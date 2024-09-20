@@ -1,6 +1,6 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
-import * as exceptions from '@macterra/exceptions';
+import * as exceptions from '@mdip/exceptions';
 
 const dataFolder = 'data';
 

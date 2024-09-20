@@ -1,12 +1,12 @@
 import mockFs from 'mock-fs';
 import canonicalize from 'canonicalize';
 
-import * as keymaster from '@macterra/keymaster/lib';
-import * as gatekeeper from '@macterra/gatekeeper/lib';
-import * as cipher from '@macterra/cipher';
-import * as db_json from '@macterra/gatekeeper/db/json';
-import * as db_wallet from '@macterra/keymaster/db/json';
-import * as exceptions from '@macterra/exceptions';
+import * as keymaster from '@mdip/keymaster/lib';
+import * as gatekeeper from '@mdip/gatekeeper/lib';
+import * as cipher from '@mdip/cipher';
+import * as db_json from '@mdip/gatekeeper/db/json';
+import * as db_wallet from '@mdip/keymaster/db/json';
+import * as exceptions from '@mdip/exceptions';
 
 beforeEach(async () => {
     db_json.start('mdip');

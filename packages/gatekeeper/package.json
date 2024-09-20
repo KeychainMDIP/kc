@@ -1,6 +1,6 @@
 {
-  "name": "@macterra/gatekeeper",
-  "version": "1.0.1",
+  "name": "@mdip/gatekeeper",
+  "version": "0.1.0",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "exports": {
@@ -17,6 +17,8 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@mdip/cipher": "*",
+    "@mdip/exceptions": "*",
     "@helia/json": "^2.0.0",
     "axios": "^1.7.7",
     "dotenv": "^16.4.5",

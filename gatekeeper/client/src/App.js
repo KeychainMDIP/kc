@@ -1,8 +1,8 @@
 import { Buffer } from 'buffer';
-import * as gatekeeper from '@macterra/gatekeeper/sdk';
-import * as cipher from '@macterra/cipher/web';
-import * as keymaster from '@macterra/keymaster/lib';
-import * as db_wallet from "@macterra/keymaster/db/web";
+import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import * as cipher from '@mdip/cipher/web';
+import * as keymaster from '@mdip/keymaster/lib';
+import * as db_wallet from "@mdip/keymaster/db/web";
 import KeymasterUI from './KeymasterUI.js';
 import './App.css';
 

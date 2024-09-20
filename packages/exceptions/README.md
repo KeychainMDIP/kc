@@ -3,5 +3,5 @@
 ## Installation
 
 ```bash
-npm install @macterra/exceptions
+npm install @mdip/exceptions
 ```

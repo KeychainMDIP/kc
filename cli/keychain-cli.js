@@ -2,11 +2,11 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import * as gatekeeper_sdk from '@macterra/gatekeeper/sdk';
-import * as keymaster_lib from '@macterra/keymaster/lib';
-import * as keymaster_sdk from '@macterra/keymaster/sdk';
-import * as db_wallet from '@macterra/keymaster/db/json';
-import * as cipher from '@macterra/cipher';
+import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
+import * as keymaster_lib from '@mdip/keymaster/lib';
+import * as keymaster_sdk from '@mdip/keymaster/sdk';
+import * as db_wallet from '@mdip/keymaster/db/json';
+import * as cipher from '@mdip/cipher';
 
 dotenv.config();
 

@@ -1,6 +1,6 @@
 {
-  "name": "@macterra/keymaster",
-  "version": "1.0.5",
+  "name": "@mdip/keymaster",
+  "version": "0.1.0",
   "description": "MDIP Keymaster",
   "type": "module",
   "exports": {
@@ -16,8 +16,8 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@macterra/cipher": "1.0.0",
-    "@macterra/exceptions": "1.0.0",
+    "@mdip/cipher": "*",
+    "@mdip/exceptions": "*",
     "axios": "^1.7.7",
     "json-schema-faker": "^0.5.6"
   }

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import * as exceptions from '@macterra/exceptions';
+import * as exceptions from '@mdip/exceptions';
 
 const dataFolder = 'data';
 let dbName;

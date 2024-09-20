@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 import config from './config.js';
-import * as exceptions from '@macterra/exceptions';
+import * as exceptions from '@mdip/exceptions';
 
 let client;
 let db;

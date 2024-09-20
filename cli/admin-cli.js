@@ -2,10 +2,10 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import * as gatekeeper from '@macterra/gatekeeper/sdk';
-import * as keymaster from '@macterra/keymaster/lib';
-import * as db_wallet from '@macterra/keymaster/db/json';
-import * as cipher from '@macterra/cipher';
+import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import * as keymaster from '@mdip/keymaster/lib';
+import * as db_wallet from '@mdip/keymaster/db/json';
+import * as cipher from '@mdip/cipher';
 
 dotenv.config();
 const gatekeeperURL = process.env.KC_CLI_GATEKEEPER_URL || 'http://localhost:4224';

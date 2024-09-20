@@ -3,6 +3,6 @@
 ## Installation
 
 ```bash
-npm install @macterra/keymaster
+npm install @mdip/keymaster
 ```
 

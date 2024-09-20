@@ -1,6 +1,6 @@
 {
-  "name": "@macterra/cipher",
-  "version": "1.0.1",
+  "name": "@mdip/cipher",
+  "version": "0.1.0",
   "description": "MDIP cipher lib",
   "type": "module",
   "exports": {

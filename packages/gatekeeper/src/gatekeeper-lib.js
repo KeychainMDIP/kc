@@ -2,8 +2,8 @@ import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
-import * as cipher from '@macterra/cipher';
-import * as exceptions from '@macterra/exceptions';
+import * as cipher from '@mdip/cipher';
+import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
 
 const validVersions = [1];

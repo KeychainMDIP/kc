@@ -1,5 +1,5 @@
 {
-  "name": "@macterra/exceptions",
+  "name": "@mdip/exceptions",
   "version": "1.0.0",
   "description": "MDIP exceptions",
   "type": "module",
@@ -10,6 +10,5 @@
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
-  "dependencies": {
-  }
+  "dependencies": {}
 }

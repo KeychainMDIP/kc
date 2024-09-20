@@ -1,8 +1,8 @@
-import * as keymaster from '@macterra/keymaster/lib';
-import * as db_wallet from '@macterra/keymaster/db/json';
-import * as gatekeeper from '@macterra/gatekeeper/lib';
-import * as db_json from '@macterra/gatekeeper/db/json';
-import * as cipher from '@macterra/cipher';
+import * as keymaster from '@mdip/keymaster/lib';
+import * as db_wallet from '@mdip/keymaster/db/json';
+import * as gatekeeper from '@mdip/gatekeeper/lib';
+import * as db_json from '@mdip/gatekeeper/db/json';
+import * as cipher from '@mdip/cipher';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",

@@ -3,5 +3,5 @@
 ## Installation
 
 ```bash
-npm install @macterra/cipher
+npm install @mdip/cipher
 ```
