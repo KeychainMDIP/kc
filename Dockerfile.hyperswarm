@@ -11,8 +11,9 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-# Copy app
-COPY src/*.js ./
+COPY mediators/hyperswarm ./hyperswarm/
+WORKDIR /app/hyperswarm
+RUN npm ci
 
 # Run...
-CMD ["node", "hyperswarm-mediator.js"]
+CMD ["node", "src/index.js"]
