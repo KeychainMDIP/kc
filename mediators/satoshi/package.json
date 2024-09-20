@@ -1,8 +1,8 @@
 {
-  "name": "hyperswarm-mediator",
-  "version": "1.0.0",
+  "name": "satoshi-mediator",
+  "version": "0.1.0",
   "type": "module",
-  "description": "MDIP hyperswarm network mediator",
+  "description": "MDIP satoshi blockchain mediator",
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

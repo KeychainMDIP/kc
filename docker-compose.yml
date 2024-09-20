@@ -64,7 +64,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
+    image: keychainmdip/satoshi-mediator
     network_mode: host
     environment:
       - KC_GATEKEEPER_URL=http://localhost
@@ -84,7 +84,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TESS_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
     volumes:
-      - ./data:/app/sat/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tess-node
@@ -103,7 +103,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
+    image: keychainmdip/satoshi-mediator
     network_mode: host
     environment:
       - KC_GATEKEEPER_URL=http://localhost
@@ -123,7 +123,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
     volumes:
-      - ./data:/app/sat/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
@@ -140,7 +140,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
+    image: keychainmdip/satoshi-mediator
     network_mode: host
     environment:
       - KC_GATEKEEPER_URL=http://localhost
@@ -160,7 +160,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
     volumes:
-      - ./data:/app/sat/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tbtc-node

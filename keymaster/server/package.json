@@ -1,6 +1,6 @@
 {
   "name": "keymaster-server",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "MDIP Keymaster REST API server",
   "main": "src/index.js",

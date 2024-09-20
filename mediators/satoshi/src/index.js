@@ -385,7 +385,7 @@ async function waitForChain() {
 
 async function main() {
     if (!config.nodeID) {
-        console.log('sat-mediator must have a KC_NODE_ID configured');
+        console.log('satoshi-mediator must have a KC_NODE_ID configured');
         return;
     }
 
