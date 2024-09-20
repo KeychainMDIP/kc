@@ -846,13 +846,13 @@ async function run() {
     if (keymasterURL) {
         keymaster = keymaster_sdk;
         keymaster.setURL(keymasterURL);
-        await keymaster.waitUntilReady();
+        await keymaster.waitUntilReady(1, false);
         program.parse(process.argv);
     }
     else {
         keymaster = keymaster_lib;
         gatekeeper_sdk.setURL(gatekeeperURL);
-        await gatekeeper_sdk.waitUntilReady();
+        await gatekeeper_sdk.waitUntilReady(1, false);
         await keymaster.start(gatekeeper_sdk, db_wallet, cipher);
         program.parse(process.argv);
         await keymaster.stop();
