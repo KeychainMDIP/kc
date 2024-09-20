@@ -17,7 +17,7 @@ app.use(express.json());
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Serve the React frontend
-app.use(express.static(path.join(__dirname, 'kc-app/build')));
+app.use(express.static(path.join(__dirname, '../../client/build')));
 
 let serverReady = false;
 
@@ -631,7 +631,7 @@ app.use('/api/v1', v1router);
 
 app.use((req, res) => {
     if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, 'kc-app/build', 'index.html'));
+        res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
     } else {
         console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
         res.status(404).json({ message: 'Endpoint not found' });

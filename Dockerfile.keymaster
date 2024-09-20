@@ -11,16 +11,12 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-# Copy the client build to the kc-app directory
-COPY src/kc-app/package*.json ./kc-app/
-RUN cd kc-app && npm ci
+COPY src/keymaster ./keymaster/
 
-COPY src/kc-app/public ./kc-app/public/
-COPY src/kc-app/src ./kc-app/src/
-RUN cd kc-app && npm run build
+RUN cd keymaster/client && npm ci && npm run build
+RUN cd keymaster/server && npm ci
 
-# Copy app
-COPY src/*.js .
+WORKDIR /app/keymaster
 
 # Run...
-CMD ["node", "keymaster-api.js"]
+CMD ["node", "server/src/index.js"]

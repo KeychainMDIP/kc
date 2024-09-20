@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+
+npm --prefix client run build
+node server/src/index.js
