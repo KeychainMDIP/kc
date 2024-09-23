@@ -11,7 +11,7 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY gatekeeper ./gatekeeper/
+COPY services/gatekeeper ./gatekeeper/
 
 RUN cd gatekeeper/client && npm ci && npm run build
 RUN cd gatekeeper/server && npm ci

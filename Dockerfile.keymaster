@@ -11,7 +11,7 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY keymaster ./keymaster/
+COPY services/keymaster ./keymaster/
 
 RUN cd keymaster/client && npm ci && npm run build
 RUN cd keymaster/server && npm ci

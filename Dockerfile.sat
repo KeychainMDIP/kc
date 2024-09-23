@@ -11,7 +11,7 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY mediators/satoshi ./satoshi/
+COPY services/mediators/satoshi ./satoshi/
 WORKDIR /app/satoshi
 RUN npm ci
 

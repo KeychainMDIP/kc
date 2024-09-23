@@ -11,7 +11,7 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY mediators/hyperswarm ./hyperswarm/
+COPY services/mediators/hyperswarm ./hyperswarm/
 WORKDIR /app/hyperswarm
 RUN npm ci
 
