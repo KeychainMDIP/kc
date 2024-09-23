@@ -1,0 +1,31 @@
+{
+  "name": "@mdip/gatekeeper",
+  "version": "0.1.0",
+  "description": "MDIP Gatekeeper",
+  "type": "module",
+  "exports": {
+    "./lib": "./src/gatekeeper-lib.js",
+    "./sdk": "./src/gatekeeper-sdk.js",
+    "./db/json": "./src/db-json.js",
+    "./db/sqlite": "./src/db-sqlite.js",
+    "./db/mongodb": "./src/db-mongodb.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@mdip/cipher": "*",
+    "@mdip/exceptions": "*",
+    "@helia/json": "^2.0.0",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "helia": "^3.0.0",
+    "mongodb": "^6.5.0",
+    "multiformats": "^13.0.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  }
+}

@@ -10,11 +10,12 @@ services:
       dockerfile: Dockerfile.gatekeeper
     image: keychainmdip/gatekeeper
     environment:
+      - KC_GATEKEEPER_PORT=4224
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
       - KC_MONGODB_URL=mongodb://mongodb:27017
     volumes:
-      - ./data:/app/data
+      - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"
@@ -25,10 +26,10 @@ services:
       dockerfile: Dockerfile.keymaster
     image: keychainmdip/keymaster
     environment:
-      - KC_GATEKEEPER_URL=http://gatekeeper
-      - KC_GATEKEEPER_PORT=4224
+      - KC_KEYMASTER_PORT=4226
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
     volumes:
-      - ./data:/app/data
+      - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4226:4226"
@@ -41,20 +42,16 @@ services:
       dockerfile: Dockerfile.hyperswarm
     image: keychainmdip/hyperswarm-mediator
     environment:
-      - KC_GATEKEEPER_URL=http://gatekeeper
-      - KC_GATEKEEPER_PORT=4224
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_NAME=${KC_NODE_NAME}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/hyperswarm/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
 
   tess-node:
     image: macterra/tesseract-node:v21.08.03
-    ports:
-      - "7333:7333"
-      - "8333:8333"
     volumes:
       - ./data/tesseract:/data
 
@@ -62,16 +59,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
-    network_mode: host
+    image: keychainmdip/satoshi-mediator
     environment:
-      - KC_GATEKEEPER_URL=http://localhost
-      - KC_GATEKEEPER_PORT=4224
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TESS
       - KC_SAT_NETWORK=mainnet
       - KC_SAT_START_BLOCK=142865
-      - KC_SAT_HOST=localhost
+      - KC_SAT_HOST=tess-node
       - KC_SAT_PORT=8333
       - KC_SAT_USER=${KC_TESS_USER}
       - KC_SAT_PASS=${KC_TESS_PASS}
@@ -82,7 +77,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TESS_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tess-node
@@ -91,9 +86,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ftc
-    ports:
-      - "19336:19336"
-      - "19337:19337"
     volumes:
       - ./data/tftc:/root/.feathercoin
 
@@ -101,16 +93,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
-    network_mode: host
+    image: keychainmdip/satoshi-mediator
     environment:
-      - KC_GATEKEEPER_URL=http://localhost
-      - KC_GATEKEEPER_PORT=4224
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_START_BLOCK=0
-      - KC_SAT_HOST=localhost
+      - KC_SAT_HOST=tftc-node
       - KC_SAT_PORT=19337
       - KC_SAT_USER=${KC_TFTC_USER}
       - KC_SAT_PASS=${KC_TFTC_PASS}
@@ -121,7 +111,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
@@ -130,23 +120,18 @@ services:
     image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
     volumes:
       - ./data/tbtc:/root/.bitcoin
-    ports:
-      - "48333:48333"
-      - "48332:48332"
 
   tbtc-mediator:
     build:
       context: .
       dockerfile: Dockerfile.sat
-    image: keychainmdip/sat-mediator
-    network_mode: host
+    image: keychainmdip/satoshi-mediator
     environment:
-      - KC_GATEKEEPER_URL=http://localhost
-      - KC_GATEKEEPER_PORT=4224
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
-      - KC_SAT_HOST=localhost
+      - KC_SAT_HOST=tbtc-node
       - KC_SAT_PORT=48332
       - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
       - KC_SAT_USER=${KC_TBTC_USER}
@@ -158,7 +143,7 @@ services:
       - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
     volumes:
-      - ./data:/app/data
+      - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tbtc-node
