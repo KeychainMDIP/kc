@@ -4,10 +4,9 @@ dotenv.config();
 
 const config = {
     nodeID: process.env.KC_NODE_ID,
-    gatekeeperPort: process.env.KC_GATEKEEPER_PORT ? parseInt(process.env.KC_GATEKEEPER_PORT) : 4224,
-    gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost',
-    chain: process.env.KC_SAT_CHAIN || 'BTC',
-    network: process.env.KC_SAT_NETWORK || 'mainnet',
+    gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
+    chain: process.env.KC_SAT_CHAIN || 'TBTC',
+    network: process.env.KC_SAT_NETWORK || 'testnet',
     host: process.env.KC_SAT_HOST || 'localhost',
     port: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
     wallet: process.env.KC_SAT_WALLET,
