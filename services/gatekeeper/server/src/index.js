@@ -11,8 +11,8 @@ import config from './config.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-const db = (config.gatekeeperDb === 'sqlite') ? db_sqlite
-    : (config.gatekeeperDb === 'mongodb') ? db_mongodb
+const db = (config.db === 'sqlite') ? db_sqlite
+    : (config.db === 'mongodb') ? db_mongodb
         : db_json;
 
 await db.start();
@@ -253,7 +253,7 @@ app.use((req, res) => {
 });
 
 async function main() {
-    if (config.gatekeeperVerifyDb) {
+    if (config.verifyDb) {
         const invalid = await gatekeeper.verifyDb();
 
         if (invalid > 0) {
@@ -265,12 +265,10 @@ async function main() {
         console.log(`Skipping db verification (${dids.length} DIDs)`);
     }
 
-    const registries = await gatekeeper.initRegistries(config.gatekeeperRegistries);
-    const port = config.gatekeeperPort;
-    const db = config.gatekeeperDb;
+    const registries = await gatekeeper.initRegistries(config.registries);
 
-    app.listen(port, () => {
-        console.log(`Server is running on port ${port}, persisting with ${db}`);
+    app.listen(config.port, () => {
+        console.log(`Server is running on port ${config.port}, persisting with ${config.db}`);
         console.log(`Supported registries: ${registries}`);
         serverReady = true;
     });
