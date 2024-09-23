@@ -1387,6 +1387,74 @@ describe('importBatch', () => {
         expect(verified).toBe(0);
         expect(failed).toBe(3);
     });
+
+    it('should report an error on invalid operation', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation = 'mock';
+
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+
+        expect(updated).toBe(0);
+        expect(verified).toBe(0);
+        expect(failed).toBe(1);
+    });
+
+    it('should report an error on invalid operation type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.type = 'mock';
+
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+
+        expect(updated).toBe(0);
+        expect(verified).toBe(0);
+        expect(failed).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature = 'mock';
+
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+
+        expect(updated).toBe(0);
+        expect(verified).toBe(0);
+        expect(failed).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature value', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.value = 'mock';
+
+        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+
+        expect(updated).toBe(0);
+        expect(verified).toBe(0);
+        expect(failed).toBe(1);
+    });
 });
 
 describe('getQueue', () => {
