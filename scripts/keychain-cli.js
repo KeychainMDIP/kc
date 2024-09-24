@@ -6,7 +6,7 @@ import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet from '@mdip/keymaster/db/json';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
 

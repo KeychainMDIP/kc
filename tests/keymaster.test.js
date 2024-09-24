@@ -3,7 +3,7 @@ import canonicalize from 'canonicalize';
 
 import * as keymaster from '@mdip/keymaster/lib';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_wallet from '@mdip/keymaster/db/json';
 import * as exceptions from '@mdip/exceptions';

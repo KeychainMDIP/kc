@@ -1,5 +1,7 @@
 # MDIP exceptions
 
+Standard MDIP exception strings
+
 ## Installation
 
 ```bash

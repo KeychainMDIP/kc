@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as db_wallet from '@mdip/keymaster/db/json';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();

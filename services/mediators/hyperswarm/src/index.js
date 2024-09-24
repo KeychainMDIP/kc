@@ -7,7 +7,7 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
