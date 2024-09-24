@@ -2,7 +2,7 @@ import * as keymaster from '@mdip/keymaster/lib';
 import * as db_wallet from '@mdip/keymaster/db/json';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
-import * as cipher from '@mdip/cipher';
+import * as cipher from '@mdip/cipher/node';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
