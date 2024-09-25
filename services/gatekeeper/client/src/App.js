@@ -12,7 +12,7 @@ function App() {
     keymaster.start(gatekeeper, db_wallet, cipher);
 
     return (
-        <KeymasterUI keymaster={keymaster} title={'Keymaster Wallet Demo'} />
+        <KeymasterUI keymaster={keymaster} title={'Keymaster Browser Wallet Demo'} />
     );
 }
 
