@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
-import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
 
-function KeymasterUI({ keymaster, title }) {
+function KeymasterUI({ keymaster, title, challengeDID }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -61,7 +60,6 @@ function KeymasterUI({ keymaster, title }) {
     const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
-    const [searchParams] = useSearchParams();
 
     useEffect(() => {
         checkForChallenge();
@@ -71,8 +69,6 @@ function KeymasterUI({ keymaster, title }) {
 
     async function checkForChallenge() {
         try {
-            const challengeDID = searchParams.get('challenge');
-
             if (challengeDID) {
                 setChallenge(challengeDID);
                 setWidget(true);
