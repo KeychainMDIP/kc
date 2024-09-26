@@ -1,0 +1,40 @@
+{
+  "name": "@mdip/keymaster-ui",
+  "version": "0.1.0",
+  "description": "MDIP Keymaster UI components",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "babel src --out-dir dist",
+    "prepare": "npm run build"
+  },
+  "keywords": [],
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "@mui/material": "^5.13.3",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.14.5",
+    "@babel/core": "^7.14.6",
+    "@babel/preset-env": "^7.14.5",
+    "@babel/preset-react": "^7.14.5"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0 <19.0.0",
+    "react-dom": ">=17.0.0 <19.0.0"
+  },
+  "babel": {
+    "presets": [
+      [
+        "@babel/preset-env",
+        {
+          "modules": "commonjs"
+        }
+      ],
+      "@babel/preset-react"
+    ],
+    "ignore": ["node_modules"]
+  }
+}
