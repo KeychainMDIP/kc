@@ -7,14 +7,43 @@ Details on each command can be found in the [CLI User Manual](https://keychain.o
 
 ## Quick start
 
-requires: [docker](https://www.docker.com/)
+Recommended system requirements: 
+- GNU/Linux OS with [docker](https://www.docker.com/) for containerized operation
+- node 18.19.1 and npm 10.8.2 or newer for manual and local operation
+- minimum of 8Gb RAM if operating a full trustless node
 
 ```
 $ git clone https://github.com/KeychainMDIP/kc
 $ cd kc
+$ cp sample.env .env
 $ ./start-node
 ```
+## Node configuration
 
+Customize your node in the kc/.env file. 
+
+```
+KC_UID=1000                                        # Docker host UID 
+KC_GID=1002                                        # Docker host GID
+KC_NODE_NAME=anon                                  # Hyperswarm node name
+KC_NODE_ID=anon                                    # Node Keymaster DID name
+KC_GATEKEEPER_REGISTRIES=hyperswarm,TESS,TBTC,TFTC # Supported DID Registries
+...
+{adjust registry details for advanced users only}
+```
+
+Once your node is operational (start-node), you can setup local dependencies and manage your server using local CLI wallet and other command line tools:
+
+```
+$ npm ci                                     # Installs all node package dependencies
+$ ./kc -h                                    # Displays kc CLI help
+$ ./kc create-id anon TBTC                   # Creates Node Keymaster DID name (set as KC_NODE_ID in .env)
+$ ./scripts/tbtc-cli createwallet mdip       # Creates MDIP wallet for Bitcoin Testnet registry
+$ ./scripts/tbtc-cli getnewaddress           # Get a new address to fund Bitcoin Testnet wallet
+$ ./scripts/tbtc-cli getwalletinfo           # Get a general status of confirmed and incoming funds
+```
+
+## Command line interface wallet
 Use the CLI `./kc` or the web app at http://localhost:4226 to access the server-side wallet.
 Use the web app at http://localhost:4224 to access a client-side (browser) wallet.
 
@@ -41,7 +70,7 @@ Commands:
   create-challenge-cc <did> [name]           Create challenge from a credential DID
   create-credential <file> [name]            Create credential from schema file
   create-id <name> [registry]                Create a new decentralized ID
-  create-response <challenge>                Create a Verifiable Presentation from a challenge
+  create-response <challenge>                Create a response to a challenge
   create-schema <file> [name]                Create schema from a file
   create-template <schema>                   Create a template from a schema
   create-wallet                              Create new wallet (or show existing wallet)
@@ -85,7 +114,42 @@ Commands:
   unpublish-credential <did>                 Remove a credential from the current user manifest
   use-id <name>                              Set the current ID
   verify-file <file>                         Verify the signature in a JSON file
-  verify-response <response> <challenge>     Decrypt and validate a Verifiable Presentation
+  verify-response <response>                 Decrypt and validate a response to a challenge
+```
+
+## admin-cli 
+
+Use the admin CLI to manage and view status of your server's DID registry operations.
+
+```
+$ ./admin
+Usage: admin-cli [options] [command]
+
+Admin CLI tool
+
+Options:
+  -V, --version                                                output the version number
+  -h, --help                                                   display help for command
+
+Commands:
+  clear-queue <registry> <batch>                               Clear a registry queue
+  create-batch <registry>                                      Create a batch for a registry
+  export-batch                                                 Export all events in a batch
+  export-did <did>                                             Export DID to file
+  export-dids                                                  Export all DIDs
+  get-dids [updatedAfter] [updatedBefore] [confirm] [resolve]  Fetch all DIDs
+  hash-dids <file>                                             Compute hash of batch
+  help [command]                                               display help for command
+  import-batch <file>                                          Import batch of events
+  import-batch <did> [registry]                                Import a batch
+  import-did <file>                                            Import DID from file
+  import-dids <file>                                           Import DIDs from file
+  list-registries                                              List supported registries
+  perf-test [full]                                             DID resolution performance test
+  reset-db                                                     Reset the database to empty
+  resolve-did <did> [confirm]                                  Return document associated with DID
+  resolve-seed-bank                                            Resolves the seed bank ID
+  show-queue <registry>                                        Show queue for a registry
 ```
 
 ## Upgrade
@@ -97,4 +161,3 @@ $ ./stop-node
 $ git pull
 $ ./start-node
 ```
-
