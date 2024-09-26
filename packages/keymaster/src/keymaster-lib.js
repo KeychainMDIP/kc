@@ -1103,35 +1103,35 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(asset, registry = ephemeralRegistry) {
+export async function createChallenge(challengeSchema, registry = ephemeralRegistry) {
 
-    if (!asset) {
-        asset = {};
+    if (!challengeSchema) {
+        challengeSchema = {};
     }
 
-    if (typeof asset !== 'object' || Array.isArray(asset)) {
+    if (typeof challengeSchema !== 'object' || Array.isArray(challengeSchema)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!asset.challenge) {
-        asset.challenge = {};
+    if (!challengeSchema.challenge) {
+        challengeSchema.challenge = {};
     }
 
-    if (!asset.ephemeral) {
+    if (!challengeSchema.ephemeral) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        asset.ephemeral = { validUntil: expires.toISOString() };
+        challengeSchema.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!asset.challenge.credentials) {
-        asset.challenge.credentials = [];
+    if (!challengeSchema.challenge.credentials) {
+        challengeSchema.challenge.credentials = [];
     }
 
-    if (!Array.isArray(asset.challenge.credentials)) {
+    if (!Array.isArray(challengeSchema.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(asset, registry);
+    return createAsset(challengeSchema, registry);
 }
 
 async function findMatchingCredential(credential) {
@@ -1176,10 +1176,20 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(challengeDID, registry = ephemeralRegistry) {
-    challengeDID = lookupDID(challengeDID);
+export async function createResponse(challengeDID, registry = ephemeralRegistry, retries = 0) {
+    let doc;
 
-    const doc = await resolveDID(challengeDID);
+    while (retries >= 0) {
+        try {
+            doc = await resolveDID(challengeDID);
+            break;
+        } catch (error) {
+            if (retries === 0) throw error; // If no retries left, throw the error
+            retries--; // Decrease the retry count
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+        }
+    }
+
     const requestor = doc.didDocument.controller;
     const { challenge } = await resolveAsset(challengeDID);
 
@@ -1233,10 +1243,20 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry)
     return await encryptJSON(response, requestor, true, registry);
 }
 
-export async function verifyResponse(responseDID) {
-    responseDID = lookupDID(responseDID);
+export async function verifyResponse(responseDID, retries = 0) {
+    let responseDoc;
 
-    const responseDoc = await resolveDID(responseDID);
+    while (retries >= 0) {
+        try {
+            responseDoc = await resolveDID(responseDID);
+            break;
+        } catch (error) {
+            if (retries === 0) throw error; // If no retries left, throw the error
+            retries--; // Decrease the retry count
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+        }
+    }
+
     const { response } = await decryptJSON(responseDID);
     const { challenge } = await resolveAsset(response.challenge);
 

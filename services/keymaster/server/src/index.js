@@ -241,7 +241,8 @@ v1router.get('/challenge', async (req, res) => {
 
 v1router.post('/challenge', async (req, res) => {
     try {
-        const did = await keymaster.createChallenge(req.body);
+        const { challenge, registry } = req.body;
+        const did = await keymaster.createChallenge(challenge, registry);
         res.json(did);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -250,8 +251,8 @@ v1router.post('/challenge', async (req, res) => {
 
 v1router.post('/response', async (req, res) => {
     try {
-        const { challenge } = req.body;
-        const did = await keymaster.createResponse(challenge);
+        const { challenge, registry, retries } = req.body;
+        const did = await keymaster.createResponse(challenge, registry, retries);
         res.json(did);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -260,8 +261,8 @@ v1router.post('/response', async (req, res) => {
 
 v1router.post('/response/verify', async (req, res) => {
     try {
-        const { response } = req.body;
-        const verify = await keymaster.verifyResponse(response);
+        const { response, retries } = req.body;
+        const verify = await keymaster.verifyResponse(response, retries);
         res.json(verify);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
