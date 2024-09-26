@@ -4,7 +4,7 @@ import './App.css';
 
 function App() {
     return (
-        <KeymasterUI keymaster={keymaster} title={'Keymaster API Demo'} />
+        <KeymasterUI keymaster={keymaster} title={'Keymaster Server Wallet Demo'} />
     );
 }
 
