@@ -215,32 +215,6 @@ v1router.get('/registries', async (req, res) => {
     }
 });
 
-app.get('/explore/:did', async (req, res) => {
-    try {
-        const doc = await gatekeeper.resolveDID(req.params.did, { atTime: req.query.atTime });
-        var hthead = '<html><body>';
-        hthead = hthead + '<h1>MDIP Network Explorer</h1>';
-        hthead = hthead + '<table><tr><td><h3>' + req.params.did + '</h3></td>';
-        var htdoc = JSON.stringify(doc, null, 5);
-        htdoc = htdoc.replace(/"didDocument"/g, '"<b>didDocument</b>"');
-        htdoc = htdoc.replace(/"didDocumentMetadata"/g, '"<b>didDocumentMetadata</b>"');
-        htdoc = htdoc.replace(/"manifest"/g, '"<b>manifest</b>"');
-        htdoc = htdoc.replace(/"issuer"/g, '"<b>issuer</b>"');
-        htdoc = htdoc.replace(/"signer"/g, '"<b>signer</b>"');
-        htdoc = htdoc.replace(/"id"/g, '"<b>id</b>"');
-        htdoc = htdoc.replace(/"credential"/g, '"<b>credential</b>"');
-        htdoc = htdoc.replace(/"vault"/g, '"<b>vault</b>"');
-        htdoc = htdoc.replace(/"(did:test:.*)"/g, '"<a href="/explore/$1">$1</a>"');
-        htdoc = hthead + '<tr><td><hr><pre>' + htdoc + '</pre><hr></td></tr>';
-        var now = new Date();
-        htdoc = htdoc + '</table>' + now + '</body></html>';
-        res.send(htdoc);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
