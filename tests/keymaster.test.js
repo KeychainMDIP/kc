@@ -1978,7 +1978,7 @@ describe('verifyResponse', () => {
                 ]
             }
         };
-        const challengeDID = await keymaster.createChallenge(challenge, 'local');
+        const challengeDID = await keymaster.createChallenge(challenge, { registry: 'local' });
 
         keymaster.setCurrentId('Carol');
         const responseDID = await keymaster.createResponse(challengeDID, { registry: 'local' });

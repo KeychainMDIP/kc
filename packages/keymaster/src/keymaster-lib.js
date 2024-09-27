@@ -1103,35 +1103,41 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(challengeSchema, registry = ephemeralRegistry) {
+export async function createChallenge(challengeSpec, options = {}) {
 
-    if (!challengeSchema) {
-        challengeSchema = {};
+    let { registry } = options;
+
+    if (!registry) {
+        registry = ephemeralRegistry;
     }
 
-    if (typeof challengeSchema !== 'object' || Array.isArray(challengeSchema)) {
+    if (!challengeSpec) {
+        challengeSpec = {};
+    }
+
+    if (typeof challengeSpec !== 'object' || Array.isArray(challengeSpec)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!challengeSchema.challenge) {
-        challengeSchema.challenge = {};
+    if (!challengeSpec.challenge) {
+        challengeSpec.challenge = {};
     }
 
-    if (!challengeSchema.ephemeral) {
+    if (!challengeSpec.ephemeral) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        challengeSchema.ephemeral = { validUntil: expires.toISOString() };
+        challengeSpec.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!challengeSchema.challenge.credentials) {
-        challengeSchema.challenge.credentials = [];
+    if (!challengeSpec.challenge.credentials) {
+        challengeSpec.challenge.credentials = [];
     }
 
-    if (!Array.isArray(challengeSchema.challenge.credentials)) {
+    if (!Array.isArray(challengeSpec.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challengeSchema, registry);
+    return createAsset(challengeSpec, registry);
 }
 
 async function findMatchingCredential(credential) {

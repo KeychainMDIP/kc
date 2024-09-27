@@ -97,7 +97,7 @@ async function runWorkflow() {
             ]
         }
     };
-    const challengeDid = await keymaster.createChallenge(mockChallenge, 'local');
+    const challengeDid = await keymaster.createChallenge(mockChallenge, { registry: 'local' });
     console.log(`Victor created challenge ${challengeDid}`);
 
     keymaster.setCurrentId('Carol');

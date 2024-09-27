@@ -260,9 +260,9 @@ export async function resolveDID(name) {
     }
 }
 
-export async function createChallenge(challengeSchema, registry = ephemeralRegistry) {
+export async function createChallenge(challengeSpec, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/challenge`, { challenge: challengeSchema, registry });
+        const response = await axios.post(`${URL}/api/v1/challenge`, { challenge: challengeSpec, options });
         return response.data;
     }
     catch (error) {
