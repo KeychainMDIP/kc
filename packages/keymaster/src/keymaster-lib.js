@@ -1263,7 +1263,17 @@ export async function createResponse(challengeDID, options = {}) {
     return await encryptJSON(response, requestor, true, registry);
 }
 
-export async function verifyResponse(responseDID, retries = 0, delay = 1000) {
+export async function verifyResponse(responseDID, options = {}) {
+    let { retries, delay } = options;
+
+    if (!retries) {
+        retries = 0;
+    }
+
+    if (!delay) {
+        delay = 1000;
+    }
+
     let responseDoc;
 
     while (retries >= 0) {

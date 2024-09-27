@@ -280,9 +280,9 @@ export async function createResponse(challengeDID, options) {
     }
 }
 
-export async function verifyResponse(responseDID, retries = 0) {
+export async function verifyResponse(responseDID, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID, retries });
+        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID, options });
         return response.data;
     }
     catch (error) {

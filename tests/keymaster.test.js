@@ -1783,7 +1783,7 @@ describe('createResponse', () => {
         }
 
         try {
-            await keymaster.createResponse('did:mock', { retries: 10, delay: 10 } );
+            await keymaster.createResponse('did:mock', { retries: 10, delay: 10 });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2065,7 +2065,7 @@ describe('verifyResponse', () => {
         }
 
         try {
-            await keymaster.verifyResponse('did:mock', 10, 10);
+            await keymaster.verifyResponse('did:mock', { retries: 10, delay: 10 });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {

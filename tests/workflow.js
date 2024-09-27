@@ -106,7 +106,7 @@ async function runWorkflow() {
 
     keymaster.setCurrentId('Victor');
 
-    const verify1 = await keymaster.verifyResponse(vpDid, challengeDid);
+    const verify1 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify1.vps.length} valid credentials`);
 
     keymaster.setCurrentId('Alice');
@@ -123,7 +123,7 @@ async function runWorkflow() {
 
     console.log(`All agents rotated their keys`);
 
-    const verify2 = await keymaster.verifyResponse(vpDid, challengeDid);
+    const verify2 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify2.vps.length} valid credentials`);
 
     keymaster.setCurrentId('Alice');
@@ -131,7 +131,7 @@ async function runWorkflow() {
     console.log(`Alice revoked vc1`);
 
     keymaster.setCurrentId('Victor');
-    const verify3 = await keymaster.verifyResponse(vpDid, challengeDid);
+    const verify3 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify3.vps.length} valid credentials`);
 
     keymaster.setCurrentId('Bob');
@@ -139,7 +139,7 @@ async function runWorkflow() {
     console.log(`Bob revoked vc3`);
 
     keymaster.setCurrentId('Victor');
-    const verify4 = await keymaster.verifyResponse(vpDid, challengeDid);
+    const verify4 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
 
     keymaster.stop();
