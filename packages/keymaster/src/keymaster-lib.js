@@ -1176,7 +1176,7 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(challengeDID, registry = ephemeralRegistry, retries = 0) {
+export async function createResponse(challengeDID, registry = ephemeralRegistry, retries = 0, delay = 1000) {
     let doc;
 
     while (retries >= 0) {
@@ -1186,14 +1186,14 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry,
         } catch (error) {
             if (retries === 0) throw error; // If no retries left, throw the error
             retries--; // Decrease the retry count
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+            await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milleseconds
         }
     }
 
     const requestor = doc.didDocument.controller;
     const { challenge } = await resolveAsset(challengeDID);
 
-    if (!challenge.credentials) {
+    if (!challenge?.credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
@@ -1243,7 +1243,7 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry,
     return await encryptJSON(response, requestor, true, registry);
 }
 
-export async function verifyResponse(responseDID, retries = 0) {
+export async function verifyResponse(responseDID, retries = 0, delay = 1000) {
     let responseDoc;
 
     while (retries >= 0) {
@@ -1253,7 +1253,7 @@ export async function verifyResponse(responseDID, retries = 0) {
         } catch (error) {
             if (retries === 0) throw error; // If no retries left, throw the error
             retries--; // Decrease the retry count
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+            await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milliseconds
         }
     }
 

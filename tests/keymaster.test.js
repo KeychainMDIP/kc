@@ -1752,6 +1752,52 @@ describe('createResponse', () => {
         expect(response.credentials.length).toBe(1);
         expect(response.credentials[0].vc).toBe(vcDid);
     });
+
+    it('should throw an exception on invalid challenge', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            await keymaster.createResponse();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
+            await keymaster.createResponse('mock');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+        }
+
+        try {
+            await keymaster.createResponse('did:mock');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
+            await keymaster.createResponse('did:mock', 'hyperswarm', 10, 10);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
+            await keymaster.createResponse(alice);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
 });
 
 describe('verifyResponse', () => {
@@ -2000,6 +2046,30 @@ describe('verifyResponse', () => {
         }
         catch (error) {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.verifyResponse('mock');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+        }
+
+        try {
+            await keymaster.verifyResponse('did:mock');
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+
+        try {
+            await keymaster.verifyResponse('did:mock', 10, 10);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
 });
