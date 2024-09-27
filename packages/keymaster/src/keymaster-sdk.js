@@ -2,7 +2,6 @@ import axios from 'axios';
 
 let URL = '';
 
-const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
 function throwError(error) {
@@ -271,9 +270,9 @@ export async function createChallenge(challengeSchema, registry = ephemeralRegis
     }
 }
 
-export async function createResponse(challengeDID, registry = ephemeralRegistry, retries = 0) {
+export async function createResponse(challengeDID, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/response`, { challenge: challengeDID, registry, retries });
+        const response = await axios.post(`${URL}/api/v1/response`, { challenge: challengeDID, options });
         return response.data;
     }
     catch (error) {

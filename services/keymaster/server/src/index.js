@@ -251,8 +251,8 @@ v1router.post('/challenge', async (req, res) => {
 
 v1router.post('/response', async (req, res) => {
     try {
-        const { challenge, registry, retries } = req.body;
-        const did = await keymaster.createResponse(challenge, registry, retries);
+        const { challenge, options } = req.body;
+        const did = await keymaster.createResponse(challenge, options);
         res.json(did);
     } catch (error) {
         res.status(400).send({ error: error.toString() });

@@ -1176,7 +1176,21 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(challengeDID, registry = ephemeralRegistry, retries = 0, delay = 1000) {
+export async function createResponse(challengeDID, options = {}) {
+    let { registry, retries, delay } = options;
+
+    if (!registry) {
+        registry = ephemeralRegistry;
+    }
+
+    if (!retries) {
+        retries = 0;
+    }
+
+    if (!delay) {
+        delay = 1000;
+    }
+
     let doc;
 
     while (retries >= 0) {

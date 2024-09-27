@@ -228,7 +228,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
     async function createResponse() {
         try {
             await clearResponse();
-            const response = await keymaster.createResponse(challenge, 'hyperswarm', 10);
+            const response = await keymaster.createResponse(challenge, { retries: 10 });
             setResponse(response);
 
             const asset = await keymaster.resolveAsset(challenge);

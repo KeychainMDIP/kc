@@ -1783,7 +1783,7 @@ describe('createResponse', () => {
         }
 
         try {
-            await keymaster.createResponse('did:mock', 'hyperswarm', 10, 10);
+            await keymaster.createResponse('did:mock', { retries: 10, delay: 10 } );
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -1981,7 +1981,7 @@ describe('verifyResponse', () => {
         const challengeDID = await keymaster.createChallenge(challenge, 'local');
 
         keymaster.setCurrentId('Carol');
-        const responseDID = await keymaster.createResponse(challengeDID, 'local');
+        const responseDID = await keymaster.createResponse(challengeDID, { registry: 'local' });
         const { response } = await keymaster.decryptJSON(responseDID);
 
         expect(response.challenge).toBe(challengeDID);

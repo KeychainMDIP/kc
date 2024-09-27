@@ -101,7 +101,7 @@ async function runWorkflow() {
     console.log(`Victor created challenge ${challengeDid}`);
 
     keymaster.setCurrentId('Carol');
-    const vpDid = await keymaster.createResponse(challengeDid, 'local');
+    const vpDid = await keymaster.createResponse(challengeDid, { registry: 'local' });
     console.log(`Carol created response for Victor ${vpDid}`);
 
     keymaster.setCurrentId('Victor');
