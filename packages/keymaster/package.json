@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "MDIP Keymaster",
   "type": "module",
   "exports": {
@@ -20,5 +20,9 @@
     "@mdip/exceptions": "*",
     "axios": "^1.7.7",
     "json-schema-faker": "^0.5.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeychainMDIP/kc.git"
   }
 }

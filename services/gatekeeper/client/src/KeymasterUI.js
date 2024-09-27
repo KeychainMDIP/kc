@@ -228,7 +228,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
     async function createResponse() {
         try {
             await clearResponse();
-            const response = await keymaster.createResponse(challenge);
+            const response = await keymaster.createResponse(challenge, { retries: 10 });
             setResponse(response);
 
             const asset = await keymaster.resolveAsset(challenge);
@@ -284,9 +284,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
     async function sendResponse() {
         try {
             setDisableSendResponse(true);
-            await axios.post(callback, { response });
-            // This would also work:
-            //await axios.get(`${callback}?response=${response}`);
+            axios.post(callback, { response });
         } catch (error) {
             window.alert(error);
         }

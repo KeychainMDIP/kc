@@ -1103,35 +1103,41 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(asset, registry = ephemeralRegistry) {
+export async function createChallenge(challengeSpec, options = {}) {
 
-    if (!asset) {
-        asset = {};
+    let { registry } = options;
+
+    if (!registry) {
+        registry = ephemeralRegistry;
     }
 
-    if (typeof asset !== 'object' || Array.isArray(asset)) {
+    if (!challengeSpec) {
+        challengeSpec = {};
+    }
+
+    if (typeof challengeSpec !== 'object' || Array.isArray(challengeSpec)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!asset.challenge) {
-        asset.challenge = {};
+    if (!challengeSpec.challenge) {
+        challengeSpec.challenge = {};
     }
 
-    if (!asset.ephemeral) {
+    if (!challengeSpec.ephemeral) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        asset.ephemeral = { validUntil: expires.toISOString() };
+        challengeSpec.ephemeral = { validUntil: expires.toISOString() };
     }
 
-    if (!asset.challenge.credentials) {
-        asset.challenge.credentials = [];
+    if (!challengeSpec.challenge.credentials) {
+        challengeSpec.challenge.credentials = [];
     }
 
-    if (!Array.isArray(asset.challenge.credentials)) {
+    if (!Array.isArray(challengeSpec.challenge.credentials)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(asset, registry);
+    return createAsset(challengeSpec, registry);
 }
 
 async function findMatchingCredential(credential) {
@@ -1176,14 +1182,38 @@ async function findMatchingCredential(credential) {
     }
 }
 
-export async function createResponse(challengeDID, registry = ephemeralRegistry) {
-    challengeDID = lookupDID(challengeDID);
+export async function createResponse(challengeDID, options = {}) {
+    let { registry, retries, delay } = options;
 
-    const doc = await resolveDID(challengeDID);
+    if (!registry) {
+        registry = ephemeralRegistry;
+    }
+
+    if (!retries) {
+        retries = 0;
+    }
+
+    if (!delay) {
+        delay = 1000;
+    }
+
+    let doc;
+
+    while (retries >= 0) {
+        try {
+            doc = await resolveDID(challengeDID);
+            break;
+        } catch (error) {
+            if (retries === 0) throw error; // If no retries left, throw the error
+            retries--; // Decrease the retry count
+            await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milleseconds
+        }
+    }
+
     const requestor = doc.didDocument.controller;
     const { challenge } = await resolveAsset(challengeDID);
 
-    if (!challenge.credentials) {
+    if (!challenge?.credentials) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
@@ -1233,10 +1263,30 @@ export async function createResponse(challengeDID, registry = ephemeralRegistry)
     return await encryptJSON(response, requestor, true, registry);
 }
 
-export async function verifyResponse(responseDID) {
-    responseDID = lookupDID(responseDID);
+export async function verifyResponse(responseDID, options = {}) {
+    let { retries, delay } = options;
 
-    const responseDoc = await resolveDID(responseDID);
+    if (!retries) {
+        retries = 0;
+    }
+
+    if (!delay) {
+        delay = 1000;
+    }
+
+    let responseDoc;
+
+    while (retries >= 0) {
+        try {
+            responseDoc = await resolveDID(responseDID);
+            break;
+        } catch (error) {
+            if (retries === 0) throw error; // If no retries left, throw the error
+            retries--; // Decrease the retry count
+            await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milliseconds
+        }
+    }
+
     const { response } = await decryptJSON(responseDID);
     const { challenge } = await resolveAsset(response.challenge);
 

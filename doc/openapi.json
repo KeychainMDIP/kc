@@ -1021,7 +1021,10 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
+              "challenge": {
+                "type": "object"
+              },
+              "options": {
                 "type": "object"
               }
             }
@@ -1058,6 +1061,9 @@
                 "type": "object",
                 "properties": {
                   "challenge": {
+                    "type": "object"
+                  },
+                  "options": {
                     "type": "object"
                   }
                 }
@@ -1096,6 +1102,9 @@
                 "type": "object",
                 "properties": {
                   "response": {
+                    "type": "object"
+                  },
+                  "options": {
                     "type": "object"
                   }
                 }

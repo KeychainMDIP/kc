@@ -2,6 +2,8 @@ import axios from 'axios';
 
 let URL = '';
 
+const ephemeralRegistry = 'hyperswarm';
+
 function throwError(error) {
     if (error.response?.data?.error) {
         throw error.response.data.error;
@@ -258,9 +260,9 @@ export async function resolveDID(name) {
     }
 }
 
-export async function createChallenge(challenge) {
+export async function createChallenge(challengeSpec, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/challenge`, challenge);
+        const response = await axios.post(`${URL}/api/v1/challenge`, { challenge: challengeSpec, options });
         return response.data;
     }
     catch (error) {
@@ -268,9 +270,9 @@ export async function createChallenge(challenge) {
     }
 }
 
-export async function createResponse(challengeDID) {
+export async function createResponse(challengeDID, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/response`, { challenge: challengeDID });
+        const response = await axios.post(`${URL}/api/v1/response`, { challenge: challengeDID, options });
         return response.data;
     }
     catch (error) {
@@ -278,9 +280,9 @@ export async function createResponse(challengeDID) {
     }
 }
 
-export async function verifyResponse(responseDID) {
+export async function verifyResponse(responseDID, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID });
+        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID, options });
         return response.data;
     }
     catch (error) {
