@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "exports": {
@@ -27,5 +27,9 @@
     "multiformats": "^13.0.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeychainMDIP/kc.git"
   }
 }

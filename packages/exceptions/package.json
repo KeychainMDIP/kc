@@ -1,6 +1,6 @@
 {
   "name": "@mdip/exceptions",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MDIP exceptions",
   "type": "module",
   "main": "src/index.js",
@@ -10,5 +10,9 @@
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeychainMDIP/kc.git"
+  }
 }
