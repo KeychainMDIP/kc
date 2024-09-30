@@ -501,8 +501,8 @@ v1router.post('/keys/rotate', async (req, res) => {
 
 v1router.post('/keys/encrypt', async (req, res) => {
     try {
-        const { msg, did } = req.body;
-        const response = await keymaster.encryptMessage(msg, did);
+        const { msg, receiver, options } = req.body;
+        const response = await keymaster.encryptMessage(msg, receiver, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });

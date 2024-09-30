@@ -548,7 +548,7 @@ describe('rotateKeys', () => {
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encryptMessage(msg, bob, true, 'local');
+            const did = await keymaster.encryptMessage(msg, bob, { registry: 'local' });
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -986,7 +986,7 @@ describe('encrypt', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.cipher_hash).toBe(msgHash);
+        expect(data.encrypted.cipher_hash).toBe(msgHash);
     });
 
     it('should encrypt a long message', async () => {
@@ -1002,7 +1002,7 @@ describe('encrypt', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.cipher_hash).toBe(msgHash);
+        expect(data.encrypted.cipher_hash).toBe(msgHash);
     });
 });
 
@@ -1031,7 +1031,7 @@ describe('decrypt', () => {
         const did = await keymaster.createId('Bob', 'local');
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'local');
+        const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'local' });
         await keymaster.rotateKeys();
         const decipher = await keymaster.decryptMessage(encryptDid);
 
@@ -1044,7 +1044,7 @@ describe('decrypt', () => {
         const did = await keymaster.createId('Bob', 'hyperswarm');
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'hyperswarm');
+        const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'hyperswarm' });
         const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -1112,7 +1112,7 @@ describe('encryptJSON', () => {
         const did = await keymaster.encryptJSON(mockJson, bob);
         const data = await keymaster.resolveAsset(did);
 
-        expect(data.sender).toStrictEqual(bob);
+        expect(data.encrypted.sender).toStrictEqual(bob);
     });
 });
 

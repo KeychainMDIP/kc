@@ -498,33 +498,42 @@ export async function createAsset(data, options = {}) {
     return did;
 }
 
-export async function encryptMessage(msg, did, encryptForSender = true, registry = defaultRegistry) {
+export async function encryptMessage(msg, receiver, options = {}) {
+    let { encryptForSender } = options;
+
+    if (typeof encryptForSender === 'undefined') {
+        encryptForSender = true;
+    }
+
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
-    const doc = await resolveDID(did, { confirm: true });
+    const doc = await resolveDID(receiver, { confirm: true });
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
     return await createAsset({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
-    }, { registry });
+        encrypted: {
+            sender: id.did,
+            created: new Date().toISOString(),
+            cipher_hash: msgHash,
+            cipher_sender: cipher_sender,
+            cipher_receiver: cipher_receiver,
+        }
+    }, options);
 }
 
 export async function decryptMessage(did) {
     const wallet = loadWallet();
     const id = fetchId();
-    const crypt = await resolveAsset(did);
+    const asset = await resolveAsset(did);
 
-    if (!crypt || !crypt.cipher_hash) {
+    if (!asset || (!asset.encrypted && !asset.cipher_hash)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    const crypt = asset.encrypted ? asset.encrypted : asset;
     const doc = await resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
     const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
@@ -547,9 +556,9 @@ export async function decryptMessage(did) {
     throw new Error('Cannot decrypt');
 }
 
-export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
+export async function encryptJSON(json, did, options = {}) {
     const plaintext = JSON.stringify(json);
-    return encryptMessage(plaintext, did, encryptForSender, registry);
+    return encryptMessage(plaintext, did, options);
 }
 
 export async function decryptJSON(did) {
@@ -963,7 +972,7 @@ export async function issueCredential(credential, registry = defaultRegistry) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, true, registry);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { registry });
     addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1243,7 +1252,7 @@ export async function createResponse(challengeDID, options = {}) {
 
     for (let vcDid of matches) {
         const plaintext = await decryptMessage(vcDid);
-        const vpDid = await encryptMessage(plaintext, requestor, true, registry);
+        const vpDid = await encryptMessage(plaintext, requestor, options);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -1266,7 +1275,7 @@ export async function createResponse(challengeDID, options = {}) {
         }
     };
 
-    return await encryptJSON(response, requestor, true, registry);
+    return await encryptJSON(response, requestor, options);
 }
 
 export async function verifyResponse(responseDID, options = {}) {
