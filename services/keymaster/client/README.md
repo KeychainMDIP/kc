@@ -1,70 +1,15 @@
-# Getting Started with Create React App
+# MDIP Keymaster WebUI Wallet
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This directory contains the MDIP Keymaster WebUI wallet app. This is a minimalistic reference implementation wallet that can be used as-is or as a basis for future MDIP wallet development efforts.
 
-## Available Scripts
+![MDIP Keymaster WebUI Client](https://github.com/user-attachments/assets/d8b5ad9a-0183-4c42-8bbf-1040eb794c5f)
 
-In the project directory, you can run:
+## Accessing your Keymaster Web Wallet
 
-### `npm start`
+A standard MDIP deployment will operate 2 instances of the Keymaster Web Wallet: 
+1. A public MDIP web wallet exposed by the Gatekeeper process [http://localhost:4224/](http://localhost:4224)
+2. A **private** MDIP web wallet exposed by the server's Keymaster process on port [http://localhost:4226/](http://localhost:4226)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+The Gatekeeper's Web Wallet on port 4224 stores its seed and keys on the visiting user's device. The server itself has no visibility to the user's keys.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+The Keymaster's Web Wallet on port 4226 exposes the server keys located in the kc/data/wallet.json directory. This shares the same wallet as accessed by the ./kc command line interface client. **Port 4226 should never be exposed to the public as it exposes the server's keymaster wallet.**
