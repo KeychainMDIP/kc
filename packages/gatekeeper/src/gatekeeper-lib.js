@@ -48,7 +48,7 @@ export async function verifyDID(did) {
         }
 
         if (validUntil < now) {
-            throw new 'Expired';
+            throw 'Expired';
         }
 
         const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);

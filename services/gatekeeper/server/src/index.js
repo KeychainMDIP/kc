@@ -234,11 +234,11 @@ async function verifyLoop() {
             console.log(`${invalid} invalid DIDs removed from MDIP db`);
         }
 
-        console.log('DID verification loop waiting 60s...');
+        console.log('DID verification loop waiting 60m...');
     } catch (error) {
         console.error(`Error in verifyLoop: ${error}`);
     }
-    setTimeout(verifyLoop, 60 * 1000);
+    setTimeout(verifyLoop, 60 * 60 * 1000);
 }
 
 async function main() {
