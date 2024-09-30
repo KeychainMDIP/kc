@@ -2,8 +2,6 @@ import axios from 'axios';
 
 let URL = '';
 
-const ephemeralRegistry = 'hyperswarm';
-
 function throwError(error) {
     if (error.response?.data?.error) {
         throw error.response.data.error;
