@@ -722,7 +722,13 @@ export async function resolveAsset(did) {
     return null;
 }
 
-export async function createId(name, registry = defaultRegistry) {
+export async function createId(name, options = {}) {
+    let { registry } = options;
+
+    if (!registry) {
+        registry = defaultRegistry;
+    }
+    
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
         throw new Error(exceptions.INVALID_PARAMETER);

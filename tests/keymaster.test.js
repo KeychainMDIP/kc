@@ -519,7 +519,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice', 'local');
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -540,8 +540,8 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice', 'local');
-        const bob = await keymaster.createId('Bob', 'local');
+        await keymaster.createId('Alice', { registry: 'local' });
+        const bob = await keymaster.createId('Bob', { registry: 'local' });
         const secrets = [];
         const msg = "Hi Bob!";
 
@@ -1028,7 +1028,7 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (confirmed)', async () => {
         mockFs({});
 
-        const did = await keymaster.createId('Bob', 'local');
+        const did = await keymaster.createId('Bob', { registry: 'local' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
         const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'local' });
@@ -1041,7 +1041,7 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
         mockFs({});
 
-        const did = await keymaster.createId('Bob', 'hyperswarm');
+        const did = await keymaster.createId('Bob', { registry: 'hyperswarm' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
         const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'hyperswarm' });
@@ -1920,9 +1920,9 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice', 'local');
-        const bob = await keymaster.createId('Bob', 'local');
-        const carol = await keymaster.createId('Carol', 'local');
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
+        const bob = await keymaster.createId('Bob', { registry: 'local' });
+        const carol = await keymaster.createId('Carol', { registry: 'local' });
         await keymaster.createId('Victor', 'local');
 
         keymaster.setCurrentId('Alice');

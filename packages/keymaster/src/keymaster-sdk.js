@@ -178,9 +178,9 @@ export async function resolveId(id) {
     }
 }
 
-export async function createId(name, registry) {
+export async function createId(name, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/ids/new`, { name, registry });
+        const response = await axios.post(`${URL}/api/v1/ids/new`, { name, options });
         return response.data;
     }
     catch (error) {

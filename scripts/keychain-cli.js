@@ -138,7 +138,7 @@ program
     .description('Create a new decentralized ID')
     .action(async (name, registry) => {
         try {
-            const did = await keymaster.createId(name, registry);
+            const did = await keymaster.createId(name, { registry });
             console.log(did);
         }
         catch (error) {

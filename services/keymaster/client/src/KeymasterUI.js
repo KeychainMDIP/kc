@@ -145,7 +145,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function createId() {
         try {
-            await keymaster.createId(newName, registry);
+            await keymaster.createId(newName, { registry });
             refreshAll();
             // TBD this should be done in keymaster?
             // The backup forces a change, triggering registration

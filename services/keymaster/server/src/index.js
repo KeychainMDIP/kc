@@ -142,8 +142,8 @@ v1router.get('/ids', async (req, res) => {
 
 v1router.post('/ids/new', async (req, res) => {
     try {
-        const { name, registry } = req.body;
-        const did = await keymaster.createId(name, registry);
+        const { name, options } = req.body;
+        const did = await keymaster.createId(name, options);
         res.json(did);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
