@@ -453,6 +453,51 @@ async function fetchKeyPair(name = null) {
     return null;
 }
 
+export async function createAsset(data, options = {}) {
+    let { registry, controller, ephemeral } = options;
+
+    if (!registry) {
+        registry = defaultRegistry;
+    }
+
+    function isEmpty(data) {
+        return (
+            !data ||
+            (Array.isArray(data) && data.length === 0) ||
+            (typeof data === 'object' && Object.keys(data).length === 0)
+        );
+    }
+
+    if (isEmpty(data)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    const id = fetchId(controller);
+
+    const operation = {
+        type: "create",
+        created: new Date().toISOString(),
+        mdip: {
+            version: 1,
+            type: "asset",
+            registry,
+            ephemeral
+        },
+        controller: id.did,
+        data,
+    };
+
+    const signed = await addSignature(operation, controller);
+    const did = await gatekeeper.createDID(signed);
+
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
+    return did;
+}
+
 export async function encryptMessage(msg, did, encryptForSender = true, registry = defaultRegistry) {
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
@@ -468,7 +513,7 @@ export async function encryptMessage(msg, did, encryptForSender = true, registry
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
         cipher_receiver: cipher_receiver,
-    }, registry);
+    }, { registry });
 }
 
 export async function decryptMessage(did) {
@@ -743,20 +788,20 @@ export async function resolveId(name) {
     return resolveDID(id.did);
 }
 
-export async function backupId(name = null) {
+export async function backupId(controller = null) {
     // Backs up current ID if name is missing
-    const id = fetchId(name);
+    const id = fetchId(controller);
     const wallet = loadWallet();
     const keypair = hdKeyPair();
     const data = {
-        name: name || wallet.current,
+        name: controller || wallet.current,
         id: id,
     };
     const msg = JSON.stringify(data);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const doc = await resolveDID(id.did);
     const registry = doc.mdip.registry;
-    const vaultDid = await createAsset({ backup: backup }, registry, name);
+    const vaultDid = await createAsset({ backup: backup }, { registry, controller });
 
     doc.didDocumentData.vault = vaultDid;
     return await updateDID(id.did, doc);
@@ -878,45 +923,6 @@ export function lookupDID(name) {
     throw new Error(exceptions.UNKNOWN_ID);
 }
 
-export async function createAsset(data, registry = defaultRegistry, owner = null) {
-
-    function isEmpty(data) {
-        return (
-            !data ||
-            (Array.isArray(data) && data.length === 0) ||
-            (typeof data === 'object' && Object.keys(data).length === 0)
-        );
-    }
-
-    if (isEmpty(data)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    const id = fetchId(owner);
-
-    const operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: 1,
-            type: "asset",
-            registry: registry,
-        },
-        controller: id.did,
-        data: data,
-    };
-
-    const signed = await addSignature(operation, owner);
-    const did = await gatekeeper.createDID(signed);
-
-    // Keep assets that will be garbage-collected out of the owned list
-    if (registry !== 'hyperswarm') {
-        addToOwned(did);
-    }
-
-    return did;
-}
-
 export async function testAgent(id) {
     const doc = await resolveDID(id);
     return doc?.mdip?.type === 'agent';
@@ -924,7 +930,7 @@ export async function testAgent(id) {
 
 export async function createCredential(schema, registry) {
     // TBD validate schema
-    return createAsset(schema, registry);
+    return createAsset(schema, { registry });
 }
 
 export async function bindCredential(schemaId, subjectId, validUntil = null) {
@@ -1137,7 +1143,7 @@ export async function createChallenge(challengeSpec, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challengeSpec, registry);
+    return createAsset(challengeSpec, { registry });
 }
 
 async function findMatchingCredential(credential) {
@@ -1343,7 +1349,7 @@ export async function createGroup(name, registry) {
         members: []
     };
 
-    return createAsset(group, registry);
+    return createAsset(group, { registry });
 }
 
 export async function getGroup(id) {
@@ -1521,7 +1527,7 @@ export async function createSchema(schema, registry) {
 
     validateSchema(schema);
 
-    return createAsset(schema, registry);
+    return createAsset(schema, { registry });
 }
 
 export async function getSchema(id) {

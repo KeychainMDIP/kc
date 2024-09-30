@@ -792,7 +792,7 @@ describe('createAsset', () => {
 
         await keymaster.createId('Alice');
 
-        const dataDid = await keymaster.createAsset(mockAnchor, 'hyperswarm', 'Bob');
+        const dataDid = await keymaster.createAsset(mockAnchor, { registry: 'hyperswarm', controller: 'Bob' });
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);

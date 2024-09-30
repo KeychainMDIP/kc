@@ -307,7 +307,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const did = await keymaster.createAsset(batch, REGISTRY, config.nodeID);
+        const did = await keymaster.createAsset(batch, { registry: REGISTRY, controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
