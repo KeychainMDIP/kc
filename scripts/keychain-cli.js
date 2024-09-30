@@ -359,12 +359,12 @@ program
     });
 
 program
-    .command('create-credential <file> [name]')
-    .description('Create credential from schema file')
+    .command('create-schema <file> [name]')
+    .description('Create schema DID from schema file')
     .action(async (file, name) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createCredential(schema);
+            const did = await keymaster.createSchema(schema);
 
             if (name) {
                 keymaster.addName(name, did);

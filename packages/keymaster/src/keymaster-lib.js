@@ -728,7 +728,7 @@ export async function createId(name, options = {}) {
     if (!registry) {
         registry = defaultRegistry;
     }
-    
+
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -943,11 +943,6 @@ export async function testAgent(id) {
     return doc?.mdip?.type === 'agent';
 }
 
-export async function createCredential(schema, registry) {
-    // TBD validate schema
-    return createAsset(schema, { registry });
-}
-
 export async function bindCredential(schemaId, subjectId, validUntil = null) {
     const id = fetchId();
     const type = lookupDID(schemaId);
@@ -970,7 +965,7 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
     };
 }
 
-export async function issueCredential(credential, registry = defaultRegistry) {
+export async function issueCredential(credential, options) {
     const id = fetchId();
 
     if (credential.issuer !== id.did) {
@@ -978,7 +973,7 @@ export async function issueCredential(credential, registry = defaultRegistry) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { registry });
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
     addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1535,14 +1530,14 @@ function validateSchema(schema) {
     return true;
 }
 
-export async function createSchema(schema, registry) {
+export async function createSchema(schema, options) {
     if (!schema) {
         schema = defaultSchema;
     }
 
     validateSchema(schema);
 
-    return createAsset(schema, { registry });
+    return createAsset(schema, options);
 }
 
 export async function getSchema(id) {
