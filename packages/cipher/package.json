@@ -1,6 +1,6 @@
 {
   "name": "@mdip/cipher",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MDIP cipher lib",
   "type": "module",
   "exports": {
@@ -23,5 +23,9 @@
     "canonicalize": "^2.0.0",
     "hdkey": "^2.1.0",
     "multiformats": "^13.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeychainMDIP/kc.git"
   }
 }
