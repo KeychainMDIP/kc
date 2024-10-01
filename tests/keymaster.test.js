@@ -1634,18 +1634,41 @@ describe('createChallenge', () => {
         const alice = await keymaster.createId('Alice');
         const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
+        const expectedChallenge = {
+            challenge: {
+                credentials: []
+            }
+        };
+        const expectedEphemeral = {
+            validUntil: expect.any(String)
+        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        const expected = {
+        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+        expect(doc.mdip.ephemeral).toStrictEqual(expectedEphemeral);
+    });
+
+    it('should create an empty challenge with specified expiry', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const validUntil = '2025-01-01';
+        const did = await keymaster.createChallenge(null, { validUntil });
+        const doc = await keymaster.resolveDID(did);
+        const expectedChallenge = {
             challenge: {
                 credentials: []
-            },
-            ephemeral: {
-                validUntil: expect.any(String),
-            },
+            }
         };
-        expect(doc.didDocumentData).toStrictEqual(expected);
+        const expectedEphemeral = {
+            validUntil
+        };
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+        expect(doc.mdip.ephemeral).toStrictEqual(expectedEphemeral);
     });
 
     it('should create a valid challenge', async () => {
@@ -1694,6 +1717,21 @@ describe('createChallenge', () => {
                     credentials: 123
                 }
             });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+
+    it('should throw an exception if validUntil is not a valid date', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+
+        try {
+            const validUntil = 'mockDate';
+            await keymaster.createChallenge(null, { validUntil });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {

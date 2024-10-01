@@ -460,6 +460,18 @@ export async function createAsset(data, options = {}) {
         registry = defaultRegistry;
     }
 
+    if (ephemeral) {
+        if (!ephemeral.validUntil) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+
+        const validate = new Date(ephemeral.validUntil);
+
+        if (isNaN(validate.getTime())) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    }
+
     function isEmpty(data) {
         return (
             !data ||
@@ -1121,10 +1133,21 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challengeSpec, options = {}) {
 
-    let { registry } = options;
+    let { registry, validUntil } = options;
 
     if (!registry) {
         registry = ephemeralRegistry;
+    }
+
+    let ephemeral;
+
+    if (validUntil) {
+        ephemeral = { validUntil };
+    }
+    else {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        ephemeral = { validUntil: expires.toISOString() };
     }
 
     if (!challengeSpec) {
@@ -1139,12 +1162,6 @@ export async function createChallenge(challengeSpec, options = {}) {
         challengeSpec.challenge = {};
     }
 
-    if (!challengeSpec.ephemeral) {
-        const expires = new Date();
-        expires.setHours(expires.getHours() + 1); // Add 1 hour
-        challengeSpec.ephemeral = { validUntil: expires.toISOString() };
-    }
-
     if (!challengeSpec.challenge.credentials) {
         challengeSpec.challenge.credentials = [];
     }
@@ -1153,7 +1170,7 @@ export async function createChallenge(challengeSpec, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challengeSpec, { registry });
+    return createAsset(challengeSpec, { registry, ephemeral });
 }
 
 async function findMatchingCredential(credential) {
@@ -1530,7 +1547,7 @@ function validateSchema(schema) {
     return true;
 }
 
-export async function createSchema(schema, options) {
+export async function createSchema(schema, options = {}) {
     if (!schema) {
         schema = defaultSchema;
     }
