@@ -491,8 +491,8 @@
                   "name": {
                     "type": "string"
                   },
-                  "registry": {
-                    "type": "string"
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -1021,11 +1021,16 @@
           "required": true,
           "content": {
             "application/json": {
-              "challenge": {
-                "type": "object"
-              },
-              "options": {
-                "type": "object"
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "challenge": {
+                    "type": "object"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -1145,8 +1150,8 @@
                   "name": {
                     "type": "string"
                   },
-                  "registry": {
-                    "type": "string"
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -1377,6 +1382,9 @@
                 "properties": {
                   "schema": {
                     "type": "object"
+                  },
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -1417,6 +1425,9 @@
                     "type": "object"
                   },
                   "subject": {
+                    "type": "object"
+                  },
+                  "options": {
                     "type": "object"
                   }
                 }
@@ -1672,44 +1683,44 @@
             "description": "Bad request"
           }
         }
-      }
-    },
-    "post": {
-      "summary": "Issue a credential",
-      "tags": [
-        "Credential"
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "credential": {
-                  "type": "object"
-                },
-                "registry": {
-                  "type": "string"
+      },
+      "post": {
+        "summary": "Issue a credential",
+        "tags": [
+          "Credential"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credential": {
+                    "type": "object"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
                 }
               }
             }
           }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Successful response",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
               }
             }
+          },
+          "400": {
+            "description": "Bad request"
           }
-        },
-        "400": {
-          "description": "Bad request"
         }
       }
     },
@@ -1729,24 +1740,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "credential": {
-                    "type": "object"
-                  },
-                  "registry": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful response",
@@ -1849,7 +1842,7 @@
         }
       }
     },
-    "/keys/encrypt": {
+    "/keys/encrypt/message": {
       "post": {
         "summary": "Encrypt a message",
         "tags": [
@@ -1865,6 +1858,47 @@
                   "msg": {
                     "type": "string"
                   },
+                  "receiver": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/keys/decrypt/message": {
+      "post": {
+        "summary": "Decrypt a message",
+        "tags": [
+          "Wallet"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
                   "did": {
                     "type": "string"
                   }
@@ -1890,9 +1924,53 @@
         }
       }
     },
-    "/keys/decrypt": {
+    "/keys/encrypt/json": {
       "post": {
-        "summary": "Decrypt a message",
+        "summary": "Encrypt JSON",
+        "tags": [
+          "Wallet"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object"
+                  },
+                  "receiver": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/keys/decrypt/json": {
+      "post": {
+        "summary": "Decrypt JSON",
         "tags": [
           "Wallet"
         ],
@@ -2057,6 +2135,9 @@
                 "properties": {
                   "poll": {
                     "type": "object"
+                  },
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -2132,8 +2213,8 @@
                   "vote": {
                     "type": "object"
                   },
-                  "spoil": {
-                    "type": "boolean"
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -2218,8 +2299,8 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "reveal": {
-                    "type": "boolean"
+                  "options": {
+                    "type": "object"
                   }
                 }
               }
@@ -2338,6 +2419,9 @@
                 "type": "object",
                 "properties": {
                   "schema": {
+                    "type": "object"
+                  },
+                  "options": {
                     "type": "object"
                   }
                 }
