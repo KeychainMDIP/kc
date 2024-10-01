@@ -35,7 +35,27 @@ export async function stop() {
 }
 
 export async function verifyDID(did) {
-    await resolveDID(did, { verify: true });
+    const doc = await resolveDID(did, { verify: true });
+    const isoDate = doc?.didDocumentData?.ephemeral?.validUntil;
+
+    if (isoDate) {
+        const validUntil = new Date(isoDate);
+        const now = new Date();
+
+        // Check if validUntil is a valid date
+        if (isNaN(validUntil.getTime())) {
+            throw new Error(exceptions.INVALID_DID);
+        }
+
+        if (validUntil < now) {
+            throw 'Expired';
+        }
+
+        const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
+        return `Expires in ${minutesLeft} minutes`;
+    }
+
+    return "OK";
 }
 
 export async function verifyDb(chatty = true) {
@@ -64,9 +84,9 @@ export async function verifyDb(chatty = true) {
     for (const did of dids) {
         n += 1;
         try {
-            await verifyDID(did);
+            const status = await verifyDID(did);
             if (chatty) {
-                console.log(`${n} ${did} OK`);
+                console.log(`${n} ${did} ${status}`);
             }
         }
         catch (error) {

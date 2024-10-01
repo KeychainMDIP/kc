@@ -226,18 +226,35 @@ app.use((req, res) => {
     }
 });
 
-async function main() {
-    if (config.verifyDb) {
+async function verifyLoop() {
+    try {
         const invalid = await gatekeeper.verifyDb();
 
         if (invalid > 0) {
             console.log(`${invalid} invalid DIDs removed from MDIP db`);
         }
+
+        console.log('DID verification loop waiting 60m...');
+    } catch (error) {
+        console.error(`Error in verifyLoop: ${error}`);
     }
-    else {
-        const dids = await gatekeeper.getDIDs();
-        console.log(`Skipping db verification (${dids.length} DIDs)`);
-    }
+    setTimeout(verifyLoop, 60 * 60 * 1000);
+}
+
+async function main() {
+    // if (config.verifyDb) {
+    //     const invalid = await gatekeeper.verifyDb();
+
+    //     if (invalid > 0) {
+    //         console.log(`${invalid} invalid DIDs removed from MDIP db`);
+    //     }
+    // }
+    // else {
+    //     const dids = await gatekeeper.getDIDs();
+    //     console.log(`Skipping db verification (${dids.length} DIDs)`);
+    // }
+
+    await verifyLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);
 

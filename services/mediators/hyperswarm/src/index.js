@@ -471,7 +471,7 @@ async function main() {
     gatekeeper.setURL(`${config.gatekeeperURL}`);
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
-    await gcLoop();
+    //await gcLoop();
     await connectionLoop();
     await exportLoop();
 }
