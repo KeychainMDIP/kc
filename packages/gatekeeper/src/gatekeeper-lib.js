@@ -36,7 +36,7 @@ export async function stop() {
 
 export async function verifyDID(did) {
     const doc = await resolveDID(did, { verify: true });
-    const isoDate = doc?.didDocumentData?.ephemeral?.validUntil;
+    const isoDate = doc?.mdip?.validUntil;
 
     if (isoDate) {
         const validUntil = new Date(isoDate);

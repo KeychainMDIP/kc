@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v22.08.14';
+const PROTOCOL = '/MDIP/v24.10.01';
 
 const nodes = {};
 const batchesSeen = {};
@@ -382,65 +382,6 @@ async function connectionLoop() {
     setTimeout(connectionLoop, 60 * 1000);
 }
 
-async function collectGarbage() {
-    console.time('collectGarbage');
-
-    const didList = await gatekeeper.getDIDs();
-    const expired = [];
-    const now = new Date();
-
-    for (let i = 0; i < didList.length; i++) {
-        const did = didList[i];
-
-        let output = `gc check: ${i} ${did}`;
-
-        const doc = await gatekeeper.resolveDID(did, { confirm: true });
-
-        if (doc.mdip.registry === REGISTRY) {
-            const isoDate = doc.didDocumentData?.ephemeral?.validUntil;
-
-            if (!isoDate) {
-                continue;
-            }
-
-            const validUntil = new Date(isoDate);
-
-            // Check if validUntil is a valid date
-            if (isNaN(validUntil.getTime())) {
-                output += ` invalid date format: ${isoDate}`;
-                continue;
-            }
-
-            if (validUntil < now) {
-                expired.push(did);
-            }
-            else {
-                const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
-                output += ` expires in ${minutesLeft} minutes`;
-            }
-        }
-
-        console.log(output);
-    }
-
-    if (expired.length > 0) {
-        console.log(`garbage collecting ${expired.length} DIDs...`);
-        await gatekeeper.removeDIDs(expired);
-    }
-
-    console.timeEnd('collectGarbage');
-}
-
-async function gcLoop() {
-    try {
-        await collectGarbage();
-        console.log('garbage collection loop waiting 60m...');
-    } catch (error) {
-        console.error(`Error in gcLoop: ${error}`);
-    }
-    setTimeout(gcLoop, 60 * 60 * 1000);
-}
-
 function logConnection(name) {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
@@ -471,7 +412,6 @@ async function main() {
     gatekeeper.setURL(`${config.gatekeeperURL}`);
     await gatekeeper.waitUntilReady();
     await initializeBatchesSeen();
-    //await gcLoop();
     await connectionLoop();
     await exportLoop();
 }
