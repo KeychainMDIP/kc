@@ -168,6 +168,46 @@ export async function listIds() {
     }
 }
 
+export async function encryptMessage(msg, receiver, options = {}) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/keys/encrypt/message`, { msg, receiver, options });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function decryptMessage(did) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/keys/decrypt/message`, { did });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function encryptJSON(json, receiver, options = {}) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/keys/encrypt/json`, { json, receiver, options });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function decryptJSON(did) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/keys/decrypt/json`, { did });
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function resolveId(id) {
     try {
         const response = await axios.get(`${URL}/api/v1/ids/${id}`);
@@ -258,6 +298,16 @@ export async function resolveDID(name) {
     }
 }
 
+export async function resolveAsset(name) {
+    try {
+        const response = await axios.get(`${URL}/api/v1/assets/${name}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function createChallenge(challengeSpec, options) {
     try {
         const response = await axios.post(`${URL}/api/v1/challenge`, { challenge: challengeSpec, options });
@@ -288,9 +338,9 @@ export async function verifyResponse(responseDID, options) {
     }
 }
 
-export async function createGroup(name, registry) {
+export async function createGroup(name, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/groups`, { name, registry });
+        const response = await axios.post(`${URL}/api/v1/groups`, { name, options });
         return response.data;
     }
     catch (error) {
@@ -338,9 +388,9 @@ export async function groupTest(group, member) {
     }
 }
 
-export async function createSchema(schema, registry) {
+export async function createSchema(schema, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/schemas`, { schema, registry });
+        const response = await axios.post(`${URL}/api/v1/schemas`, { schema, options });
         return response.data;
     }
     catch (error) {
@@ -388,9 +438,9 @@ export async function testAgent(id) {
     }
 }
 
-export async function bindCredential(schema, subject) {
+export async function bindCredential(schema, subject, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/bind`, { schema, subject });
+        const response = await axios.post(`${URL}/api/v1/credentials/bind`, { schema, subject, options });
         return response.data;
     }
     catch (error) {
@@ -398,9 +448,9 @@ export async function bindCredential(schema, subject) {
     }
 }
 
-export async function issueCredential(credential, registry) {
+export async function issueCredential(credential, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/issued`, { credential, registry });
+        const response = await axios.post(`${URL}/api/v1/credentials/issued`, { credential, options });
         return response.data;
     }
     catch (error) {
@@ -458,9 +508,9 @@ export async function removeCredential(did) {
     }
 }
 
-export async function publishCredential(did, reveal) {
+export async function publishCredential(did, options) {
     try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/publish`, { reveal });
+        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/publish`, { options });
         return response.data;
     }
     catch (error) {
