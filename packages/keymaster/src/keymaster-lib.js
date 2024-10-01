@@ -454,18 +454,14 @@ async function fetchKeyPair(name = null) {
 }
 
 export async function createAsset(data, options = {}) {
-    let { registry, controller, ephemeral } = options;
+    let { registry, controller, validUntil } = options;
 
     if (!registry) {
         registry = defaultRegistry;
     }
 
-    if (ephemeral) {
-        if (!ephemeral.validUntil) {
-            throw new Error(exceptions.INVALID_PARAMETER);
-        }
-
-        const validate = new Date(ephemeral.validUntil);
+    if (validUntil) {
+        const validate = new Date(validUntil);
 
         if (isNaN(validate.getTime())) {
             throw new Error(exceptions.INVALID_PARAMETER);
@@ -493,7 +489,7 @@ export async function createAsset(data, options = {}) {
             version: 1,
             type: "asset",
             registry,
-            ephemeral
+            validUntil
         },
         controller: id.did,
         data,
@@ -1133,21 +1129,14 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challengeSpec, options = {}) {
 
-    let { registry, validUntil } = options;
-
-    if (!registry) {
-        registry = ephemeralRegistry;
+    if (!options.registry) {
+        options.registry = ephemeralRegistry;
     }
 
-    let ephemeral;
-
-    if (validUntil) {
-        ephemeral = { validUntil };
-    }
-    else {
+    if (!options.validUntil) {
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        ephemeral = { validUntil: expires.toISOString() };
+        options.validUntil = expires.toISOString();
     }
 
     if (!challengeSpec) {
@@ -1170,7 +1159,7 @@ export async function createChallenge(challengeSpec, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challengeSpec, { registry, ephemeral });
+    return createAsset(challengeSpec, options);
 }
 
 async function findMatchingCredential(credential) {
@@ -1216,11 +1205,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(challengeDID, options = {}) {
-    let { registry, retries, delay } = options;
-
-    if (!registry) {
-        registry = ephemeralRegistry;
-    }
+    let { retries, delay } = options;
 
     if (!retries) {
         retries = 0;
@@ -1228,6 +1213,16 @@ export async function createResponse(challengeDID, options = {}) {
 
     if (!delay) {
         delay = 1000;
+    }
+
+    if (!options.registry) {
+        options.registry = ephemeralRegistry;
+    }
+
+    if (!options.validUntil) {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        options.validUntil = expires.toISOString();
     }
 
     let doc;
@@ -1277,8 +1272,6 @@ export async function createResponse(challengeDID, options = {}) {
     const requested = challenge.credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
-    const expires = new Date();
-    expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
         response: {
@@ -1287,9 +1280,6 @@ export async function createResponse(challengeDID, options = {}) {
             requested: requested,
             fulfilled: fulfilled,
             match: match,
-        },
-        ephemeral: {
-            validUntil: expires.toISOString()
         }
     };
 

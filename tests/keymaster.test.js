@@ -1639,14 +1639,16 @@ describe('createChallenge', () => {
                 credentials: []
             }
         };
-        const expectedEphemeral = {
-            validUntil: expect.any(String)
-        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
-        expect(doc.mdip.ephemeral).toStrictEqual(expectedEphemeral);
+
+        const now = new Date();
+        const validUntil = new Date(doc.mdip.validUntil);
+        const ttl = validUntil - now;
+
+        expect(ttl < 60 * 60 * 1000).toBe(true);
     });
 
     it('should create an empty challenge with specified expiry', async () => {
@@ -1661,14 +1663,11 @@ describe('createChallenge', () => {
                 credentials: []
             }
         };
-        const expectedEphemeral = {
-            validUntil
-        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
-        expect(doc.mdip.ephemeral).toStrictEqual(expectedEphemeral);
+        expect(doc.mdip.validUntil).toBe(validUntil);
     });
 
     it('should create a valid challenge', async () => {
