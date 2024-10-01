@@ -2125,7 +2125,7 @@ describe('publishCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, { reveal: true });
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -2142,7 +2142,7 @@ describe('publishCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        await keymaster.publishCredential(did, false);
+        await keymaster.publishCredential(did, { reveal: false });
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -3259,7 +3259,7 @@ describe('publishPoll', () => {
         const pollDid = await keymaster.createPoll(template);
         const ballotDid = await keymaster.votePoll(pollDid, 1);
         await keymaster.updatePoll(ballotDid);
-        const ok = await keymaster.publishPoll(pollDid, true);
+        const ok = await keymaster.publishPoll(pollDid, { reveal: true });
         const pollData = await keymaster.resolveAsset(pollDid);
 
         expect(ok).toBe(true);

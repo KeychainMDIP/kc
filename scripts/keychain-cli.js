@@ -811,7 +811,7 @@ program
     .description('Publish results to poll, revealing ballots')
     .action(async (poll) => {
         try {
-            const ok = await keymaster.publishPoll(poll, true);
+            const ok = await keymaster.publishPoll(poll, { reveal: true });
             if (ok) {
                 console.log(UPDATE_OK);
             }

@@ -951,7 +951,13 @@ export async function testAgent(id) {
     return doc?.mdip?.type === 'agent';
 }
 
-export async function bindCredential(schemaId, subjectId, validUntil = null) {
+export async function bindCredential(schemaId, subjectId, options = {}) {
+    let { validFrom, validUntil } = options;
+
+    if (!validFrom) {
+        validFrom = new Date().toISOString();
+    }
+
     const id = fetchId();
     const type = lookupDID(schemaId);
     const schema = await resolveAsset(type);
@@ -964,16 +970,16 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
         ],
         type: ["VerifiableCredential", type],
         issuer: id.did,
-        validFrom: new Date().toISOString(),
-        validUntil: validUntil,
+        validFrom,
+        validUntil,
         credentialSubject: {
             id: lookupDID(subjectId),
         },
-        credential: credential,
+        credential,
     };
 }
 
-export async function issueCredential(credential, options) {
+export async function issueCredential(credential, options = {}) {
     const id = fetchId();
 
     if (credential.issuer !== id.did) {
@@ -1079,7 +1085,8 @@ export async function listCredentials(id) {
     return fetchId(id).held || [];
 }
 
-export async function publishCredential(did, reveal = false) {
+export async function publishCredential(did, options = {}) {
+    const { reveal } = options;
     const id = fetchId();
     const credential = lookupDID(did);
     const vc = await decryptJSON(credential);
@@ -1360,13 +1367,13 @@ export async function verifyResponse(responseDID, options = {}) {
     return response;
 }
 
-export async function createGroup(name, registry) {
+export async function createGroup(name, options = {}) {
     const group = {
         name: name,
         members: []
     };
 
-    return createAsset(group, { registry });
+    return createAsset(group, options);
 }
 
 export async function getGroup(id) {
@@ -1606,7 +1613,7 @@ export async function pollTemplate() {
     };
 }
 
-export async function createPoll(poll) {
+export async function createPoll(poll, options = {}) {
     if (poll.type !== 'poll') {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
@@ -1652,7 +1659,7 @@ export async function createPoll(poll) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(poll);
+    return createAsset(poll, options);
 }
 
 export async function viewPoll(poll) {
@@ -1736,7 +1743,8 @@ export async function viewPoll(poll) {
     return view;
 }
 
-export async function votePoll(poll, vote, spoil = false) {
+export async function votePoll(poll, vote, options = {}) {
+    const { spoil } = options;
     const id = fetchId();
     const didPoll = lookupDID(poll);
     const doc = await resolveDID(didPoll);
@@ -1776,8 +1784,8 @@ export async function votePoll(poll, vote, spoil = false) {
     }
 
     // Encrypt for receiver only
-    // TBD which registry?
-    return await encryptJSON(ballot, owner, false);
+    options.encryptForSender = false;
+    return await encryptJSON(ballot, owner, options);
 }
 
 export async function updatePoll(ballot) {
@@ -1839,7 +1847,8 @@ export async function updatePoll(ballot) {
     return await updateDID(didPoll, docPoll);
 }
 
-export async function publishPoll(poll, reveal = false) {
+export async function publishPoll(poll, options = {}) {
+    const { reveal } = options;
     const id = fetchId();
     const didPoll = lookupDID(poll);
     const doc = await resolveDID(didPoll);
