@@ -101,14 +101,15 @@ async function createUpdateOp(keypair, did, doc) {
     };
 }
 
-async function createAssetOp(agent, keypair, registry = 'local') {
+async function createAssetOp(agent, keypair, registry = 'local', validUntil = null) {
     const dataAnchor = {
         type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
-            registry: registry,
+            registry,
+            validUntil
         },
         controller: agent,
         data: "mockData",
@@ -1904,5 +1905,32 @@ describe('verifyDb', () => {
         const invalid = await gatekeeper.verifyDb(false);
 
         expect(invalid).toBe(1);
+    });
+
+    it('should removed expired DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        // create asset that should expire
+        const validUntil = new Date().toISOString();
+        const assetOp1 = await createAssetOp(agentDID, keypair, 'local', validUntil);
+        await gatekeeper.createDID(assetOp1);
+
+        // create asset with invalid date
+        const assetOp2 = await createAssetOp(agentDID, keypair, 'local', 'mock');
+        await gatekeeper.createDID(assetOp2);
+
+        // create asset that expires later
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        const assetOp3 = await createAssetOp(agentDID, keypair, 'local', expires.toISOString());
+        await gatekeeper.createDID(assetOp3);
+
+        const invalid = await gatekeeper.verifyDb(false);
+
+        expect(invalid).toBe(2);
     });
 });
