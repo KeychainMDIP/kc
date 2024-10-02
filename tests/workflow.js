@@ -20,10 +20,10 @@ const mockSchema = {
 
 async function runWorkflow() {
 
-    const alice = await keymaster.createId('Alice', 'local');
-    const bob = await keymaster.createId('Bob', 'local');
-    const carol = await keymaster.createId('Carol', 'local');
-    const victor = await keymaster.createId('Victor', 'local');
+    const alice = await keymaster.createId('Alice', { registry: 'local' });
+    const bob = await keymaster.createId('Bob', { registry: 'local' });
+    const carol = await keymaster.createId('Carol', { registry: 'local' });
+    const victor = await keymaster.createId('Victor', { registry: 'local' });
 
     console.log(`Created Alice  ${alice}`);
     console.log(`Created Bob    ${bob}`);
@@ -32,34 +32,34 @@ async function runWorkflow() {
 
     keymaster.setCurrentId('Alice');
 
-    const credential1 = await keymaster.createCredential(mockSchema, 'local');
-    const credential2 = await keymaster.createCredential(mockSchema, 'local');
+    const schema1 = await keymaster.createSchema(mockSchema, { registry: 'local' });
+    const schema2 = await keymaster.createSchema(mockSchema, { registry: 'local' });
 
-    console.log(`Alice created credential1  ${credential1}`);
-    console.log(`Alice created credential2  ${credential2}`);
+    console.log(`Alice created schema1 ${schema1}`);
+    console.log(`Alice created schema2 ${schema2}`);
 
-    const bc1 = await keymaster.bindCredential(credential1, carol);
-    const bc2 = await keymaster.bindCredential(credential2, carol);
+    const bc1 = await keymaster.bindCredential(schema1, carol);
+    const bc2 = await keymaster.bindCredential(schema2, carol);
 
-    const vc1 = await keymaster.issueCredential(bc1, 'local');
-    const vc2 = await keymaster.issueCredential(bc2, 'local');
+    const vc1 = await keymaster.issueCredential(bc1, { registry: 'local' });
+    const vc2 = await keymaster.issueCredential(bc2, { registry: 'local' });
 
     console.log(`Alice issued vc1 for Carol ${vc1}`);
     console.log(`Alice issued vc2 for Carol ${vc2}`);
 
     keymaster.setCurrentId('Bob');
 
-    const credential3 = await keymaster.createCredential(mockSchema, 'local');
-    const credential4 = await keymaster.createCredential(mockSchema, 'local');
+    const schema3 = await keymaster.createSchema(mockSchema, { registry: 'local' });
+    const schema4 = await keymaster.createSchema(mockSchema, { registry: 'local' });
 
-    console.log(`Bob created credential3  ${credential3}`);
-    console.log(`Bob created credential4  ${credential4}`);
+    console.log(`Bob created schema3 ${schema3}`);
+    console.log(`Bob created schema4 ${schema4}`);
 
-    const bc3 = await keymaster.bindCredential(credential3, carol);
-    const bc4 = await keymaster.bindCredential(credential4, carol);
+    const bc3 = await keymaster.bindCredential(schema3, carol);
+    const bc4 = await keymaster.bindCredential(schema4, carol);
 
-    const vc3 = await keymaster.issueCredential(bc3, 'local');
-    const vc4 = await keymaster.issueCredential(bc4, 'local');
+    const vc3 = await keymaster.issueCredential(bc3, { registry: 'local' });
+    const vc4 = await keymaster.issueCredential(bc4, { registry: 'local' });
 
     console.log(`Bob issued vc3 for Carol ${vc3}`);
     console.log(`Bob issued vc4 for Carol ${vc4}`);
@@ -79,19 +79,19 @@ async function runWorkflow() {
         challenge: {
             credentials: [
                 {
-                    schema: credential1,
+                    schema: schema1,
                     issuers: [alice]
                 },
                 {
-                    schema: credential2,
+                    schema: schema2,
                     issuers: [alice]
                 },
                 {
-                    schema: credential3,
+                    schema: schema3,
                     issuers: [bob]
                 },
                 {
-                    schema: credential4,
+                    schema: schema4,
                     issuers: [bob]
                 },
             ]

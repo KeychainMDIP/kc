@@ -138,7 +138,7 @@ program
     .description('Create a new decentralized ID')
     .action(async (name, registry) => {
         try {
-            const did = await keymaster.createId(name, registry);
+            const did = await keymaster.createId(name, { registry });
             console.log(did);
         }
         catch (error) {
@@ -359,12 +359,12 @@ program
     });
 
 program
-    .command('create-credential <file> [name]')
-    .description('Create credential from schema file')
+    .command('create-schema <file> [name]')
+    .description('Create schema DID from schema file')
     .action(async (file, name) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createCredential(schema);
+            const did = await keymaster.createSchema(schema);
 
             if (name) {
                 keymaster.addName(name, did);
@@ -811,7 +811,7 @@ program
     .description('Publish results to poll, revealing ballots')
     .action(async (poll) => {
         try {
-            const ok = await keymaster.publishPoll(poll, true);
+            const ok = await keymaster.publishPoll(poll, { reveal: true });
             if (ok) {
                 console.log(UPDATE_OK);
             }

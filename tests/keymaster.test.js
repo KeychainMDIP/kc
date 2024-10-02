@@ -519,7 +519,7 @@ describe('rotateKeys', () => {
     it('should update DID doc with new keys', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice', 'local');
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument.verificationMethod[0];
         let pubkey = vm.publicKeyJwk;
@@ -540,15 +540,15 @@ describe('rotateKeys', () => {
     it('should decrypt messages encrypted with rotating keys', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice', 'local');
-        const bob = await keymaster.createId('Bob', 'local');
+        await keymaster.createId('Alice', { registry: 'local' });
+        const bob = await keymaster.createId('Bob', { registry: 'local' });
         const secrets = [];
         const msg = "Hi Bob!";
 
         for (let i = 0; i < 3; i++) {
             keymaster.setCurrentId('Alice');
 
-            const did = await keymaster.encryptMessage(msg, bob, true, 'local');
+            const did = await keymaster.encryptMessage(msg, bob, { registry: 'local' });
             secrets.push(did);
 
             await keymaster.rotateKeys();
@@ -792,7 +792,7 @@ describe('createAsset', () => {
 
         await keymaster.createId('Alice');
 
-        const dataDid = await keymaster.createAsset(mockAnchor, 'hyperswarm', 'Bob');
+        const dataDid = await keymaster.createAsset(mockAnchor, { registry: 'hyperswarm', controller: 'Bob' });
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
@@ -986,7 +986,7 @@ describe('encrypt', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.cipher_hash).toBe(msgHash);
+        expect(data.encrypted.cipher_hash).toBe(msgHash);
     });
 
     it('should encrypt a long message', async () => {
@@ -1002,7 +1002,7 @@ describe('encrypt', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.cipher_hash).toBe(msgHash);
+        expect(data.encrypted.cipher_hash).toBe(msgHash);
     });
 });
 
@@ -1028,10 +1028,10 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (confirmed)', async () => {
         mockFs({});
 
-        const did = await keymaster.createId('Bob', 'local');
+        const did = await keymaster.createId('Bob', { registry: 'local' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'local');
+        const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'local' });
         await keymaster.rotateKeys();
         const decipher = await keymaster.decryptMessage(encryptDid);
 
@@ -1041,10 +1041,10 @@ describe('decrypt', () => {
     it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
         mockFs({});
 
-        const did = await keymaster.createId('Bob', 'hyperswarm');
+        const did = await keymaster.createId('Bob', { registry: 'hyperswarm' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
-        const encryptDid = await keymaster.encryptMessage(msg, did, true, 'hyperswarm');
+        const encryptDid = await keymaster.encryptMessage(msg, did, { encryptForSender: true, registry: 'hyperswarm' });
         const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -1112,7 +1112,7 @@ describe('encryptJSON', () => {
         const did = await keymaster.encryptJSON(mockJson, bob);
         const data = await keymaster.resolveAsset(did);
 
-        expect(data.sender).toStrictEqual(bob);
+        expect(data.encrypted.sender).toStrictEqual(bob);
     });
 });
 
@@ -1246,7 +1246,7 @@ const mockSchema = {
     "type": "object"
 };
 
-describe('createCredential', () => {
+describe('createSchema', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -1257,7 +1257,7 @@ describe('createCredential', () => {
 
         await keymaster.createId('Bob');
 
-        const did = await keymaster.createCredential(mockSchema);
+        const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
@@ -1275,7 +1275,7 @@ describe('bindCredential', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
 
         const vc = await keymaster.bindCredential(credentialDid, userDid);
 
@@ -1289,7 +1289,7 @@ describe('bindCredential', () => {
 
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
 
         keymaster.setCurrentId('Alice')
         const vc = await keymaster.bindCredential(credentialDid, bob);
@@ -1310,7 +1310,7 @@ describe('issueCredential', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
 
         const did = await keymaster.issueCredential(boundCredential);
@@ -1335,7 +1335,7 @@ describe('issueCredential', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
 
         keymaster.setCurrentId('Bob');
@@ -1369,7 +1369,7 @@ describe('listIssued', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1389,7 +1389,7 @@ describe('updateCredential', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
         const vc = await keymaster.getCredential(did);
@@ -1411,7 +1411,7 @@ describe('updateCredential', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
         const vc = await keymaster.getCredential(did);
@@ -1501,7 +1501,7 @@ describe('revokeCredential', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1517,7 +1517,7 @@ describe('revokeCredential', () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1540,7 +1540,7 @@ describe('revokeCredential', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1572,7 +1572,7 @@ describe('acceptCredential', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1595,7 +1595,7 @@ describe('acceptCredential', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -1613,7 +1613,7 @@ describe('acceptCredential', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
 
         keymaster.setCurrentId('Bob');
 
@@ -1634,18 +1634,40 @@ describe('createChallenge', () => {
         const alice = await keymaster.createId('Alice');
         const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
+        const expectedChallenge = {
+            challenge: {
+                credentials: []
+            }
+        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        const expected = {
+        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+
+        const now = new Date();
+        const validUntil = new Date(doc.mdip.validUntil);
+        const ttl = validUntil - now;
+
+        expect(ttl < 60 * 60 * 1000).toBe(true);
+    });
+
+    it('should create an empty challenge with specified expiry', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const validUntil = '2025-01-01';
+        const did = await keymaster.createChallenge(null, { validUntil });
+        const doc = await keymaster.resolveDID(did);
+        const expectedChallenge = {
             challenge: {
                 credentials: []
-            },
-            ephemeral: {
-                validUntil: expect.any(String),
-            },
+            }
         };
-        expect(doc.didDocumentData).toStrictEqual(expected);
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+        expect(doc.mdip.validUntil).toBe(validUntil);
     });
 
     it('should create a valid challenge', async () => {
@@ -1656,7 +1678,7 @@ describe('createChallenge', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const challenge = {
             challenge: {
                 credentials: [
@@ -1700,6 +1722,21 @@ describe('createChallenge', () => {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
     });
+
+    it('should throw an exception if validUntil is not a valid date', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+
+        try {
+            const validUntil = 'mockDate';
+            await keymaster.createChallenge(null, { validUntil });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
 });
 
 describe('createResponse', () => {
@@ -1717,7 +1754,7 @@ describe('createResponse', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const vcDid = await keymaster.issueCredential(boundCredential);
 
@@ -1844,7 +1881,7 @@ describe('verifyResponse', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema);
+        const credential1 = await keymaster.createSchema(mockSchema);
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const vc1 = await keymaster.issueCredential(bc1);
 
@@ -1888,7 +1925,7 @@ describe('verifyResponse', () => {
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema);
+        const credential1 = await keymaster.createSchema(mockSchema);
 
         keymaster.setCurrentId('Victor');
 
@@ -1920,32 +1957,32 @@ describe('verifyResponse', () => {
     it('should demonstrate full workflow with credential revocations', async () => {
         mockFs({});
 
-        const alice = await keymaster.createId('Alice', 'local');
-        const bob = await keymaster.createId('Bob', 'local');
-        const carol = await keymaster.createId('Carol', 'local');
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
+        const bob = await keymaster.createId('Bob', { registry: 'local' });
+        const carol = await keymaster.createId('Carol', { registry: 'local' });
         await keymaster.createId('Victor', 'local');
 
         keymaster.setCurrentId('Alice');
 
-        const credential1 = await keymaster.createCredential(mockSchema, 'local');
-        const credential2 = await keymaster.createCredential(mockSchema, 'local');
+        const schema1 = await keymaster.createSchema(mockSchema, { registry: 'local' });
+        const schema2 = await keymaster.createSchema(mockSchema, { registry: 'local' });
 
-        const bc1 = await keymaster.bindCredential(credential1, carol);
-        const bc2 = await keymaster.bindCredential(credential2, carol);
+        const bc1 = await keymaster.bindCredential(schema1, carol);
+        const bc2 = await keymaster.bindCredential(schema2, carol);
 
-        const vc1 = await keymaster.issueCredential(bc1, 'local');
-        const vc2 = await keymaster.issueCredential(bc2, 'local');
+        const vc1 = await keymaster.issueCredential(bc1, { registry: 'local' });
+        const vc2 = await keymaster.issueCredential(bc2, { registry: 'local' });
 
         keymaster.setCurrentId('Bob');
 
-        const credential3 = await keymaster.createCredential(mockSchema, 'local');
-        const credential4 = await keymaster.createCredential(mockSchema, 'local');
+        const schema3 = await keymaster.createSchema(mockSchema, { registry: 'local' });
+        const schema4 = await keymaster.createSchema(mockSchema, { registry: 'local' });
 
-        const bc3 = await keymaster.bindCredential(credential3, carol);
-        const bc4 = await keymaster.bindCredential(credential4, carol);
+        const bc3 = await keymaster.bindCredential(schema3, carol);
+        const bc4 = await keymaster.bindCredential(schema4, carol);
 
-        const vc3 = await keymaster.issueCredential(bc3, 'local');
-        const vc4 = await keymaster.issueCredential(bc4, 'local');
+        const vc3 = await keymaster.issueCredential(bc3, { registry: 'local' });
+        const vc4 = await keymaster.issueCredential(bc4, { registry: 'local' });
 
         keymaster.setCurrentId('Carol');
 
@@ -1960,19 +1997,19 @@ describe('verifyResponse', () => {
             challenge: {
                 credentials: [
                     {
-                        schema: credential1,
+                        schema: schema1,
                         issuers: [alice]
                     },
                     {
-                        schema: credential2,
+                        schema: schema2,
                         issuers: [alice]
                     },
                     {
-                        schema: credential3,
+                        schema: schema3,
                         issuers: [bob]
                     },
                     {
-                        schema: credential4,
+                        schema: schema4,
                         issuers: [bob]
                     },
                 ]
@@ -2084,11 +2121,11 @@ describe('publishCredential', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, { reveal: true });
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -2101,11 +2138,11 @@ describe('publishCredential', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        await keymaster.publishCredential(did, false);
+        await keymaster.publishCredential(did, { reveal: false });
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
@@ -2127,7 +2164,7 @@ describe('unpublishCredential', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
         await keymaster.publishCredential(did, true);
@@ -2170,7 +2207,7 @@ describe('unpublishCredential', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createCredential(mockSchema);
+        const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
@@ -3222,7 +3259,7 @@ describe('publishPoll', () => {
         const pollDid = await keymaster.createPoll(template);
         const ballotDid = await keymaster.votePoll(pollDid, 1);
         await keymaster.updatePoll(ballotDid);
-        const ok = await keymaster.publishPoll(pollDid, true);
+        const ok = await keymaster.publishPoll(pollDid, { reveal: true });
         const pollData = await keymaster.resolveAsset(pollDid);
 
         expect(ok).toBe(true);
@@ -3465,8 +3502,8 @@ async function setupCredentials() {
 
     keymaster.setCurrentId('Alice');
 
-    const credential1 = await keymaster.createCredential(mockSchema);
-    const credential2 = await keymaster.createCredential(mockSchema);
+    const credential1 = await keymaster.createSchema(mockSchema);
+    const credential2 = await keymaster.createSchema(mockSchema);
 
     const bc1 = await keymaster.bindCredential(credential1, carol);
     const bc2 = await keymaster.bindCredential(credential2, carol);
@@ -3476,8 +3513,8 @@ async function setupCredentials() {
 
     keymaster.setCurrentId('Bob');
 
-    const credential3 = await keymaster.createCredential(mockSchema);
-    const credential4 = await keymaster.createCredential(mockSchema);
+    const credential3 = await keymaster.createSchema(mockSchema);
+    const credential4 = await keymaster.createSchema(mockSchema);
 
     const bc3 = await keymaster.bindCredential(credential3, carol);
     const bc4 = await keymaster.bindCredential(credential4, carol);

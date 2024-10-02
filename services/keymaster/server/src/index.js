@@ -142,8 +142,8 @@ v1router.get('/ids', async (req, res) => {
 
 v1router.post('/ids/new', async (req, res) => {
     try {
-        const { name, registry } = req.body;
-        const did = await keymaster.createId(name, registry);
+        const { name, options } = req.body;
+        const did = await keymaster.createId(name, options);
         res.json(did);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -241,8 +241,8 @@ v1router.get('/challenge', async (req, res) => {
 
 v1router.post('/challenge', async (req, res) => {
     try {
-        const { challenge, registry } = req.body;
-        const did = await keymaster.createChallenge(challenge, registry);
+        const { challenge, options } = req.body;
+        const did = await keymaster.createChallenge(challenge, options);
         res.json(did);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -261,8 +261,8 @@ v1router.post('/response', async (req, res) => {
 
 v1router.post('/response/verify', async (req, res) => {
     try {
-        const { response, retries } = req.body;
-        const verify = await keymaster.verifyResponse(response, retries);
+        const { response, options } = req.body;
+        const verify = await keymaster.verifyResponse(response, options);
         res.json(verify);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -271,8 +271,8 @@ v1router.post('/response/verify', async (req, res) => {
 
 v1router.post('/groups', async (req, res) => {
     try {
-        const { name, registry } = req.body;
-        const response = await keymaster.createGroup(name, registry);
+        const { name, options } = req.body;
+        const response = await keymaster.createGroup(name, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -323,8 +323,8 @@ v1router.post('/groups/:name/test', async (req, res) => {
 
 v1router.post('/schemas', async (req, res) => {
     try {
-        const { schema, registry } = req.body;
-        const response = await keymaster.createSchema(schema, registry);
+        const { schema, options } = req.body;
+        const response = await keymaster.createSchema(schema, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -373,8 +373,8 @@ v1router.post('/agents/:id/test', async (req, res) => {
 
 v1router.post('/credentials/bind', async (req, res) => {
     try {
-        const { schema, subject } = req.body;
-        const response = await keymaster.bindCredential(schema, subject);
+        const { schema, subject, options } = req.body;
+        const response = await keymaster.bindCredential(schema, subject, options);
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -421,8 +421,8 @@ v1router.delete('/credentials/held/:did', async (req, res) => {
 v1router.post('/credentials/held/:did/publish', async (req, res) => {
     try {
         const did = req.params.did;
-        const { reveal } = req.body;
-        const response = await keymaster.publishCredential(did, reveal);
+        const { options } = req.body;
+        const response = await keymaster.publishCredential(did, options);
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -450,8 +450,8 @@ v1router.get('/credentials/issued', async (req, res) => {
 
 v1router.post('/credentials/issued', async (req, res) => {
     try {
-        const { credential, registry } = req.body;
-        const response = await keymaster.issueCredential(credential, registry);
+        const { credential, options } = req.body;
+        const response = await keymaster.issueCredential(credential, options);
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -499,19 +499,38 @@ v1router.post('/keys/rotate', async (req, res) => {
     }
 });
 
-v1router.post('/keys/encrypt', async (req, res) => {
+v1router.post('/keys/encrypt/message', async (req, res) => {
     try {
-        const { msg, did } = req.body;
-        const response = await keymaster.encryptMessage(msg, did);
+        const { msg, receiver, options } = req.body;
+        const response = await keymaster.encryptMessage(msg, receiver, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
 });
 
-v1router.post('/keys/decrypt', async (req, res) => {
+v1router.post('/keys/decrypt/message', async (req, res) => {
     try {
         const response = await keymaster.decryptMessage(req.body.did);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/keys/encrypt/json', async (req, res) => {
+    try {
+        const { json, receiver, options } = req.body;
+        const response = await keymaster.encryptJSON(json, receiver, options);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/keys/decrypt/json', async (req, res) => {
+    try {
+        const response = await keymaster.decryptJSON(req.body.did);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -538,7 +557,8 @@ v1router.post('/keys/verify', async (req, res) => {
 
 v1router.post('/credentials/new', async (req, res) => {
     try {
-        const response = await keymaster.createCredential(req.body.schema);
+        const { schema, options } = req.body;
+        const response = await keymaster.createSchema(schema, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -547,17 +567,31 @@ v1router.post('/credentials/new', async (req, res) => {
 
 v1router.post('/schemas/:id/template/new', async (req, res) => {
     try {
-        const response = await keymaster.createTemplate(req.body.schema);
+        const { schema } = req.body;
+        const response = await keymaster.createTemplate(schema);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
 });
 
-v1router.post('/asset/create', async (req, res) => {
+v1router.post('/assets/new', async (req, res) => {
     try {
-        const response = await keymaster.createAsset(req.body.asset);
+        const { asset, options } = req.body;
+        const response = await keymaster.createAsset(asset, options);
         res.json(response);
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/assets/:id', async (req, res) => {
+    try {
+        const asset = await keymaster.resolveAsset(req.params.id);
+        if (!asset) {
+            return res.status(404).send({ error: 'Asset not found' });
+        }
+        res.json(asset);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -574,7 +608,8 @@ v1router.get('/templates/poll', async (req, res) => {
 
 v1router.post('/poll/new', async (req, res) => {
     try {
-        const response = await keymaster.createPoll(req.body.poll);
+        const { poll, options } = req.body;
+        const response = await keymaster.createPoll(poll, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -592,8 +627,8 @@ v1router.get('/poll/:poll/view', async (req, res) => {
 
 v1router.post('/poll/vote', async (req, res) => {
     try {
-        const { poll, vote, spoil } = req.body;
-        const response = await keymaster.votePoll(poll, vote, spoil);
+        const { poll, vote, options } = req.body;
+        const response = await keymaster.votePoll(poll, vote, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -602,7 +637,8 @@ v1router.post('/poll/vote', async (req, res) => {
 
 v1router.put('/poll/update', async (req, res) => {
     try {
-        const response = await keymaster.updatePoll(req.body.ballot);
+        const { ballot } = req.body;
+        const response = await keymaster.updatePoll(ballot);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -611,8 +647,8 @@ v1router.put('/poll/update', async (req, res) => {
 
 v1router.post('/poll/:poll/publish', async (req, res) => {
     try {
-        const reveal = req.body.reveal || false;
-        const response = await keymaster.publishPoll(req.params.poll, reveal);
+        const { poll, options } = req.body;
+        const response = await keymaster.publishPoll(poll, options);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -621,7 +657,8 @@ v1router.post('/poll/:poll/publish', async (req, res) => {
 
 v1router.delete('/poll/:poll/unpublish', async (req, res) => {
     try {
-        const response = await keymaster.unpublishPoll(req.params.poll);
+        const { poll } = req.params;
+        const response = await keymaster.unpublishPoll(poll);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });

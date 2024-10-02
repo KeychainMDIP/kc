@@ -453,33 +453,95 @@ async function fetchKeyPair(name = null) {
     return null;
 }
 
-export async function encryptMessage(msg, did, encryptForSender = true, registry = defaultRegistry) {
+export async function createAsset(data, options = {}) {
+    let { registry, controller, validUntil } = options;
+
+    if (!registry) {
+        registry = defaultRegistry;
+    }
+
+    if (validUntil) {
+        const validate = new Date(validUntil);
+
+        if (isNaN(validate.getTime())) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    }
+
+    function isEmpty(data) {
+        return (
+            !data ||
+            (Array.isArray(data) && data.length === 0) ||
+            (typeof data === 'object' && Object.keys(data).length === 0)
+        );
+    }
+
+    if (isEmpty(data)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    const id = fetchId(controller);
+
+    const operation = {
+        type: "create",
+        created: new Date().toISOString(),
+        mdip: {
+            version: 1,
+            type: "asset",
+            registry,
+            validUntil
+        },
+        controller: id.did,
+        data,
+    };
+
+    const signed = await addSignature(operation, controller);
+    const did = await gatekeeper.createDID(signed);
+
+    // Keep assets that will be garbage-collected out of the owned list
+    if (registry !== 'hyperswarm') {
+        addToOwned(did);
+    }
+
+    return did;
+}
+
+export async function encryptMessage(msg, receiver, options = {}) {
+    let { encryptForSender } = options;
+
+    if (typeof encryptForSender === 'undefined') {
+        encryptForSender = true;
+    }
+
     const id = fetchId();
     const senderKeypair = await fetchKeyPair();
-    const doc = await resolveDID(did, { confirm: true });
+    const doc = await resolveDID(receiver, { confirm: true });
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
     const msgHash = cipher.hashMessage(msg);
 
     return await createAsset({
-        sender: id.did,
-        created: new Date().toISOString(),
-        cipher_hash: msgHash,
-        cipher_sender: cipher_sender,
-        cipher_receiver: cipher_receiver,
-    }, registry);
+        encrypted: {
+            sender: id.did,
+            created: new Date().toISOString(),
+            cipher_hash: msgHash,
+            cipher_sender: cipher_sender,
+            cipher_receiver: cipher_receiver,
+        }
+    }, options);
 }
 
 export async function decryptMessage(did) {
     const wallet = loadWallet();
     const id = fetchId();
-    const crypt = await resolveAsset(did);
+    const asset = await resolveAsset(did);
 
-    if (!crypt || !crypt.cipher_hash) {
+    if (!asset || (!asset.encrypted && !asset.cipher_hash)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    const crypt = asset.encrypted ? asset.encrypted : asset;
     const doc = await resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
     const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
@@ -502,9 +564,9 @@ export async function decryptMessage(did) {
     throw new Error('Cannot decrypt');
 }
 
-export async function encryptJSON(json, did, encryptForSender = true, registry = defaultRegistry) {
+export async function encryptJSON(json, did, options = {}) {
     const plaintext = JSON.stringify(json);
-    return encryptMessage(plaintext, did, encryptForSender, registry);
+    return encryptMessage(plaintext, did, options);
 }
 
 export async function decryptJSON(did) {
@@ -668,7 +730,13 @@ export async function resolveAsset(did) {
     return null;
 }
 
-export async function createId(name, registry = defaultRegistry) {
+export async function createId(name, options = {}) {
+    let { registry } = options;
+
+    if (!registry) {
+        registry = defaultRegistry;
+    }
+
     const wallet = loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -743,20 +811,20 @@ export async function resolveId(name) {
     return resolveDID(id.did);
 }
 
-export async function backupId(name = null) {
+export async function backupId(controller = null) {
     // Backs up current ID if name is missing
-    const id = fetchId(name);
+    const id = fetchId(controller);
     const wallet = loadWallet();
     const keypair = hdKeyPair();
     const data = {
-        name: name || wallet.current,
+        name: controller || wallet.current,
         id: id,
     };
     const msg = JSON.stringify(data);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
     const doc = await resolveDID(id.did);
     const registry = doc.mdip.registry;
-    const vaultDid = await createAsset({ backup: backup }, registry, name);
+    const vaultDid = await createAsset({ backup: backup }, { registry, controller });
 
     doc.didDocumentData.vault = vaultDid;
     return await updateDID(id.did, doc);
@@ -878,56 +946,18 @@ export function lookupDID(name) {
     throw new Error(exceptions.UNKNOWN_ID);
 }
 
-export async function createAsset(data, registry = defaultRegistry, owner = null) {
-
-    function isEmpty(data) {
-        return (
-            !data ||
-            (Array.isArray(data) && data.length === 0) ||
-            (typeof data === 'object' && Object.keys(data).length === 0)
-        );
-    }
-
-    if (isEmpty(data)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    const id = fetchId(owner);
-
-    const operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: 1,
-            type: "asset",
-            registry: registry,
-        },
-        controller: id.did,
-        data: data,
-    };
-
-    const signed = await addSignature(operation, owner);
-    const did = await gatekeeper.createDID(signed);
-
-    // Keep assets that will be garbage-collected out of the owned list
-    if (registry !== 'hyperswarm') {
-        addToOwned(did);
-    }
-
-    return did;
-}
-
 export async function testAgent(id) {
     const doc = await resolveDID(id);
     return doc?.mdip?.type === 'agent';
 }
 
-export async function createCredential(schema, registry) {
-    // TBD validate schema
-    return createAsset(schema, registry);
-}
+export async function bindCredential(schemaId, subjectId, options = {}) {
+    let { validFrom, validUntil } = options;
 
-export async function bindCredential(schemaId, subjectId, validUntil = null) {
+    if (!validFrom) {
+        validFrom = new Date().toISOString();
+    }
+
     const id = fetchId();
     const type = lookupDID(schemaId);
     const schema = await resolveAsset(type);
@@ -940,16 +970,16 @@ export async function bindCredential(schemaId, subjectId, validUntil = null) {
         ],
         type: ["VerifiableCredential", type],
         issuer: id.did,
-        validFrom: new Date().toISOString(),
-        validUntil: validUntil,
+        validFrom,
+        validUntil,
         credentialSubject: {
             id: lookupDID(subjectId),
         },
-        credential: credential,
+        credential,
     };
 }
 
-export async function issueCredential(credential, registry = defaultRegistry) {
+export async function issueCredential(credential, options = {}) {
     const id = fetchId();
 
     if (credential.issuer !== id.did) {
@@ -957,7 +987,7 @@ export async function issueCredential(credential, registry = defaultRegistry) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, true, registry);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
     addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1055,7 +1085,8 @@ export async function listCredentials(id) {
     return fetchId(id).held || [];
 }
 
-export async function publishCredential(did, reveal = false) {
+export async function publishCredential(did, options = {}) {
+    const { reveal } = options;
     const id = fetchId();
     const credential = lookupDID(did);
     const vc = await decryptJSON(credential);
@@ -1105,10 +1136,14 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challengeSpec, options = {}) {
 
-    let { registry } = options;
+    if (!options.registry) {
+        options.registry = ephemeralRegistry;
+    }
 
-    if (!registry) {
-        registry = ephemeralRegistry;
+    if (!options.validUntil) {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        options.validUntil = expires.toISOString();
     }
 
     if (!challengeSpec) {
@@ -1123,12 +1158,6 @@ export async function createChallenge(challengeSpec, options = {}) {
         challengeSpec.challenge = {};
     }
 
-    if (!challengeSpec.ephemeral) {
-        const expires = new Date();
-        expires.setHours(expires.getHours() + 1); // Add 1 hour
-        challengeSpec.ephemeral = { validUntil: expires.toISOString() };
-    }
-
     if (!challengeSpec.challenge.credentials) {
         challengeSpec.challenge.credentials = [];
     }
@@ -1137,7 +1166,7 @@ export async function createChallenge(challengeSpec, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(challengeSpec, registry);
+    return createAsset(challengeSpec, options);
 }
 
 async function findMatchingCredential(credential) {
@@ -1183,11 +1212,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(challengeDID, options = {}) {
-    let { registry, retries, delay } = options;
-
-    if (!registry) {
-        registry = ephemeralRegistry;
-    }
+    let { retries, delay } = options;
 
     if (!retries) {
         retries = 0;
@@ -1195,6 +1220,16 @@ export async function createResponse(challengeDID, options = {}) {
 
     if (!delay) {
         delay = 1000;
+    }
+
+    if (!options.registry) {
+        options.registry = ephemeralRegistry;
+    }
+
+    if (!options.validUntil) {
+        const expires = new Date();
+        expires.setHours(expires.getHours() + 1); // Add 1 hour
+        options.validUntil = expires.toISOString();
     }
 
     let doc;
@@ -1237,15 +1272,13 @@ export async function createResponse(challengeDID, options = {}) {
 
     for (let vcDid of matches) {
         const plaintext = await decryptMessage(vcDid);
-        const vpDid = await encryptMessage(plaintext, requestor, true, registry);
+        const vpDid = await encryptMessage(plaintext, requestor, options);
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
     const requested = challenge.credentials.length;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
-    const expires = new Date();
-    expires.setHours(expires.getHours() + 1); // Add 1 hour
 
     const response = {
         response: {
@@ -1254,13 +1287,10 @@ export async function createResponse(challengeDID, options = {}) {
             requested: requested,
             fulfilled: fulfilled,
             match: match,
-        },
-        ephemeral: {
-            validUntil: expires.toISOString()
         }
     };
 
-    return await encryptJSON(response, requestor, true, registry);
+    return await encryptJSON(response, requestor, options);
 }
 
 export async function verifyResponse(responseDID, options = {}) {
@@ -1337,13 +1367,13 @@ export async function verifyResponse(responseDID, options = {}) {
     return response;
 }
 
-export async function createGroup(name, registry) {
+export async function createGroup(name, options = {}) {
     const group = {
         name: name,
         members: []
     };
 
-    return createAsset(group, registry);
+    return createAsset(group, options);
 }
 
 export async function getGroup(id) {
@@ -1514,14 +1544,14 @@ function validateSchema(schema) {
     return true;
 }
 
-export async function createSchema(schema, registry) {
+export async function createSchema(schema, options = {}) {
     if (!schema) {
         schema = defaultSchema;
     }
 
     validateSchema(schema);
 
-    return createAsset(schema, registry);
+    return createAsset(schema, options);
 }
 
 export async function getSchema(id) {
@@ -1583,7 +1613,7 @@ export async function pollTemplate() {
     };
 }
 
-export async function createPoll(poll) {
+export async function createPoll(poll, options = {}) {
     if (poll.type !== 'poll') {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
@@ -1629,7 +1659,7 @@ export async function createPoll(poll) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(poll);
+    return createAsset(poll, options);
 }
 
 export async function viewPoll(poll) {
@@ -1713,7 +1743,8 @@ export async function viewPoll(poll) {
     return view;
 }
 
-export async function votePoll(poll, vote, spoil = false) {
+export async function votePoll(poll, vote, options = {}) {
+    const { spoil } = options;
     const id = fetchId();
     const didPoll = lookupDID(poll);
     const doc = await resolveDID(didPoll);
@@ -1753,8 +1784,8 @@ export async function votePoll(poll, vote, spoil = false) {
     }
 
     // Encrypt for receiver only
-    // TBD which registry?
-    return await encryptJSON(ballot, owner, false);
+    options.encryptForSender = false;
+    return await encryptJSON(ballot, owner, options);
 }
 
 export async function updatePoll(ballot) {
@@ -1816,7 +1847,8 @@ export async function updatePoll(ballot) {
     return await updateDID(didPoll, docPoll);
 }
 
-export async function publishPoll(poll, reveal = false) {
+export async function publishPoll(poll, options = {}) {
+    const { reveal } = options;
     const id = fetchId();
     const didPoll = lookupDID(poll);
     const doc = await resolveDID(didPoll);
