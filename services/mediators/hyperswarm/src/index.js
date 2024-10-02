@@ -280,7 +280,16 @@ let exportQueue = asyncLib.queue(async function (task, callback) {
 }, 1); // concurrency is 1
 
 async function receiveMsg(conn, name, json) {
-    const msg = JSON.parse(json);
+    let msg;
+
+    try {
+        msg = JSON.parse(json);
+    }
+    catch (error) {
+        const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
+        console.log(`received invalid message from: ${shortName(name)}, JSON: ${jsonPreview}`);
+        return;
+    }
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
     connectionLastSeen[name] = new Date().getTime();
