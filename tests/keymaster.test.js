@@ -63,6 +63,30 @@ describe('saveWallet', () => {
         expect(wallet).toStrictEqual(mockWallet);
     });
 
+    it('should ignore overwrite flag if unnecessary', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const ok = await keymaster.saveWallet(mockWallet, false);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
+    it('should handle data folder existing already', async () => {
+        mockFs({
+            data: {}
+        });
+        const mockWallet = { mock: 0 };
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
     it('should overwrite an existing wallet', async () => {
         mockFs({});
         const mockWallet1 = { mock: 1 };
@@ -74,6 +98,19 @@ describe('saveWallet', () => {
 
         expect(ok).toBe(true);
         expect(wallet).toStrictEqual(mockWallet2);
+    });
+
+    it('should not overwrite an existing wallet if specified', async () => {
+        mockFs({});
+        const mockWallet1 = { mock: 1 };
+        const mockWallet2 = { mock: 2 };
+
+        await keymaster.saveWallet(mockWallet1);
+        const ok = await keymaster.saveWallet(mockWallet2, false);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(false);
+        expect(wallet).toStrictEqual(mockWallet1);
     });
 
     it('should overwrite an existing wallet in a loop', async () => {

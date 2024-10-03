@@ -36,9 +36,9 @@ export async function loadWallet() {
     return wallet;
 }
 
-export async function saveWallet(wallet) {
+export async function saveWallet(wallet, overwrite = true) {
     // TBD validate wallet before saving
-    return db.saveWallet(wallet, true);
+    return db.saveWallet(wallet, overwrite);
 }
 
 export async function newWallet(mnemonic, overwrite = false) {
