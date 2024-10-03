@@ -27,7 +27,7 @@ describe('loadWallet', () => {
     it('should create a wallet on first load', async () => {
         mockFs({});
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
 
         expect(wallet.seed.mnemonic.length > 0).toBe(true);
         expect(wallet.seed.hdkey.xpub.length > 0).toBe(true);
@@ -39,8 +39,8 @@ describe('loadWallet', () => {
     it('should return the same wallet on second load', async () => {
         mockFs({});
 
-        const wallet1 = keymaster.loadWallet();
-        const wallet2 = keymaster.loadWallet();
+        const wallet1 = await keymaster.loadWallet();
+        const wallet2 = await keymaster.loadWallet();
 
         expect(wallet2).toStrictEqual(wallet1);
     });
@@ -55,8 +55,8 @@ describe('decryptMnemonic', () => {
     it('should return 12 words', async () => {
         mockFs({});
 
-        const wallet = keymaster.loadWallet();
-        const mnemonic = keymaster.decryptMnemonic();
+        const wallet = await keymaster.loadWallet();
+        const mnemonic = await keymaster.decryptMnemonic();
 
         expect(mnemonic !== wallet.seed.mnemonic).toBe(true);
 
@@ -75,9 +75,9 @@ describe('newWallet', () => {
     it('should overwrite an existing wallet when allowed', async () => {
         mockFs({});
 
-        const wallet1 = keymaster.loadWallet();
-        keymaster.newWallet(null, true);
-        const wallet2 = keymaster.loadWallet();
+        const wallet1 = await keymaster.loadWallet();
+        await keymaster.newWallet(null, true);
+        const wallet2 = await keymaster.loadWallet();
 
         expect(wallet1.seed.mnemonic !== wallet2.seed.mnemonic).toBe(true);
     });
@@ -85,10 +85,10 @@ describe('newWallet', () => {
     it('should not overwrite an existing wallet by default', async () => {
         mockFs({});
 
-        keymaster.loadWallet();
+        await keymaster.loadWallet();
 
         try {
-            keymaster.newWallet();
+            await keymaster.newWallet();
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -100,8 +100,8 @@ describe('newWallet', () => {
         mockFs({});
 
         const mnemonic1 = cipher.generateMnemonic();
-        keymaster.newWallet(mnemonic1);
-        const mnemonic2 = keymaster.decryptMnemonic();
+        await keymaster.newWallet(mnemonic1);
+        const mnemonic2 = await keymaster.decryptMnemonic();
 
         expect(mnemonic1 === mnemonic2).toBe(true);
     });
@@ -110,7 +110,7 @@ describe('newWallet', () => {
         mockFs({});
 
         try {
-            keymaster.newWallet([]);
+            await keymaster.newWallet([]);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -120,12 +120,15 @@ describe('newWallet', () => {
 });
 
 describe('resolveSeedBank', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
 
     it('should create a deterministic seed bank ID', async () => {
         mockFs({});
 
-        const bank1 = keymaster.resolveSeedBank();
-        const bank2 = keymaster.resolveSeedBank();
+        const bank1 = await keymaster.resolveSeedBank();
+        const bank2 = await keymaster.resolveSeedBank();
 
         expect(bank1).toStrictEqual(bank2);
     });
@@ -168,12 +171,12 @@ describe('recoverWallet', () => {
         mockFs({});
 
         await keymaster.createId('Bob');
-        const wallet = keymaster.loadWallet();
-        const mnemonic = keymaster.decryptMnemonic();
+        const wallet = await keymaster.loadWallet();
+        const mnemonic = await keymaster.decryptMnemonic();
         await keymaster.backupWallet();
 
         // Recover wallet from mnemonic
-        keymaster.newWallet(mnemonic, true);
+        await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet();
 
         expect(wallet).toStrictEqual(recovered);
@@ -183,12 +186,12 @@ describe('recoverWallet', () => {
         mockFs({});
 
         await keymaster.createId('Bob');
-        const wallet = keymaster.loadWallet();
-        const mnemonic = keymaster.decryptMnemonic();
+        const wallet = await keymaster.loadWallet();
+        const mnemonic = await keymaster.decryptMnemonic();
         const did = await keymaster.backupWallet();
 
         // Recover wallet from mnemonic and recovery DID
-        keymaster.newWallet(mnemonic, true);
+        await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet(did);
 
         expect(wallet).toStrictEqual(recovered);
@@ -198,10 +201,10 @@ describe('recoverWallet', () => {
         mockFs({});
 
         await keymaster.createId('Bob');
-        const mnemonic = keymaster.decryptMnemonic();
+        const mnemonic = await keymaster.decryptMnemonic();
 
         // Recover wallet from mnemonic
-        keymaster.newWallet(mnemonic, true);
+        await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet();
 
         expect(recovered.ids).toStrictEqual({});
@@ -211,10 +214,10 @@ describe('recoverWallet', () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Bob');
-        const mnemonic = keymaster.decryptMnemonic();
+        const mnemonic = await keymaster.decryptMnemonic();
 
         // Recover wallet from mnemonic
-        keymaster.newWallet(mnemonic, true);
+        await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet(agentDID);
 
         expect(recovered.ids).toStrictEqual({});
@@ -232,7 +235,7 @@ describe('createId', () => {
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
 
         expect(wallet.ids[name].did).toBe(did);
         expect(wallet.current).toBe(name);
@@ -261,7 +264,7 @@ describe('createId', () => {
         const name2 = 'Alice';
         const did2 = await keymaster.createId(name2);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
 
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
@@ -281,9 +284,9 @@ describe('removeId', () => {
         const name = 'Bob';
         await keymaster.createId(name);
 
-        keymaster.removeId(name);
+        await keymaster.removeId(name);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
 
         expect(wallet.ids).toStrictEqual({});
         expect(wallet.current).toBe('');
@@ -298,7 +301,7 @@ describe('removeId', () => {
         await keymaster.createId(name1);
 
         try {
-            keymaster.removeId(name2);
+            await keymaster.removeId(name2);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
             expect(error.message).toBe(exceptions.UNKNOWN_ID);
@@ -321,9 +324,9 @@ describe('setCurrentId', () => {
         const name2 = 'Alice';
         await keymaster.createId(name2);
 
-        keymaster.setCurrentId(name1);
+        await keymaster.setCurrentId(name1);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
         expect(wallet.current).toBe(name1);
     });
 
@@ -333,7 +336,7 @@ describe('setCurrentId', () => {
         await keymaster.createId('Bob');
 
         try {
-            keymaster.setCurrentId('Alice');
+            await keymaster.setCurrentId('Alice');
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -406,19 +409,19 @@ describe('recoverId', () => {
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
-        let wallet = keymaster.loadWallet();
+        let wallet = await keymaster.loadWallet();
         const bob = wallet.ids['Bob'];
-        const mnemonic = keymaster.decryptMnemonic();
+        const mnemonic = await keymaster.decryptMnemonic();
 
         await keymaster.backupId();
 
         // reset wallet
-        keymaster.newWallet(mnemonic, true);
-        wallet = keymaster.loadWallet();
+        await keymaster.newWallet(mnemonic, true);
+        wallet = await keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 
         await keymaster.recoverId(did);
-        wallet = keymaster.loadWallet();
+        wallet = await keymaster.loadWallet();
         expect(wallet.ids[name]).toStrictEqual(bob);
         expect(wallet.current === name);
         expect(wallet.counter === 1);
@@ -431,7 +434,7 @@ describe('recoverId', () => {
         await keymaster.backupId();
 
         // reset to a different wallet
-        keymaster.newWallet(null, true);
+        await keymaster.newWallet(null, true);
 
         try {
             await keymaster.recoverId(did);
@@ -546,24 +549,24 @@ describe('rotateKeys', () => {
         const msg = "Hi Bob!";
 
         for (let i = 0; i < 3; i++) {
-            keymaster.setCurrentId('Alice');
+            await keymaster.setCurrentId('Alice');
 
             const did = await keymaster.encryptMessage(msg, bob, { registry: 'local' });
             secrets.push(did);
 
             await keymaster.rotateKeys();
 
-            keymaster.setCurrentId('Bob');
+            await keymaster.setCurrentId('Bob');
             await keymaster.rotateKeys();
         }
 
         for (let secret of secrets) {
-            keymaster.setCurrentId('Alice');
+            await keymaster.setCurrentId('Alice');
 
             const decipher1 = await keymaster.decryptMessage(secret);
             expect(decipher1).toBe(msg);
 
-            keymaster.setCurrentId('Bob');
+            await keymaster.setCurrentId('Bob');
 
             const decipher2 = await keymaster.decryptMessage(secret);
             expect(decipher2).toBe(msg);
@@ -596,8 +599,8 @@ describe('addName', () => {
         mockFs({});
 
         const bob = await keymaster.createId('Bob');
-        const ok = keymaster.addName('Jack', bob);
-        const wallet = keymaster.loadWallet();
+        const ok = await keymaster.addName('Jack', bob);
+        const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
         expect(wallet.names['Jack'] === bob).toBe(true);
@@ -610,8 +613,8 @@ describe('addName', () => {
         const bob = await keymaster.createId('Bob');
 
         try {
-            keymaster.addName('Jack', alice);
-            keymaster.addName('Jack', bob);
+            await keymaster.addName('Jack', alice);
+            await keymaster.addName('Jack', bob);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -625,7 +628,7 @@ describe('addName', () => {
         const alice = await keymaster.createId('Alice');
 
         try {
-            keymaster.addName('Alice', alice);
+            await keymaster.addName('Alice', alice);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -645,10 +648,10 @@ describe('removeName', () => {
 
         const bob = await keymaster.createId('Bob');
 
-        keymaster.addName('Jack', bob);
-        keymaster.removeName('Jack');
+        await keymaster.addName('Jack', bob);
+        await keymaster.removeName('Jack');
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
 
         expect(wallet.names['Jack'] === bob).toBe(false);
     });
@@ -656,7 +659,7 @@ describe('removeName', () => {
     it('should return true if name is missing', async () => {
         mockFs({});
 
-        const ok = keymaster.removeName('Jack');
+        const ok = await keymaster.removeName('Jack');
 
         expect(ok).toBe(true);
     });
@@ -674,10 +677,10 @@ describe('listNames', () => {
         const bob = await keymaster.createId('Bob');
 
         for (let i = 0; i < 10; i++) {
-            keymaster.addName(`name-${i}`, bob);
+            await keymaster.addName(`name-${i}`, bob);
         }
 
-        const names = keymaster.listNames();
+        const names = await keymaster.listNames();
 
         expect(Object.keys(names).length).toBe(10);
 
@@ -689,7 +692,7 @@ describe('listNames', () => {
     it('should return empty list if no names added', async () => {
         mockFs({});
 
-        const names = keymaster.listNames();
+        const names = await keymaster.listNames();
 
         expect(Object.keys(names).length).toBe(0);
     });
@@ -719,7 +722,7 @@ describe('resolveDID', () => {
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        keymaster.addName('mock', dataDid);
+        await keymaster.addName('mock', dataDid);
 
         const doc1 = await keymaster.resolveDID(dataDid);
         const doc2 = await keymaster.resolveDID('mock');
@@ -892,7 +895,7 @@ describe('updateDID', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Alice');
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -901,7 +904,7 @@ describe('updateDID', () => {
         const dataUpdated = { name: 'updated' };
         doc.didDocumentData = dataUpdated;
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const ok = await keymaster.updateDID(dataDid, doc);
         const doc2 = await keymaster.resolveDID(dataDid);
@@ -941,12 +944,12 @@ describe('revokeDID', () => {
         await keymaster.createId('Bob');
         await keymaster.createId('Alice');
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const ok = await keymaster.revokeDID(dataDid);
         const doc = await keymaster.resolveDID(dataDid);
@@ -968,7 +971,7 @@ function generateRandomString(length) {
     return result;
 }
 
-describe('encrypt', () => {
+describe('encryptMessage', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -1006,7 +1009,7 @@ describe('encrypt', () => {
     });
 });
 
-describe('decrypt', () => {
+describe('decryptMessage', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -1059,12 +1062,12 @@ describe('decrypt', () => {
         const name2 = 'Bob';
         const did = await keymaster.createId(name2);
 
-        keymaster.setCurrentId(name1);
+        await keymaster.setCurrentId(name1);
 
         const msg = 'Hi Bob!';
         const encryptDid = await keymaster.encryptMessage(msg, did);
 
-        keymaster.setCurrentId(name2);
+        await keymaster.setCurrentId(name2);
         const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -1079,12 +1082,12 @@ describe('decrypt', () => {
         const name2 = 'Bob';
         const did = await keymaster.createId(name2);
 
-        keymaster.setCurrentId(name1);
+        await keymaster.setCurrentId(name1);
 
         const msg = generateRandomString(1024);
         const encryptDid = await keymaster.encryptMessage(msg, did);
 
-        keymaster.setCurrentId(name2);
+        await keymaster.setCurrentId(name2);
         const decipher = await keymaster.decryptMessage(encryptDid);
 
         expect(decipher).toBe(msg);
@@ -1291,7 +1294,7 @@ describe('bindCredential', () => {
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
 
-        keymaster.setCurrentId('Alice')
+        await keymaster.setCurrentId('Alice')
         const vc = await keymaster.bindCredential(credentialDid, bob);
 
         expect(vc.issuer).toBe(alice);
@@ -1323,7 +1326,7 @@ describe('issueCredential', () => {
         const isValid = await keymaster.verifySignature(vc);
         expect(isValid).toBe(true);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
         expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
     });
 
@@ -1333,12 +1336,12 @@ describe('issueCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         try {
             await keymaster.issueCredential(boundCredential);
@@ -1538,14 +1541,14 @@ describe('revokeCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        keymaster.setCurrentId('Bob');
-        keymaster.removeId('Alice');
+        await keymaster.setCurrentId('Bob');
+        await keymaster.removeId('Alice');
 
         try {
             await keymaster.revokeCredential(did);
@@ -1570,18 +1573,18 @@ describe('acceptCredential', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(true);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
         expect(wallet.ids['Alice'].owned.includes(did));
         expect(wallet.ids['Bob'].held.includes(did));
     });
@@ -1593,13 +1596,13 @@ describe('acceptCredential', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Carol');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
 
         const ok = await keymaster.acceptCredential(did);
         expect(ok).toBe(false);
@@ -1611,11 +1614,11 @@ describe('acceptCredential', () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(credentialDid);
         expect(ok).toBe(false);
@@ -1676,7 +1679,7 @@ describe('createChallenge', () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const challenge = {
@@ -1752,22 +1755,22 @@ describe('createResponse', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Victor');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const vcDid = await keymaster.issueCredential(boundCredential);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const ok = await keymaster.acceptCredential(vcDid);
         expect(ok).toBe(true);
 
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
         expect(wallet.ids['Alice'].owned.includes(vcDid));
         expect(wallet.ids['Bob'].held.includes(vcDid));
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const challenge = {
             challenge: {
@@ -1781,7 +1784,7 @@ describe('createResponse', () => {
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
         const { response } = await keymaster.decryptJSON(responseDID);
 
@@ -1849,14 +1852,14 @@ describe('verifyResponse', () => {
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
         const challenge = { credentials: [] };
         const challengeDID = await keymaster.createChallenge(challenge);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
         const verify = await keymaster.verifyResponse(responseDID);
 
         const expected = {
@@ -1879,17 +1882,17 @@ describe('verifyResponse', () => {
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credential1 = await keymaster.createSchema(mockSchema);
         const bc1 = await keymaster.bindCredential(credential1, carol);
         const vc1 = await keymaster.issueCredential(bc1);
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
 
         await keymaster.acceptCredential(vc1);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const challenge = {
             challenge: {
@@ -1902,10 +1905,10 @@ describe('verifyResponse', () => {
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
         const responseDID = await keymaster.createResponse(challengeDID);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(responseDID);
 
@@ -1923,11 +1926,11 @@ describe('verifyResponse', () => {
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const credential1 = await keymaster.createSchema(mockSchema);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const challenge = {
             challenge: {
@@ -1940,10 +1943,10 @@ describe('verifyResponse', () => {
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
         const responseDID = await keymaster.createResponse(challengeDID);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(responseDID);
 
@@ -1962,7 +1965,7 @@ describe('verifyResponse', () => {
         const carol = await keymaster.createId('Carol', { registry: 'local' });
         await keymaster.createId('Victor', 'local');
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
 
         const schema1 = await keymaster.createSchema(mockSchema, { registry: 'local' });
         const schema2 = await keymaster.createSchema(mockSchema, { registry: 'local' });
@@ -1973,7 +1976,7 @@ describe('verifyResponse', () => {
         const vc1 = await keymaster.issueCredential(bc1, { registry: 'local' });
         const vc2 = await keymaster.issueCredential(bc2, { registry: 'local' });
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
 
         const schema3 = await keymaster.createSchema(mockSchema, { registry: 'local' });
         const schema4 = await keymaster.createSchema(mockSchema, { registry: 'local' });
@@ -1984,14 +1987,14 @@ describe('verifyResponse', () => {
         const vc3 = await keymaster.issueCredential(bc3, { registry: 'local' });
         const vc4 = await keymaster.issueCredential(bc4, { registry: 'local' });
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
 
         await keymaster.acceptCredential(vc1);
         await keymaster.acceptCredential(vc2);
         await keymaster.acceptCredential(vc3);
         await keymaster.acceptCredential(vc4);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const challenge = {
             challenge: {
@@ -2017,48 +2020,48 @@ describe('verifyResponse', () => {
         };
         const challengeDID = await keymaster.createChallenge(challenge, { registry: 'local' });
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
         const responseDID = await keymaster.createResponse(challengeDID, { registry: 'local' });
         const { response } = await keymaster.decryptJSON(responseDID);
 
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(4);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
 
         const verify1 = await keymaster.verifyResponse(responseDID);
         expect(verify1.match).toBe(true);
         expect(verify1.vps.length).toBe(4);
 
         // All agents rotate keys
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
         await keymaster.rotateKeys();
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
         await keymaster.rotateKeys();
 
-        keymaster.setCurrentId('Carol');
+        await keymaster.setCurrentId('Carol');
         await keymaster.rotateKeys();
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
         await keymaster.rotateKeys();
 
         const verify2 = await keymaster.verifyResponse(responseDID);
         expect(verify2.match).toBe(true);
         expect(verify2.vps.length).toBe(4);
 
-        keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Alice');
         await keymaster.revokeCredential(vc1);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
         const verify3 = await keymaster.verifyResponse(responseDID)
         expect(verify3.match).toBe(false);
         expect(verify3.vps.length).toBe(3);
 
-        keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Bob');
         await keymaster.revokeCredential(vc3);
 
-        keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Victor');
         const verify4 = await keymaster.verifyResponse(responseDID);
         expect(verify4.match).toBe(false);
         expect(verify4.vps.length).toBe(2);
@@ -2281,7 +2284,7 @@ describe('groupAdd', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         const alias = 'mockAlias';
-        keymaster.addName(alias, dataDid);
+        await keymaster.addName(alias, dataDid);
         const data = await keymaster.groupAdd(groupDid, alias);
 
         const expectedGroup = {
@@ -2318,7 +2321,7 @@ describe('groupAdd', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         const alias = 'mockAlias';
-        keymaster.addName(alias, groupDid);
+        await keymaster.addName(alias, groupDid);
         const data = await keymaster.groupAdd(alias, dataDid);
 
         const expectedGroup = {
@@ -2584,7 +2587,7 @@ describe('groupRemove', () => {
         await keymaster.groupAdd(groupDid, dataDid);
 
         const alias = 'mockAlias';
-        keymaster.addName(alias, dataDid);
+        await keymaster.addName(alias, dataDid);
 
         const data = await keymaster.groupRemove(groupDid, alias);
 
@@ -3500,7 +3503,7 @@ async function setupCredentials() {
     const carol = await keymaster.createId('Carol');
     await keymaster.createId('Victor');
 
-    keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Alice');
 
     const credential1 = await keymaster.createSchema(mockSchema);
     const credential2 = await keymaster.createSchema(mockSchema);
@@ -3511,7 +3514,7 @@ async function setupCredentials() {
     const vc1 = await keymaster.issueCredential(bc1);
     const vc2 = await keymaster.issueCredential(bc2);
 
-    keymaster.setCurrentId('Bob');
+    await keymaster.setCurrentId('Bob');
 
     const credential3 = await keymaster.createSchema(mockSchema);
     const credential4 = await keymaster.createSchema(mockSchema);
@@ -3522,7 +3525,7 @@ async function setupCredentials() {
     const vc3 = await keymaster.issueCredential(bc3);
     const vc4 = await keymaster.issueCredential(bc4);
 
-    keymaster.setCurrentId('Carol');
+    await keymaster.setCurrentId('Carol');
 
     await keymaster.acceptCredential(vc1);
     await keymaster.acceptCredential(vc2);
@@ -3577,7 +3580,7 @@ describe('checkWallet', () => {
 
         const agentDID = await keymaster.createId('Alice');
         const schemaDID = await keymaster.createSchema();
-        keymaster.addName('schema', schemaDID);
+        await keymaster.addName('schema', schemaDID);
         await gatekeeper.removeDIDs([agentDID, schemaDID]);
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
@@ -3591,8 +3594,8 @@ describe('checkWallet', () => {
         mockFs({});
 
         const credentials = await setupCredentials();
-        keymaster.addName('credential-0', credentials[0]);
-        keymaster.addName('credential-2', credentials[2]);
+        await keymaster.addName('credential-0', credentials[0]);
+        await keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);
         await keymaster.revokeCredential(credentials[2]);
 
@@ -3651,7 +3654,7 @@ describe('fixWallet', () => {
 
         const agentDID = await keymaster.createId('Alice');
         const schemaDID = await keymaster.createSchema();
-        keymaster.addName('schema', schemaDID);
+        await keymaster.addName('schema', schemaDID);
         await gatekeeper.removeDIDs([agentDID, schemaDID]);
 
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
@@ -3666,8 +3669,8 @@ describe('fixWallet', () => {
         mockFs({});
 
         const credentials = await setupCredentials();
-        keymaster.addName('credential-0', credentials[0]);
-        keymaster.addName('credential-2', credentials[2]);
+        await keymaster.addName('credential-0', credentials[0]);
+        await keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);
         await keymaster.revokeCredential(credentials[2]);
 
@@ -3821,7 +3824,7 @@ describe('listIds', () => {
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        const ids = keymaster.listIds();
+        const ids = await keymaster.listIds();
 
         expect(ids.length).toBe(4);
         expect(ids.includes('Alice')).toBe(true);
@@ -3844,7 +3847,7 @@ describe('getCurrentId', () => {
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        const current = keymaster.getCurrentId();
+        const current = await keymaster.getCurrentId();
 
         expect(current).toBe('Victor');
     });
@@ -3863,8 +3866,8 @@ describe('setCurrentId', () => {
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
 
-        keymaster.setCurrentId('Carol');
-        const current = keymaster.getCurrentId();
+        await keymaster.setCurrentId('Carol');
+        const current = await keymaster.getCurrentId();
 
         expect(current).toBe('Carol');
     });
@@ -3878,7 +3881,7 @@ describe('setCurrentId', () => {
         await keymaster.createId('Victor');
 
         try {
-            keymaster.setCurrentId('mock');
+            await keymaster.setCurrentId('mock');
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
             expect(error.message).toBe(exceptions.UNKNOWN_ID);
