@@ -27,7 +27,13 @@ export async function listRegistries() {
 }
 
 export async function loadWallet() {
-    return db.loadWallet() || newWallet();
+    let wallet = await db.loadWallet();
+
+    if (!wallet) {
+        wallet = await newWallet();
+    }
+
+    return wallet;
 }
 
 export async function saveWallet(wallet) {
@@ -59,7 +65,8 @@ export async function newWallet(mnemonic, overwrite = false) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!db.saveWallet(wallet, overwrite)) {
+    const ok = await db.saveWallet(wallet, overwrite)
+    if (!ok) {
         throw new Error(exceptions.UPDATE_FAILED);
     }
 
@@ -251,7 +258,7 @@ export async function fixWallet() {
         }
     }
 
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
 }
@@ -360,7 +367,7 @@ export async function recoverWallet(did) {
         const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
         const wallet = JSON.parse(backup);
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return wallet;
     }
     catch (error) {
@@ -383,7 +390,7 @@ export async function setCurrentId(name) {
     const wallet = await loadWallet();
     if (Object.keys(wallet.ids).includes(name)) {
         wallet.current = name;
-        saveWallet(wallet);
+        await saveWallet(wallet);
     }
     else {
         throw new Error(exceptions.UNKNOWN_ID);
@@ -500,7 +507,7 @@ export async function createAsset(data, options = {}) {
 
     // Keep assets that will be garbage-collected out of the owned list
     if (registry !== 'hyperswarm') {
-        addToOwned(did);
+        await addToOwned(did);
     }
 
     return did;
@@ -662,7 +669,7 @@ export async function revokeDID(did) {
     const ok = gatekeeper.deleteDID(signed);
 
     if (ok && current.didDocument.controller) {
-        removeFromOwned(did, current.didDocument.controller);
+        await removeFromOwned(did, current.didDocument.controller);
     }
 
     return ok;
@@ -676,8 +683,7 @@ async function addToOwned(did) {
     owned.add(did);
     id.owned = Array.from(owned);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
 async function removeFromOwned(did, owner) {
@@ -686,8 +692,7 @@ async function removeFromOwned(did, owner) {
 
     id.owned = id.owned.filter(item => item !== did);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
 async function addToHeld(did) {
@@ -698,8 +703,7 @@ async function addToHeld(did) {
     held.add(did);
     id.held = Array.from(held);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
 async function removeFromHeld(did) {
@@ -709,8 +713,7 @@ async function removeFromHeld(did) {
 
     if (held.delete(did)) {
         id.held = Array.from(held);
-        saveWallet(wallet);
-        return true;
+        return saveWallet(wallet);
     }
 
     return false;
@@ -805,7 +808,7 @@ export async function createId(name, options = {}) {
     wallet.ids[name] = newId;
     wallet.counter += 1;
     wallet.current = name;
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return did;
 }
@@ -822,7 +825,7 @@ export async function removeId(name) {
             wallet.current = ids.length > 0 ? ids[0] : '';
         }
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return true;
     }
     else {
@@ -851,7 +854,7 @@ export async function backupId(controller = null) {
     const vaultDid = await createAsset({ backup: backup }, { registry, controller });
 
     doc.didDocumentData.vault = vaultDid;
-    return await updateDID(id.did, doc);
+    return updateDID(id.did, doc);
 }
 
 export async function recoverId(did) {
@@ -868,7 +871,7 @@ export async function recoverId(did) {
         wallet.current = data.name;
         wallet.counter += 1;
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
 
         return `Recovered ${data.name}!`;
     }
@@ -901,7 +904,7 @@ export async function rotateKeys() {
 
     if (ok) {
         id.index = nextIndex;
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return doc;
     }
     else {
@@ -931,7 +934,7 @@ export async function addName(name, did) {
     }
 
     wallet.names[name] = did;
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return true;
 }
@@ -941,7 +944,7 @@ export async function removeName(name) {
 
     if (wallet.names && Object.keys(wallet.names).includes(name)) {
         delete wallet.names[name];
-        saveWallet(wallet);
+        await saveWallet(wallet);
     }
 
     return true;
@@ -990,7 +993,7 @@ export async function issueCredential(credential, options = {}) {
 
     const signed = await addSignature(credential);
     const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
-    addToOwned(cipherDid);
+    await addToOwned(cipherDid);
     return cipherDid;
 }
 

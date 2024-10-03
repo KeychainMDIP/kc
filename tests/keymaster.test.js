@@ -46,6 +46,51 @@ describe('loadWallet', () => {
     });
 });
 
+describe('saveWallet', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should save a wallet', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
+    it('should overwrite an existing wallet', async () => {
+        mockFs({});
+        const mockWallet1 = { mock: 1 };
+        const mockWallet2 = { mock: 2 };
+
+        await keymaster.saveWallet(mockWallet1);
+        const ok = await keymaster.saveWallet(mockWallet2);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet).toStrictEqual(mockWallet2);
+    });
+
+    it('should overwrite an existing wallet in a loop', async () => {
+        mockFs({});
+
+        for (let i = 0; i < 10; i++) {
+            const mockWallet = { mock: i };
+
+            const ok = await keymaster.saveWallet(mockWallet);
+            const wallet = await keymaster.loadWallet();
+
+            expect(ok).toBe(true);
+            expect(wallet).toStrictEqual(mockWallet);
+        }
+    });
+});
+
 describe('decryptMnemonic', () => {
 
     afterEach(() => {

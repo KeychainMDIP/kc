@@ -1,26 +1,58 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 
 const dataFolder = 'data';
 const walletName = `${dataFolder}/wallet.json`;
 
-export function saveWallet(wallet, overwrite = false) {
-    if (fs.existsSync(walletName) && !overwrite) {
-        return false;
+export async function saveWallet(wallet, overwrite = false) {
+    if (!overwrite) {
+        try {
+            await fs.access(walletName);
+            return false;
+        }
+        catch (error) {
+            if (error.code !== 'ENOENT') {
+                return false;
+            }
+            // If the error is 'ENOENT', the file does not exist, so we can ignore it.
+        }
     }
 
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
+    // Create the folder if it doesn't exist
+    try {
+        await fs.mkdir(dataFolder, { recursive: true });
+    }
+    catch (error) {
+        if (error.code !== 'EEXIST') {
+            return false;
+        }
+        // If the error is 'EEXIST', the directory already exists, so we can ignore it.
     }
 
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+    // Write the wallet data to the file
+    await fs.writeFile(walletName, JSON.stringify(wallet, null, 4));
     return true;
 }
 
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
+export async function loadWallet() {
+    let walletJson;
+
+    try {
+        walletJson = await fs.readFile(walletName, 'utf-8');
+    }
+    catch (error) {
+        if (error.code === 'ENOENT') {
+            // Return null if the wallet file doesn't exist
+            return null;
+        }
+        // If the error is anything else, rethrow it.
+        throw error;
     }
 
-    return null;
+    try {
+        return JSON.parse(walletJson);
+    }
+    catch (error) {
+        //throw new Error(`Bad JSON ${walletJson}`);
+        return null;
+    }
 }
