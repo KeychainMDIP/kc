@@ -26,16 +26,22 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-export function loadWallet() {
-    return db.loadWallet() || newWallet();
+export async function loadWallet() {
+    let wallet = await db.loadWallet();
+
+    if (!wallet) {
+        wallet = await newWallet();
+    }
+
+    return wallet;
 }
 
-export function saveWallet(wallet) {
+export async function saveWallet(wallet, overwrite = true) {
     // TBD validate wallet before saving
-    return db.saveWallet(wallet, true);
+    return db.saveWallet(wallet, overwrite);
 }
 
-export function newWallet(mnemonic, overwrite = false) {
+export async function newWallet(mnemonic, overwrite = false) {
     let wallet;
 
     try {
@@ -59,22 +65,23 @@ export function newWallet(mnemonic, overwrite = false) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!db.saveWallet(wallet, overwrite)) {
+    const ok = await db.saveWallet(wallet, overwrite)
+    if (!ok) {
         throw new Error(exceptions.UPDATE_FAILED);
     }
 
     return wallet;
 }
 
-export function decryptMnemonic() {
-    const wallet = loadWallet();
-    const keypair = hdKeyPair();
+export async function decryptMnemonic() {
+    const wallet = await loadWallet();
+    const keypair = await hdKeyPair();
 
     return cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
 }
 
 export async function checkWallet() {
-    const wallet = loadWallet();
+    const wallet = await loadWallet();
 
     let checked = 0;
     let invalid = 0;
@@ -155,7 +162,7 @@ export async function checkWallet() {
 }
 
 export async function fixWallet() {
-    const wallet = loadWallet();
+    const wallet = await loadWallet();
     let idsRemoved = 0;
     let ownedRemoved = 0;
     let heldRemoved = 0;
@@ -251,13 +258,13 @@ export async function fixWallet() {
         }
     }
 
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
 }
 
 export async function resolveSeedBank() {
-    const keypair = hdKeyPair();
+    const keypair = await hdKeyPair();
 
     const operation = {
         type: "create",
@@ -281,11 +288,11 @@ export async function resolveSeedBank() {
         }
     }
     const did = await gatekeeper.createDID(signed);
-    return await gatekeeper.resolveDID(did);
+    return gatekeeper.resolveDID(did);
 }
 
 async function updateSeedBank(doc) {
-    const keypair = hdKeyPair();
+    const keypair = await hdKeyPair();
     const did = doc.didDocument.id;
     const current = await gatekeeper.resolveDID(did);
     const prev = cipher.hashJSON(current);
@@ -313,8 +320,8 @@ async function updateSeedBank(doc) {
 }
 
 export async function backupWallet(registry = defaultRegistry) {
-    const wallet = loadWallet();
-    const keypair = hdKeyPair();
+    const wallet = await loadWallet();
+    const keypair = await hdKeyPair();
     const seedBank = await resolveSeedBank();
     const msg = JSON.stringify(wallet);
     const backup = cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
@@ -355,12 +362,12 @@ export async function recoverWallet(did) {
             did = seedBank.didDocumentData.wallet;
         }
 
-        const keypair = hdKeyPair();
+        const keypair = await hdKeyPair();
         const data = await resolveAsset(did);
         const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
         const wallet = JSON.parse(backup);
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return wallet;
     }
     catch (error) {
@@ -369,29 +376,29 @@ export async function recoverWallet(did) {
     }
 }
 
-export function listIds() {
-    const wallet = loadWallet();
+export async function listIds() {
+    const wallet = await loadWallet();
     return Object.keys(wallet.ids);
 }
 
-export function getCurrentId() {
-    const wallet = loadWallet();
+export async function getCurrentId() {
+    const wallet = await loadWallet();
     return wallet.current;
 }
 
-export function setCurrentId(name) {
-    const wallet = loadWallet();
+export async function setCurrentId(name) {
+    const wallet = await loadWallet();
     if (Object.keys(wallet.ids).includes(name)) {
         wallet.current = name;
-        saveWallet(wallet);
+        await saveWallet(wallet);
     }
     else {
         throw new Error(exceptions.UNKNOWN_ID);
     }
 }
 
-function fetchId(id) {
-    const wallet = loadWallet();
+async function fetchIdInfo(id) {
+    const wallet = await loadWallet();
     let idInfo = null;
 
     if (id) {
@@ -424,16 +431,16 @@ function fetchId(id) {
     return idInfo;
 }
 
-function hdKeyPair() {
-    const wallet = loadWallet();
+async function hdKeyPair() {
+    const wallet = await loadWallet();
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
 
     return cipher.generateJwk(hdkey.privateKey);
 }
 
 async function fetchKeyPair(name = null) {
-    const wallet = loadWallet();
-    const id = fetchId(name);
+    const wallet = await loadWallet();
+    const id = await fetchIdInfo(name);
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
     const doc = await resolveDID(id.did, { confirm: true });
     const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -480,7 +487,7 @@ export async function createAsset(data, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const id = fetchId(controller);
+    const id = await fetchIdInfo(controller);
 
     const operation = {
         type: "create",
@@ -500,7 +507,7 @@ export async function createAsset(data, options = {}) {
 
     // Keep assets that will be garbage-collected out of the owned list
     if (registry !== 'hyperswarm') {
-        addToOwned(did);
+        await addToOwned(did);
     }
 
     return did;
@@ -513,7 +520,7 @@ export async function encryptMessage(msg, receiver, options = {}) {
         encryptForSender = true;
     }
 
-    const id = fetchId();
+    const id = await fetchIdInfo();
     const senderKeypair = await fetchKeyPair();
     const doc = await resolveDID(receiver, { confirm: true });
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -533,8 +540,8 @@ export async function encryptMessage(msg, receiver, options = {}) {
 }
 
 export async function decryptMessage(did) {
-    const wallet = loadWallet();
-    const id = fetchId();
+    const wallet = await loadWallet();
+    const id = await fetchIdInfo();
     const asset = await resolveAsset(did);
 
     if (!asset || (!asset.encrypted && !asset.cipher_hash)) {
@@ -582,7 +589,7 @@ export async function decryptJSON(did) {
 
 export async function addSignature(obj, controller = null) {
     // Fetches current ID if name is missing
-    const id = fetchId(controller);
+    const id = await fetchIdInfo(controller);
     const keypair = await fetchKeyPair(controller);
 
     try {
@@ -662,62 +669,82 @@ export async function revokeDID(did) {
     const ok = gatekeeper.deleteDID(signed);
 
     if (ok && current.didDocument.controller) {
-        removeFromOwned(did, current.didDocument.controller);
+        await removeFromOwned(did, current.didDocument.controller);
     }
 
     return ok;
 }
 
-function addToOwned(did) {
-    const wallet = loadWallet();
+async function addToOwned(did) {
+    const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const owned = new Set(id.owned);
 
     owned.add(did);
     id.owned = Array.from(owned);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
-function removeFromOwned(did, owner) {
-    const wallet = loadWallet();
-    const id = fetchId(owner);
+async function removeFromOwned(did, owner) {
+    const wallet = await loadWallet();
+    const id = await fetchIdInfo(owner);
 
     id.owned = id.owned.filter(item => item !== did);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
-function addToHeld(did) {
-    const wallet = loadWallet();
+async function addToHeld(did) {
+    const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const held = new Set(id.held);
 
     held.add(did);
     id.held = Array.from(held);
 
-    saveWallet(wallet);
-    return true;
+    return saveWallet(wallet);
 }
 
-function removeFromHeld(did) {
-    const wallet = loadWallet();
+async function removeFromHeld(did) {
+    const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const held = new Set(id.held);
 
     if (held.delete(did)) {
         id.held = Array.from(held);
-        saveWallet(wallet);
-        return true;
+        return saveWallet(wallet);
     }
 
     return false;
 }
 
+export async function lookupDID(name) {
+    try {
+        if (name.startsWith('did:')) {
+            return name;
+        }
+    }
+    catch {
+        throw new Error(exceptions.INVALID_DID);
+    }
+
+    const wallet = await loadWallet();
+
+    if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        return wallet.names[name];
+    }
+
+    if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        return wallet.ids[name].did;
+    }
+
+    throw new Error(exceptions.UNKNOWN_ID);
+}
+
 export async function resolveDID(did, options = {}) {
-    return await gatekeeper.resolveDID(lookupDID(did), options);
+    did = await lookupDID(did);
+    return await gatekeeper.resolveDID(did, options);
 }
 
 export async function resolveAsset(did) {
@@ -737,7 +764,7 @@ export async function createId(name, options = {}) {
         registry = defaultRegistry;
     }
 
-    const wallet = loadWallet();
+    const wallet = await loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
@@ -781,13 +808,13 @@ export async function createId(name, options = {}) {
     wallet.ids[name] = newId;
     wallet.counter += 1;
     wallet.current = name;
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return did;
 }
 
-export function removeId(name) {
-    const wallet = loadWallet();
+export async function removeId(name) {
+    const wallet = await loadWallet();
     let ids = Object.keys(wallet.ids);
 
     if (ids.includes(name)) {
@@ -798,7 +825,7 @@ export function removeId(name) {
             wallet.current = ids.length > 0 ? ids[0] : '';
         }
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return true;
     }
     else {
@@ -807,15 +834,15 @@ export function removeId(name) {
 }
 
 export async function resolveId(name) {
-    const id = fetchId(name);
+    const id = await fetchIdInfo(name);
     return resolveDID(id.did);
 }
 
 export async function backupId(controller = null) {
     // Backs up current ID if name is missing
-    const id = fetchId(controller);
-    const wallet = loadWallet();
-    const keypair = hdKeyPair();
+    const id = await fetchIdInfo(controller);
+    const wallet = await loadWallet();
+    const keypair = await hdKeyPair();
     const data = {
         name: controller || wallet.current,
         id: id,
@@ -827,13 +854,13 @@ export async function backupId(controller = null) {
     const vaultDid = await createAsset({ backup: backup }, { registry, controller });
 
     doc.didDocumentData.vault = vaultDid;
-    return await updateDID(id.did, doc);
+    return updateDID(id.did, doc);
 }
 
 export async function recoverId(did) {
     try {
-        const wallet = loadWallet();
-        const keypair = hdKeyPair();
+        const wallet = await loadWallet();
+        const keypair = await hdKeyPair();
         const doc = await resolveDID(did);
         const vault = await resolveAsset(doc.didDocumentData.vault);
         const backup = cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
@@ -844,7 +871,7 @@ export async function recoverId(did) {
         wallet.current = data.name;
         wallet.counter += 1;
 
-        saveWallet(wallet);
+        await saveWallet(wallet);
 
         return `Recovered ${data.name}!`;
     }
@@ -854,7 +881,7 @@ export async function recoverId(did) {
 }
 
 export async function rotateKeys() {
-    const wallet = loadWallet();
+    const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const nextIndex = id.index + 1;
     const hdkey = cipher.generateHDKeyJSON(wallet.seed.hdkey);
@@ -877,7 +904,7 @@ export async function rotateKeys() {
 
     if (ok) {
         id.index = nextIndex;
-        saveWallet(wallet);
+        await saveWallet(wallet);
         return doc;
     }
     else {
@@ -885,14 +912,14 @@ export async function rotateKeys() {
     }
 }
 
-export function listNames() {
-    const wallet = loadWallet();
+export async function listNames() {
+    const wallet = await loadWallet();
 
     return wallet.names || {};
 }
 
-export function addName(name, did) {
-    const wallet = loadWallet();
+export async function addName(name, did) {
+    const wallet = await loadWallet();
 
     if (!wallet.names) {
         wallet.names = {};
@@ -907,43 +934,20 @@ export function addName(name, did) {
     }
 
     wallet.names[name] = did;
-    saveWallet(wallet);
+    await saveWallet(wallet);
 
     return true;
 }
 
-export function removeName(name) {
-    const wallet = loadWallet();
+export async function removeName(name) {
+    const wallet = await loadWallet();
 
     if (wallet.names && Object.keys(wallet.names).includes(name)) {
         delete wallet.names[name];
-        saveWallet(wallet);
+        await saveWallet(wallet);
     }
 
     return true;
-}
-
-export function lookupDID(name) {
-    try {
-        if (name.startsWith('did:')) {
-            return name;
-        }
-    }
-    catch {
-        throw new Error(exceptions.INVALID_DID);
-    }
-
-    const wallet = loadWallet();
-
-    if (wallet.names && Object.keys(wallet.names).includes(name)) {
-        return wallet.names[name];
-    }
-
-    if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        return wallet.ids[name].did;
-    }
-
-    throw new Error(exceptions.UNKNOWN_ID);
 }
 
 export async function testAgent(id) {
@@ -958,10 +962,11 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
         validFrom = new Date().toISOString();
     }
 
-    const id = fetchId();
-    const type = lookupDID(schemaId);
+    const id = await fetchIdInfo();
+    const type = await lookupDID(schemaId);
     const schema = await resolveAsset(type);
     const credential = JSONSchemaFaker.generate(schema);
+    const subjectDID = await lookupDID(subjectId);
 
     return {
         "@context": [
@@ -973,14 +978,14 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
         validFrom,
         validUntil,
         credentialSubject: {
-            id: lookupDID(subjectId),
+            id: subjectDID,
         },
         credential,
     };
 }
 
 export async function issueCredential(credential, options = {}) {
-    const id = fetchId();
+    const id = await fetchIdInfo();
 
     if (credential.issuer !== id.did) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -988,12 +993,12 @@ export async function issueCredential(credential, options = {}) {
 
     const signed = await addSignature(credential);
     const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
-    addToOwned(cipherDid);
+    await addToOwned(cipherDid);
     return cipherDid;
 }
 
 export async function updateCredential(did, credential) {
-    did = lookupDID(did);
+    did = await lookupDID(did);
     const originalVC = await decryptJSON(did);
 
     if (!originalVC.credential) {
@@ -1008,7 +1013,7 @@ export async function updateCredential(did, credential) {
     const signed = await addSignature(credential);
     const msg = JSON.stringify(signed);
 
-    const id = fetchId();
+    const id = await fetchIdInfo();
     const senderKeypair = await fetchKeyPair();
     const holder = credential.credentialSubject.id;
     const holderDoc = await resolveDID(holder, { confirm: true });
@@ -1030,12 +1035,12 @@ export async function updateCredential(did, credential) {
 }
 
 export async function revokeCredential(credential) {
-    const did = lookupDID(credential);
+    const did = await lookupDID(credential);
     return revokeDID(did);
 }
 
 export async function listIssued(issuer) {
-    const id = fetchId(issuer);
+    const id = await fetchIdInfo(issuer);
     const issued = [];
 
     if (id.owned) {
@@ -1058,8 +1063,8 @@ export async function listIssued(issuer) {
 
 export async function acceptCredential(did) {
     try {
-        const id = fetchId();
-        const credential = lookupDID(did);
+        const id = await fetchIdInfo();
+        const credential = await lookupDID(did);
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
@@ -1073,22 +1078,25 @@ export async function acceptCredential(did) {
     }
 }
 
-export async function getCredential(did) {
-    return decryptJSON(lookupDID(did));
+export async function getCredential(id) {
+    const did = await lookupDID(id);
+    return decryptJSON(did);
 }
 
-export async function removeCredential(did) {
-    return removeFromHeld(lookupDID(did));
+export async function removeCredential(id) {
+    const did = await lookupDID(id);
+    return removeFromHeld(did);
 }
 
 export async function listCredentials(id) {
-    return fetchId(id).held || [];
+    const idInfo = await fetchIdInfo(id);
+    return idInfo.held || [];
 }
 
 export async function publishCredential(did, options = {}) {
     const { reveal } = options;
-    const id = fetchId();
-    const credential = lookupDID(did);
+    const id = await fetchIdInfo();
+    const credential = await lookupDID(did);
     const vc = await decryptJSON(credential);
 
     if (vc.credentialSubject.id !== id.did) {
@@ -1119,9 +1127,9 @@ export async function publishCredential(did, options = {}) {
 }
 
 export async function unpublishCredential(did) {
-    const id = fetchId();
+    const id = await fetchIdInfo();
     const doc = await resolveDID(id.did);
-    const credential = lookupDID(did);
+    const credential = await lookupDID(did);
     const manifest = doc.didDocumentData.manifest;
 
     if (credential && manifest && Object.keys(manifest).includes(credential)) {
@@ -1170,7 +1178,7 @@ export async function createChallenge(challengeSpec, options = {}) {
 }
 
 async function findMatchingCredential(credential) {
-    const id = fetchId();
+    const id = await fetchIdInfo();
 
     if (!id.held) {
         return;
@@ -1387,7 +1395,7 @@ export async function getGroup(id) {
 }
 
 export async function groupAdd(groupId, memberId) {
-    const groupDID = lookupDID(groupId);
+    const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
 
@@ -1395,7 +1403,7 @@ export async function groupAdd(groupId, memberId) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const memberDID = lookupDID(memberId);
+    const memberDID = await lookupDID(memberId);
 
     try {
         // test for valid member DID
@@ -1436,7 +1444,7 @@ export async function groupAdd(groupId, memberId) {
 }
 
 export async function groupRemove(groupId, memberId) {
-    const groupDID = lookupDID(groupId);
+    const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
 
@@ -1444,7 +1452,7 @@ export async function groupRemove(groupId, memberId) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const memberDID = lookupDID(memberId);
+    const memberDID = await lookupDID(memberId);
 
     try {
         // test for valid member DID
@@ -1473,7 +1481,7 @@ export async function groupRemove(groupId, memberId) {
 }
 
 export async function groupTest(group, member) {
-    const didGroup = lookupDID(group);
+    const didGroup = await lookupDID(group);
 
     if (!didGroup) {
         return false;
@@ -1499,7 +1507,7 @@ export async function groupTest(group, member) {
         return true;
     }
 
-    const didMember = lookupDID(member);
+    const didMember = await lookupDID(member);
     let isMember = data.members.includes(didMember);
 
     if (!isMember) {
@@ -1589,7 +1597,7 @@ export async function createTemplate(id) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const schemaDID = lookupDID(id);
+    const schemaDID = await lookupDID(id);
     const schema = await resolveAsset(schemaDID);
     const template = JSONSchemaFaker.generate(schema);
 
@@ -1663,8 +1671,8 @@ export async function createPoll(poll, options = {}) {
 }
 
 export async function viewPoll(poll) {
-    const id = fetchId();
-    const didPoll = lookupDID(poll);
+    const id = await fetchIdInfo();
+    const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
 
@@ -1745,8 +1753,8 @@ export async function viewPoll(poll) {
 
 export async function votePoll(poll, vote, options = {}) {
     const { spoil } = options;
-    const id = fetchId();
-    const didPoll = lookupDID(poll);
+    const id = await fetchIdInfo();
+    const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
     const eligible = await groupTest(data.roster, id.did);
@@ -1789,9 +1797,9 @@ export async function votePoll(poll, vote, options = {}) {
 }
 
 export async function updatePoll(ballot) {
-    const id = fetchId();
+    const id = await fetchIdInfo();
 
-    const didBallot = lookupDID(ballot);
+    const didBallot = await lookupDID(ballot);
     const docBallot = await resolveDID(didBallot);
     const didVoter = docBallot.didDocument.controller;
     let dataBallot;
@@ -1807,7 +1815,7 @@ export async function updatePoll(ballot) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const didPoll = lookupDID(dataBallot.poll);
+    const didPoll = await lookupDID(dataBallot.poll);
     const docPoll = await resolveDID(didPoll);
     const dataPoll = docPoll.didDocumentData;
     const didOwner = docPoll.didDocument.controller;
@@ -1849,8 +1857,8 @@ export async function updatePoll(ballot) {
 
 export async function publishPoll(poll, options = {}) {
     const { reveal } = options;
-    const id = fetchId();
-    const didPoll = lookupDID(poll);
+    const id = await fetchIdInfo();
+    const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const owner = doc.didDocument.controller;
 
@@ -1874,8 +1882,8 @@ export async function publishPoll(poll, options = {}) {
 }
 
 export async function unpublishPoll(poll) {
-    const id = fetchId();
-    const didPoll = lookupDID(poll);
+    const id = await fetchIdInfo();
+    const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const owner = doc.didDocument.controller;
 

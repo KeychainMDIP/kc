@@ -1,26 +1,39 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 
 const dataFolder = 'data';
 const walletName = `${dataFolder}/wallet.json`;
 
-export function saveWallet(wallet, overwrite = false) {
-    if (fs.existsSync(walletName) && !overwrite) {
-        return false;
+export async function saveWallet(wallet, overwrite) {
+    if (!overwrite) {
+        try {
+            await fs.access(walletName);
+            return false;
+        }
+        catch (error) {
+            // If the file does not exist, we can ignore it.
+        }
     }
 
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
+    // Create the folder if it doesn't exist
+    try {
+        await fs.mkdir(dataFolder, { recursive: true });
+    }
+    catch (error) {
+        // If the directory already exists, we can ignore it.
     }
 
-    fs.writeFileSync(walletName, JSON.stringify(wallet, null, 4));
+    // Write the wallet data to the file
+    await fs.writeFile(walletName, JSON.stringify(wallet, null, 4));
     return true;
 }
 
-export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
+export async function loadWallet() {
+    try {
+        const walletJson = await fs.readFile(walletName, 'utf-8');
         return JSON.parse(walletJson);
     }
-
-    return null;
+    catch (error) {
+        // Return null if the wallet can't be read and parsed
+        return null;
+    }
 }
