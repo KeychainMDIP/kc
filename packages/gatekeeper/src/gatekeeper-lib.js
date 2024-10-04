@@ -48,6 +48,7 @@ export async function verifyDID(did) {
         }
 
         if (validUntil < now) {
+            // eslint-disable-next-line
             throw 'Expired';
         }
 
