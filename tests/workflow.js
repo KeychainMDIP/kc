@@ -30,7 +30,7 @@ async function runWorkflow() {
     console.log(`Created Carol  ${carol}`);
     console.log(`Created Victor ${victor}`);
 
-    keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Alice');
 
     const schema1 = await keymaster.createSchema(mockSchema, { registry: 'local' });
     const schema2 = await keymaster.createSchema(mockSchema, { registry: 'local' });
@@ -47,7 +47,7 @@ async function runWorkflow() {
     console.log(`Alice issued vc1 for Carol ${vc1}`);
     console.log(`Alice issued vc2 for Carol ${vc2}`);
 
-    keymaster.setCurrentId('Bob');
+    await keymaster.setCurrentId('Bob');
 
     const schema3 = await keymaster.createSchema(mockSchema, { registry: 'local' });
     const schema4 = await keymaster.createSchema(mockSchema, { registry: 'local' });
@@ -64,7 +64,7 @@ async function runWorkflow() {
     console.log(`Bob issued vc3 for Carol ${vc3}`);
     console.log(`Bob issued vc4 for Carol ${vc4}`);
 
-    keymaster.setCurrentId('Carol');
+    await keymaster.setCurrentId('Carol');
 
     await keymaster.acceptCredential(vc1);
     await keymaster.acceptCredential(vc2);
@@ -73,7 +73,7 @@ async function runWorkflow() {
 
     console.log(`Carol accepted all 4 VCs`);
 
-    keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Victor');
 
     const mockChallenge = {
         challenge: {
@@ -100,25 +100,25 @@ async function runWorkflow() {
     const challengeDid = await keymaster.createChallenge(mockChallenge, { registry: 'local' });
     console.log(`Victor created challenge ${challengeDid}`);
 
-    keymaster.setCurrentId('Carol');
+    await keymaster.setCurrentId('Carol');
     const vpDid = await keymaster.createResponse(challengeDid, { registry: 'local' });
     console.log(`Carol created response for Victor ${vpDid}`);
 
-    keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Victor');
 
     const verify1 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify1.vps.length} valid credentials`);
 
-    keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Alice');
     await keymaster.rotateKeys();
 
-    keymaster.setCurrentId('Bob');
+    await keymaster.setCurrentId('Bob');
     await keymaster.rotateKeys();
 
-    keymaster.setCurrentId('Carol');
+    await keymaster.setCurrentId('Carol');
     await keymaster.rotateKeys();
 
-    keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Victor');
     await keymaster.rotateKeys();
 
     console.log(`All agents rotated their keys`);
@@ -126,23 +126,23 @@ async function runWorkflow() {
     const verify2 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify2.vps.length} valid credentials`);
 
-    keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Alice');
     await keymaster.revokeCredential(vc1);
     console.log(`Alice revoked vc1`);
 
-    keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Victor');
     const verify3 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify3.vps.length} valid credentials`);
 
-    keymaster.setCurrentId('Bob');
+    await keymaster.setCurrentId('Bob');
     await keymaster.revokeCredential(vc3);
     console.log(`Bob revoked vc3`);
 
-    keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Victor');
     const verify4 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
 
-    keymaster.stop();
+    await keymaster.stop();
 }
 
 async function main() {
@@ -150,8 +150,8 @@ async function main() {
     await gatekeeper.start(db_json);
     await keymaster.start(gatekeeper, db_wallet, cipher);
 
-    const backup = keymaster.loadWallet();
-    keymaster.newWallet(null, true);
+    const backup = await keymaster.loadWallet();
+    await keymaster.newWallet(null, true);
 
     try {
         await runWorkflow();
@@ -160,7 +160,7 @@ async function main() {
         console.log(error);
     }
 
-    keymaster.saveWallet(backup);
+    await keymaster.saveWallet(backup);
     process.exit();
 }
 
