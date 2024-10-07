@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as db_wallet from '@mdip/keymaster/db/json';
+import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -383,8 +383,8 @@ program
     });
 
 async function run() {
-    gatekeeper.setURL(gatekeeperURL);
-    await keymaster.start(gatekeeper, db_wallet, cipher);
+    gatekeeper.start({ url: gatekeeperURL });
+    await keymaster.start({ gatekeeper, wallet, cipher });
     program.parse(process.argv);
     await keymaster.stop();
 }

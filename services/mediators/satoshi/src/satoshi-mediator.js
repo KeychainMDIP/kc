@@ -2,7 +2,7 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as db_wallet from '@mdip/keymaster/db/json';
+import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 
@@ -397,7 +397,7 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
-    await keymaster.start(gatekeeper, db_wallet, cipher);
+    await keymaster.start({ gatekeeper, wallet, cipher });
 
     try {
         await keymaster.resolveDID(config.nodeID);
