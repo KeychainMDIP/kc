@@ -58,7 +58,7 @@ services:
   tess-mediator:
     build:
       context: .
-      dockerfile: Dockerfile.sat
+      dockerfile: Dockerfile.satoshi
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
@@ -92,7 +92,7 @@ services:
   tftc-mediator:
     build:
       context: .
-      dockerfile: Dockerfile.sat
+      dockerfile: Dockerfile.satoshi
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
@@ -124,7 +124,7 @@ services:
   tbtc-mediator:
     build:
       context: .
-      dockerfile: Dockerfile.sat
+      dockerfile: Dockerfile.satoshi
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
