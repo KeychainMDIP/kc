@@ -40,7 +40,7 @@ v1router.get('/registries', async (req, res) => {
 
 v1router.get('/wallet', async (req, res) => {
     try {
-        const wallet = keymaster.loadWallet();
+        const wallet = await keymaster.loadWallet();
         res.json(wallet);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -50,7 +50,7 @@ v1router.get('/wallet', async (req, res) => {
 v1router.put('/wallet', async (req, res) => {
     try {
         const { wallet } = req.body;
-        const response = keymaster.saveWallet(wallet);
+        const response = await keymaster.saveWallet(wallet);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -60,7 +60,7 @@ v1router.put('/wallet', async (req, res) => {
 v1router.post('/wallet/new', async (req, res) => {
     try {
         const { mnemonic, overwrite } = req.body;
-        const wallet = keymaster.newWallet(mnemonic, overwrite);
+        const wallet = await keymaster.newWallet(mnemonic, overwrite);
         res.json(wallet);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -105,8 +105,8 @@ v1router.post('/wallet/fix', async (req, res) => {
 
 v1router.get('/wallet/mnemonic', async (req, res) => {
     try {
-        const mnemonic = keymaster.decryptMnemonic();
-        res.json(mnemonic);
+        const response = await keymaster.decryptMnemonic();
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -114,8 +114,8 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
 
 v1router.get('/ids/current', async (req, res) => {
     try {
-        const current = keymaster.getCurrentId();
-        res.json(current);
+        const response = await keymaster.getCurrentId();
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -124,8 +124,8 @@ v1router.get('/ids/current', async (req, res) => {
 v1router.put('/ids/current', async (req, res) => {
     try {
         const { name } = req.body;
-        keymaster.setCurrentId(name);
-        res.json("OK");
+        const response = await keymaster.setCurrentId(name);
+        res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
     }
@@ -133,8 +133,8 @@ v1router.put('/ids/current', async (req, res) => {
 
 v1router.get('/ids', async (req, res) => {
     try {
-        const ids = keymaster.listIds();
-        res.json(ids);
+        const response = await keymaster.listIds();
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -143,8 +143,8 @@ v1router.get('/ids', async (req, res) => {
 v1router.post('/ids/new', async (req, res) => {
     try {
         const { name, options } = req.body;
-        const did = await keymaster.createId(name, options);
-        res.json(did);
+        const response = await keymaster.createId(name, options);
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -164,7 +164,7 @@ v1router.get('/ids/:id', async (req, res) => {
 
 v1router.delete('/ids/:id', async (req, res) => {
     try {
-        const response = keymaster.removeId(req.params.id);
+        const response = await keymaster.removeId(req.params.id);
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -192,8 +192,8 @@ v1router.post('/ids/:id/recover', async (req, res) => {
 
 v1router.get('/names', async (req, res) => {
     try {
-        const names = keymaster.listNames();
-        res.json(names);
+        const response = await keymaster.listNames();
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -202,7 +202,7 @@ v1router.get('/names', async (req, res) => {
 v1router.post('/names', async (req, res) => {
     try {
         const { name, did } = req.body;
-        const response = keymaster.addName(name, did);
+        const response = await keymaster.addName(name, did);
         res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -223,7 +223,7 @@ v1router.get('/names/:name', async (req, res) => {
 
 v1router.delete('/names/:name', async (req, res) => {
     try {
-        const response = keymaster.removeName(req.params.name);
+        const response = await keymaster.removeName(req.params.name);
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
@@ -232,8 +232,8 @@ v1router.delete('/names/:name', async (req, res) => {
 
 v1router.get('/challenge', async (req, res) => {
     try {
-        const did = await keymaster.createChallenge();
-        res.json(did);
+        const response = await keymaster.createChallenge();
+        res.json(response);
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -242,8 +242,8 @@ v1router.get('/challenge', async (req, res) => {
 v1router.post('/challenge', async (req, res) => {
     try {
         const { challenge, options } = req.body;
-        const did = await keymaster.createChallenge(challenge, options);
-        res.json(did);
+        const response = await keymaster.createChallenge(challenge, options);
+        res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
     }
@@ -252,8 +252,8 @@ v1router.post('/challenge', async (req, res) => {
 v1router.post('/response', async (req, res) => {
     try {
         const { challenge, options } = req.body;
-        const did = await keymaster.createResponse(challenge, options);
-        res.json(did);
+        const response = await keymaster.createResponse(challenge, options);
+        res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
     }
@@ -695,7 +695,7 @@ app.listen(port, async () => {
     console.log(`keymaster server running on port ${port}`);
 
     try {
-        const currentId = keymaster.getCurrentId();
+        const currentId = await keymaster.getCurrentId();
         const doc = await keymaster.resolveId();
 
         console.log(`current ID: ${currentId}`);

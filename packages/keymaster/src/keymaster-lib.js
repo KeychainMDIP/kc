@@ -390,7 +390,7 @@ export async function setCurrentId(name) {
     const wallet = await loadWallet();
     if (Object.keys(wallet.ids).includes(name)) {
         wallet.current = name;
-        await saveWallet(wallet);
+        return saveWallet(wallet);
     }
     else {
         throw new Error(exceptions.UNKNOWN_ID);
