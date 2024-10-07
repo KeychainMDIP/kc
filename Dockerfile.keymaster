@@ -19,4 +19,4 @@ RUN cd keymaster/server && npm ci
 WORKDIR /app/keymaster
 
 # Run...
-CMD ["node", "server/src/index.js"]
+CMD ["node", "server/src/keymaster-api.js"]

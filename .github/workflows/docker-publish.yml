@@ -54,7 +54,7 @@ jobs:
           - dockerfile: Dockerfile.hyperswarm
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
-          - dockerfile: Dockerfile.sat
+          - dockerfile: Dockerfile.satoshi
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:release
     permissions:

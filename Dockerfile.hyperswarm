@@ -16,4 +16,4 @@ WORKDIR /app/hyperswarm
 RUN npm ci
 
 # Run...
-CMD ["node", "src/index.js"]
+CMD ["node", "src/hyperswarm-mediator.js"]

@@ -19,4 +19,4 @@ RUN cd gatekeeper/server && npm ci
 WORKDIR /app/gatekeeper
 
 # Run...
-CMD ["node", "server/src/index.js"]
+CMD ["node", "server/src/gatekeeper-api.js"]

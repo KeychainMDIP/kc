@@ -16,4 +16,4 @@ WORKDIR /app/satoshi
 RUN npm ci
 
 # Run...
-CMD ["node", "src/index.js"]
+CMD ["node", "src/satoshi-mediator.js"]
