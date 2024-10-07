@@ -84,13 +84,3 @@ jobs:
           push: false
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ matrix.tags }}
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: ${{ matrix.tags }}
-          format: "table"
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL'
