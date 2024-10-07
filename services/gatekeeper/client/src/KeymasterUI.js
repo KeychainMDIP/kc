@@ -408,13 +408,15 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 return;
             }
 
-            const groupDID = await keymaster.createGroup(groupName, registry);
+            const name = groupName;
+            setGroupName('');
+
+            const groupDID = await keymaster.createGroup(name, { registry });
             await keymaster.addName(groupName, groupDID);
 
-            setGroupName('');
             refreshNames();
-            setSelectedGroupName(groupName);
-            refreshGroup(groupName);
+            setSelectedGroupName(name);
+            refreshGroup(name);
         } catch (error) {
             window.alert(error);
         }
@@ -467,13 +469,15 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 return;
             }
 
-            const schemaDID = await keymaster.createSchema(null, registry);
-            await keymaster.addName(schemaName, schemaDID);
-
+            const name = schemaName;
             setSchemaName('');
+
+            const schemaDID = await keymaster.createSchema(null, { registry });
+            await keymaster.addName(name, schemaDID);
+
             refreshNames();
-            setSelectedSchemaName(schemaName);
-            editSchema(schemaName);
+            setSelectedSchemaName(name);
+            editSchema(name);
         } catch (error) {
             window.alert(error);
         }
@@ -511,7 +515,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function issueCredential() {
         try {
-            const did = await keymaster.issueCredential(JSON.parse(credentialString), registry);
+            const did = await keymaster.issueCredential(JSON.parse(credentialString), { registry });
             setCredentialDID(did);
             // Add did to issuedList
             setIssuedList(prevIssuedList => [...prevIssuedList, did]);
