@@ -851,8 +851,13 @@ async function run() {
     }
     else {
         keymaster = keymaster_lib;
-        gatekeeper_sdk.setURL(gatekeeperURL);
-        await gatekeeper_sdk.waitUntilReady(1, false);
+        await gatekeeper_sdk.start({
+            url: gatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 1,
+            chatty: false,
+            becomeChattyAfter: 5
+        });
         await keymaster.start(gatekeeper_sdk, db_wallet, cipher);
         program.parse(process.argv);
         await keymaster.stop();

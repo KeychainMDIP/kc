@@ -689,8 +689,12 @@ process.on('unhandledRejection', (reason, promise) => {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    gatekeeper.setURL(`${config.gatekeeperURL}`);
-    await gatekeeper.waitUntilReady();
+    await gatekeeper.start({
+        url: config.gatekeeperURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
     await keymaster.start(gatekeeper, db_wallet, cipher);
     console.log(`keymaster server running on port ${port}`);
 

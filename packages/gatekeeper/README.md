@@ -37,8 +37,12 @@ The SDK is used to communicate with a Gatekeeper REST API service.
 ```js
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 
-gatekeeper.setURL('http://gatekeeper-host:4224');
-await gatekeeper.waitUntilReady();
+await gatekeeper.start({
+    url: 'http://gatekeeper-host:4224',
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
 
 const did = 'did:test:did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);

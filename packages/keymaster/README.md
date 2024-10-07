@@ -26,8 +26,12 @@ import * as json_wallet from '@mdip/keymaster/db/json';
 import * as cipher_node from '@mdip/cipher/node';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
-gatekeeper_sdk.setURL('http://gatekeeper-host:4224');
-await gatekeeper_sdk.waitUntilReady();
+await gatekeeper.start({
+    url: 'http://gatekeeper-host:4224',
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
 await keymaster_lib.start(gatekeeper_sdk, json_wallet, cipher_node);
 
 const newId = await keymaster_lib.createId('Bob');
@@ -41,8 +45,12 @@ import * as browser_wallet from '@mdip/keymaster/db/web';
 import * as cipher_web from '@mdip/cipher/web';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
-gatekeeper_sdk.setURL('http://gatekeeper-host:4224');
-await gatekeeper_sdk.waitUntilReady();
+await gatekeeper.start({
+    url: 'http://gatekeeper-host:4224',
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
 await keymaster_lib.start(gatekeeper_sdk, browser_wallet, cipher_web);
 
 const newId = await keymaster_lib.createId('Bob');

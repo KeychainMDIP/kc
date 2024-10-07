@@ -10,14 +10,50 @@ function throwError(error) {
     throw error.message;
 }
 
-export async function start() {
+export async function start(options = {}) {
+    if (options.url) {
+        URL = options.url;
+    }
+
+    if (options.waitUntilReady) {
+        await waitUntilReady(options);
+    }
+}
+
+async function waitUntilReady(options = {}) {
+    let { intervalSeconds, chatty, becomeChattyAfter } = options;
+    let ready = false;
+    let retries = 0;
+
+    if (chatty) {
+        console.log(`Connecting to gatekeeper at ${URL}`);
+    }
+
+    while (!ready) {
+        ready = await isReady();
+
+        if (!ready) {
+            if (chatty) {
+                console.log('Waiting for Gatekeeper to be ready...');
+            }
+            // wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+        }
+
+        retries += 1;
+
+        if (!chatty && retries > becomeChattyAfter) {
+            console.log(`Connecting to gatekeeper at ${URL}`);
+            chatty = true;
+        }
+    }
+
+    if (chatty) {
+        console.log('Gatekeeper service is ready!');
+    }
 }
 
 export async function stop() {
-}
-
-export function setURL(url) {
-    URL = url;
 }
 
 export async function listRegistries() {
@@ -37,30 +73,6 @@ export async function resetDb() {
     }
     catch (error) {
         return false;
-    }
-}
-
-export async function waitUntilReady(intervalSeconds = 5, chatty = true) {
-    let ready = false;
-
-    if (chatty) {
-        console.log(`Connecting to gatekeeper at ${URL}`);
-    }
-
-    while (!ready) {
-        ready = await isReady();
-
-        if (!ready) {
-            if (chatty) {
-                console.log('Waiting for Gatekeeper to be ready...');
-            }
-            // wait for 1 second before checking again
-            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-        }
-    }
-
-    if (chatty) {
-        console.log('Gatekeeper service is ready!');
     }
 }
 
