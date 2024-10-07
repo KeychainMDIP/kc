@@ -25,6 +25,18 @@ async function waitUntilReady(options = {}) {
     let ready = false;
     let retries = 0;
 
+    if (!intervalSeconds) {
+        intervalSeconds = 5;
+    }
+
+    if (!chatty) {
+        chatty = false;
+    }
+
+    if (!becomeChattyAfter) {
+        becomeChattyAfter = 0;
+    }
+
     if (chatty) {
         console.log(`Connecting to gatekeeper at ${URL}`);
     }
@@ -42,7 +54,7 @@ async function waitUntilReady(options = {}) {
 
         retries += 1;
 
-        if (!chatty && retries > becomeChattyAfter) {
+        if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
             console.log(`Connecting to gatekeeper at ${URL}`);
             chatty = true;
         }

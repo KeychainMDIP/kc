@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as db_wallet from '@mdip/keymaster/db/json';
+import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
@@ -695,7 +695,7 @@ app.listen(port, async () => {
         intervalSeconds: 5,
         chatty: true,
     });
-    await keymaster.start(gatekeeper, db_wallet, cipher);
+    await keymaster.start({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     try {

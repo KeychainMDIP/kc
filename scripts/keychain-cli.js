@@ -11,8 +11,8 @@ import * as cipher from '@mdip/cipher/node';
 dotenv.config();
 
 let keymaster;
-const gatekeeperURL = process.env.KC_CLI_GATEKEEPER_URL || 'http://localhost:4224';
-const keymasterURL = process.env.KC_CLI_KEYMASTER_URL;
+const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
+const keymasterURL = process.env.KC_KEYMASTER_URL;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -151,7 +151,8 @@ program
     .description('Resolves the current ID')
     .action(async () => {
         try {
-            const doc = await keymaster.resolveId();
+            const current = await keymaster.getCurrentId();
+            const doc = await keymaster.resolveDID(current);
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
@@ -845,8 +846,13 @@ program
 async function run() {
     if (keymasterURL) {
         keymaster = keymaster_sdk;
-        keymaster.setURL(keymasterURL);
-        await keymaster.waitUntilReady(1, false);
+        await keymaster.start({
+            url: keymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 1,
+            chatty: false,
+            becomeChattyAfter: 5
+        });
         program.parse(process.argv);
     }
     else {
@@ -858,7 +864,11 @@ async function run() {
             chatty: false,
             becomeChattyAfter: 5
         });
-        await keymaster.start(gatekeeper_sdk, db_wallet, cipher);
+        await keymaster.start({
+            gatekeeper: gatekeeper_sdk,
+            wallet: db_wallet,
+            cipher
+        });
         program.parse(process.argv);
         await keymaster.stop();
     }
