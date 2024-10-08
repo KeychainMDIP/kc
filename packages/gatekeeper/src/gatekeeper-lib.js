@@ -28,7 +28,9 @@ export async function start(options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    // Only used for unit testing
     if (options.console) {
+        // eslint-disable-next-line
         console = options.console;
     }
 
