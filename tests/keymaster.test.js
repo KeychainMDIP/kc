@@ -614,8 +614,8 @@ describe('testAgent', () => {
         mockFs({});
 
         await keymaster.createId('Bob');
-        const dataDID = await keymaster.createAsset({ name: 'mockAnchor' });
-        const isAgent = await keymaster.testAgent(dataDID);
+        const dataDid = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isAgent = await keymaster.testAgent(dataDid);
 
         expect(isAgent).toBe(false);
     });
@@ -2344,7 +2344,7 @@ describe('unpublishCredential', () => {
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
-        await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, { reveal: true });
 
         await keymaster.unpublishCredential(did);
 
@@ -2438,8 +2438,11 @@ describe('groupAdd', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        const data = await keymaster.groupAdd(groupDid, dataDid);
 
+        const ok = await keymaster.groupAdd(groupDid, dataDid);
+        expect(ok).toBe(true);
+
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -2459,8 +2462,10 @@ describe('groupAdd', () => {
 
         const alias = 'mockAlias';
         await keymaster.addName(alias, dataDid);
-        const data = await keymaster.groupAdd(groupDid, alias);
+        const ok = await keymaster.groupAdd(groupDid, alias);
+        expect(ok).toBe(true);
 
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -2496,8 +2501,10 @@ describe('groupAdd', () => {
 
         const alias = 'mockAlias';
         await keymaster.addName(alias, groupDid);
-        const data = await keymaster.groupAdd(alias, dataDid);
+        const ok = await keymaster.groupAdd(alias, dataDid);
+        expect(ok).toBe(true);
 
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -3022,9 +3029,9 @@ describe('getGroup', () => {
 
         await keymaster.createId('Bob');
         const groupName = 'mock';
-        const groupDID = await keymaster.createGroup(groupName);
+        const groupDid = await keymaster.createGroup(groupName);
 
-        const group = await keymaster.getGroup(groupDID);
+        const group = await keymaster.getGroup(groupDid);
 
         expect(group.name).toBe(groupName);
         expect(group.members).toStrictEqual([]);
