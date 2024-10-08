@@ -20,18 +20,34 @@ export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
 }
 
-export async function start(injectedDb) {
+export async function start(options = {}) {
+    if (options.db) {
+        db = options.db;
+    }
+    else {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    // Only used for unit testing
+    if (options.console) {
+        // eslint-disable-next-line
+        console = options.console;
+    }
+
     if (!ipfs) {
         helia = await createHelia();
         ipfs = json(helia);
     }
-
-    db = injectedDb;
 }
 
 export async function stop() {
-    helia.stop();
-    await db.stop();
+    if (helia) {
+        helia.stop();
+    }
+
+    if (db) {
+        await db.stop();
+    }
 }
 
 export async function verifyDID(did) {
@@ -59,7 +75,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty = true) {
+export async function verifyDb(chatty) {
     if (chatty) {
         console.time('verifyDb');
     }

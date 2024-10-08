@@ -20,12 +20,12 @@ The library must be configured by calling the start function with one of the sup
 
 ```js
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as json_db from '@mdip/gatekeeper/db/json';
+import * as db_json from '@mdip/gatekeeper/db/json';
 
 await json_db.start('mdip-test');
-await gatekeeper.start(json_db);
+await gatekeeper.start({ db: db_json });
 
-const did = 'did:test:did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
+const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
 ```
@@ -37,10 +37,17 @@ The SDK is used to communicate with a Gatekeeper REST API service.
 ```js
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 
-gatekeeper.setURL('http://gatekeeper-host:4224');
-await gatekeeper.waitUntilReady();
+// Try connecting to the gatekeeper service every second,
+// and start reporting (chatty) if not connected after 5 attempts
+await gatekeeper.start({
+    url: 'http://gatekeeper-host:4224',
+    waitUntilReady: true,
+    intervalSeconds: 1,
+    chatty: false,
+    becomeChattyAfter: 5
+});
 
-const did = 'did:test:did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
+const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
 ```

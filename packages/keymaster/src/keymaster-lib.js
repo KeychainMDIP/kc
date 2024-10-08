@@ -8,18 +8,43 @@ let cipher = null;
 const defaultRegistry = 'TESS';
 const ephemeralRegistry = 'hyperswarm';
 
-export async function start(gatekeeperDep, dbDep, cipherDep) {
-    if (!gatekeeperDep?.createDID || !dbDep?.loadWallet || !cipherDep?.verifySig) {
+export async function start(options = {}) {
+    if (options.gatekeeper) {
+        gatekeeper = options.gatekeeper;
+
+        if (!gatekeeper.createDID) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    }
+    else {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    gatekeeper = gatekeeperDep;
-    db = dbDep;
-    cipher = cipherDep;
+    if (options.wallet) {
+        db = options.wallet;
+
+        if (!db.loadWallet) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    }
+    else {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (options.cipher) {
+        cipher = options.cipher;
+
+        if (!cipher.verifySig) {
+            throw new Error(exceptions.INVALID_PARAMETER);
+        }
+    }
+    else {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 }
 
 export async function stop() {
-    await gatekeeper.stop();
+    return gatekeeper.stop();
 }
 
 export async function listRegistries() {

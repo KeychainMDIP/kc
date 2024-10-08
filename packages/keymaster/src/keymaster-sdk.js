@@ -10,12 +10,32 @@ function throwError(error) {
     throw error.message;
 }
 
-export function setURL(url) {
-    URL = url;
+export async function start(options = {}) {
+    if (options.url) {
+        URL = options.url;
+    }
+
+    if (options.waitUntilReady) {
+        await waitUntilReady(options);
+    }
 }
 
-export async function waitUntilReady(intervalSeconds = 1, chatty = true) {
+async function waitUntilReady(options) {
+    let { intervalSeconds, chatty, becomeChattyAfter } = options;
     let ready = false;
+    let retries = 0;
+
+    if (!intervalSeconds) {
+        intervalSeconds = 5;
+    }
+
+    if (!chatty) {
+        chatty = false;
+    }
+
+    if (!becomeChattyAfter) {
+        becomeChattyAfter = 0;
+    }
 
     if (chatty) {
         console.log(`Connecting to Keymaster at ${URL}`);
@@ -31,11 +51,21 @@ export async function waitUntilReady(intervalSeconds = 1, chatty = true) {
             // wait for 1 second before checking again
             await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
         }
+
+        retries += 1;
+
+        if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
+            console.log(`Connecting to Keymaster at ${URL}`);
+            chatty = true;
+        }
     }
 
     if (chatty) {
         console.log('Keymaster service is ready!');
     }
+}
+
+export async function stop() {
 }
 
 export async function isReady() {

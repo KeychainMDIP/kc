@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as db_wallet from '@mdip/keymaster/db/json';
+import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
@@ -689,9 +689,13 @@ process.on('unhandledRejection', (reason, promise) => {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    gatekeeper.setURL(`${config.gatekeeperURL}`);
-    await gatekeeper.waitUntilReady();
-    await keymaster.start(gatekeeper, db_wallet, cipher);
+    await gatekeeper.start({
+        url: config.gatekeeperURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+    await keymaster.start({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     try {
