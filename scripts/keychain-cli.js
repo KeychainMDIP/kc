@@ -509,7 +509,7 @@ program
     .description('Publish the existence of a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const response = await keymaster.publishCredential(did, false);
+            const response = await keymaster.publishCredential(did, { reveal: false });
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
@@ -522,7 +522,7 @@ program
     .description('Reveal a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const response = await keymaster.publishCredential(did, true);
+            const response = await keymaster.publishCredential(did, { reveal: true });
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {

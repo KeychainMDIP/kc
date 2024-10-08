@@ -592,7 +592,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function publishCredential(did) {
         try {
-            await keymaster.publishCredential(did, false);
+            await keymaster.publishCredential(did, { reveal: false });
             resolveId();
             decryptCredential(did);
         } catch (error) {
@@ -602,7 +602,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function revealCredential(did) {
         try {
-            await keymaster.publishCredential(did, true);
+            await keymaster.publishCredential(did, { reveal: true });
             resolveId();
             decryptCredential(did);
         } catch (error) {

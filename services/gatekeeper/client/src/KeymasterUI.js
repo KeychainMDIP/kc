@@ -592,7 +592,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function publishCredential(did) {
         try {
-            await keymaster.publishCredential(did, false);
+            await keymaster.publishCredential(did, { reveal: false });
             resolveId();
             decryptCredential(did);
         } catch (error) {
@@ -602,7 +602,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function revealCredential(did) {
         try {
-            await keymaster.publishCredential(did, true);
+            await keymaster.publishCredential(did, { reveal: true });
             resolveId();
             decryptCredential(did);
         } catch (error) {
@@ -1541,7 +1541,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                                 margin="normal"
                                                 inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                             />
-                                            <br/>
+                                            <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={newChallenge}>
@@ -1577,7 +1577,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                                 margin="normal"
                                                 inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                             />
-                                            <br/>
+                                            <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>
