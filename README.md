@@ -7,7 +7,7 @@ Details on each command can be found in the [CLI User Manual](https://keychain.o
 
 ## Quick start
 
-Recommended system requirements: 
+Recommended system requirements:
 - GNU/Linux OS with [docker](https://www.docker.com/) for containerized operation
 - node 18.15.0 and npm 10.8.2 or newer for manual and local operation
 - minimum of 8Gb RAM if operating a full trustless node
@@ -20,14 +20,14 @@ $ ./start-node
 ```
 ## Node configuration
 
-Customize your node in the kc/.env file. 
+Customize your node in the kc/.env file.
 
 ```
-KC_UID=1000                                        # Docker host UID 
+KC_UID=1000                                        # Docker host UID
 KC_GID=1002                                        # Docker host GID
 KC_NODE_NAME=anon                                  # Hyperswarm node name
 KC_NODE_ID=anon                                    # Node Keymaster DID name
-KC_GATEKEEPER_REGISTRIES=hyperswarm,TESS,TBTC,TFTC # Supported DID Registries
+KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC      # Supported DID Registries
 ...
 {adjust registry details for advanced users only}
 ```
@@ -117,7 +117,7 @@ Commands:
   verify-response <response>                 Decrypt and validate a response to a challenge
 ```
 
-## admin-cli 
+## admin-cli
 
 Use the admin CLI to manage and view status of your server's DID registry operations.
 

@@ -8,6 +8,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
+// We'll leave TESS here so existing TESS DIDs are not deleted
+// Remove TESS when we switch to did:mdip
 const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
@@ -75,7 +77,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty) {
+export async function verifyDb(chatty=true) {
     if (chatty) {
         console.time('verifyDb');
     }

@@ -725,7 +725,7 @@ describe('rotateKeys', () => {
     it('should raise an exception if latest version is not confirmed', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice', 'TESS');
+        await keymaster.createId('Alice', 'TFTC');
         await keymaster.rotateKeys();
 
         try {
@@ -3642,7 +3642,7 @@ describe('listRegistries', () => {
 
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TESS')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
     });
 });
 

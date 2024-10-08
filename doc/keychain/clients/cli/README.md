@@ -45,7 +45,7 @@ Keychain is provided as a set of docker containers and scripts:
     KC_NODE_NAME=mynode
     KC_NODE_ID=mynodeID
     KC_GATEKEEPER_DB=json
-    KC_GATEKEEPER_REGISTRIES=hyperswarm,TESS,TBTC,TFTC
+    KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC
 
     ...
     ```

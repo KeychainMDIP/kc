@@ -92,7 +92,7 @@
                 "example": [
                   "local",
                   "hyperswarm",
-                  "TESS"
+                  "TBTC"
                 ]
               }
             }
@@ -647,7 +647,7 @@
                         },
                         "registry": {
                           "type": "string",
-                          "example": "TESS"
+                          "example": "TBTC"
                         }
                       }
                     }
