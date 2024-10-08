@@ -475,7 +475,7 @@
         }
       }
     },
-    "/ids/new": {
+    "/ids/": {
       "post": {
         "summary": "Create a new ID",
         "tags": [
@@ -1367,47 +1367,6 @@
         }
       }
     },
-    "/credentials/new": {
-      "post": {
-        "summary": "Create a credential",
-        "tags": [
-          "Credential"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "schema": {
-                    "type": "object"
-                  },
-                  "options": {
-                    "type": "object"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
     "/credentials/bind": {
       "post": {
         "summary": "Bind a credential",
@@ -2120,7 +2079,7 @@
         }
       }
     },
-    "/poll/new": {
+    "/polls": {
       "post": {
         "summary": "Create a poll",
         "tags": [
@@ -2161,7 +2120,7 @@
         }
       }
     },
-    "/poll/{poll}/view": {
+    "/polls/{poll}/view": {
       "get": {
         "summary": "View a poll",
         "tags": [
@@ -2194,7 +2153,7 @@
         }
       }
     },
-    "/poll/vote": {
+    "/polls/vote": {
       "post": {
         "summary": "Vote in a poll",
         "tags": [
@@ -2238,7 +2197,7 @@
         }
       }
     },
-    "/poll/update": {
+    "/polls/update": {
       "put": {
         "summary": "Update a poll",
         "tags": [
@@ -2276,7 +2235,7 @@
         }
       }
     },
-    "/poll/{poll}/publish": {
+    "/polls/{poll}/publish": {
       "post": {
         "summary": "Publish a poll",
         "tags": [
@@ -2324,7 +2283,7 @@
         }
       }
     },
-    "/poll/{poll}/unpublish": {
+    "/polls/{poll}/unpublish": {
       "delete": {
         "summary": "Unpublish a poll",
         "tags": [
@@ -2357,7 +2316,7 @@
         }
       }
     },
-    "/schemas/{id}/template/new": {
+    "/schemas/{id}/template": {
       "post": {
         "summary": "Create a template",
         "tags": [
@@ -2405,7 +2364,7 @@
         }
       }
     },
-    "/schemas/new": {
+    "/schemas": {
       "post": {
         "summary": "Create new schema",
         "tags": [
@@ -2444,9 +2403,7 @@
             "description": "Internal server error"
           }
         }
-      }
-    },
-    "/schemas": {
+      },
       "get": {
         "summary": "List schemas",
         "tags": [

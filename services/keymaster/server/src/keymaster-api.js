@@ -140,7 +140,7 @@ v1router.get('/ids', async (req, res) => {
     }
 });
 
-v1router.post('/ids/new', async (req, res) => {
+v1router.post('/ids/', async (req, res) => {
     try {
         const { name, options } = req.body;
         const response = await keymaster.createId(name, options);
@@ -555,17 +555,7 @@ v1router.post('/keys/verify', async (req, res) => {
     }
 });
 
-v1router.post('/credentials/new', async (req, res) => {
-    try {
-        const { schema, options } = req.body;
-        const response = await keymaster.createSchema(schema, options);
-        res.json(response);
-    } catch (error) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-v1router.post('/schemas/:id/template/new', async (req, res) => {
+v1router.post('/schemas/:id/template/', async (req, res) => {
     try {
         const { schema } = req.body;
         const response = await keymaster.createTemplate(schema);
@@ -575,7 +565,7 @@ v1router.post('/schemas/:id/template/new', async (req, res) => {
     }
 });
 
-v1router.post('/assets/new', async (req, res) => {
+v1router.post('/assets/', async (req, res) => {
     try {
         const { asset, options } = req.body;
         const response = await keymaster.createAsset(asset, options);
@@ -606,7 +596,7 @@ v1router.get('/templates/poll', async (req, res) => {
     }
 });
 
-v1router.post('/poll/new', async (req, res) => {
+v1router.post('/polls/', async (req, res) => {
     try {
         const { poll, options } = req.body;
         const response = await keymaster.createPoll(poll, options);
@@ -616,7 +606,7 @@ v1router.post('/poll/new', async (req, res) => {
     }
 });
 
-v1router.get('/poll/:poll/view', async (req, res) => {
+v1router.get('/polls/:poll/view', async (req, res) => {
     try {
         const response = await keymaster.viewPoll(req.params.poll);
         res.json(response);
@@ -625,7 +615,7 @@ v1router.get('/poll/:poll/view', async (req, res) => {
     }
 });
 
-v1router.post('/poll/vote', async (req, res) => {
+v1router.post('/polls/vote', async (req, res) => {
     try {
         const { poll, vote, options } = req.body;
         const response = await keymaster.votePoll(poll, vote, options);
@@ -635,7 +625,7 @@ v1router.post('/poll/vote', async (req, res) => {
     }
 });
 
-v1router.put('/poll/update', async (req, res) => {
+v1router.put('/polls/update', async (req, res) => {
     try {
         const { ballot } = req.body;
         const response = await keymaster.updatePoll(ballot);
@@ -645,7 +635,7 @@ v1router.put('/poll/update', async (req, res) => {
     }
 });
 
-v1router.post('/poll/:poll/publish', async (req, res) => {
+v1router.post('/polls/:poll/publish', async (req, res) => {
     try {
         const { poll, options } = req.body;
         const response = await keymaster.publishPoll(poll, options);
@@ -655,7 +645,7 @@ v1router.post('/poll/:poll/publish', async (req, res) => {
     }
 });
 
-v1router.delete('/poll/:poll/unpublish', async (req, res) => {
+v1router.delete('/polls/:poll/unpublish', async (req, res) => {
     try {
         const { poll } = req.params;
         const response = await keymaster.unpublishPoll(poll);
