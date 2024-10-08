@@ -92,8 +92,7 @@ v1router.get('/did/:did', async (req, res) => {
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.toString());
+        return res.status(404).send({ error: 'DID not found' });
     }
 });
 
