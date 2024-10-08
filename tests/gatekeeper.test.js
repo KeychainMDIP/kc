@@ -13,6 +13,25 @@ afterEach(async () => {
     await gatekeeper.stop();
 });
 
+describe('start', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should throw exception on invalid parameters', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.start();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+});
+
 describe('anchorSeed', () => {
 
     afterEach(() => {
