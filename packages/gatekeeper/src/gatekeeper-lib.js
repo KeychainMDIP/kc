@@ -77,7 +77,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty) {
+export async function verifyDb(chatty=true) {
     if (chatty) {
         console.time('verifyDb');
     }
