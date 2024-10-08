@@ -3072,6 +3072,8 @@ describe('listGroups', () => {
         const group2 = await keymaster.createGroup('mock-2');
         const group3 = await keymaster.createGroup('mock-3');
         const schema1 = await keymaster.createSchema();
+        // add a bogus DID to trigger the exception case
+        await keymaster.addToOwned('did:test:mock');
 
         const groups = await keymaster.listGroups();
 
