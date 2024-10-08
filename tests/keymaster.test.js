@@ -1417,6 +1417,31 @@ describe('createSchema', () => {
     });
 });
 
+describe('listSchemas', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of schemas', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const schema1 = await keymaster.createSchema();
+        const schema2 = await keymaster.createSchema();
+        const schema3 = await keymaster.createSchema();
+        const group1 = await keymaster.createGroup('mockGroup');
+
+        const schemas = await keymaster.listSchemas();
+
+        expect(schemas.includes(schema1)).toBe(true);
+        expect(schemas.includes(schema2)).toBe(true);
+        expect(schemas.includes(schema3)).toBe(true);
+        expect(schemas.includes(group1)).toBe(false);
+    });
+});
+
 describe('bindCredential', () => {
 
     afterEach(() => {
@@ -3028,6 +3053,32 @@ describe('getGroup', () => {
         catch (error) {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
+    });
+});
+
+
+describe('listGroups', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of schemas', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const group1 = await keymaster.createGroup('mock-1');
+        const group2 = await keymaster.createGroup('mock-2');
+        const group3 = await keymaster.createGroup('mock-3');
+        const schema1 = await keymaster.createSchema();
+
+        const groups = await keymaster.listGroups();
+
+        expect(groups.includes(group1)).toBe(true);
+        expect(groups.includes(group2)).toBe(true);
+        expect(groups.includes(group3)).toBe(true);
+        expect(groups.includes(schema1)).toBe(false);
     });
 });
 

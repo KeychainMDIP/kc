@@ -531,7 +531,7 @@ export async function createAsset(data, options = {}) {
     const did = await gatekeeper.createDID(signed);
 
     // Keep assets that will be garbage-collected out of the owned list
-    if (registry !== 'hyperswarm') {
+    if (!validUntil) {
         await addToOwned(did);
     }
 
@@ -1561,6 +1561,28 @@ export const defaultSchema = {
     ]
 };
 
+export async function listGroups(owner) {
+    const id = await fetchIdInfo(owner);
+    const schemas = [];
+
+    if (id.owned) {
+        for (const did of id.owned) {
+            try {
+                const isGroup = await groupTest(did);
+
+                if (isGroup) {
+                    schemas.push(did);
+                }
+            }
+            catch (error) {
+                continue;
+            }
+        }
+    }
+
+    return schemas;
+}
+
 function validateSchema(schema) {
     try {
         if (!Object.keys(schema).includes('$schema')) {
@@ -1611,6 +1633,28 @@ export async function testSchema(id) {
     }
 
     return validateSchema(schema);
+}
+
+export async function listSchemas(owner) {
+    const id = await fetchIdInfo(owner);
+    const schemas = [];
+
+    if (id.owned) {
+        for (const did of id.owned) {
+            try {
+                const isSchema = await testSchema(did);
+
+                if (isSchema) {
+                    schemas.push(did);
+                }
+            }
+            catch (error) {
+                continue;
+            }
+        }
+    }
+
+    return schemas;
 }
 
 export async function createTemplate(id) {
