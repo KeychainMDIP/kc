@@ -898,7 +898,7 @@ export async function recoverId(did) {
 
         await saveWallet(wallet);
 
-        return `Recovered ${data.name}!`;
+        return wallet.current;
     }
     catch {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -959,9 +959,7 @@ export async function addName(name, did) {
     }
 
     wallet.names[name] = did;
-    await saveWallet(wallet);
-
-    return true;
+    return saveWallet(wallet);
 }
 
 export async function removeName(name) {
@@ -1465,7 +1463,7 @@ export async function groupAdd(groupId, memberId) {
         throw new Error(exceptions.UPDATE_FAILED);
     }
 
-    return data;
+    return ok;
 }
 
 export async function groupRemove(groupId, memberId) {
@@ -1921,7 +1919,7 @@ export async function updatePoll(ballot) {
         received: new Date().toISOString(),
     };
 
-    return await updateDID(didPoll, docPoll);
+    return updateDID(didPoll, docPoll);
 }
 
 export async function publishPoll(poll, options = {}) {
@@ -1947,7 +1945,7 @@ export async function publishPoll(poll, options = {}) {
 
     doc.didDocumentData.results = view.results;
 
-    return await updateDID(didPoll, doc);
+    return updateDID(didPoll, doc);
 }
 
 export async function unpublishPoll(poll) {
