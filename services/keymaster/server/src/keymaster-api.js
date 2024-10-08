@@ -269,6 +269,15 @@ v1router.post('/response/verify', async (req, res) => {
     }
 });
 
+v1router.get('/groups', async (req, res) => {
+    try {
+        const response = await keymaster.listGroups(req.query.owner);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 v1router.post('/groups', async (req, res) => {
     try {
         const { name, options } = req.body;
@@ -318,6 +327,15 @@ v1router.post('/groups/:name/test', async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(400).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/schemas', async (req, res) => {
+    try {
+        const response = await keymaster.listSchemas(req.query.owner);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
     }
 });
 

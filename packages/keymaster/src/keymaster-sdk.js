@@ -418,6 +418,19 @@ export async function groupTest(group, member) {
     }
 }
 
+export async function listGroups(owner) {
+    try {
+        if (!owner) {
+            owner = '';
+        }
+        const response = await axios.get(`${URL}/api/v1/groups?owner=${owner}`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function createSchema(schema, options) {
     try {
         const response = await axios.post(`${URL}/api/v1/schemas`, { schema, options });
@@ -451,6 +464,20 @@ export async function setSchema(id, schema) {
 export async function testSchema(id) {
     try {
         const response = await axios.post(`${URL}/api/v1/schemas/${id}/test`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function listSchemas(owner) {
+    try {
+        if (!owner) {
+            owner = '';
+        }
+
+        const response = await axios.get(`${URL}/api/v1/schemas?owner=${owner}`);
         return response.data;
     }
     catch (error) {
