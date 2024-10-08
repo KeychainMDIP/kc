@@ -8,6 +8,8 @@ import config from './config.js';
 
 const validVersions = [1];
 const validTypes = ['agent', 'asset'];
+// We'll leave TESS here so existing TESS DIDs are not deleted
+// Remove TESS when we switch to did:mdip
 const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 

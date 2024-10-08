@@ -1251,15 +1251,15 @@ describe('importBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].registry = 'TESS';
-        ops[1].registry = 'TESS';
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
         const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
         expect(updated).toBe(2);
@@ -1271,15 +1271,15 @@ describe('importBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].registry = 'TESS';
-        ops[1].registry = 'TESS';
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
         await gatekeeper.importBatch(ops);
 
         const doc2 = await gatekeeper.resolveDID(did);
@@ -1292,14 +1292,14 @@ describe('importBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
         const ops = await gatekeeper.exportDID(did);
-        ops[0].registry = 'TESS';
-        ops[1].registry = 'TESS';
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
         await gatekeeper.importBatch(ops);
 
         ops[0].registry = 'hyperswarm';
@@ -1492,7 +1492,7 @@ describe('getQueue', () => {
     it('should return single event in queue', async () => {
         mockFs({});
 
-        const registry = 'TESS';
+        const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
         const did = await gatekeeper.createDID(agentOp);
@@ -1526,7 +1526,7 @@ describe('clearQueue', () => {
     it('should clear non-empty queue', async () => {
         mockFs({});
 
-        const registry = 'TESS';
+        const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
         const did = await gatekeeper.createDID(agentOp);
@@ -1545,7 +1545,7 @@ describe('clearQueue', () => {
     it('should clear only specified events', async () => {
         mockFs({});
 
-        const registry = 'TESS';
+        const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
         const did = await gatekeeper.createDID(agentOp);
@@ -1579,14 +1579,14 @@ describe('clearQueue', () => {
     it('should return true if queue already empty', async () => {
         mockFs({});
 
-        const ok = await gatekeeper.clearQueue('TESS', []);
+        const ok = await gatekeeper.clearQueue('TFTC', []);
         expect(ok).toBe(true);
     });
 
     it('should return true if invalid queue specified', async () => {
         mockFs({});
 
-        const registry = 'TESS';
+        const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, registry);
         const did = await gatekeeper.createDID(agentOp);
@@ -1659,7 +1659,7 @@ describe('getDids', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
         const agentDID = await gatekeeper.createDID(agentOp);
         const agentDoc = await gatekeeper.resolveDID(agentDID);
 
@@ -1683,7 +1683,7 @@ describe('getDids', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TESS');
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
         const agentDID = await gatekeeper.createDID(agentOp);
         const agentDoc = await gatekeeper.resolveDID(agentDID);
 
@@ -1825,7 +1825,7 @@ describe('initRegistries', () => {
         expect(registries.length).toBe(5);
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TESS')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
         expect(registries.includes('TBTC')).toBe(true);
         expect(registries.includes('TFTC')).toBe(true);
     });
@@ -1876,7 +1876,7 @@ describe('listRegistries', () => {
         expect(registries.length).toBe(5);
         expect(registries.includes('local')).toBe(true);
         expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TESS')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
         expect(registries.includes('TBTC')).toBe(true);
         expect(registries.includes('TFTC')).toBe(true);
     });
@@ -1884,12 +1884,12 @@ describe('listRegistries', () => {
     it('should return list of configured registries', async () => {
         mockFs({});
 
-        await gatekeeper.initRegistries("hyperswarm, TESS");
+        await gatekeeper.initRegistries("hyperswarm, TFTC");
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(2);
         expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TESS')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
     });
 });
 

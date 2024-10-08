@@ -50,38 +50,6 @@ services:
     depends_on:
       - gatekeeper
 
-  tess-node:
-    image: macterra/tesseract-node:v21.08.03
-    volumes:
-      - ./data/tesseract:/data
-
-  tess-mediator:
-    build:
-      context: .
-      dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
-    environment:
-      - KC_GATEKEEPER_URL=http://gatekeeper:4224
-      - KC_NODE_ID=${KC_NODE_ID}
-      - KC_SAT_CHAIN=TESS
-      - KC_SAT_NETWORK=mainnet
-      - KC_SAT_START_BLOCK=142865
-      - KC_SAT_HOST=tess-node
-      - KC_SAT_PORT=8333
-      - KC_SAT_USER=${KC_TESS_USER}
-      - KC_SAT_PASS=${KC_TESS_PASS}
-      - KC_SAT_WALLET=${KC_TESS_WALLET}
-      - KC_SAT_IMPORT_INTERVAL=${KC_TESS_IMPORT_INTERVAL}
-      - KC_SAT_EXPORT_INTERVAL=${KC_TESS_EXPORT_INTERVAL}
-      - KC_SAT_FEE_MIN=${KC_TESS_FEE_MIN}
-      - KC_SAT_FEE_MAX=${KC_TESS_FEE_MAX}
-      - KC_SAT_FEE_INC=${KC_TESS_FEE_INC}
-    volumes:
-      - ./data:/app/satoshi/data
-    user: "${KC_UID}:${KC_GID}"
-    depends_on:
-      - tess-node
-
   tftc-node:
     build:
       context: .

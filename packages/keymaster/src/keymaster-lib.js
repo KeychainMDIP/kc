@@ -5,7 +5,7 @@ let gatekeeper = null;
 let db = null;
 let cipher = null;
 
-const defaultRegistry = 'TESS';
+const defaultRegistry = 'TFTC';
 const ephemeralRegistry = 'hyperswarm';
 
 export async function start(options = {}) {
