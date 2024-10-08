@@ -28,6 +28,10 @@ export async function start(options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    if (options.console) {
+        console = options.console;
+    }
+
     if (!ipfs) {
         helia = await createHelia();
         ipfs = json(helia);
@@ -69,7 +73,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty = true) {
+export async function verifyDb(chatty) {
     if (chatty) {
         console.time('verifyDb');
     }

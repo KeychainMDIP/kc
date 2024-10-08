@@ -4,9 +4,16 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as exceptions from '@mdip/exceptions';
 
+const mockConsole = {
+    log: () => {},
+    error: () => {},
+    time: () => {},
+    timeEnd: () => {},
+}
+
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start({ db: db_json });
+    await gatekeeper.start({ db: db_json, console: mockConsole });
 });
 
 afterEach(async () => {
@@ -1901,6 +1908,20 @@ describe('verifyDb', () => {
         await gatekeeper.createDID(assetOp);
 
         const invalid = await gatekeeper.verifyDb(false);
+
+        expect(invalid).toBe(0);
+    });
+
+    it('should verify all DIDs in db with chatty enabled', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const invalid = await gatekeeper.verifyDb(true);
 
         expect(invalid).toBe(0);
     });
