@@ -147,7 +147,7 @@ async function runWorkflow() {
 
 async function main() {
     await db_json.start('mdip-workflow');
-    await gatekeeper.start(db_json);
+    await gatekeeper.start({ db: db_json });
     await keymaster.start({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();

@@ -20,10 +20,10 @@ The library must be configured by calling the start function with one of the sup
 
 ```js
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as json_db from '@mdip/gatekeeper/db/json';
+import * as db_json from '@mdip/gatekeeper/db/json';
 
 await json_db.start('mdip-test');
-await gatekeeper.start(json_db);
+await gatekeeper.start({ db: db_json });
 
 const did = 'did:test:did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);

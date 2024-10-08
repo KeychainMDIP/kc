@@ -20,18 +20,28 @@ export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
 }
 
-export async function start(injectedDb) {
+export async function start(options = {}) {
+    if (options.db) {
+        db = options.db;
+    }
+    else {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
     if (!ipfs) {
         helia = await createHelia();
         ipfs = json(helia);
     }
-
-    db = injectedDb;
 }
 
 export async function stop() {
-    helia.stop();
-    await db.stop();
+    if (helia) {
+        helia.stop();
+    }
+
+    if (db) {
+        await db.stop();
+    }
 }
 
 export async function verifyDID(did) {

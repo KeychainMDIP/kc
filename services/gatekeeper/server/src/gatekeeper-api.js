@@ -16,7 +16,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
         : db_json;
 
 await db.start();
-await gatekeeper.start(db);
+await gatekeeper.start({ db });
 
 const app = express();
 const v1router = express.Router();

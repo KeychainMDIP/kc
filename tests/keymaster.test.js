@@ -10,12 +10,79 @@ import * as exceptions from '@mdip/exceptions';
 
 beforeEach(async () => {
     db_json.start('mdip');
-    await gatekeeper.start(db_json);
+    await gatekeeper.start({ db: db_json });
     await keymaster.start({ gatekeeper, wallet, cipher });
 });
 
 afterEach(async () => {
     await keymaster.stop();
+});
+
+describe('start', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should throw exception on invalid parameters', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.start();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ wallet, cipher });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ gatekeeper, cipher });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ gatekeeper, wallet });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ gatekeeper: {}, wallet, cipher });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ gatekeeper, wallet: {}, cipher });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await keymaster.start({ gatekeeper, wallet, cipher: {} });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
 });
 
 describe('loadWallet', () => {

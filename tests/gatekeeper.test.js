@@ -6,7 +6,7 @@ import * as exceptions from '@mdip/exceptions';
 
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start(db_json);
+    await gatekeeper.start({ db: db_json });
 });
 
 afterEach(async () => {
