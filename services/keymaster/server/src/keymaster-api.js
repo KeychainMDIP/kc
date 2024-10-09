@@ -303,7 +303,7 @@ v1router.get('/groups/:name', async (req, res) => {
 v1router.post('/groups/:name/add', async (req, res) => {
     try {
         const { member } = req.body;
-        const ok = await keymaster.groupAdd(req.params.name, member);
+        const ok = await keymaster.addGroupMember(req.params.name, member);
         res.json({ ok });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -313,7 +313,7 @@ v1router.post('/groups/:name/add', async (req, res) => {
 v1router.post('/groups/:name/remove', async (req, res) => {
     try {
         const { member } = req.body;
-        const ok = await keymaster.groupRemove(req.params.name, member);
+        const ok = await keymaster.removeGroupMember(req.params.name, member);
         res.json({ ok });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -323,7 +323,7 @@ v1router.post('/groups/:name/remove', async (req, res) => {
 v1router.post('/groups/:name/test', async (req, res) => {
     try {
         const { member } = req.body;
-        const test = await keymaster.groupTest(req.params.name, member);
+        const test = await keymaster.testGroup(req.params.name, member);
         res.json({ test });
     } catch (error) {
         res.status(400).send({ error: error.toString() });

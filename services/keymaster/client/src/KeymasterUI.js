@@ -303,7 +303,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
         for (const name of names) {
             try {
-                const isGroup = await keymaster.groupTest(name);
+                const isGroup = await keymaster.testGroup(name);
 
                 if (isGroup) {
                     groupList.push(name);
@@ -444,7 +444,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
     async function addMember(did) {
         try {
-            await keymaster.groupAdd(selectedGroupName, did);
+            await keymaster.addGroupMember(selectedGroupName, did);
             refreshGroup(selectedGroupName);
         } catch (error) {
             window.alert(error);
@@ -454,7 +454,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
     async function removeMember(did) {
         try {
             if (window.confirm(`Remove member from ${selectedGroupName}?`)) {
-                await keymaster.groupRemove(selectedGroupName, did);
+                await keymaster.removeGroupMember(selectedGroupName, did);
                 refreshGroup(selectedGroupName);
             }
         } catch (error) {
@@ -1541,7 +1541,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                                 margin="normal"
                                                 inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                             />
-                                            <br/>
+                                            <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={newChallenge}>
@@ -1577,7 +1577,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                                 margin="normal"
                                                 inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
                                             />
-                                            <br/>
+                                            <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>

@@ -388,7 +388,7 @@ export async function getGroup(group) {
     }
 }
 
-export async function groupAdd(group, member) {
+export async function addGroupMember(group, member) {
     try {
         const response = await axios.post(`${URL}/api/v1/groups/${group}/add`, { member });
         return response.data.ok;
@@ -398,7 +398,7 @@ export async function groupAdd(group, member) {
     }
 }
 
-export async function groupRemove(group, member) {
+export async function removeGroupMember(group, member) {
     try {
         const response = await axios.post(`${URL}/api/v1/groups/${group}/remove`, { member });
         return response.data.ok;
@@ -408,7 +408,7 @@ export async function groupRemove(group, member) {
     }
 }
 
-export async function groupTest(group, member) {
+export async function testGroup(group, member) {
     try {
         const response = await axios.post(`${URL}/api/v1/groups/${group}/test`, { member });
         return response.data.test;

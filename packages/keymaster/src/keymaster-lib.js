@@ -1408,7 +1408,7 @@ export async function createGroup(name, options = {}) {
 }
 
 export async function getGroup(id) {
-    const isGroup = await groupTest(id);
+    const isGroup = await testGroup(id);
 
     if (!isGroup) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1417,7 +1417,7 @@ export async function getGroup(id) {
     return resolveAsset(id);
 }
 
-export async function groupAdd(groupId, memberId) {
+export async function addGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
@@ -1447,7 +1447,7 @@ export async function groupAdd(groupId, memberId) {
     }
 
     // Can't add a mutual membership relation
-    const isMember = await groupTest(memberId, groupId);
+    const isMember = await testGroup(memberId, groupId);
 
     if (isMember) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1466,7 +1466,7 @@ export async function groupAdd(groupId, memberId) {
     return ok;
 }
 
-export async function groupRemove(groupId, memberId) {
+export async function removeGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
@@ -1503,7 +1503,7 @@ export async function groupRemove(groupId, memberId) {
     return data;
 }
 
-export async function groupTest(group, member) {
+export async function testGroup(group, member) {
     const didGroup = await lookupDID(group);
 
     if (!didGroup) {
@@ -1535,7 +1535,7 @@ export async function groupTest(group, member) {
 
     if (!isMember) {
         for (const did of data.members) {
-            isMember = await groupTest(did, didMember);
+            isMember = await testGroup(did, didMember);
 
             if (isMember) {
                 break;
@@ -1566,7 +1566,7 @@ export async function listGroups(owner) {
     if (id.owned) {
         for (const did of id.owned) {
             try {
-                const isGroup = await groupTest(did);
+                const isGroup = await testGroup(did);
 
                 if (isGroup) {
                     schemas.push(did);
@@ -1710,7 +1710,7 @@ export async function createPoll(poll, options = {}) {
     }
 
     try {
-        const isValidGroup = await groupTest(poll.roster);
+        const isValidGroup = await testGroup(poll.roster);
 
         if (!isValidGroup) {
             throw new Error(exceptions.INVALID_PARAMETER);
@@ -1754,7 +1754,7 @@ export async function viewPoll(poll) {
     }
 
     const voteExpired = Date(data.deadline) > new Date();
-    const isEligible = await groupTest(data.roster, id.did);
+    const isEligible = await testGroup(data.roster, id.did);
 
     const view = {
         description: data.description,
@@ -1824,7 +1824,7 @@ export async function votePoll(poll, vote, options = {}) {
     const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
-    const eligible = await groupTest(data.roster, id.did);
+    const eligible = await testGroup(data.roster, id.did);
     const expired = (Date(data.deadline) > new Date());
     const owner = doc.didDocument.controller;
 
@@ -1891,7 +1891,7 @@ export async function updatePoll(ballot) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const eligible = await groupTest(dataPoll.roster, didVoter);
+    const eligible = await testGroup(dataPoll.roster, didVoter);
 
     if (!eligible) {
         throw new Error(exceptions.INVALID_PARAMETER);
