@@ -951,10 +951,7 @@ async function run() {
         keymaster = keymaster_lib;
         await gatekeeper_sdk.start({
             url: gatekeeperURL,
-            waitUntilReady: true,
-            intervalSeconds: 1,
-            chatty: false,
-            becomeChattyAfter: 5
+            waitUntilReady: false,
         });
         await keymaster.start({
             gatekeeper: gatekeeper_sdk,
