@@ -711,7 +711,7 @@ export async function addToOwned(did) {
     return saveWallet(wallet);
 }
 
-export async function removeFromOwned(did, owner) {
+async function removeFromOwned(did, owner) {
     const wallet = await loadWallet();
     const id = await fetchIdInfo(owner);
 
@@ -720,7 +720,7 @@ export async function removeFromOwned(did, owner) {
     return saveWallet(wallet);
 }
 
-async function addToHeld(did) {
+export async function addToHeld(did) {
     const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const held = new Set(id.held);

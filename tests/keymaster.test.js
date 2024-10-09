@@ -3784,7 +3784,7 @@ describe('checkWallet', () => {
         expect(deleted).toBe(1);
     });
 
-    it('should detect invalid DIDs', async () => {
+    it('should detect removed DIDs', async () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Alice');
@@ -3796,6 +3796,20 @@ describe('checkWallet', () => {
 
         expect(checked).toBe(3);
         expect(invalid).toBe(3);
+        expect(deleted).toBe(0);
+    });
+
+    it('should detect invalid DIDs', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.addToOwned('did:test:mock');
+        await keymaster.addToHeld('did:test:mock');
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(3);
+        expect(invalid).toBe(2);
         expect(deleted).toBe(0);
     });
 
