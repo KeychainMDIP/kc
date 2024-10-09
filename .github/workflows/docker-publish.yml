@@ -96,3 +96,10 @@ jobs:
           image: ${{ matrix.tags }}
           fail-build: false
           severity-cutoff: critical
+          cache-db: true
+          output-format: table
+        
+      - name: upload Anchore scan SARIF report
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }} 
