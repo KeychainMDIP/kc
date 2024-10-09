@@ -614,8 +614,8 @@ describe('testAgent', () => {
         mockFs({});
 
         await keymaster.createId('Bob');
-        const dataDID = await keymaster.createAsset({ name: 'mockAnchor' });
-        const isAgent = await keymaster.testAgent(dataDID);
+        const dataDid = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isAgent = await keymaster.testAgent(dataDid);
 
         expect(isAgent).toBe(false);
     });
@@ -1414,6 +1414,31 @@ describe('createSchema', () => {
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocumentData).toStrictEqual(mockSchema);
+    });
+});
+
+describe('listSchemas', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of schemas', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const schema1 = await keymaster.createSchema();
+        const schema2 = await keymaster.createSchema();
+        const schema3 = await keymaster.createSchema();
+        const group1 = await keymaster.createGroup('mockGroup');
+
+        const schemas = await keymaster.listSchemas();
+
+        expect(schemas.includes(schema1)).toBe(true);
+        expect(schemas.includes(schema2)).toBe(true);
+        expect(schemas.includes(schema3)).toBe(true);
+        expect(schemas.includes(group1)).toBe(false);
     });
 });
 
@@ -2319,7 +2344,7 @@ describe('unpublishCredential', () => {
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
-        await keymaster.publishCredential(did, true);
+        await keymaster.publishCredential(did, { reveal: true });
 
         await keymaster.unpublishCredential(did);
 
@@ -2399,7 +2424,7 @@ describe('createGroup', () => {
     });
 });
 
-describe('groupAdd', () => {
+describe('addGroupMember', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -2413,8 +2438,11 @@ describe('groupAdd', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        const data = await keymaster.groupAdd(groupDid, dataDid);
 
+        const ok = await keymaster.addGroupMember(groupDid, dataDid);
+        expect(ok).toBe(true);
+
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -2434,8 +2462,10 @@ describe('groupAdd', () => {
 
         const alias = 'mockAlias';
         await keymaster.addName(alias, dataDid);
-        const data = await keymaster.groupAdd(groupDid, alias);
+        const ok = await keymaster.addGroupMember(groupDid, alias);
+        expect(ok).toBe(true);
 
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -2452,7 +2482,7 @@ describe('groupAdd', () => {
         const groupDid = await keymaster.createGroup(groupName);
 
         try {
-            await keymaster.groupAdd(groupDid, 'mockAlias');
+            await keymaster.addGroupMember(groupDid, 'mockAlias');
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2471,8 +2501,10 @@ describe('groupAdd', () => {
 
         const alias = 'mockAlias';
         await keymaster.addName(alias, groupDid);
-        const data = await keymaster.groupAdd(alias, dataDid);
+        const ok = await keymaster.addGroupMember(alias, dataDid);
+        expect(ok).toBe(true);
 
+        const data = await keymaster.getGroup(groupDid);
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
@@ -2489,7 +2521,7 @@ describe('groupAdd', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
-            await keymaster.groupAdd('mockAlias', dataDid);
+            await keymaster.addGroupMember('mockAlias', dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2506,11 +2538,11 @@ describe('groupAdd', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        await keymaster.groupAdd(groupDid, dataDid);
-        await keymaster.groupAdd(groupDid, dataDid);
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
 
-        const data = await keymaster.groupAdd(groupDid, dataDid);
+        const data = await keymaster.addGroupMember(groupDid, dataDid);
 
         const expectedGroup = {
             name: groupName,
@@ -2529,11 +2561,11 @@ describe('groupAdd', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
         const dox1 = await keymaster.resolveDID(groupDid);
         const version1 = dox1.didDocumentMetadata.version;
 
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
         const dox2 = await keymaster.resolveDID(groupDid);
         const version2 = dox2.didDocumentMetadata.version;
 
@@ -2551,7 +2583,7 @@ describe('groupAdd', () => {
         for (let i = 0; i < memberCount; i++) {
             const mockAnchor = { name: `mock-${i}` };
             const dataDid = await keymaster.createAsset(mockAnchor);
-            await keymaster.groupAdd(groupDid, dataDid);
+            await keymaster.addGroupMember(groupDid, dataDid);
         }
 
         const data = await keymaster.resolveAsset(groupDid);
@@ -2567,7 +2599,7 @@ describe('groupAdd', () => {
         const groupDid = await keymaster.createGroup(groupName);
 
         try {
-            await keymaster.groupAdd(groupDid);
+            await keymaster.addGroupMember(groupDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2575,7 +2607,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(groupDid, 100);
+            await keymaster.addGroupMember(groupDid, 100);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2583,7 +2615,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(groupDid, [1, 2, 3]);
+            await keymaster.addGroupMember(groupDid, [1, 2, 3]);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2591,7 +2623,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(groupDid, { name: 'mock' });
+            await keymaster.addGroupMember(groupDid, { name: 'mock' });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2599,7 +2631,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(groupDid, 'did:mock');
+            await keymaster.addGroupMember(groupDid, 'did:mock');
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2615,7 +2647,7 @@ describe('groupAdd', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
-            await keymaster.groupAdd(null, dataDid);
+            await keymaster.addGroupMember(null, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2623,7 +2655,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(100, dataDid);
+            await keymaster.addGroupMember(100, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2631,7 +2663,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd([1, 2, 3], dataDid);
+            await keymaster.addGroupMember([1, 2, 3], dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2639,7 +2671,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd({ name: 'mock' }, dataDid);
+            await keymaster.addGroupMember({ name: 'mock' }, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2647,7 +2679,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(agentDid, dataDid);
+            await keymaster.addGroupMember(agentDid, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2655,7 +2687,7 @@ describe('groupAdd', () => {
         }
 
         try {
-            await keymaster.groupAdd(dataDid, agentDid);
+            await keymaster.addGroupMember(dataDid, agentDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2670,7 +2702,7 @@ describe('groupAdd', () => {
         const groupDid = await keymaster.createGroup('group');
 
         try {
-            await keymaster.groupAdd(groupDid, groupDid);
+            await keymaster.addGroupMember(groupDid, groupDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2686,11 +2718,11 @@ describe('groupAdd', () => {
         const group2Did = await keymaster.createGroup('group-2');
         const group3Did = await keymaster.createGroup('group-3');
 
-        await keymaster.groupAdd(group1Did, group2Did);
-        await keymaster.groupAdd(group2Did, group3Did);
+        await keymaster.addGroupMember(group1Did, group2Did);
+        await keymaster.addGroupMember(group2Did, group3Did);
 
         try {
-            await keymaster.groupAdd(group3Did, group1Did);
+            await keymaster.addGroupMember(group3Did, group1Did);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2699,7 +2731,7 @@ describe('groupAdd', () => {
     });
 });
 
-describe('groupRemove', () => {
+describe('removeGroupMember', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -2713,9 +2745,9 @@ describe('groupRemove', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
 
-        const data = await keymaster.groupRemove(groupDid, dataDid);
+        const data = await keymaster.removeGroupMember(groupDid, dataDid);
 
         const expectedGroup = {
             name: groupName,
@@ -2733,12 +2765,12 @@ describe('groupRemove', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
 
         const alias = 'mockAlias';
         await keymaster.addName(alias, dataDid);
 
-        const data = await keymaster.groupRemove(groupDid, alias);
+        const data = await keymaster.removeGroupMember(groupDid, alias);
 
         const expectedGroup = {
             name: groupName,
@@ -2757,7 +2789,7 @@ describe('groupRemove', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        const data = await keymaster.groupRemove(groupDid, dataDid);
+        const data = await keymaster.removeGroupMember(groupDid, dataDid);
 
         const expectedGroup = {
             name: groupName,
@@ -2778,7 +2810,7 @@ describe('groupRemove', () => {
         const version1 = dox1.didDocumentMetadata.version;
 
         const dataDid = await keymaster.createAsset(mockAnchor);
-        await keymaster.groupRemove(groupDid, dataDid);
+        await keymaster.removeGroupMember(groupDid, dataDid);
         const dox2 = await keymaster.resolveDID(groupDid);
         const version2 = dox2.didDocumentMetadata.version;
 
@@ -2793,7 +2825,7 @@ describe('groupRemove', () => {
         const groupDid = await keymaster.createGroup(groupName);
 
         try {
-            await keymaster.groupRemove(groupDid);
+            await keymaster.removeGroupMember(groupDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2801,7 +2833,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(groupDid, 100);
+            await keymaster.removeGroupMember(groupDid, 100);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2809,7 +2841,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(groupDid, [1, 2, 3]);
+            await keymaster.removeGroupMember(groupDid, [1, 2, 3]);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2817,7 +2849,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(groupDid, { name: 'mock' });
+            await keymaster.removeGroupMember(groupDid, { name: 'mock' });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2825,7 +2857,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(groupDid, 'did:mock');
+            await keymaster.removeGroupMember(groupDid, 'did:mock');
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2841,7 +2873,7 @@ describe('groupRemove', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
-            await keymaster.groupRemove();
+            await keymaster.removeGroupMember();
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2849,7 +2881,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(null, dataDid);
+            await keymaster.removeGroupMember(null, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2857,7 +2889,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(100, dataDid);
+            await keymaster.removeGroupMember(100, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2865,7 +2897,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove([1, 2, 3], dataDid);
+            await keymaster.removeGroupMember([1, 2, 3], dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2873,7 +2905,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove({ name: 'mock' }, dataDid);
+            await keymaster.removeGroupMember({ name: 'mock' }, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2881,7 +2913,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(agentDid, dataDid);
+            await keymaster.removeGroupMember(agentDid, dataDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2889,7 +2921,7 @@ describe('groupRemove', () => {
         }
 
         try {
-            await keymaster.groupRemove(dataDid, agentDid);
+            await keymaster.removeGroupMember(dataDid, agentDid);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -2898,7 +2930,7 @@ describe('groupRemove', () => {
     });
 });
 
-describe('groupTest', () => {
+describe('testGroup', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -2912,9 +2944,9 @@ describe('groupTest', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
-        await keymaster.groupAdd(groupDid, dataDid);
+        await keymaster.addGroupMember(groupDid, dataDid);
 
-        const test = await keymaster.groupTest(groupDid, dataDid);
+        const test = await keymaster.testGroup(groupDid, dataDid);
 
         expect(test).toBe(true);
     });
@@ -2928,7 +2960,7 @@ describe('groupTest', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        const test = await keymaster.groupTest(groupDid, dataDid);
+        const test = await keymaster.testGroup(groupDid, dataDid);
 
         expect(test).toBe(false);
     });
@@ -2940,7 +2972,7 @@ describe('groupTest', () => {
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
 
-        const test = await keymaster.groupTest(groupDid);
+        const test = await keymaster.testGroup(groupDid);
 
         expect(test).toBe(true);
     });
@@ -2952,7 +2984,7 @@ describe('groupTest', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        const test = await keymaster.groupTest(dataDid);
+        const test = await keymaster.testGroup(dataDid);
 
         expect(test).toBe(false);
     });
@@ -2967,21 +2999,21 @@ describe('groupTest', () => {
         const group4Did = await keymaster.createGroup('level-4');
         const group5Did = await keymaster.createGroup('level-5');
 
-        await keymaster.groupAdd(group1Did, group2Did);
-        await keymaster.groupAdd(group2Did, group3Did);
-        await keymaster.groupAdd(group3Did, group4Did);
-        await keymaster.groupAdd(group4Did, group5Did);
+        await keymaster.addGroupMember(group1Did, group2Did);
+        await keymaster.addGroupMember(group2Did, group3Did);
+        await keymaster.addGroupMember(group3Did, group4Did);
+        await keymaster.addGroupMember(group4Did, group5Did);
 
-        const test1 = await keymaster.groupTest(group1Did, group2Did);
+        const test1 = await keymaster.testGroup(group1Did, group2Did);
         expect(test1).toBe(true);
 
-        const test2 = await keymaster.groupTest(group1Did, group3Did);
+        const test2 = await keymaster.testGroup(group1Did, group3Did);
         expect(test2).toBe(true);
 
-        const test3 = await keymaster.groupTest(group1Did, group4Did);
+        const test3 = await keymaster.testGroup(group1Did, group4Did);
         expect(test3).toBe(true);
 
-        const test4 = await keymaster.groupTest(group1Did, group5Did);
+        const test4 = await keymaster.testGroup(group1Did, group5Did);
         expect(test4).toBe(true);
     });
 });
@@ -2997,9 +3029,9 @@ describe('getGroup', () => {
 
         await keymaster.createId('Bob');
         const groupName = 'mock';
-        const groupDID = await keymaster.createGroup(groupName);
+        const groupDid = await keymaster.createGroup(groupName);
 
-        const group = await keymaster.getGroup(groupDID);
+        const group = await keymaster.getGroup(groupDid);
 
         expect(group.name).toBe(groupName);
         expect(group.members).toStrictEqual([]);
@@ -3028,6 +3060,34 @@ describe('getGroup', () => {
         catch (error) {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
+    });
+});
+
+
+describe('listGroups', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of schemas', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const group1 = await keymaster.createGroup('mock-1');
+        const group2 = await keymaster.createGroup('mock-2');
+        const group3 = await keymaster.createGroup('mock-3');
+        const schema1 = await keymaster.createSchema();
+        // add a bogus DID to trigger the exception case
+        await keymaster.addToOwned('did:test:mock');
+
+        const groups = await keymaster.listGroups();
+
+        expect(groups.includes(group1)).toBe(true);
+        expect(groups.includes(group2)).toBe(true);
+        expect(groups.includes(group3)).toBe(true);
+        expect(groups.includes(schema1)).toBe(false);
     });
 });
 
@@ -3213,7 +3273,7 @@ describe('viewPoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
 
         template.roster = rosterDid;
@@ -3248,7 +3308,7 @@ describe('votePoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
 
         template.roster = rosterDid;
@@ -3270,7 +3330,7 @@ describe('votePoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
 
         template.roster = rosterDid;
@@ -3318,7 +3378,7 @@ describe('updatePoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
         template.roster = rosterDid;
         const pollDid = await keymaster.createPoll(template);
@@ -3336,7 +3396,7 @@ describe('updatePoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
         template.roster = rosterDid;
         const pollDid = await keymaster.createPoll(template);
@@ -3362,7 +3422,7 @@ describe('publishPoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
         template.roster = rosterDid;
         const pollDid = await keymaster.createPoll(template);
@@ -3405,7 +3465,7 @@ describe('publishPoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
         template.roster = rosterDid;
         const pollDid = await keymaster.createPoll(template);
@@ -3437,7 +3497,7 @@ describe('unpublishPoll', () => {
 
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
-        await keymaster.groupAdd(rosterDid, bobDid);
+        await keymaster.addGroupMember(rosterDid, bobDid);
         const template = await keymaster.pollTemplate();
         template.roster = rosterDid;
         const pollDid = await keymaster.createPoll(template);
@@ -3724,7 +3784,7 @@ describe('checkWallet', () => {
         expect(deleted).toBe(1);
     });
 
-    it('should detect invalid DIDs', async () => {
+    it('should detect removed DIDs', async () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Alice');
@@ -3736,6 +3796,20 @@ describe('checkWallet', () => {
 
         expect(checked).toBe(3);
         expect(invalid).toBe(3);
+        expect(deleted).toBe(0);
+    });
+
+    it('should detect invalid DIDs', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.addToOwned('did:test:mock1');
+        await keymaster.addToHeld('did:test:mock2');
+
+        const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+        expect(checked).toBe(3);
+        expect(invalid).toBe(2);
         expect(deleted).toBe(0);
     });
 
@@ -3798,7 +3872,7 @@ describe('fixWallet', () => {
         expect(namesRemoved).toBe(0);
     });
 
-    it('should remove invalid DIDs', async () => {
+    it('should remove deleted DIDs', async () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Alice');
@@ -3812,6 +3886,21 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(0);
         expect(namesRemoved).toBe(1);
+    });
+
+    it('should remove invalid DIDs', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.addToOwned('did:test:mock1');
+        await keymaster.addToHeld('did:test:mock2');
+
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(1);
+        expect(heldRemoved).toBe(1);
+        expect(namesRemoved).toBe(0);
     });
 
     it('should remove revoked credentials', async () => {

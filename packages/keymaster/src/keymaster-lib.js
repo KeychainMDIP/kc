@@ -531,7 +531,7 @@ export async function createAsset(data, options = {}) {
     const did = await gatekeeper.createDID(signed);
 
     // Keep assets that will be garbage-collected out of the owned list
-    if (registry !== 'hyperswarm') {
+    if (!validUntil) {
         await addToOwned(did);
     }
 
@@ -700,7 +700,7 @@ export async function revokeDID(did) {
     return ok;
 }
 
-async function addToOwned(did) {
+export async function addToOwned(did) {
     const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const owned = new Set(id.owned);
@@ -720,7 +720,7 @@ async function removeFromOwned(did, owner) {
     return saveWallet(wallet);
 }
 
-async function addToHeld(did) {
+export async function addToHeld(did) {
     const wallet = await loadWallet();
     const id = wallet.ids[wallet.current];
     const held = new Set(id.held);
@@ -898,7 +898,7 @@ export async function recoverId(did) {
 
         await saveWallet(wallet);
 
-        return `Recovered ${data.name}!`;
+        return wallet.current;
     }
     catch {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -959,9 +959,7 @@ export async function addName(name, did) {
     }
 
     wallet.names[name] = did;
-    await saveWallet(wallet);
-
-    return true;
+    return saveWallet(wallet);
 }
 
 export async function removeName(name) {
@@ -1410,7 +1408,7 @@ export async function createGroup(name, options = {}) {
 }
 
 export async function getGroup(id) {
-    const isGroup = await groupTest(id);
+    const isGroup = await testGroup(id);
 
     if (!isGroup) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1419,7 +1417,7 @@ export async function getGroup(id) {
     return resolveAsset(id);
 }
 
-export async function groupAdd(groupId, memberId) {
+export async function addGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
@@ -1449,7 +1447,7 @@ export async function groupAdd(groupId, memberId) {
     }
 
     // Can't add a mutual membership relation
-    const isMember = await groupTest(memberId, groupId);
+    const isMember = await testGroup(memberId, groupId);
 
     if (isMember) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1465,10 +1463,10 @@ export async function groupAdd(groupId, memberId) {
         throw new Error(exceptions.UPDATE_FAILED);
     }
 
-    return data;
+    return ok;
 }
 
-export async function groupRemove(groupId, memberId) {
+export async function removeGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
     const doc = await resolveDID(groupDID);
     const data = doc.didDocumentData;
@@ -1505,7 +1503,7 @@ export async function groupRemove(groupId, memberId) {
     return data;
 }
 
-export async function groupTest(group, member) {
+export async function testGroup(group, member) {
     const didGroup = await lookupDID(group);
 
     if (!didGroup) {
@@ -1537,7 +1535,7 @@ export async function groupTest(group, member) {
 
     if (!isMember) {
         for (const did of data.members) {
-            isMember = await groupTest(did, didMember);
+            isMember = await testGroup(did, didMember);
 
             if (isMember) {
                 break;
@@ -1560,6 +1558,28 @@ export const defaultSchema = {
         "propertyName"
     ]
 };
+
+export async function listGroups(owner) {
+    const id = await fetchIdInfo(owner);
+    const schemas = [];
+
+    if (id.owned) {
+        for (const did of id.owned) {
+            try {
+                const isGroup = await testGroup(did);
+
+                if (isGroup) {
+                    schemas.push(did);
+                }
+            }
+            catch (error) {
+                continue;
+            }
+        }
+    }
+
+    return schemas;
+}
 
 function validateSchema(schema) {
     try {
@@ -1611,6 +1631,28 @@ export async function testSchema(id) {
     }
 
     return validateSchema(schema);
+}
+
+export async function listSchemas(owner) {
+    const id = await fetchIdInfo(owner);
+    const schemas = [];
+
+    if (id.owned) {
+        for (const did of id.owned) {
+            try {
+                const isSchema = await testSchema(did);
+
+                if (isSchema) {
+                    schemas.push(did);
+                }
+            }
+            catch (error) {
+                continue;
+            }
+        }
+    }
+
+    return schemas;
 }
 
 export async function createTemplate(id) {
@@ -1668,7 +1710,7 @@ export async function createPoll(poll, options = {}) {
     }
 
     try {
-        const isValidGroup = await groupTest(poll.roster);
+        const isValidGroup = await testGroup(poll.roster);
 
         if (!isValidGroup) {
             throw new Error(exceptions.INVALID_PARAMETER);
@@ -1712,7 +1754,7 @@ export async function viewPoll(poll) {
     }
 
     const voteExpired = Date(data.deadline) > new Date();
-    const isEligible = await groupTest(data.roster, id.did);
+    const isEligible = await testGroup(data.roster, id.did);
 
     const view = {
         description: data.description,
@@ -1782,7 +1824,7 @@ export async function votePoll(poll, vote, options = {}) {
     const didPoll = await lookupDID(poll);
     const doc = await resolveDID(didPoll);
     const data = doc.didDocumentData;
-    const eligible = await groupTest(data.roster, id.did);
+    const eligible = await testGroup(data.roster, id.did);
     const expired = (Date(data.deadline) > new Date());
     const owner = doc.didDocument.controller;
 
@@ -1849,7 +1891,7 @@ export async function updatePoll(ballot) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const eligible = await groupTest(dataPoll.roster, didVoter);
+    const eligible = await testGroup(dataPoll.roster, didVoter);
 
     if (!eligible) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1877,7 +1919,7 @@ export async function updatePoll(ballot) {
         received: new Date().toISOString(),
     };
 
-    return await updateDID(didPoll, docPoll);
+    return updateDID(didPoll, docPoll);
 }
 
 export async function publishPoll(poll, options = {}) {
@@ -1903,7 +1945,7 @@ export async function publishPoll(poll, options = {}) {
 
     doc.didDocumentData.results = view.results;
 
-    return await updateDID(didPoll, doc);
+    return updateDID(didPoll, doc);
 }
 
 export async function unpublishPoll(poll) {

@@ -241,7 +241,7 @@ program
 
 program
     .command('rotate-keys')
-    .description('Rotates keys for current user')
+    .description('Generates new set of keys for current ID')
     .action(async () => {
         try {
             const doc = await keymaster.rotateKeys();
@@ -279,7 +279,7 @@ program
     });
 
 program
-    .command('encrypt-msg <msg> <did>')
+    .command('encrypt-message <message> <did>')
     .description('Encrypt a message for a DID')
     .action(async (msg, did) => {
         try {
@@ -505,11 +505,37 @@ program
     });
 
 program
+    .command('list-credentials')
+    .description('List credentials by current ID')
+    .action(async () => {
+        try {
+            const held = await keymaster.listCredentials();
+            console.log(JSON.stringify(held, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('get-credential <did>')
+    .description('Get credential by DID')
+    .action(async (did) => {
+        try {
+            const credential = await keymaster.getCredential(did);
+            console.log(JSON.stringify(credential, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
     .command('publish-credential <did>')
     .description('Publish the existence of a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const response = await keymaster.publishCredential(did, false);
+            const response = await keymaster.publishCredential(did, { reveal: false });
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
@@ -522,7 +548,7 @@ program
     .description('Reveal a credential to the current user manifest')
     .action(async (did) => {
         try {
-            const response = await keymaster.publishCredential(did, true);
+            const response = await keymaster.publishCredential(did, { reveal: true });
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
@@ -615,7 +641,7 @@ program
     });
 
 program
-    .command('group-create <name>')
+    .command('create-group <name>')
     .description('Create a new group')
     .action(async (name) => {
         try {
@@ -629,11 +655,37 @@ program
     });
 
 program
-    .command('group-add <group> <member>')
+    .command('list-groups')
+    .description('List groups owned by current ID')
+    .action(async () => {
+        try {
+            const groups = await keymaster.listGroups();
+            console.log(JSON.stringify(groups, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('get-group <did>')
+    .description('Get group by DID')
+    .action(async (did) => {
+        try {
+            const group = await keymaster.getGroup(did);
+            console.log(JSON.stringify(group, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('add-group-member <group> <member>')
     .description('Add a member to a group')
     .action(async (group, member) => {
         try {
-            const response = await keymaster.groupAdd(group, member);
+            const response = await keymaster.addGroupMember(group, member);
             console.log(response);
         }
         catch (error) {
@@ -642,11 +694,11 @@ program
     });
 
 program
-    .command('group-remove <group> <member>')
+    .command('remove-group-member <group> <member>')
     .description('Remove a member from a group')
     .action(async (group, member) => {
         try {
-            const response = await keymaster.groupRemove(group, member);
+            const response = await keymaster.removeGroupMember(group, member);
             console.log(response);
         }
         catch (error) {
@@ -655,11 +707,11 @@ program
     });
 
 program
-    .command('group-test <group> [member]')
+    .command('test-group <group> [member]')
     .description('Determine if a member is in a group')
     .action(async (group, member) => {
         try {
-            const response = await keymaster.groupTest(group, member);
+            const response = await keymaster.testGroup(group, member);
             console.log(response);
         }
         catch (error) {
@@ -687,7 +739,34 @@ program
     });
 
 program
-    .command('create-template <schema>')
+    .command('list-schemas')
+    .description('List schemas owned by current ID')
+    .action(async (file, name) => {
+        try {
+            const schemas = await keymaster.listSchemas();
+            console.log(JSON.stringify(schemas, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+
+program
+    .command('get-schema <did>')
+    .description('Get schema by DID')
+    .action(async (did) => {
+        try {
+            const schema = await keymaster.getSchema(did);
+            console.log(JSON.stringify(schema, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('create-schema-template <schema>')
     .description('Create a template from a schema')
     .action(async (schema) => {
         try {
@@ -714,7 +793,20 @@ program
     });
 
 program
-    .command('poll-template')
+    .command('get-asset <did>')
+    .description('Get asset by DID')
+    .action(async (did) => {
+        try {
+            const asset = await keymaster.resolveAsset(did);
+            console.log(JSON.stringify(asset, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('create-poll-template')
     .description('Generate a poll template')
     .action(async () => {
         try {
@@ -727,7 +819,7 @@ program
     });
 
 program
-    .command('poll-create <file> [name]')
+    .command('create-poll <file> [name]')
     .description('Create poll')
     .action(async (file, name) => {
         try {
@@ -746,7 +838,7 @@ program
     });
 
 program
-    .command('poll-view <poll>')
+    .command('view-poll <poll>')
     .description('View poll details')
     .action(async (poll) => {
         try {
@@ -759,7 +851,7 @@ program
     });
 
 program
-    .command('poll-vote <poll> <vote> [spoil]')
+    .command('vote-poll <poll> <vote> [spoil]')
     .description('Vote in a poll')
     .action(async (poll, vote, spoil) => {
         try {
@@ -772,7 +864,7 @@ program
     });
 
 program
-    .command('poll-update <ballot>')
+    .command('update-poll <ballot>')
     .description('Add a ballot to the poll')
     .action(async (ballot) => {
         try {
@@ -790,7 +882,7 @@ program
     });
 
 program
-    .command('poll-publish <poll>')
+    .command('publish-poll <poll>')
     .description('Publish results to poll, hiding ballots')
     .action(async (poll) => {
         try {
@@ -808,7 +900,7 @@ program
     });
 
 program
-    .command('poll-reveal <poll>')
+    .command('reveal-poll <poll>')
     .description('Publish results to poll, revealing ballots')
     .action(async (poll) => {
         try {
@@ -826,7 +918,7 @@ program
     });
 
 program
-    .command('poll-unpublish <poll>')
+    .command('unpublish-poll <poll>')
     .description('Remove results from poll')
     .action(async (poll) => {
         try {
@@ -859,10 +951,7 @@ async function run() {
         keymaster = keymaster_lib;
         await gatekeeper_sdk.start({
             url: gatekeeperURL,
-            waitUntilReady: true,
-            intervalSeconds: 1,
-            chatty: false,
-            becomeChattyAfter: 5
+            waitUntilReady: false,
         });
         await keymaster.start({
             gatekeeper: gatekeeper_sdk,
