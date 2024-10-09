@@ -505,6 +505,32 @@ program
     });
 
 program
+    .command('list-credentials')
+    .description('List credentials by current ID')
+    .action(async () => {
+        try {
+            const held = await keymaster.listCredentials();
+            console.log(JSON.stringify(held, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('get-credential <did>')
+    .description('Get credential by DID')
+    .action(async (did) => {
+        try {
+            const credential = await keymaster.getCredential(did);
+            console.log(JSON.stringify(credential, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
     .command('publish-credential <did>')
     .description('Publish the existence of a credential to the current user manifest')
     .action(async (did) => {
@@ -615,13 +641,39 @@ program
     });
 
 program
-    .command('group-create <name>')
+    .command('create-group <name>')
     .description('Create a new group')
     .action(async (name) => {
         try {
             const did = await keymaster.createGroup(name);
             console.log(did);
             keymaster.addName(name, did);
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('list-groups')
+    .description('List groups owned by current ID')
+    .action(async () => {
+        try {
+            const groups = await keymaster.listGroups();
+            console.log(JSON.stringify(groups, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('get-group <did>')
+    .description('Get group by DID')
+    .action(async (did) => {
+        try {
+            const group = await keymaster.getGroup(did);
+            console.log(JSON.stringify(group, null, 4));
         }
         catch (error) {
             console.error(error.message);
@@ -687,6 +739,33 @@ program
     });
 
 program
+    .command('list-schemas')
+    .description('List schemas owned by current ID')
+    .action(async (file, name) => {
+        try {
+            const schemas = await keymaster.listSchemas();
+            console.log(JSON.stringify(schemas, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+
+program
+    .command('get-schema <did>')
+    .description('Get schema by DID')
+    .action(async (did) => {
+        try {
+            const schema = await keymaster.getSchema(did);
+            console.log(JSON.stringify(schema, null, 4));
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
     .command('create-template <schema>')
     .description('Create a template from a schema')
     .action(async (schema) => {
@@ -707,6 +786,19 @@ program
             const asset = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.createAsset(asset);
             console.log(did);
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
+    .command('get-asset <did>')
+    .description('Get asset by DID')
+    .action(async (did) => {
+        try {
+            const asset = await keymaster.resolveAsset(did);
+            console.log(JSON.stringify(asset, null, 4));
         }
         catch (error) {
             console.error(error.message);

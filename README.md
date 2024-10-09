@@ -68,9 +68,10 @@ Commands:
   create-asset <file>                        Create an asset from a JSON file
   create-challenge [file] [name]             Create challenge (optionally from a file)
   create-challenge-cc <did> [name]           Create challenge from a credential DID
-  create-credential <file> [name]            Create credential from schema file
+  create-group <name>                        Create a new group
   create-id <name> [registry]                Create a new decentralized ID
   create-response <challenge>                Create a response to a challenge
+  create-schema <file> [name]                Create schema DID from schema file
   create-schema <file> [name]                Create schema from a file
   create-template <schema>                   Create a template from a schema
   create-wallet                              Create new wallet (or show existing wallet)
@@ -79,16 +80,22 @@ Commands:
   encrypt-file <file> <did>                  Encrypt a file for a DID
   encrypt-msg <msg> <did>                    Encrypt a message for a DID
   fix-wallet                                 Remove invalid DIDs from the wallet
+  get-asset <did>                            Get asset by DID
+  get-credential <did>                       Get credential by DID
+  get-group <did>                            Get group by DID
+  get-schema <did>                           Get schema by DID
   group-add <group> <member>                 Add a member to a group
-  group-create <name>                        Create a new group
   group-remove <group> <member>              Remove a member from a group
   group-test <group> [member]                Determine if a member is in a group
   help [command]                             display help for command
   import-wallet <recovery-phrase>            Create new wallet from a recovery phrase
   issue-credential <file> [registry] [name]  Sign and encrypt a bound credential file
+  list-credentials                           List credentials by current ID
+  list-groups                                List groups owned by current ID
   list-ids                                   List IDs and show current ID
   list-issued                                List issued credentials
   list-names                                 Lists names of DIDs
+  list-schemas                               List schemas owned by current ID
   poll-create <file> [name]                  Create poll
   poll-publish <poll>                        Publish results to poll, hiding ballots
   poll-reveal <poll>                         Publish results to poll, revealing ballots
