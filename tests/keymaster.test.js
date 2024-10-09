@@ -3803,8 +3803,8 @@ describe('checkWallet', () => {
         mockFs({});
 
         await keymaster.createId('Alice');
-        await keymaster.addToOwned('did:test:mock');
-        await keymaster.addToHeld('did:test:mock');
+        await keymaster.addToOwned('did:test:mock1');
+        await keymaster.addToHeld('did:test:mock2');
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
