@@ -43,3 +43,11 @@ def listIds():
 def resolveId(id):
     response = proxy_request('GET', f'{KEYMASTER_API}/ids/{id}')
     return response['docs']
+
+def bindCredential(schema, subject, options={}):
+    response = proxy_request('POST', f'{KEYMASTER_API}/credentials/bind', json={"schema": schema, "subject": subject, "options": options})
+    return response['credential']
+
+def issueCredential(credential, options={}):
+    response = proxy_request('POST', f'{KEYMASTER_API}/credentials/issued', json={"credential": credential, "options": options})
+    return response['did']

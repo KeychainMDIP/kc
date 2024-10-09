@@ -1,6 +1,8 @@
 import keymaster_sdk as keymaster
 import json
 
+emailSchema = 'did:test:z3v8Auaha4rszsBwMyApaY9eUR1pipjGASYvqqfuXiXhxA8DXmo'
+
 def main():
     try:
         ready = keymaster.isReady()
@@ -14,6 +16,13 @@ def main():
 
         docs = keymaster.resolveId(currentId)
         print(json.dumps(docs, indent=4))
+
+        credential = keymaster.bindCredential(emailSchema, currentId)
+        print(json.dumps(credential, indent=4))
+
+        for i in range(25):
+            vcDID = keymaster.issueCredential(credential)
+            print(f"VC {i}: {vcDID}")
 
     except Exception as e:
         print(f"Error: {e}")
