@@ -3872,7 +3872,7 @@ describe('fixWallet', () => {
         expect(namesRemoved).toBe(0);
     });
 
-    it('should remove invalid DIDs', async () => {
+    it('should remove deleted DIDs', async () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Alice');
@@ -3886,6 +3886,21 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(0);
         expect(namesRemoved).toBe(1);
+    });
+
+    it('should remove invalid DIDs', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.addToOwned('did:test:mock1');
+        await keymaster.addToHeld('did:test:mock2');
+
+        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
+
+        expect(idsRemoved).toBe(0);
+        expect(ownedRemoved).toBe(1);
+        expect(heldRemoved).toBe(1);
+        expect(namesRemoved).toBe(0);
     });
 
     it('should remove revoked credentials', async () => {
