@@ -20,7 +20,7 @@ def main():
         credential = keymaster.bindCredential(emailSchema, currentId)
         print(json.dumps(credential, indent=4))
 
-        for i in range(25):
+        for i in range(5):
             vcDID = keymaster.issueCredential(credential)
             print(f"VC {i}: {vcDID}")
 

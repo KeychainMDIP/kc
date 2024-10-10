@@ -16,7 +16,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
         : db_json;
 
 await db.start();
-await gatekeeper.start({ db });
+await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
 const v1router = express.Router();
@@ -241,18 +241,6 @@ async function verifyLoop() {
 }
 
 async function main() {
-    // if (config.verifyDb) {
-    //     const invalid = await gatekeeper.verifyDb();
-
-    //     if (invalid > 0) {
-    //         console.log(`${invalid} invalid DIDs removed from MDIP db`);
-    //     }
-    // }
-    // else {
-    //     const dids = await gatekeeper.getDIDs();
-    //     console.log(`Skipping db verification (${dids.length} DIDs)`);
-    // }
-
     await verifyLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);

@@ -20,13 +20,16 @@ const mockSchema = {
     "type": "object"
 };
 
+let gatekeeper;
 let keymaster;
 
 // eslint-disable-next-line
 async function setup1() {
-    await db_json.start('mdip-workflow');
-    await gatekeeper_lib.start({ db: db_json });
+    await db_json.start('mdip');
+    await gatekeeper_lib.start({ db: db_json, primeCache: true });
     await keymaster_lib.start({ gatekeeper: gatekeeper_lib, wallet, cipher });
+
+    gatekeeper = gatekeeper_lib;
     keymaster = keymaster_lib;
 }
 
@@ -34,16 +37,42 @@ async function setup1() {
 async function setup2() {
     await gatekeeper_sdk.start({ url: 'http://localhost:4224' });
     await keymaster_lib.start({ gatekeeper: gatekeeper_sdk, wallet, cipher });
+
+    gatekeeper = gatekeeper_sdk;
     keymaster = keymaster_lib;
 }
 
 // eslint-disable-next-line
 async function setup3() {
+    await gatekeeper_sdk.start({ url: 'http://localhost:4224' });
     await keymaster_sdk.start({ url: 'http://localhost:4226' });
+
+    gatekeeper = gatekeeper_sdk;
     keymaster = keymaster_sdk;
 }
 
+async function perfTest() {
+    console.time('getDIDs');
+    const dids = await gatekeeper.getDIDs();
+    console.timeEnd('getDIDs');
+
+    console.log(`${dids.length} DIDs`);
+
+    let n = 0;
+    console.time('resolveDID(did, { confirm: true })');
+    for (const did of dids) {
+        n += 1;
+        await gatekeeper.resolveDID(did, { confirm: true });
+        console.log(`${n} ${did}`);
+    }
+    console.timeEnd('resolveDID(did, { confirm: true })');
+}
+
 async function runWorkflow() {
+
+    await perfTest();
+    await perfTest();
+
     const registry = 'local';
 
     console.time('createId');
@@ -55,6 +84,22 @@ async function runWorkflow() {
     console.log(`Created Bob    ${bob}`);
 
     await keymaster.setCurrentId('Alice');
+
+    await perfTest();
+
+    for (let i = 0; i < 5; i++) {
+        console.time('resolveId');
+        await keymaster.resolveId(alice);
+        console.timeEnd('resolveId');
+    }
+
+    for (let i = 0; i < 5; i++) {
+        console.time('createSchema');
+        await keymaster.createSchema(mockSchema, { registry });
+        console.timeEnd('createSchema');
+    }
+
+    await perfTest();
 
     console.time('createSchema');
     const schema1 = await keymaster.createSchema(mockSchema, { registry });
@@ -74,9 +119,9 @@ async function runWorkflow() {
 }
 
 async function main() {
-    // await setup1();
+    await setup1();
     // await setup2();
-    await setup3();
+    // await setup3();
 
     const backup = await keymaster.loadWallet();
     await keymaster.newWallet(null, true);
