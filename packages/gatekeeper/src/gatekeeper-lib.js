@@ -25,6 +25,20 @@ export function copyJSON(json) {
 export async function start(options = {}) {
     if (options.db) {
         db = options.db;
+
+        if (options.primeCache) {
+            try {
+                const allEvents = await db.getAllEvents();
+                for (const key of Object.keys(allEvents)) {
+                    eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
+                }
+            }
+            catch (error) {
+                if (chatty) {
+                    console.error(error);
+                }
+            }
+        }
     }
     else {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -77,7 +91,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty=true) {
+export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
     }
@@ -86,19 +100,6 @@ export async function verifyDb(chatty=true) {
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
     let n = 0;
     let invalid = 0;
-
-    // prime the cache
-    try {
-        const allEvents = await db.getAllEvents();
-        for (const key of Object.keys(allEvents)) {
-            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-        }
-    }
-    catch (error) {
-        if (chatty) {
-            console.error(error);
-        }
-    }
 
     for (const did of dids) {
         n += 1;
