@@ -34,9 +34,6 @@ export async function start(options = {}) {
                 }
             }
             catch (error) {
-                if (chatty) {
-                    console.error(error);
-                }
             }
         }
     }
