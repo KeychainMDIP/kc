@@ -29,6 +29,7 @@ async function setup1() {
     //await db_json.start('mdip');
     await db_redis.start('mdip');
     await gatekeeper_lib.start({ db: db_redis, primeCache: true });
+    //await gatekeeper_lib.verifyDb();
     await keymaster_lib.start({ gatekeeper: gatekeeper_lib, wallet, cipher });
 
     gatekeeper = gatekeeper_lib;
@@ -71,10 +72,6 @@ async function perfTest() {
 }
 
 async function runWorkflow() {
-
-    //await perfTest();
-    //await perfTest();
-
     const registry = 'local';
 
     console.time('createId');
@@ -87,7 +84,6 @@ async function runWorkflow() {
 
     await keymaster.setCurrentId('Alice');
 
-    //await perfTest();
 
     for (let i = 0; i < 5; i++) {
         console.time('resolveId');
@@ -95,26 +91,23 @@ async function runWorkflow() {
         console.timeEnd('resolveId');
     }
 
+    let promises = [];
+
     for (let i = 0; i < 5; i++) {
-        console.time('createSchema');
-        await keymaster.createSchema(mockSchema, { registry });
-        console.timeEnd('createSchema');
+        promises.push(keymaster.createSchema(mockSchema, { registry }));
     }
 
-    //await perfTest();
+    console.time('createSchemas');
+    const schemas = await Promise.all(promises);
+    console.timeEnd('createSchemas');
 
-    console.time('createSchema');
-    const schema1 = await keymaster.createSchema(mockSchema, { registry });
-    console.timeEnd('createSchema');
-    console.log(`Alice created schema1 ${schema1}`);
+    const bc1 = await keymaster.bindCredential(schemas[0], bob);
 
-    const bc1 = await keymaster.bindCredential(schema1, bob);
-
-    const count = 100;
+    const count = 25;
     const label = `issue ${count}`;
 
     console.time(label);
-    let promises = [];
+    let vcs = [];
     for (let i = 0; i < count; i++) {
         promises.push(keymaster.issueCredential(bc1, { registry }));
 
@@ -123,21 +116,27 @@ async function runWorkflow() {
             const results = await Promise.all(promises);
             console.timeEnd('issueCredential');
             promises = [];
-
-            results.forEach((result, index) => {
-                console.log(`Alice issued vc ${index} for Bob ${result}`);
-            });
+            vcs.push(...results);
         }
     }
+    console.time('issueCredential');
+    const results = await Promise.all(promises);
+    console.timeEnd('issueCredential');
+    promises = [];
+    vcs.push(...results);
     console.timeEnd(label);
+
+    vcs.forEach((result, index) => {
+        console.log(`Alice issued vc ${index} for Bob ${result}`);
+    });
 
     await keymaster.stop();
 }
 
 async function main() {
-    await setup1();
+    // await setup1();
     // await setup2();
-    // await setup3();
+    await setup3();
 
     const backup = await keymaster.loadWallet();
     await keymaster.newWallet(null, true);

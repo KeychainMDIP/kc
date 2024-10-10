@@ -54,10 +54,6 @@ export async function setEvents(did, events) {
 }
 
 export async function getEvents(did) {
-    // if (!did) {
-    //     throw new Error(exceptions.INVALID_DID);
-    // }
-
     const id = did.split(':').pop();
     return redis.lrange(`${DB}/dids/${id}`, 0, -1).then(events => {
         return events.map(event => JSON.parse(event));
@@ -76,6 +72,15 @@ export async function deleteEvents(did) {
 export async function getAllKeys() {
     const keys = await redis.keys(`${DB}/dids/*`);
     return keys.map(key => key.split('/').pop()); // Extract the id part from the key
+}
+
+export async function getAllEvents() {
+    let allEvents = {};
+    const keys = await getAllKeys();
+    for (const key of keys) {
+        allEvents[key] = await getEvents(key);
+    }
+    return allEvents;
 }
 
 export async function queueOperation(registry, op) {
