@@ -3,7 +3,6 @@ import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as wallet from '@mdip/keymaster/db/json';
-import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
 import * as cipher from '@mdip/cipher/node';
 
@@ -54,6 +53,7 @@ async function setup3() {
     keymaster = keymaster_sdk;
 }
 
+// eslint-disable-next-line
 async function perfTest() {
     console.time('getDIDs');
     const dids = await gatekeeper.getDIDs();
@@ -134,9 +134,9 @@ async function runWorkflow() {
 }
 
 async function main() {
-    // await setup1();
+    await setup1();
     // await setup2();
-    await setup3();
+    // await setup3();
 
     const backup = await keymaster.loadWallet();
     await keymaster.newWallet(null, true);
