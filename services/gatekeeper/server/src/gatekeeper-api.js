@@ -6,6 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -13,10 +14,12 @@ EventEmitter.defaultMaxListeners = 100;
 
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
-        : db_json;
+        : (config.db === 'redis') ? db_redis
+            : (config.db === 'json') ? db_json
+                : null;
 
-await db.start();
-await gatekeeper.start({ db });
+await db.start('mdip');
+await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
 const v1router = express.Router();
@@ -241,18 +244,6 @@ async function verifyLoop() {
 }
 
 async function main() {
-    // if (config.verifyDb) {
-    //     const invalid = await gatekeeper.verifyDb();
-
-    //     if (invalid > 0) {
-    //         console.log(`${invalid} invalid DIDs removed from MDIP db`);
-    //     }
-    // }
-    // else {
-    //     const dids = await gatekeeper.getDIDs();
-    //     console.log(`Skipping db verification (${dids.length} DIDs)`);
-    // }
-
     await verifyLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);
