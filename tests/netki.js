@@ -110,13 +110,27 @@ async function runWorkflow() {
 
     const bc1 = await keymaster.bindCredential(schema1, bob);
 
-    for (let i = 0; i < 10; i++) {
-        console.time('issueCredential');
-        const vc1 = await keymaster.issueCredential(bc1, { registry });
-        console.timeEnd('issueCredential');
-        console.log(`Alice issued vc ${i} for Bob ${vc1}`);
+    const count = 100;
+    const label = `issue ${count}`;
+
+    console.time(label);
+    let promises = [];
+    for (let i = 0; i < count; i++) {
+        promises.push(keymaster.issueCredential(bc1, { registry }));
+
+        if (promises.length === 10) {
+            console.time('issueCredential');
+            const results = await Promise.all(promises);
+            console.timeEnd('issueCredential');
+            promises = [];
+
+            results.forEach((result, index) => {
+                console.log(`Alice issued vc ${index} for Bob ${result}`);
+            });
+        }
     }
-    
+    console.timeEnd(label);
+
     await keymaster.stop();
 }
 
