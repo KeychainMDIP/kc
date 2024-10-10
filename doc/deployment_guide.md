@@ -61,4 +61,68 @@ While perhaps not optimal for a production environment, developement environment
 - kc-tbtc-node is a generic Bitcoin Testnet4 node
 
 ## Systems Requirement
+The resource estimates and recommendations below are early estimates and are still under development. 
 
+The most resource-hungry component of an MDIP node is the Gatekeeper. Every MDIP operation goes through a Gatekeeper. From the perspective of a Keymaster (MDIP client), all Gatekeepers are *the same* in the sense that they expose the same MDIP interfaces. MDIP Gatekeepers do not have any visibility in the keys held securely by an MDIP Keymaster.
+
+Another important consideration when running an MDIP node are the blockchain registries. Testnet registries are resource-friendly, but operating a full Bitcoin node requires significant resources that are beyond the scope of this document. 
+
+MDIP components communicate with one another using their respective APIs. It is possible although certainly not necessary to deploy any MDIP component on dedicated machines.
+
+### Hardware Resources
+- 8GB of RAM available for MDIP components
+- 80GB of disk available for MDIP database
+- Fixed IP address for named servers
+
+### Software Dependencies
+- Linux OS v.
+- Docker v.
+- Node v.
+- NPM v.
+
+### Operating System Preparations
+- uid creation
+- disk preparation
+- dependencies installation
+- nginx & certbot configuration
+
+## Installation and Configuration
+
+### MDIP Directory Structure
+- keychainMDIP repository review
+- downloading / cloning KeychainMDIP
+
+### MDIP Environment Configuration
+- Environment variables explained
+- Configuring your environment
+- nodeID and nodeName
+
+### Launching the MDIP Node
+- First Launch - manual
+- Reviewing Launch logs
+
+### Post-Launch Server Configuration
+- NodeID setup
+- Registries setup
+- Systemd setup
+- nginx setup
+
+### Automating Launch
+- Systemd setup
+- ReLaunch & Test
+
+## Using an MDIP Node
+
+### Basic Tests and Common Links
+- Gatekeeper Public Web Wallet
+- Keymaster Private Wallet (web and cli)
+- Gatekeeper API (private or public)
+
+### Securing a generic system or website with MDIP
+- nginx mdip-auth session router setup 
+- mdip challenge/response examples
+
+### MDIP authentication demo site
+- Installing auth-demo
+- Using auth-demo
+- Customizing auth-demo
