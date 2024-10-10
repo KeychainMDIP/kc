@@ -6,6 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -13,9 +14,11 @@ EventEmitter.defaultMaxListeners = 100;
 
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
-        : db_json;
+        : (config.db === 'redis') ? db_redis
+            : (config.db === 'json') ? db_json
+                : null;
 
-await db.start();
+await db.start('mdip');
 await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
