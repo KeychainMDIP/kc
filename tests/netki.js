@@ -4,6 +4,7 @@ import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as db_redis from '@mdip/gatekeeper/db/redis';
 import * as cipher from '@mdip/cipher/node';
 
 const mockSchema = {
@@ -25,8 +26,9 @@ let keymaster;
 
 // eslint-disable-next-line
 async function setup1() {
-    await db_json.start('mdip');
-    await gatekeeper_lib.start({ db: db_json, primeCache: true });
+    //await db_json.start('mdip');
+    await db_redis.start('mdip');
+    await gatekeeper_lib.start({ db: db_redis, primeCache: true });
     await keymaster_lib.start({ gatekeeper: gatekeeper_lib, wallet, cipher });
 
     gatekeeper = gatekeeper_lib;
@@ -70,8 +72,8 @@ async function perfTest() {
 
 async function runWorkflow() {
 
-    await perfTest();
-    await perfTest();
+    //await perfTest();
+    //await perfTest();
 
     const registry = 'local';
 
@@ -85,7 +87,7 @@ async function runWorkflow() {
 
     await keymaster.setCurrentId('Alice');
 
-    await perfTest();
+    //await perfTest();
 
     for (let i = 0; i < 5; i++) {
         console.time('resolveId');
@@ -99,7 +101,7 @@ async function runWorkflow() {
         console.timeEnd('createSchema');
     }
 
-    await perfTest();
+    //await perfTest();
 
     console.time('createSchema');
     const schema1 = await keymaster.createSchema(mockSchema, { registry });
@@ -108,13 +110,13 @@ async function runWorkflow() {
 
     const bc1 = await keymaster.bindCredential(schema1, bob);
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
         console.time('issueCredential');
         const vc1 = await keymaster.issueCredential(bc1, { registry });
         console.timeEnd('issueCredential');
         console.log(`Alice issued vc ${i} for Bob ${vc1}`);
     }
-
+    
     await keymaster.stop();
 }
 
