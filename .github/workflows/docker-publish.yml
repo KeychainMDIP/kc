@@ -90,12 +90,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ matrix.tags }}
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.20.0
+      - name: Run Anchore vulnerability scanner
+        uses: anchore/scan-action@v3
         with:
-          image-ref: ${{ matrix.tags }}
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL'
+          image: ${{ matrix.tags }}
+          fail-build: false
+          severity-cutoff: critical
+          output-format: table

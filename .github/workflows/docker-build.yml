@@ -84,3 +84,11 @@ jobs:
           push: false
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ matrix.tags }}
+      
+      - name: Run Anchore vulnerability scanner
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ matrix.tags }}
+          fail-build: false
+          severity-cutoff: critical
+          output-format: table
