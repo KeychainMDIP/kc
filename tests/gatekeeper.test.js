@@ -13,7 +13,7 @@ const mockConsole = {
 
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start({ db: db_json, console: mockConsole });
+    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
 });
 
 afterEach(async () => {
