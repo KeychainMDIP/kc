@@ -57,17 +57,17 @@ console.time('copyDIDs');
 await copyDIDs();
 console.timeEnd('copyDIDs');
 
-// console.time('dumpDIDs');
-// const cache = await dumpDIDs();
-// console.timeEnd('dumpDIDs');
+console.time('dumpDIDs');
+const cache = await dumpDIDs();
+console.timeEnd('dumpDIDs');
 
-// console.time('deleteDIDs');
-// await deleteDIDs();
-// console.timeEnd('deleteDIDs');
+console.time('deleteDIDs');
+await deleteDIDs();
+console.timeEnd('deleteDIDs');
 
-// console.time('restoreDIDs');
-// await restoreDIDs(cache);
-// console.timeEnd('restoreDIDs');
+console.time('restoreDIDs');
+await restoreDIDs(cache);
+console.timeEnd('restoreDIDs');
 
 await db_json.stop();
 await db_redis.stop();

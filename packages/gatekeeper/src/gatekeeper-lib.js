@@ -598,11 +598,15 @@ export async function removeDIDs(dids) {
 
 async function importCreateEvent(event) {
     try {
+        console.time('verifyCreate');
         const valid = await verifyCreate(event.operation, { verifySig: false });
+        console.timeEnd('verifyCreate');
 
         if (valid) {
             const did = await anchorSeed(event.operation);
+            console.time('addEvent');
             await db.addEvent(did, event);
+            console.timeEnd('addEvent');
             return true;
         }
 
@@ -616,14 +620,21 @@ async function importCreateEvent(event) {
 async function importUpdateEvent(event) {
     try {
         const did = event.operation.did;
+        console.time('resolveDID');
         const doc = await resolveDID(did);
+        console.timeEnd('resolveDID');
+
+        console.time('verifyUpdate');
         const updateValid = await verifyUpdate(event.operation, doc, { verifySig: false });
+        console.timeEnd('verifyUpdate');
 
         if (!updateValid) {
             return false;
         }
 
+        console.time('addEvent');
         await db.addEvent(did, event);
+        console.timeEnd('addEvent');
         return true;
     }
     catch (error) {
@@ -656,10 +667,19 @@ export async function importEvent(event) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const current = await exportDID(did);
+    // console.time('exportDID');
+    // const current = await exportDID(did);
+    // console.timeEnd('exportDID');
+
+    console.time('db.getEvents');
+    const current = await db.getEvents(did);
+    console.timeEnd('db.getEvents');
+    console.log(`current len = ${current.length}`);
 
     if (current.length === 0) {
+        console.time('importCreateEvent');
         const ok = await importCreateEvent(event);
+        console.timeEnd('importCreateEvent');
 
         if (!ok) {
             throw new Error(exceptions.INVALID_OPERATION);
@@ -683,7 +703,9 @@ export async function importEvent(event) {
             const index = current.indexOf(match);
             current[index] = event;
 
+            console.time('db.setEvents');
             db.setEvents(did, current);
+            console.timeEnd('db.setEvents');
             delete eventsCache[did];
             return true;
         }
@@ -691,7 +713,9 @@ export async function importEvent(event) {
         return false;
     }
 
+    console.time('importUpdateEvent');
     const ok = await importUpdateEvent(event);
+    console.timeEnd('importUpdateEvent');
 
     if (!ok) {
         throw new Error(exceptions.INVALID_OPERATION);
@@ -713,7 +737,9 @@ export async function importBatch(batch) {
 
     for (const event of batch) {
         try {
+            console.time('importEvent');
             const imported = await importEvent(event);
+            console.timeEnd('importEvent');
 
             if (imported) {
                 updated += 1;
