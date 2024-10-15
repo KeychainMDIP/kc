@@ -184,13 +184,13 @@ async function verifyCreateAsset(operation, verifySig) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
-
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
-    }
-
     if (verifySig) {
+        const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
+
         const operationCopy = copyJSON(operation);
         delete operationCopy.signature;
         const msgHash = cipher.hashJSON(operationCopy);
@@ -239,6 +239,87 @@ async function verifyCreate(operation, options) {
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
+}
+
+export async function verifyEvent(event) {
+    let did;
+
+    if (!event.registry || !event.time || !event.operation) {
+        return { ok: false };
+    }
+
+    const eventTime = new Date(event.time).getTime();
+
+    if (isNaN(eventTime)) {
+        return { ok: false };
+    }
+
+    const operation = event.operation;
+
+    if (!operation.signature?.value) {
+        return { ok: false };
+    }
+
+    if (operation.type === 'create') {
+        if (!operation.created) {
+            return { ok: false };
+        }
+
+        if (!operation.mdip) {
+            return { ok: false };
+        }
+
+        if (!validVersions.includes(operation.mdip.version)) {
+            return { ok: false };
+        }
+
+        if (!validTypes.includes(operation.mdip.type)) {
+            return { ok: false };
+        }
+
+        if (!validRegistries.includes(operation.mdip.registry)) {
+            return { ok: false };
+        }
+
+        if (operation.mdip.type === 'agent') {
+            if (!operation.signature) {
+                return { ok: false };
+            }
+
+            if (!operation.publicJwk) {
+                return { ok: false };
+            }
+        }
+
+        if (operation.mdip.type === 'asset') {
+            if (operation.controller !== operation.signature?.signer) {
+                return { ok: false };
+            }
+        }
+
+        did = await anchorSeed(event.operation);
+    }
+    else if (operation.type === 'update') {
+        const doc = operation.doc;
+
+        if (!doc || !doc.didDocument || !doc.didDocumentMetadata || !doc.didDocumentData || !doc.mdip) {
+            return { ok: false };
+        }
+
+        did = operation.did;
+    }
+    else if (operation.type === 'delete') {
+        did = operation.did;
+    }
+    else {
+        return { ok: false };
+    }
+
+    if (!did) {
+        return { ok: false };
+    }
+
+    return { ok: true, did };
 }
 
 export async function createDID(operation) {
