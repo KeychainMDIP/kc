@@ -6,14 +6,15 @@ await db_redis.start('mdip');
 
 // eslint-disable-next-line
 async function copyDIDs() {
-    const ids = await db_json.getAllKeys();
+    const allEvents = await db_json.getAllEvents();
+    const ids = Object.keys(allEvents);
     const deleted = await db_redis.resetDb();
 
     console.log(`${deleted} keys deleted`);
 
     for (const i in ids) {
         const id = ids[i];
-        const events = await db_json.getEvents(id);
+        const events = allEvents[id];
         await db_redis.setEvents(id, events);
         console.log(`${i} ${id} copied`);
     }
@@ -56,17 +57,17 @@ console.time('copyDIDs');
 await copyDIDs();
 console.timeEnd('copyDIDs');
 
-console.time('dumpDIDs');
-const cache = await dumpDIDs();
-console.timeEnd('dumpDIDs');
+// console.time('dumpDIDs');
+// const cache = await dumpDIDs();
+// console.timeEnd('dumpDIDs');
 
-console.time('deleteDIDs');
-await deleteDIDs();
-console.timeEnd('deleteDIDs');
+// console.time('deleteDIDs');
+// await deleteDIDs();
+// console.timeEnd('deleteDIDs');
 
-console.time('restoreDIDs');
-await restoreDIDs(cache);
-console.timeEnd('restoreDIDs');
+// console.time('restoreDIDs');
+// await restoreDIDs(cache);
+// console.timeEnd('restoreDIDs');
 
 await db_json.stop();
 await db_redis.stop();
