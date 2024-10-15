@@ -193,8 +193,23 @@ WARNING: Changes to these variables are likely to **break** the Docker Compose f
 | KC_TBTC_FEE_MAX=0.00000600 | Bitcoin Testnet transaction maximum fee |
 | KC_TBTC_FEE_INC=0 |  | 
 
+### Customizing docker-compose.yml 
+Another important file controlling the behavior of an MDIP node is the `docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file show how each components is launched.
+
+Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the docker-compose.yml file by removing the `tess-node` and `tess-mediator` sections.
+
+Operators wanting to operate MDIP in a Kubernetes or other type of virtualized environments will find the environment variable dependencies for each MDIP component in the `docker-compose.yml` file. 
+
 ### Launching the MDIP Node
-- First Launch - manual
+
+Once configured, it is time to install the local dependencies, compile the docker containers, and launch the MDIP Node.
+
+```
+npm i
+./start-node
+```
+On the first run, the `start-node` command will take up to 15 minutes to prepare the docker containers needed by the MDIP node. This will include Bitcoin Testnet and Feathercoin Testnet as registries. 
+
 - Reviewing Launch logs
 
 ### Post-Launch Server Configuration
