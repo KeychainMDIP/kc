@@ -77,7 +77,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty=true) {
+export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
     }
@@ -345,15 +345,17 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function verifyUpdate(operation, doc) {
+async function verifyUpdate(operation, doc, options) {
+    const { verifySig } = options;
 
     if (!doc?.didDocument) {
         return false;
     }
 
     if (doc.didDocument.controller) {
+        // This DID is an asset, verify with controller's keys
         const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
-        return verifyUpdate(operation, controllerDoc);
+        return verifyUpdate(operation, controllerDoc, options);
     }
 
     if (!doc.didDocument.verificationMethod) {
@@ -370,9 +372,13 @@ async function verifyUpdate(operation, doc) {
         return false;
     }
 
-    // TBD get the right signature, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, signature.value, publicJwk);
+    if (verifySig) {
+        // TBD get the right signature, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, signature.value, publicJwk);
+    }
+
+    return true;
 }
 
 async function getEvents(did) {
@@ -431,7 +437,7 @@ export async function resolveDID(did, options = {}) {
         }
 
         if (verify) {
-            const valid = await verifyUpdate(operation, doc);
+            const valid = await verifyUpdate(operation, doc, { verifySig: true });
 
             if (!valid) {
                 throw new Error(exceptions.INVALID_OPERATION);
@@ -486,7 +492,7 @@ export async function resolveDID(did, options = {}) {
 export async function updateDID(operation) {
     try {
         const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdate(operation, doc);
+        const updateValid = await verifyUpdate(operation, doc, { verifySig: true });
 
         if (!updateValid) {
             return false;
@@ -613,7 +619,7 @@ async function importUpdateEvent(event) {
     try {
         const did = event.operation.did;
         const doc = await resolveDID(did);
-        const updateValid = await verifyUpdate(event.operation, doc);
+        const updateValid = await verifyUpdate(event.operation, doc, { verifySig: false });
 
         if (!updateValid) {
             return false;
