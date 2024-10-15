@@ -161,7 +161,7 @@ export async function anchorSeed(seed) {
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
-async function verifyCreateAgent(operation) {
+async function verifyCreateAgent(operation, verifySig) {
     if (!operation.signature) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -170,14 +170,18 @@ async function verifyCreateAgent(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
+    if (verifySig) {
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
 
-    const msgHash = cipher.hashJSON(operationCopy);
-    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
+        const msgHash = cipher.hashJSON(operationCopy);
+        return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
+    }
+
+    return true;
 }
 
-async function verifyCreateAsset(operation) {
+async function verifyCreateAsset(operation, verifySig) {
     if (operation.controller !== operation.signature?.signer) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -188,15 +192,21 @@ async function verifyCreateAsset(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    if (verifySig) {
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    }
+
+    return true;
 }
 
-async function verifyCreate(operation) {
+async function verifyCreate(operation, options) {
+    const { verifySig } = options;
+
     if (operation?.type !== "create") {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -223,18 +233,18 @@ async function verifyCreate(operation) {
     }
 
     if (operation.mdip.type === 'agent') {
-        return verifyCreateAgent(operation);
+        return verifyCreateAgent(operation, verifySig);
     }
 
     if (operation.mdip.type === 'asset') {
-        return verifyCreateAsset(operation);
+        return verifyCreateAsset(operation, verifySig);
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
 }
 
 export async function createDID(operation) {
-    const valid = await verifyCreate(operation);
+    const valid = await verifyCreate(operation, { verifySig: true });
 
     if (valid) {
         const did = await anchorSeed(operation);
@@ -379,7 +389,8 @@ async function getEvents(did) {
     return copyJSON(events);
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+export async function resolveDID(did, options = {}) {
+    const { atTime, atVersion, confirm, verify } = options;
     const events = await getEvents(did);
 
     if (events.length === 0) {
@@ -583,7 +594,7 @@ export async function removeDIDs(dids) {
 
 async function importCreateEvent(event) {
     try {
-        const valid = await verifyCreate(event.operation);
+        const valid = await verifyCreate(event.operation, { verifySig: false });
 
         if (valid) {
             const did = await anchorSeed(event.operation);
