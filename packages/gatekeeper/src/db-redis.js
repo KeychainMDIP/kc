@@ -37,11 +37,9 @@ export async function addEvent(did, event) {
         throw new Error(exceptions.INVALID_DID);
     }
 
-    const id = did.split(':').pop();
-
-    //console.time('rpush');
-    await redis.rpush(`${DB}/dids/${id}`, JSON.stringify(event));
-    //console.timeEnd('rpush');
+    const key = didKey(did);
+    const val = JSON.stringify(event);
+    redis.rpush(key, val);
 }
 
 export async function setEvents(did, events) {
@@ -53,11 +51,14 @@ export async function setEvents(did, events) {
     }
 }
 
-export async function getEvents(did) {
+function didKey(did) {
     const id = did.split(':').pop();
-    return redis.lrange(`${DB}/dids/${id}`, 0, -1).then(events => {
-        return events.map(event => JSON.parse(event));
-    });
+    return `${DB}/dids/${id}`;
+
+}
+export async function getEvents(did) {
+    const events = await redis.lrange(didKey(did), 0, -1);
+    return events.map(event => JSON.parse(event));
 }
 
 export async function deleteEvents(did) {
@@ -65,8 +66,7 @@ export async function deleteEvents(did) {
         throw new Error(exceptions.INVALID_DID);
     }
 
-    const id = did.split(':').pop();
-    return redis.del(`${DB}/dids/${id}`);
+    return redis.del(didKey(did));
 }
 
 export async function getAllKeys() {

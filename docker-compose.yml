@@ -4,6 +4,15 @@ services:
     volumes:
       - ./data/mongodb:/data/db
 
+  redis:
+    image: redis:latest
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - 6379:6379
+    volumes:
+      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./data/redis:/data
+
   gatekeeper:
     build:
       context: .
@@ -14,11 +23,15 @@ services:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
       - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
     volumes:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - "4224:4224"
+      - 4224:4224
+    depends_on:
+      - mongodb
+      - redis
 
   keymaster:
     build:
@@ -32,7 +45,7 @@ services:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - "4226:4226"
+      - 4226:4226
     depends_on:
       - gatekeeper
 
