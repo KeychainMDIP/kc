@@ -382,6 +382,19 @@ program
         }
     });
 
+program
+    .command('populate-redis')
+    .description('Copy DIDs from json to redis')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.populateRedis();
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.start({ url: gatekeeperURL });
     await keymaster.start({ gatekeeper, wallet, cipher });

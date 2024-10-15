@@ -245,3 +245,13 @@ export async function clearQueue(registry, events) {
         throwError(error);
     }
 }
+
+export async function populateRedis() {
+    try {
+        const response = await axios.get(`${URL}/test`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
