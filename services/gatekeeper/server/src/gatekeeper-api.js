@@ -237,6 +237,16 @@ app.get('/test', async (req, res) => {
         console.time('restoreDIDs');
         await pop.restoreDIDs(db_redis, cache);
         console.timeEnd('restoreDIDs');
+
+        // console.time('importEvents');
+        // await pop.importEvents(db_redis, cache);
+        // console.timeEnd('importEvents');
+
+        let batch = Object.values(cache).flat();
+        console.time('importBatch');
+        await pop.importBatch(db_redis, batch);
+        console.timeEnd('importBatch');
+
         res.json('OK');
     } catch (error) {
         console.error(error);
