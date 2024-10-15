@@ -139,13 +139,59 @@ Once a local copy of the repository is available, we can look at important parts
 | /docker-compose.yml | this file contains the suite of Docker services that will be launched; advanced customization only! |
 | /package.json | npm package dependencies required to launch MDIP components. |
 | /sample.env | sample configuration file. Copy this file to a local .env file. Edit and configure .env file to your local needs |
+| /admin | this will run the MDIP admin tool |
+| /kc | this will run the Keychain command line interface client |
 | /start-node | this command will launch the local node, including downloading docker containers, compiling source, and launching services as configured |
 | /stop-node | this command will stop local node services |
 
 ### MDIP Environment Configuration
-- Environment variables explained
-- Configuring your environment
-- nodeID and nodeName
+Configuration of an MDIP node is mainly done by editing a copy of the `sample.env` file into a locally customized `.env` file. Each command below should be executed from the `$HOME/kc` directory created when cloning the repository in the previous step.
+
+```
+cp sample.env .env
+vi .env
+```
+The `.env` file will include the following customizable environment variables. At a minimum, make sure to configure the `#General` variables.
+
+| environment variable | description |
+|----------------------|-------------|
+| # General            |             |
+| KC_UID=1000          | value of your `mdip` user's uid |
+| KC_GID=1000          | value of your `mdip` user's gid |
+| KC_NODE_NAME=mynodeName | node name publicly visible over hyperswarm network |
+| KC_NODE_ID=mynodeID | MDIP Agent DID from local data/wallet.json file used to issue Challenges, Credentials as the server app |
+|                      |             | 
+| # Gatekeeper         |             | 
+| KC_DEBUG=false       |             |
+| KC_GATEKEEPER_DB=json | type of local data storage; leave as json for now with more options coming out soon |
+| KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC | list of DID registries supported by this node. TESS is being deprecated and can be removed if present | 
+| KC_GATEKEEPER_PORT=4224 | default MDIP port for Gatekeeper API | 
+| KC_GATEKEEPER_VERIFY_DB=true |     | 
+|                      |             | 
+| # CLI                |             |
+| KC_GATEKEEPER_URL=http://localhost:4224 | this URL is used for client-facing apps, to be replaced with an SSL address once setup |
+| # KC_KEYMASTER_URL=http://localhost:4226 | commented: clients use in-process keymaster library; set: uses localhost:4226 keymaster API | 
+
+Following these initial Gatekeeper configuration variables, the file will contain MDIP Registry Mediator configuration variables. The following block of variables is repeated for each *Satoshi Mediator* network. The Bitcoin Testnet block is used as an example here. No changes are needed in these blocks. The TESS registry was used in the early development of the protocol and is being deprecated; KC_TESS_* variables can be removed. 
+
+WARNING: Changes to these variables are likely to **break** the Docker Compose functionality.
+
+| environment variable | description |
+|----------------------|-------------|
+| # Bitcoin testnet4 mediator |      | 
+| KC_TBTC_HOST=localhost | host name for Bitcoin Testnet node | 
+| KC_TBTC_CHAIN=TBTC | MDIP registry name for Bitcoin Testnet network | 
+| KC_TBTC_NETWORK=testnet |  | 
+| KC_TBTC_START_BLOCK=38000 |  |
+| KC_TBTC_PORT=48332 | Bitcoin Testnet node RPC port | 
+| KC_TBTC_USER=testnet4 | Bitcoin Testnet node RPC user |
+| KC_TBTC_PASS=testnet4 | Bitcoin Testnet node RPC password |
+| KC_TBTC_WALLET=mdip | Name of Bitcoin Testnet wallet to draw funds for transaction fees | 
+| KC_TBTC_IMPORT_INTERVAL=1 | MDIP Satoshi Mediator import loop wait interval (in minutes) |
+| KC_TBTC_EXPORT_INTERVAL=1 | MDIP Satoshi Mediator export loop wait interval (in minutes) |
+| KC_TBTC_FEE_MIN=0.00000200 | Bitcoin Testnet transaction minimum fee | 
+| KC_TBTC_FEE_MAX=0.00000600 | Bitcoin Testnet transaction maximum fee |
+| KC_TBTC_FEE_INC=0 |  | 
 
 ### Launching the MDIP Node
 - First Launch - manual
