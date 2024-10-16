@@ -29,12 +29,14 @@ export async function dumpDIDs(db_redis) {
 
 export async function deleteDIDs(db_redis) {
     let ids = await db_redis.getAllKeys();
+    let n = 0;
 
     while (ids.length > 0) {
+        n += 1;
         const i = Math.floor(Math.random() * ids.length);
         const id = ids[i];
         await db_redis.deleteEvents(id);
-        console.log(`deleted ${id} ${i}`);
+        console.log(`deleted ${n} ${id} ${i}`);
         ids.splice(i, 1);
     }
 }
@@ -48,29 +50,47 @@ export async function restoreDIDs(db_redis, cache) {
     }
 }
 
-export async function importEvents(db_redis, cache) {
-    let keys = Object.keys(cache);
-    for (let i = 0; i < keys.length; i++) {
-        const id = keys[i];
-        const events = cache[id];
-        const current = db_redis.getEvents(id);
-        for (const event of events) {
-            const ok = await gatekeeper.verifyEvent(event);
+async function importEvent(db_redis, did, event) {
+    console.time('getEvents');
+    const currentEvents = await db_redis.getEvents(did);
+    console.timeEnd('getEvents');
 
-            if (ok) {
-                await db_redis.addEvent(id, event);
-                console.log(`added event ${event.operation.signature.value}`);
-            }
+    const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+
+    if (match) {
+        const first = currentEvents[0];
+        const nativeRegistry = first.operation.mdip.registry;
+
+        if (match.registry === nativeRegistry) {
+            return false;
         }
-        console.log(`imported ${i} ${id}`);
+
+        if (event.registry === nativeRegistry) {
+            // If this import is on the native registry, replace the current one
+            const index = currentEvents.indexOf(match);
+            currentEvents[index] = event;
+            await db_redis.setEvents(did, currentEvents);
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        await db_redis.addEvent(did, event);
+        return true;
     }
 }
 
-export async function importBatch(db_redis, batch) {
+export async function importBatch(db_redis, batch, deleteFirst) {
     let updated = 0;
     let verified = 0;
     let confirmed = 0;
     let rejected = 0;
+
+    if (deleteFirst) {
+        const deleted = await db_redis.resetDb();
+        console.log(`${deleted} keys deleted`);
+    }
 
     for (let i = 0; i < batch.length; i++) {
         const event = batch[i];
@@ -82,33 +102,13 @@ export async function importBatch(db_redis, batch) {
         console.log(`verified event ${i} ${did} ${ok}`);
 
         if (ok) {
-            console.time('getEvents');
-            const current = await db_redis.getEvents(did);
-            console.timeEnd('getEvents');
+            const eventUpdated = await importEvent(db_redis, did, event);
 
-            const match = current.find(item => item.operation.signature.value === event.operation.signature.value);
-
-            if (match) {
-                const create = current[0];
-                const registry = create.operation.mdip.registry;
-
-                if (match.registry === registry) {
-                    // Don't update if this op has already been validated on its native registry
-                    verified += 1;
-                    continue;
-                }
-
-                if (event.registry === registry) {
-                    // If this import is on the native registry, replace the current one
-                    const index = current.indexOf(match);
-                    current[index] = event;
-                    await db_redis.setEvents(did, current);
-                    confirmed += 1;
-                }
+            if (eventUpdated) {
+                updated += 1;
             }
             else {
-                //await db_redis.addEvent(did, event);
-                // updated += 1;
+                verified += 1;
             }
         }
         else {
@@ -117,6 +117,6 @@ export async function importBatch(db_redis, batch) {
         }
     }
 
-    console.log(JSON.stringify({ updated, verified, confirmed, rejected}, null, 4));
+    console.log(JSON.stringify({ updated, verified, confirmed, rejected }, null, 4));
 }
 
