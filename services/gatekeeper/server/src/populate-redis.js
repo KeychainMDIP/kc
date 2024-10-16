@@ -51,10 +51,7 @@ export async function restoreDIDs(db_redis, cache) {
 }
 
 async function importEvent(db_redis, did, event) {
-    console.time('getEvents');
     const currentEvents = await db_redis.getEvents(did);
-    console.timeEnd('getEvents');
-
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
     if (match) {
@@ -94,12 +91,7 @@ export async function importBatch(db_redis, batch, deleteFirst) {
 
     for (let i = 0; i < batch.length; i++) {
         const event = batch[i];
-
-        console.time('verifyEvent');
         const { ok, did } = await gatekeeper.verifyEvent(event);
-        console.timeEnd('verifyEvent');
-
-        console.log(`verified event ${i} ${did} ${ok}`);
 
         if (ok) {
             const eventUpdated = await importEvent(db_redis, did, event);
@@ -115,6 +107,8 @@ export async function importBatch(db_redis, batch, deleteFirst) {
             console.log(JSON.stringify(event, null, 4));
             rejected += 1;
         }
+
+        console.log(`imported event ${i} ${did}`);
     }
 
     console.log(JSON.stringify({ updated, verified, confirmed, rejected }, null, 4));
