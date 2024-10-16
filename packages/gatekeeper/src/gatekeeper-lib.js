@@ -291,6 +291,7 @@ export async function verifyEvent(event) {
             }
         }
 
+        // eslint-disable-next-line
         if (operation.mdip.type === 'asset') {
             if (operation.controller !== operation.signature?.signer) {
                 return { ok: false };
