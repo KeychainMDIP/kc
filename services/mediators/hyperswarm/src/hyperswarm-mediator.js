@@ -185,6 +185,8 @@ async function relayMsg(msg) {
 }
 
 async function importBatch(batch) {
+    // The batch we receive from other hyperswarm nodes includes just operations.
+    // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
         const hash = cipher.hashJSON(batch);
 
