@@ -725,7 +725,7 @@ async function importUpdateEvent(event) {
     }
 }
 
-export async function importEvent(event) {
+export async function oldimportEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -808,7 +808,7 @@ export async function importEvent(event) {
     return true;
 }
 
-export async function importBatch(batch) {
+export async function oldimportBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
@@ -834,6 +834,70 @@ export async function importBatch(batch) {
             failed += 1;
         }
     }
+
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
+}
+
+async function importEvent(did, event) {
+    const currentEvents = await db.getEvents(did);
+    const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+
+    if (match) {
+        const first = currentEvents[0];
+        const nativeRegistry = first.operation.mdip.registry;
+
+        if (match.registry === nativeRegistry) {
+            // If this event is already confirmed on the native registry, no need to update
+            return false;
+        }
+
+        if (event.registry === nativeRegistry) {
+            // If this import is on the native registry, replace the current one
+            const index = currentEvents.indexOf(match);
+            currentEvents[index] = event;
+            await db.setEvents(did, currentEvents);
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        await db.addEvent(did, event);
+        return true;
+    }
+}
+
+export async function importBatch(batch) {
+    let updated = 0;
+    let verified = 0;
+    let failed = 0;
+
+    for (let i = 0; i < batch.length; i++) {
+        const event = batch[i];
+        const { ok, did } = await verifyEvent(event);
+
+        if (ok) {
+            const eventUpdated = await importEvent(did, event);
+
+            if (eventUpdated) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        else {
+            failed += 1;
+        }
+
+        //console.log(`imported event ${i} ${did}`);
+    }
+
+    //console.log(JSON.stringify({ updated, verified, failed }, null, 4));
 
     return {
         verified: verified,
