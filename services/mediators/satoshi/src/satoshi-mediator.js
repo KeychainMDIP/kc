@@ -113,36 +113,46 @@ async function scanBlocks() {
     }
 }
 
-async function importBatch() {
+async function importBatch(db, item) {
+    console.log(JSON.stringify(item, null, 4));
+
+    const queue = await keymaster.resolveAsset(item.did);
+    const batch = [];
+
+    for (let i = 0; i < queue.length; i++) {
+        batch.push({
+            registry: REGISTRY,
+            time: item.time,
+            ordinal: [item.height, item.index, i],
+            operation: queue[i],
+            blockchain: {
+                height: item.height,
+                index: item.index,
+                txid: item.txid,
+                batch: item.did,
+            }
+        });
+    }
+
+    console.log(JSON.stringify(batch, null, 4));
+    const imported = await gatekeeper.importBatch(batch);
+    item.imported = imported;
+    writeDb(db);
+    console.log(JSON.stringify(item, null, 4));
+}
+
+async function importBatches() {
     const db = loadDb();
 
     for (const item of db.discovered) {
         if (!item.imported) {
-            console.log(JSON.stringify(item, null, 4));
-
-            const queue = await keymaster.resolveAsset(item.did);
-            const batch = [];
-
-            for (let i = 0; i < queue.length; i++) {
-                batch.push({
-                    registry: REGISTRY,
-                    time: item.time,
-                    ordinal: [item.height, item.index, i],
-                    operation: queue[i],
-                    blockchain: {
-                        height: item.height,
-                        index: item.index,
-                        txid: item.txid,
-                        batch: item.did,
-                    }
-                });
+            try {
+                await importBatch(db, item);
             }
-
-            console.log(JSON.stringify(batch, null, 4));
-            const imported = await gatekeeper.importBatch(batch);
-            item.imported = imported;
-            writeDb(db);
-            console.log(JSON.stringify(item, null, 4));
+            catch (error) {
+                console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
+                continue;
+            }
         }
     }
 }
@@ -339,10 +349,10 @@ async function anchorBatch() {
 async function importLoop() {
     try {
         await scanBlocks();
-        await importBatch();
+        await importBatches();
         console.log(`import loop waiting ${config.importInterval} minute(s)...`);
     } catch (error) {
-        console.error(`Error in importLoop: ${error}`);
+        console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
     }
     setTimeout(importLoop, config.importInterval * 60 * 1000);
 }
