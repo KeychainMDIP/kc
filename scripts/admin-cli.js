@@ -357,6 +357,19 @@ program
     });
 
 program
+    .command('verify-db')
+    .description('Verify all the DIDs in the db')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.verifyDb();
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('resolve-seed-bank')
     .description('Resolves the seed bank ID')
     .action(async () => {
