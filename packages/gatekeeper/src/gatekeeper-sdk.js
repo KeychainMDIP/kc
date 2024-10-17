@@ -88,6 +88,16 @@ export async function resetDb() {
     }
 }
 
+export async function verifyDb() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/db/verify`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
 export async function isReady() {
     try {
         const response = await axios.get(`${URL}/api/v1/ready`);
@@ -239,6 +249,16 @@ export async function getQueue(registry) {
 export async function clearQueue(registry, events) {
     try {
         const response = await axios.post(`${URL}/api/v1/queue/${registry}/clear`, events);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function populateRedis() {
+    try {
+        const response = await axios.get(`${URL}/test`);
         return response.data;
     }
     catch (error) {

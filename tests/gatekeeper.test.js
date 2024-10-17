@@ -13,7 +13,7 @@ const mockConsole = {
 
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start({ db: db_json, console: mockConsole });
+    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
 afterEach(async () => {
@@ -24,6 +24,12 @@ describe('start', () => {
 
     afterEach(() => {
         mockFs.restore();
+    });
+
+    it('should prime the cache on demand', async () => {
+        mockFs({});
+
+        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -1449,7 +1455,7 @@ describe('importBatch', () => {
         expect(failed).toBe(1);
     });
 
-    it('should report an error on invalid operation signature', async () => {
+    it('should report an error on absent operation signature', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1457,7 +1463,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature = 'mock';
+        delete ops[0].operation.signature;
 
         const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 
@@ -1466,7 +1472,7 @@ describe('importBatch', () => {
         expect(failed).toBe(1);
     });
 
-    it('should report an error on invalid operation signature value', async () => {
+    it('should report an error on absent operation key', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1474,7 +1480,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature.value = 'mock';
+        delete ops[0].operation.publicJwk;
 
         const { updated, verified, failed } = await gatekeeper.importBatch(ops);
 

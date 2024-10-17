@@ -6,17 +6,21 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
+import * as pop from './populate-redis.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
-        : db_json;
+        : (config.db === 'redis') ? db_redis
+            : (config.db === 'json') ? db_json
+                : null;
 
-await db.start();
-await gatekeeper.start({ db });
+await db.start('mdip');
+await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
 const v1router = express.Router();
@@ -48,11 +52,20 @@ v1router.get('/version', async (req, res) => {
     }
 });
 
-// TBD temporary
+// TBD lock it down
 v1router.get('/db/reset', async (req, res) => {
     try {
         await gatekeeper.resetDb();
         res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/db/verify', async (req, res) => {
+    try {
+        const invalid = await gatekeeper.verifyDb();
+        res.json(invalid);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -214,6 +227,42 @@ v1router.get('/registries', async (req, res) => {
     }
 });
 
+app.get('/test', async (req, res) => {
+    try {
+        db_json.start('mdip');
+
+        console.time('copyDIDs');
+        await pop.copyDIDs(db_json, db_redis);
+        console.timeEnd('copyDIDs');
+
+        console.time('dumpDIDs');
+        const cache = await pop.dumpDIDs(db_redis);
+        console.timeEnd('dumpDIDs');
+
+        console.time('deleteDIDs');
+        await pop.deleteDIDs(db_redis);
+        console.timeEnd('deleteDIDs');
+
+        console.time('restoreDIDs');
+        await pop.restoreDIDs(db_redis, cache);
+        console.timeEnd('restoreDIDs');
+
+        let batch = Object.values(cache).flat();
+        console.time('importBatch');
+        await pop.importBatch(db_redis, batch, false);
+        console.timeEnd('importBatch');
+
+        console.time('importBatch');
+        await pop.importBatch(db_redis, batch, true);
+        console.timeEnd('importBatch');
+
+        res.json('OK');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
@@ -241,18 +290,6 @@ async function verifyLoop() {
 }
 
 async function main() {
-    // if (config.verifyDb) {
-    //     const invalid = await gatekeeper.verifyDb();
-
-    //     if (invalid > 0) {
-    //         console.log(`${invalid} invalid DIDs removed from MDIP db`);
-    //     }
-    // }
-    // else {
-    //     const dids = await gatekeeper.getDIDs();
-    //     console.log(`Skipping db verification (${dids.length} DIDs)`);
-    // }
-
     await verifyLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);

@@ -25,6 +25,17 @@ export function copyJSON(json) {
 export async function start(options = {}) {
     if (options.db) {
         db = options.db;
+
+        if (options.primeCache) {
+            try {
+                const allEvents = await db.getAllEvents();
+                for (const key of Object.keys(allEvents)) {
+                    eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
+                }
+            }
+            catch (error) {
+            }
+        }
     }
     else {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -77,7 +88,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty=true) {
+export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
     }
@@ -86,19 +97,6 @@ export async function verifyDb(chatty=true) {
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
     let n = 0;
     let invalid = 0;
-
-    // prime the cache
-    try {
-        const allEvents = await db.getAllEvents();
-        for (const key of Object.keys(allEvents)) {
-            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-        }
-    }
-    catch (error) {
-        if (chatty) {
-            console.error(error);
-        }
-    }
 
     for (const did of dids) {
         n += 1;
@@ -161,7 +159,7 @@ export async function anchorSeed(seed) {
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
-async function verifyCreateAgent(operation) {
+async function verifyCreateAgent(operation, verifySig) {
     if (!operation.signature) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -170,33 +168,43 @@ async function verifyCreateAgent(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
+    if (verifySig) {
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
 
-    const msgHash = cipher.hashJSON(operationCopy);
-    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
+        const msgHash = cipher.hashJSON(operationCopy);
+        return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
+    }
+
+    return true;
 }
 
-async function verifyCreateAsset(operation) {
+async function verifyCreateAsset(operation, verifySig) {
     if (operation.controller !== operation.signature?.signer) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+    if (verifySig) {
+        const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
+
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    return true;
 }
 
-async function verifyCreate(operation) {
+async function verifyCreate(operation, options) {
+    const { verifySig } = options;
+
     if (operation?.type !== "create") {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -223,18 +231,100 @@ async function verifyCreate(operation) {
     }
 
     if (operation.mdip.type === 'agent') {
-        return verifyCreateAgent(operation);
+        return verifyCreateAgent(operation, verifySig);
     }
 
     if (operation.mdip.type === 'asset') {
-        return verifyCreateAsset(operation);
+        return verifyCreateAsset(operation, verifySig);
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
 }
 
+export async function verifyEvent(event) {
+    let did;
+
+    if (!event.registry || !event.time || !event.operation) {
+        return { ok: false };
+    }
+
+    const eventTime = new Date(event.time).getTime();
+
+    if (isNaN(eventTime)) {
+        return { ok: false };
+    }
+
+    const operation = event.operation;
+
+    if (!operation.signature?.value) {
+        return { ok: false };
+    }
+
+    if (operation.type === 'create') {
+        if (!operation.created) {
+            return { ok: false };
+        }
+
+        if (!operation.mdip) {
+            return { ok: false };
+        }
+
+        if (!validVersions.includes(operation.mdip.version)) {
+            return { ok: false };
+        }
+
+        if (!validTypes.includes(operation.mdip.type)) {
+            return { ok: false };
+        }
+
+        if (!validRegistries.includes(operation.mdip.registry)) {
+            return { ok: false };
+        }
+
+        if (operation.mdip.type === 'agent') {
+            if (!operation.signature) {
+                return { ok: false };
+            }
+
+            if (!operation.publicJwk) {
+                return { ok: false };
+            }
+        }
+
+        // eslint-disable-next-line
+        if (operation.mdip.type === 'asset') {
+            if (operation.controller !== operation.signature?.signer) {
+                return { ok: false };
+            }
+        }
+
+        did = await anchorSeed(event.operation);
+    }
+    else if (operation.type === 'update') {
+        const doc = operation.doc;
+
+        if (!doc || !doc.didDocument || !doc.didDocumentMetadata || !doc.didDocumentData || !doc.mdip) {
+            return { ok: false };
+        }
+
+        did = operation.did;
+    }
+    else if (operation.type === 'delete') {
+        did = operation.did;
+    }
+    else {
+        return { ok: false };
+    }
+
+    if (!did) {
+        return { ok: false };
+    }
+
+    return { ok: true, did };
+}
+
 export async function createDID(operation) {
-    const valid = await verifyCreate(operation);
+    const valid = await verifyCreate(operation, { verifySig: true });
 
     if (valid) {
         const did = await anchorSeed(operation);
@@ -335,15 +425,17 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function verifyUpdate(operation, doc) {
+async function verifyUpdate(operation, doc, options) {
+    const { verifySig } = options;
 
     if (!doc?.didDocument) {
         return false;
     }
 
     if (doc.didDocument.controller) {
+        // This DID is an asset, verify with controller's keys
         const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
-        return verifyUpdate(operation, controllerDoc);
+        return verifyUpdate(operation, controllerDoc, options);
     }
 
     if (!doc.didDocument.verificationMethod) {
@@ -360,9 +452,13 @@ async function verifyUpdate(operation, doc) {
         return false;
     }
 
-    // TBD get the right signature, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, signature.value, publicJwk);
+    if (verifySig) {
+        // TBD get the right signature, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, signature.value, publicJwk);
+    }
+
+    return true;
 }
 
 async function getEvents(did) {
@@ -379,7 +475,8 @@ async function getEvents(did) {
     return copyJSON(events);
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+export async function resolveDID(did, options = {}) {
+    const { atTime, atVersion, confirm, verify } = options;
     const events = await getEvents(did);
 
     if (events.length === 0) {
@@ -420,7 +517,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
 
         if (verify) {
-            const valid = await verifyUpdate(operation, doc);
+            const valid = await verifyUpdate(operation, doc, { verifySig: true });
 
             if (!valid) {
                 throw new Error(exceptions.INVALID_OPERATION);
@@ -475,7 +572,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
 export async function updateDID(operation) {
     try {
         const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdate(operation, doc);
+        const updateValid = await verifyUpdate(operation, doc, { verifySig: true });
 
         if (!updateValid) {
             return false;
@@ -583,11 +680,15 @@ export async function removeDIDs(dids) {
 
 async function importCreateEvent(event) {
     try {
-        const valid = await verifyCreate(event.operation);
+        console.time('verifyCreate');
+        const valid = await verifyCreate(event.operation, { verifySig: false });
+        console.timeEnd('verifyCreate');
 
         if (valid) {
             const did = await anchorSeed(event.operation);
+            console.time('addEvent');
             await db.addEvent(did, event);
+            console.timeEnd('addEvent');
             return true;
         }
 
@@ -601,14 +702,21 @@ async function importCreateEvent(event) {
 async function importUpdateEvent(event) {
     try {
         const did = event.operation.did;
+        console.time('resolveDID');
         const doc = await resolveDID(did);
-        const updateValid = await verifyUpdate(event.operation, doc);
+        console.timeEnd('resolveDID');
+
+        console.time('verifyUpdate');
+        const updateValid = await verifyUpdate(event.operation, doc, { verifySig: false });
+        console.timeEnd('verifyUpdate');
 
         if (!updateValid) {
             return false;
         }
 
+        console.time('addEvent');
         await db.addEvent(did, event);
+        console.timeEnd('addEvent');
         return true;
     }
     catch (error) {
@@ -617,7 +725,7 @@ async function importUpdateEvent(event) {
     }
 }
 
-export async function importEvent(event) {
+export async function oldimportEvent(event) {
 
     if (!event.registry || !event.time || !event.operation) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -641,10 +749,19 @@ export async function importEvent(event) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    const current = await exportDID(did);
+    // console.time('exportDID');
+    // const current = await exportDID(did);
+    // console.timeEnd('exportDID');
+
+    console.time('db.getEvents');
+    const current = await db.getEvents(did);
+    console.timeEnd('db.getEvents');
+    console.log(`current len = ${current.length}`);
 
     if (current.length === 0) {
+        console.time('importCreateEvent');
         const ok = await importCreateEvent(event);
+        console.timeEnd('importCreateEvent');
 
         if (!ok) {
             throw new Error(exceptions.INVALID_OPERATION);
@@ -668,7 +785,9 @@ export async function importEvent(event) {
             const index = current.indexOf(match);
             current[index] = event;
 
+            console.time('db.setEvents');
             db.setEvents(did, current);
+            console.timeEnd('db.setEvents');
             delete eventsCache[did];
             return true;
         }
@@ -676,7 +795,9 @@ export async function importEvent(event) {
         return false;
     }
 
+    console.time('importUpdateEvent');
     const ok = await importUpdateEvent(event);
+    console.timeEnd('importUpdateEvent');
 
     if (!ok) {
         throw new Error(exceptions.INVALID_OPERATION);
@@ -687,7 +808,7 @@ export async function importEvent(event) {
     return true;
 }
 
-export async function importBatch(batch) {
+export async function oldimportBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
@@ -698,7 +819,9 @@ export async function importBatch(batch) {
 
     for (const event of batch) {
         try {
+            console.time('importEvent');
             const imported = await importEvent(event);
+            console.timeEnd('importEvent');
 
             if (imported) {
                 updated += 1;
@@ -711,6 +834,75 @@ export async function importBatch(batch) {
             failed += 1;
         }
     }
+
+    return {
+        verified: verified,
+        updated: updated,
+        failed: failed,
+    };
+}
+
+async function importEvent(did, event) {
+    const currentEvents = await db.getEvents(did);
+    const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+
+    if (match) {
+        const first = currentEvents[0];
+        const nativeRegistry = first.operation.mdip.registry;
+
+        if (match.registry === nativeRegistry) {
+            // If this event is already confirmed on the native registry, no need to update
+            return false;
+        }
+
+        if (event.registry === nativeRegistry) {
+            // If this import is on the native registry, replace the current one
+            const index = currentEvents.indexOf(match);
+            currentEvents[index] = event;
+            await db.setEvents(did, currentEvents);
+            delete eventsCache[did];
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        await db.addEvent(did, event);
+        return true;
+    }
+}
+
+export async function importBatch(batch) {
+    if (!batch || !Array.isArray(batch) || batch.length < 1) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+    
+    let updated = 0;
+    let verified = 0;
+    let failed = 0;
+
+    for (let i = 0; i < batch.length; i++) {
+        const event = batch[i];
+        const { ok, did } = await verifyEvent(event);
+
+        if (ok) {
+            const eventUpdated = await importEvent(did, event);
+
+            if (eventUpdated) {
+                updated += 1;
+            }
+            else {
+                verified += 1;
+            }
+        }
+        else {
+            failed += 1;
+        }
+
+        //console.log(`imported event ${i} ${did}`);
+    }
+
+    //console.log(JSON.stringify({ updated, verified, failed }, null, 4));
 
     return {
         verified: verified,
