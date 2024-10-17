@@ -13,7 +13,7 @@ const mockConsole = {
 
 beforeEach(async () => {
     db_json.start();
-    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
+    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
 afterEach(async () => {
@@ -24,6 +24,12 @@ describe('start', () => {
 
     afterEach(() => {
         mockFs.restore();
+    });
+
+    it('should prime the cache on demand', async () => {
+        mockFs({});
+
+        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {
