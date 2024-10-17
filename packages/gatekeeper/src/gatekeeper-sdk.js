@@ -88,6 +88,16 @@ export async function resetDb() {
     }
 }
 
+export async function verifyDb() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/db/verify`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
 export async function isReady() {
     try {
         const response = await axios.get(`${URL}/api/v1/ready`);

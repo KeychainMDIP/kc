@@ -52,10 +52,19 @@ v1router.get('/version', async (req, res) => {
     }
 });
 
-// TBD temporary
+// TBD lock it down
 v1router.get('/db/reset', async (req, res) => {
     try {
         await gatekeeper.resetDb();
+        res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/db/verify', async (req, res) => {
+    try {
+        await gatekeeper.verifyDb();
         res.json(true);
     } catch (error) {
         res.status(500).send(error.toString());
