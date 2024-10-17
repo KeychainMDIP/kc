@@ -860,6 +860,7 @@ async function importEvent(did, event) {
             const index = currentEvents.indexOf(match);
             currentEvents[index] = event;
             await db.setEvents(did, currentEvents);
+            delete eventsCache[did];
             return true;
         }
 
@@ -872,6 +873,10 @@ async function importEvent(did, event) {
 }
 
 export async function importBatch(batch) {
+    if (!batch || !Array.isArray(batch) || batch.length < 1) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+    
     let updated = 0;
     let verified = 0;
     let failed = 0;
