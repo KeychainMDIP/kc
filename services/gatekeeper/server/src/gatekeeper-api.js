@@ -64,8 +64,8 @@ v1router.get('/db/reset', async (req, res) => {
 
 v1router.get('/db/verify', async (req, res) => {
     try {
-        await gatekeeper.verifyDb();
-        res.json(true);
+        const invalid = await gatekeeper.verifyDb();
+        res.json(invalid);
     } catch (error) {
         res.status(500).send(error.toString());
     }
