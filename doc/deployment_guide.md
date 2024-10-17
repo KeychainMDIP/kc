@@ -159,7 +159,7 @@ The `.env` file will include the following customizable environment variables. A
 | KC_UID=1000          | value of your `mdip` user's uid |
 | KC_GID=1000          | value of your `mdip` user's gid |
 | KC_NODE_NAME=mynodeName | node name publicly visible over hyperswarm network |
-| KC_NODE_ID=mynodeID | MDIP Agent DID from local data/wallet.json file used to issue Challenges, Credentials as the server app |
+| KC_NODE_ID=mynodeDID | MDIP Agent DID from local data/wallet.json file used to issue Challenges, Credentials as the server app |
 |                      |             | 
 | # Gatekeeper         |             | 
 | KC_DEBUG=false       |             |
@@ -202,18 +202,79 @@ Operators wanting to operate MDIP in a Kubernetes or other type of virtualized e
 
 ### Launching the MDIP Node
 
-Once configured, it is time to install the local dependencies, compile the docker containers, and launch the MDIP Node.
+NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the installation of all npm package dependencies for MDIP.
 
 ```
 npm i
+```
+
+The next step will create and launch the docker containers. 
+```
 ./start-node
 ```
+
 On the first run, the `start-node` command will take up to 15 minutes to prepare the docker containers needed by the MDIP node. This will include Bitcoin Testnet and Feathercoin Testnet as registries. 
 
-- Reviewing Launch logs
+The script contains 2 commands: 
+```
+docker compose build "$@"
+docker compose up "$@"
+```
+
+The *build* process will download numerous containers and dependencies as defined in the repository's Dockerfiles. The *up* command will launch the MDIP Node. The MDIP Node is considered `online` once the following messages appear in the Gatekeeper logs: 
+
+```
+Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Server is running on port 4224, persisting with json
+Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Supported registries: hyperswarm,TESS,TBTC,TFTC
+Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | GET /api/v1/ready 200 9.088 ms - 4
+Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: hyperswarm-1     | Gatekeeper service is ready!
+```
+
+Likewise, the MDIP Node's Keymaster becomes available once the following logs are seen: 
+```
+Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | Gatekeeper service is ready!
+Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | keymaster server running on port 4226
+Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | Error: No current ID
+```
+We will resolve the `No current ID` error in the next section.
 
 ### Post-Launch Server Configuration
-- NodeID setup
+Now that our MDIP Node is online, we can create an agent DID for the Node and setup the wallets for blockchain registries. 
+
+This section will also cover automated launch of MDIP Services using [systemd](https://systemd.io/) and protection of selected MDIP API end-points using a combination of [nginx](https://nginx.org/) as a reverse-proxy and [certbot](https://certbot.eff.org/) for SSL certificates.
+
+#### Node Agent DID Creation
+
+The MDIP Node's Keymaster wallet is located in `data/wallet.json`. There are two clients available to manage your server wallet: 
+- `kc` Command Line Interface
+- Keymaster Web User Interface on `http://localhost:4226`
+
+This document will provide examples using the `kc` CLI tool. The following command will create a new wallet and show its content:
+
+```
+./kc create-wallet
+```
+
+We can now create an Agent DID for our MDIP Node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable. The following command will create this new DID and schedule it for registration on the Bitcoin Blockchain (to be configured below). 
+
+```
+./kc create-id mynodeDID TBTC
+```
+
+The `./kc show-wallet` command will show an updated JSON wallet containing the newly created DID. To resolve a specific DID Document, use the command `./kc resolve-did mynodeDID` and replace mynodeDID with a specific DID or aliased name.
+
+#### DID Registries Setup
+
+MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the Registry contains the concensus on order of MDIP operations. 
+
+By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The following command will create that wallet; the Bitcoin Testnet node is configured to store its data in the `data/tbtc` directory.
+
+```
+./scripts/tbtc-cli createwallet mdip
+```
+
+
+./scripts/tbtc-cli 
 - Registries setup
 - Systemd setup
 - nginx setup
