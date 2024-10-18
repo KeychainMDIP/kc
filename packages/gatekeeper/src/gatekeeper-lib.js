@@ -28,14 +28,7 @@ export async function start(options = {}) {
         db = options.db;
 
         if (options.primeCache) {
-            try {
-                const allEvents = await db.getAllEvents();
-                for (const key of Object.keys(allEvents)) {
-                    eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-                }
-            }
-            catch (error) {
-            }
+            await primeCache();
         }
     }
     else {
@@ -61,6 +54,17 @@ export async function stop() {
 
     if (db) {
         await db.stop();
+    }
+}
+
+async function primeCache() {
+    try {
+        const allEvents = await db.getAllEvents();
+        for (const key of Object.keys(allEvents)) {
+            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
+        }
+    }
+    catch (error) {
     }
 }
 
@@ -843,6 +847,7 @@ export async function processEvents() {
     }
 
     eventsQueue = newQueue;
+    await primeCache();
 
     return { imported, deferred };
 }
