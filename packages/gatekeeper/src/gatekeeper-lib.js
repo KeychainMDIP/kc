@@ -665,33 +665,41 @@ export async function getEventsQueue() {
     return eventsQueue;
 }
 
-export async function processEvents() {
-    for (const i in eventsQueue) {
-        const event = eventsQueue[i];
+async function prepareEvents() {
+    const promises = eventsQueue.map(async (event, i) => {
         if (!event.did) {
             if (event.operation.did) {
                 event.did = event.operation.did;
             }
             else {
-                console.time('anchorSeed');
                 event.did = await anchorSeed(event.operation);
-                console.timeEnd('anchorSeed');
             }
         }
-        console.log(`preparing event ${i} ${event.did}`);
-    }
+    });
 
+    return Promise.all(promises);
+}
+
+async function importEvents() {
     const newQueue = [];
-    let imported = 0;
+    let added = 0;
+    let merged = 0;
     let deferred = 0;
     let event = eventsQueue.shift();
 
     while (event) {
         console.time('importEvent');
         try {
-            await importEvent(event);
-            imported += 1;
-            console.log(`imported event for ${event.did}`);
+            const imported = await importEvent(event);
+
+            if (imported) {
+                added += 1;
+                console.log(`added event for ${event.did}`);
+            }
+            else {
+                merged += 1;
+                console.log(`merged event for ${event.did}`);
+            }
         }
         catch (error) {
             newQueue.push(event);
@@ -704,63 +712,80 @@ export async function processEvents() {
     }
 
     eventsQueue = newQueue;
+
+    return { added, merged, deferred };
+}
+
+export async function processEvents() {
+    console.time('processEvents');
+
+    console.time('prepareEvents');
+    await prepareEvents();
+    console.timeEnd('prepareEvents');
+
+    console.time('importEvents');
+    const response = await importEvents();
+    console.timeEnd('importEvents');
+
     primeCache();
 
-    return { imported, deferred };
+    console.timeEnd('processEvents');
+
+    return response;
 }
 
 export async function verifyEvent(event) {
     if (!event.registry || !event.time || !event.operation) {
-        return { ok: false };
+        return false;
     }
 
     const eventTime = new Date(event.time).getTime();
 
     if (isNaN(eventTime)) {
-        return { ok: false };
+        return false;
     }
 
     const operation = event.operation;
 
     if (!operation.signature?.value) {
-        return { ok: false };
+        return false;
     }
 
     if (operation.type === 'create') {
         if (!operation.created) {
-            return { ok: false };
+            return false;
         }
 
         if (!operation.mdip) {
-            return { ok: false };
+            return false;
         }
 
         if (!validVersions.includes(operation.mdip.version)) {
-            return { ok: false };
+            return false;
         }
 
         if (!validTypes.includes(operation.mdip.type)) {
-            return { ok: false };
+            return false;
         }
 
         if (!validRegistries.includes(operation.mdip.registry)) {
-            return { ok: false };
+            return false;
         }
 
         if (operation.mdip.type === 'agent') {
             if (!operation.signature) {
-                return { ok: false };
+                return false;
             }
 
             if (!operation.publicJwk) {
-                return { ok: false };
+                return false;
             }
         }
 
         // eslint-disable-next-line
         if (operation.mdip.type === 'asset') {
             if (operation.controller !== operation.signature?.signer) {
-                return { ok: false };
+                return false;
             }
         }
     }
@@ -768,23 +793,23 @@ export async function verifyEvent(event) {
         const doc = operation.doc;
 
         if (!doc || !doc.didDocument || !doc.didDocumentMetadata || !doc.didDocumentData || !doc.mdip) {
-            return { ok: false };
+            return false;
         }
 
         if (!operation.did) {
-            return { ok: false };
+            return false;
         }
     }
     else if (operation.type === 'delete') {
         if (!operation.did) {
-            return { ok: false };
+            return false;
         }
     }
     else {
-        return { ok: false };
+        return false;
     }
 
-    return { ok: true };
+    return true;
 }
 
 export async function importBatch(batch) {
@@ -798,7 +823,7 @@ export async function importBatch(batch) {
     for (let i = 0; i < batch.length; i++) {
         const event = batch[i];
         console.time('verifyEvent');
-        const { ok, did } = await verifyEvent(event);
+        const ok = await verifyEvent(event);
         console.timeEnd('verifyEvent');
 
         if (ok) {
