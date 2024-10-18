@@ -52,25 +52,6 @@ v1router.get('/version', async (req, res) => {
     }
 });
 
-// TBD lock it down
-v1router.get('/db/reset', async (req, res) => {
-    try {
-        await gatekeeper.resetDb();
-        res.json(true);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.get('/db/verify', async (req, res) => {
-    try {
-        const invalid = await gatekeeper.verifyDb();
-        res.json(invalid);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
 v1router.post('/did', async (req, res) => {
     try {
         const operation = req.body;
@@ -223,6 +204,43 @@ v1router.get('/registries', async (req, res) => {
         res.json(registries);
     } catch (error) {
         console.error(error);
+        res.status(500).send(error.toString());
+    }
+});
+
+// TBD lock it down
+v1router.get('/db/reset', async (req, res) => {
+    try {
+        await gatekeeper.resetDb();
+        res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/db/verify', async (req, res) => {
+    try {
+        const response = await gatekeeper.verifyDb();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/events/queue', async (req, res) => {
+    try {
+        const response = await gatekeeper.getEventsQueue();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/events/process', async (req, res) => {
+    try {
+        const response = await gatekeeper.processEvents();
+        res.json(response);
+    } catch (error) {
         res.status(500).send(error.toString());
     }
 });
