@@ -265,14 +265,14 @@ app.get('/test', async (req, res) => {
         await pop.restoreDIDs(db_redis, cache);
         console.timeEnd('restoreDIDs');
 
-        let batch = Object.values(cache).flat();
-        console.time('importBatch');
-        await pop.importBatch(db_redis, batch, false);
-        console.timeEnd('importBatch');
+        // let batch = Object.values(cache).flat();
+        // console.time('importBatch');
+        // await pop.importBatch(db_redis, batch, false);
+        // console.timeEnd('importBatch');
 
-        console.time('importBatch');
-        await pop.importBatch(db_redis, batch, true);
-        console.timeEnd('importBatch');
+        // console.time('importBatch');
+        // await pop.importBatch(db_redis, batch, true);
+        // console.timeEnd('importBatch');
 
         res.json('OK');
     } catch (error) {

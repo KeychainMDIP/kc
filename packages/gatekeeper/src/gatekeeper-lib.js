@@ -618,8 +618,12 @@ export async function removeDIDs(dids) {
 }
 
 async function importEvent(event) {
+
     const did = event.did;
+    console.time('getEvents');
     const currentEvents = await db.getEvents(did);
+    console.timeEnd('getEvents');
+
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
     if (match) {
@@ -635,7 +639,7 @@ async function importEvent(event) {
             // If this import is on the native registry, replace the current one
             const index = currentEvents.indexOf(match);
             currentEvents[index] = event;
-            await db.setEvents(did, currentEvents);
+            db.setEvents(did, currentEvents);
             delete eventsCache[did];
             return true;
         }
@@ -643,7 +647,9 @@ async function importEvent(event) {
         return false;
     }
     else {
+        //console.time('verifyOperation');
         const ok = await verifyOperation(event.operation);
+        //console.timeEnd('verifyOperation');
 
         if (ok) {
             db.addEvent(did, event);
@@ -660,6 +666,21 @@ export async function getEventsQueue() {
 }
 
 export async function processEvents() {
+    for (const i in eventsQueue) {
+        const event = eventsQueue[i];
+        if (!event.did) {
+            if (event.operation.did) {
+                event.did = event.operation.did;
+            }
+            else {
+                console.time('anchorSeed');
+                event.did = await anchorSeed(event.operation);
+                console.timeEnd('anchorSeed');
+            }
+        }
+        console.log(`preparing event ${i} ${event.did}`);
+    }
+
     const newQueue = [];
     let imported = 0;
     let deferred = 0;
@@ -683,14 +704,12 @@ export async function processEvents() {
     }
 
     eventsQueue = newQueue;
-    await primeCache();
+    primeCache();
 
     return { imported, deferred };
 }
 
 export async function verifyEvent(event) {
-    let did;
-
     if (!event.registry || !event.time || !event.operation) {
         return { ok: false };
     }
@@ -744,10 +763,6 @@ export async function verifyEvent(event) {
                 return { ok: false };
             }
         }
-
-        console.time('anchorSeed');
-        did = await anchorSeed(event.operation);
-        console.timeEnd('anchorSeed');
     }
     else if (operation.type === 'update') {
         const doc = operation.doc;
@@ -756,22 +771,20 @@ export async function verifyEvent(event) {
             return { ok: false };
         }
 
-        did = operation.did;
+        if (!operation.did) {
+            return { ok: false };
+        }
     }
     else if (operation.type === 'delete') {
-        did = operation.did;
+        if (!operation.did) {
+            return { ok: false };
+        }
     }
     else {
         return { ok: false };
     }
 
-    if (!did) {
-        return { ok: false };
-    }
-
-    event.did = did;
-
-    return { ok: true, did };
+    return { ok: true };
 }
 
 export async function importBatch(batch) {
