@@ -409,19 +409,6 @@ program
     });
 
 program
-    .command('get-events-queue')
-    .description('Show events queue')
-    .action(async () => {
-        try {
-            const response = await gatekeeper.getEventsQueue();
-            console.log(JSON.stringify(response, null, 4));
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
     .command('process-events')
     .description('Process events queue')
     .action(async () => {

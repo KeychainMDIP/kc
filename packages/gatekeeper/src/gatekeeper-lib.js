@@ -645,10 +645,6 @@ async function importEvent(event) {
     }
 }
 
-export async function getEventsQueue() {
-    return eventsQueue;
-}
-
 async function prepareEvents() {
     const promises = eventsQueue.map(async (event, i) => {
         if (!event.did) {

@@ -229,15 +229,6 @@ v1router.get('/db/verify', async (req, res) => {
     }
 });
 
-v1router.get('/events/queue', async (req, res) => {
-    try {
-        const response = await gatekeeper.getEventsQueue();
-        res.json(response);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
 v1router.post('/events/process', async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();

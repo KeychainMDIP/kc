@@ -258,16 +258,6 @@ export async function clearQueue(registry, events) {
     }
 }
 
-export async function getEventsQueue() {
-    try {
-        const response = await axios.get(`${API}/events/queue`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
 export async function processEvents() {
     try {
         const response = await axios.post(`${API}/events/process`);
