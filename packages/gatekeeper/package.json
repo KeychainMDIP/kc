@@ -7,6 +7,7 @@
     "./lib": "./src/gatekeeper-lib.js",
     "./sdk": "./src/gatekeeper-sdk.js",
     "./db/json": "./src/db-json.js",
+    "./db/json-cache": "./src/db-json-cache.js",
     "./db/sqlite": "./src/db-sqlite.js",
     "./db/redis": "./src/db-redis.js",
     "./db/mongodb": "./src/db-mongodb.js"

@@ -806,9 +806,9 @@ export async function importBatch(batch) {
 
     for (let i = 0; i < batch.length; i++) {
         const event = batch[i];
-        console.time('verifyEvent');
+        //console.time('verifyEvent');
         const ok = await verifyEvent(event);
-        console.timeEnd('verifyEvent');
+        //console.timeEnd('verifyEvent');
 
         if (ok) {
             eventsQueue.push(event);

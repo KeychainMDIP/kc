@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as db_json_cache from '@mdip/gatekeeper/db/json-cache';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
@@ -17,7 +18,8 @@ const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
         : (config.db === 'redis') ? db_redis
             : (config.db === 'json') ? db_json
-                : null;
+                : (config.db === 'json-cache') ? db_json_cache
+                    : null;
 
 await db.start('mdip');
 await gatekeeper.start({ db, primeCache: true });
