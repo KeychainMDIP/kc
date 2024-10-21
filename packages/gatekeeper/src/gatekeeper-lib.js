@@ -164,7 +164,7 @@ export async function anchorSeed(seed) {
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
-async function verifyCreateAgent(operation, verifySig) {
+async function verifyCreateAgent(operation) {
     if (!operation.signature) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -173,49 +173,41 @@ async function verifyCreateAgent(operation, verifySig) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    if (verifySig) {
-        const operationCopy = copyJSON(operation);
-        delete operationCopy.signature;
+    const operationCopy = copyJSON(operation);
+    delete operationCopy.signature;
 
-        const msgHash = cipher.hashJSON(operationCopy);
-        return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
-    }
-
-    return true;
+    const msgHash = cipher.hashJSON(operationCopy);
+    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 }
 
-async function verifyCreateAsset(operation, verifySig) {
+async function verifyCreateAsset(operation) {
     if (operation.controller !== operation.signature?.signer) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    if (verifySig) {
-        const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
-        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-            throw new Error(exceptions.INVALID_REGISTRY);
-        }
-
-        const operationCopy = copyJSON(operation);
-        delete operationCopy.signature;
-        const msgHash = cipher.hashJSON(operationCopy);
-        // TBD select the right key here, not just the first one
-        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+        throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    return true;
+    const operationCopy = copyJSON(operation);
+    delete operationCopy.signature;
+    const msgHash = cipher.hashJSON(operationCopy);
+    // TBD select the right key here, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 }
 
 async function verifyOperation(operation) {
     try {
         if (operation.type === 'create') {
-            return verifyCreateOperation(operation, { verifySig: true });
+            return verifyCreateOperation(operation);
         }
 
         if (operation.type === 'update' || operation.type === 'delete') {
             const doc = await resolveDID(operation.did);
-            return verifyUpdateOperation(operation, doc, { verifySig: true });
+            return verifyUpdateOperation(operation, doc);
         }
     }
     catch (error) {
@@ -223,9 +215,7 @@ async function verifyOperation(operation) {
     }
 }
 
-async function verifyCreateOperation(operation, options) {
-    const { verifySig } = options;
-
+async function verifyCreateOperation(operation) {
     if (operation?.type !== "create") {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -252,18 +242,18 @@ async function verifyCreateOperation(operation, options) {
     }
 
     if (operation.mdip.type === 'agent') {
-        return verifyCreateAgent(operation, verifySig);
+        return verifyCreateAgent(operation);
     }
 
     if (operation.mdip.type === 'asset') {
-        return verifyCreateAsset(operation, verifySig);
+        return verifyCreateAsset(operation);
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
 }
 
 export async function createDID(operation) {
-    const valid = await verifyCreateOperation(operation, { verifySig: true });
+    const valid = await verifyCreateOperation(operation);
 
     if (valid) {
         const did = await anchorSeed(operation);
@@ -364,9 +354,7 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function verifyUpdateOperation(operation, doc, options) {
-    const { verifySig } = options;
-
+async function verifyUpdateOperation(operation, doc) {
     if (!doc?.didDocument) {
         return false;
     }
@@ -374,7 +362,7 @@ async function verifyUpdateOperation(operation, doc, options) {
     if (doc.didDocument.controller) {
         // This DID is an asset, verify with controller's keys
         const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
-        return verifyUpdateOperation(operation, controllerDoc, options);
+        return verifyUpdateOperation(operation, controllerDoc);
     }
 
     if (!doc.didDocument.verificationMethod) {
@@ -391,13 +379,9 @@ async function verifyUpdateOperation(operation, doc, options) {
         return false;
     }
 
-    if (verifySig) {
-        // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        return cipher.verifySig(msgHash, signature.value, publicJwk);
-    }
-
-    return true;
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
 async function getEvents(did) {
@@ -456,7 +440,7 @@ export async function resolveDID(did, options = {}) {
         }
 
         if (verify) {
-            const valid = await verifyUpdateOperation(operation, doc, { verifySig: true });
+            const valid = await verifyUpdateOperation(operation, doc);
 
             if (!valid) {
                 throw new Error(exceptions.INVALID_OPERATION);
@@ -511,7 +495,7 @@ export async function resolveDID(did, options = {}) {
 export async function updateDID(operation) {
     try {
         const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdateOperation(operation, doc, { verifySig: true });
+        const updateValid = await verifyUpdateOperation(operation, doc);
 
         if (!updateValid) {
             return false;
