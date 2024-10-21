@@ -3,60 +3,37 @@ import * as exceptions from '@mdip/exceptions';
 
 const dataFolder = 'data';
 let dbName;
-let dbCache;
 
 function loadDb() {
-    if (!dbCache) {
-        try {
-            dbCache = JSON.parse(fs.readFileSync(dbName));
-        }
-        catch (err) {
-            dbCache = {
-                dids: {}
-            };
+    if (fs.existsSync(dbName)) {
+        return JSON.parse(fs.readFileSync(dbName));
+    }
+    else {
+        return {
+            dids: {}
         }
     }
-
-    return dbCache;
 }
 
 function writeDb(db) {
-    dbCache = db;
-}
-
-function saveDb() {
     if (!fs.existsSync(dataFolder)) {
         fs.mkdirSync(dataFolder, { recursive: true });
     }
 
-    fs.writeFileSync(dbName, JSON.stringify(dbCache, null, 4));
-}
-
-async function saveLoop() {
-    try {
-        saveDb();
-        console.log('JSON db saved...');
-    } catch (error) {
-        console.error(`Error in saveLoop: ${error}`);
-    }
-    setTimeout(saveLoop, 10 * 1000);
+    fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
 }
 
 export async function start(name = 'mdip') {
     dbName = `${dataFolder}/${name}.json`;
-    loadDb();
-    saveLoop();
 }
 
 export async function stop() {
-    saveDb();
 }
 
 export async function resetDb() {
     if (fs.existsSync(dbName)) {
         fs.rmSync(dbName);
     }
-    dbCache = null;
 }
 
 export async function addEvent(did, event) {
