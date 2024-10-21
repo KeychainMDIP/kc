@@ -114,9 +114,33 @@ async function createUpdateOp(keypair, did, doc) {
 
     const operation = {
         type: "update",
-        did: did,
-        doc: doc,
-        prev: prev,
+        did,
+        doc,
+        prev,
+    };
+
+    const msgHash = cipher.hashJSON(operation);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
+
+    return {
+        ...operation,
+        signature: {
+            signer: did,
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+}
+
+async function createDeleteOp(keypair, did) {
+    const current = await gatekeeper.resolveDID(did);
+    const prev = cipher.hashJSON(current);
+
+    const operation = {
+        type: "delete",
+        did,
+        prev
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -1265,6 +1289,21 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(3);
     });
 
+    it('should report an error on invalid event time', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].time = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
     it('should report an error on invalid operation', async () => {
         mockFs({});
 
@@ -1295,7 +1334,82 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
-    it('should report an error on absent operation signature', async () => {
+    it('should report an error on missing created time', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[0].operation.created;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on missing mdip metadata', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[0].operation.mdip;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip version', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.version = -1;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.type = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.registry = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on missing operation signature', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1310,7 +1424,7 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
-    it('should report an error on absent operation key', async () => {
+    it('should report an error on missing operation key', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1322,6 +1436,79 @@ describe('importBatch', () => {
 
         const response = await gatekeeper.importBatch(ops);
 
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on incorrect controller', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const ops = await gatekeeper.exportDID(assetDID);
+
+        ops[0].operation.controller = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid update operation missing doc', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.doc;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid update operation missing did', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.did;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid delete operation', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const deleteOp = await createDeleteOp(keypair, did);
+        await gatekeeper.deleteDID(deleteOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.did;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
         expect(response.rejected).toBe(1);
     });
 });

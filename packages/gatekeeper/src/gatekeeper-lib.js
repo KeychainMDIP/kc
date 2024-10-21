@@ -753,10 +753,6 @@ export async function verifyEvent(event) {
         }
 
         if (operation.mdip.type === 'agent') {
-            if (!operation.signature) {
-                return false;
-            }
-
             if (!operation.publicJwk) {
                 return false;
             }
