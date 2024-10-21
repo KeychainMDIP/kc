@@ -752,6 +752,7 @@ export async function verifyEvent(event) {
             return false;
         }
 
+        // eslint-disable-next-line
         if (operation.mdip.type === 'agent') {
             if (!operation.publicJwk) {
                 return false;
