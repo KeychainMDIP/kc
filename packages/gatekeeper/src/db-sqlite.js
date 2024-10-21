@@ -43,9 +43,7 @@ export async function addEvent(did, event) {
     events.push(event);
 
     const id = did.split(':').pop();
-    console.time("INSERT");
-    await db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
-    console.timeEnd("INSERT");
+    return db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
 }
 
 export async function getEvents(did) {
@@ -55,10 +53,14 @@ export async function getEvents(did) {
 
     try {
         const id = did.split(':').pop();
-        console.time("SELECT");
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
-        console.timeEnd("SELECT");
-        return JSON.parse(row.events);
+        
+        if (row?.events) {
+            return JSON.parse(row.events);
+        }
+        else {
+            return [];
+        }
     }
     catch {
         return [];
@@ -71,7 +73,7 @@ export async function deleteEvents(did) {
     }
 
     const id = did.split(':').pop();
-    await db.run('DELETE FROM dids WHERE id = ?', id);
+    return db.run('DELETE FROM dids WHERE id = ?', id);
 }
 
 export async function queueOperation(registry, op) {
@@ -79,7 +81,7 @@ export async function queueOperation(registry, op) {
 
     ops.push(op);
 
-    await db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
+    return db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
 }
 
 export async function getQueue(registry) {
@@ -114,4 +116,13 @@ export async function clearQueue(registry, batch) {
 export async function getAllKeys() {
     const rows = await db.all('SELECT id FROM dids');
     return rows.map(row => row.id);
+}
+
+export async function getAllEvents() {
+    let allEvents = {};
+    const keys = await getAllKeys();
+    for (const key of keys) {
+        allEvents[key] = await getEvents(key);
+    }
+    return allEvents;
 }
