@@ -409,7 +409,7 @@ program
     });
 
 program
-    .command('get-events')
+    .command('get-events-queue')
     .description('Show events queue')
     .action(async () => {
         try {
