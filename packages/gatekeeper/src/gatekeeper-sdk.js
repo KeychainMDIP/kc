@@ -267,14 +267,3 @@ export async function processEvents() {
         throwError(error);
     }
 }
-
-export async function populateRedis() {
-    try {
-        const response = await axios.get(`${URL}/test`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-

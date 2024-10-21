@@ -9,7 +9,6 @@ import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
-import * as pop from './populate-redis.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
@@ -234,42 +233,6 @@ v1router.post('/events/process', async (req, res) => {
         const response = await gatekeeper.processEvents();
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-app.get('/test', async (req, res) => {
-    try {
-        db_json.start('mdip');
-
-        console.time('copyDIDs');
-        await pop.copyDIDs(db_json, db_redis);
-        console.timeEnd('copyDIDs');
-
-        console.time('dumpDIDs');
-        const cache = await pop.dumpDIDs(db_redis);
-        console.timeEnd('dumpDIDs');
-
-        console.time('deleteDIDs');
-        await pop.deleteDIDs(db_redis);
-        console.timeEnd('deleteDIDs');
-
-        console.time('restoreDIDs');
-        await pop.restoreDIDs(db_redis, cache);
-        console.timeEnd('restoreDIDs');
-
-        // let batch = Object.values(cache).flat();
-        // console.time('importBatch');
-        // await pop.importBatch(db_redis, batch, false);
-        // console.timeEnd('importBatch');
-
-        // console.time('importBatch');
-        // await pop.importBatch(db_redis, batch, true);
-        // console.timeEnd('importBatch');
-
-        res.json('OK');
-    } catch (error) {
-        console.error(error);
         res.status(500).send(error.toString());
     }
 });
