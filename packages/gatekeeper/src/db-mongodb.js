@@ -6,7 +6,7 @@ let client;
 let db;
 
 export async function start(dbName = 'mdip') {
-    client = new MongoClient(config.mongodbUrl);
+    client = new MongoClient(config.mongodbUrl || 'mongodb://localhost:27017');
     await client.connect();
     db = client.db(dbName);
     await db.collection('dids').createIndex({ id: 1 });
@@ -27,13 +27,11 @@ export async function addEvent(did, event) {
 
     const id = did.split(':').pop();
 
-    console.time('updateOne');
-    await db.collection('dids').updateOne(
+    return db.collection('dids').updateOne(
         { id: id },
         { $push: { events: event } },
         { upsert: true }
     );
-    console.timeEnd('updateOne');
 }
 
 export async function getEvents(did) {
@@ -43,9 +41,7 @@ export async function getEvents(did) {
 
     try {
         const id = did.split(':').pop();
-        console.time('findOne');
         const row = await db.collection('dids').findOne({ id: id });
-        console.timeEnd('findOne');
         return row.events;
     }
     catch {
@@ -65,6 +61,15 @@ export async function deleteEvents(did) {
 export async function getAllKeys() {
     const rows = await db.collection('dids').find().toArray();
     return rows.map(row => row.id);
+}
+
+export async function getAllEvents() {
+    let allEvents = {};
+    const keys = await getAllKeys();
+    for (const key of keys) {
+        allEvents[key] = await getEvents(key);
+    }
+    return allEvents;
 }
 
 export async function queueOperation(registry, op) {
