@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+
+# Set timeout for commands
+set timeout 10
+
+# Set environment variables using the env array correctly
+set env(KC_CLI_GATEKEEPER_URL) "http://localhost:4224"
+set env(KC_CLI_KEYMASTER_URL) "http://localhost:4226"
+
+# Start the CLI program you want to test
+spawn bash ./kc "resolve-id"
+
+# Initialize json variable
+set json ""
+
+# Capture all output
+expect {
+    -re {.+} {
+        puts -nonewline "$expect_out(buffer)"
+        exp_continue
+    }
+    eof
+}
+
+# Print captured output for debugging
+puts "Captured output:\n$json"
+
+# Use regexp to extract the id
+if {[regexp {\"id\":\s*\"([^\"]+)\"} $json match id]} {
+    puts "Extracted ID: $id"
+} else {
+    puts "Failed to extract ID from the output"
+}
+
+# Exit the script
+exit

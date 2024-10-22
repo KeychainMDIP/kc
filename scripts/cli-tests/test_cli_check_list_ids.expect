@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+
+# Set timeout for commands
+set timeout 10
+
+# Start the CLI program you want to test
+spawn bash ./kc "list-ids"
+
+# Expect the program's output
+expect {
+    "DEMO  <<< current" {
+        # If the expected string is found, pass the test
+        puts "Test passed: Expected output received."
+    }
+    timeout {
+        # If the command times out, fail the test
+        puts "Test failed: Timeout waiting for expected output."
+        exit 1
+    }
+    default {
+        # If any other output is received, fail the test
+        puts "Test failed: Unexpected output received."
+        exit 1
+    }
+}
+
+# Exit the script
+exit 0

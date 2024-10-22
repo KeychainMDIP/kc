@@ -1,0 +1,56 @@
+#!/usr/bin/expect
+
+# Set a timeout (optional)
+set timeout -1
+
+# Start the pawn command
+spawn bash ./kc show-wallet
+
+# Capture the output
+set output ""
+
+# Expect the end of the output or a prompt
+expect {
+    eof {
+        # Get the full output of the command
+        set output $expect_out(buffer)
+    }
+}
+
+# Debug: Print the raw output to check its format
+puts "Raw output: $output"
+
+# Sanitize the output by removing any non-printable characters (if necessary)
+# This uses a regular expression to keep only printable characters
+regsub -all {[^[:print:]\n]} $output "" output_clean
+
+# Write the sanitized output to a temporary file
+set tmpfile "/tmp/show_wallet_output.json"
+set f [open $tmpfile "w"]
+puts $f $output_clean
+close $f
+
+# Debug: Print the contents of the temporary file to check
+set f [open $tmpfile "r"]
+set file_contents [read $f]
+close $f
+
+# Debug: Print file contents to the console to examine
+puts "File contents: $file_contents"
+
+# Optional: Save the contents to another file for inspection
+set debug_file "/tmp/debug_show_wallet_output.json"
+set f [open $debug_file "w"]
+puts $f $file_contents
+close $f
+puts "Debug file created at: $debug_file"
+
+# Parse the JSON file with jq to extract the desired value
+set debug_file "/tmp/debug_show_wallet_output.json"
+set validation [exec "jq -r '.seed.mnemonic' $debug_file"]
+puts "Validation result: $validation"
+# Remove the temporary file (optional)
+#file delete $tmpfile
+
+# Continue the script or exit
+exit 0
