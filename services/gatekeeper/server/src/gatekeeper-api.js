@@ -263,8 +263,20 @@ async function verifyLoop() {
     setTimeout(verifyLoop, 60 * 60 * 1000);
 }
 
+async function importLoop() {
+    try {
+        console.log(`importLoop: processingEvents...`);
+        const response = await gatekeeper.processEvents();
+        console.log(`importLoop: ${JSON.stringify(response)}`);
+    } catch (error) {
+        console.error(`Error in verifyLoop: ${error}`);
+    }
+    setTimeout(importLoop, 10 * 1000);
+}
+
 async function main() {
     await verifyLoop();
+    await importLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);
 
@@ -285,3 +297,25 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection caught', reason, promise);
 });
 
+function reportMemoryUsage() {
+    const memoryUsage = process.memoryUsage();
+
+    console.log('Memory Usage Report:');
+    console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
+    console.log(`  Heap Used: ${formatBytes(memoryUsage.heapUsed)} (Heap actually used)`);
+    console.log(`  External: ${formatBytes(memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    console.log(`  Array Buffers: ${formatBytes(memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+
+    console.log('------------------------------------');
+}
+
+function formatBytes(bytes) {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+// Example: Report memory usage every 10 seconds
+setInterval(reportMemoryUsage, 10000);

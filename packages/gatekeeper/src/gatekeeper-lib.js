@@ -18,6 +18,7 @@ let helia = null;
 let ipfs = null;
 let eventsCache = {};
 let eventsQueue = [];
+let isProcessingEvents = false;
 
 export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json))
@@ -603,10 +604,19 @@ export async function removeDIDs(dids) {
 
 async function importEvent(event) {
 
+    if (!event.did) {
+        if (event.operation.did) {
+            event.did = event.operation.did;
+        }
+        else {
+            event.did = await anchorSeed(event.operation);
+        }
+    }
+
     const did = event.did;
-    console.time('getEvents');
+    //console.time('getEvents');
     const currentEvents = await db.getEvents(did);
-    console.timeEnd('getEvents');
+    //console.timeEnd('getEvents');
 
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
@@ -645,72 +655,70 @@ async function importEvent(event) {
     }
 }
 
-async function prepareEvents() {
-    const promises = eventsQueue.map(async (event, i) => {
-        if (!event.did) {
-            if (event.operation.did) {
-                event.did = event.operation.did;
-            }
-            else {
-                event.did = await anchorSeed(event.operation);
-            }
-        }
-    });
-
-    return Promise.all(promises);
-}
-
 async function importEvents() {
-    const newQueue = [];
+    let deferredQueue = [];
+    let tempQueue = eventsQueue.splice(0, 1000);
+    const total = tempQueue.length;
+    let event = tempQueue.shift();
+    let i = 0;
     let added = 0;
     let merged = 0;
-    let deferred = 0;
-    let event = eventsQueue.shift();
 
     while (event) {
-        console.time('importEvent');
+        // console.time('importEvent');
+        i += 1;
         try {
             const imported = await importEvent(event);
 
             if (imported) {
                 added += 1;
-                console.log(`added event for ${event.did}`);
+                console.log(`import ${i}/${total}: added event for ${event.did}`);
             }
             else {
                 merged += 1;
-                console.log(`merged event for ${event.did}`);
+                console.log(`import ${i}/${total}: merged event for ${event.did}`);
             }
         }
         catch (error) {
-            newQueue.push(event);
-            deferred += 1;
-            console.log(`deferred event for ${event.did}`);
+            deferredQueue.push(event);
+            console.log(`import ${i}/${total}: deferred event for ${event.did}`);
 
         }
-        console.timeEnd('importEvent');
-        event = eventsQueue.shift();
+        // console.timeEnd('importEvent');
+        event = tempQueue.shift();
     }
 
-    eventsQueue = newQueue;
+    eventsQueue = [...eventsQueue, ...deferredQueue];
+    let deferred = eventsQueue.length;
 
     return { added, merged, deferred };
 }
 
 export async function processEvents() {
-    console.time('processEvents');
 
-    console.time('prepareEvents');
-    await prepareEvents();
-    console.timeEnd('prepareEvents');
+    if (isProcessingEvents) {
+        return;
+    }
 
-    console.time('importEvents');
-    const response = await importEvents();
-    console.timeEnd('importEvents');
+    let response;
+    //console.time('processEvents');
+    isProcessingEvents = true;
 
-    primeCache();
+    try {
+        //console.time('importEvents');
+        response = await importEvents();
+        //console.timeEnd('importEvents');
 
-    console.timeEnd('processEvents');
+        primeCache();
+    }
+    catch (error) {
 
+    }
+    finally {
+        isProcessingEvents = false;
+    }
+
+    //console.timeEnd('processEvents');
     return response;
 }
 
