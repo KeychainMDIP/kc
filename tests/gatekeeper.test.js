@@ -1693,6 +1693,44 @@ describe('processEvents', () => {
 
         expect(doc.didDocument.id).toBe(did);
     });
+
+    it('should defer operation validation when keys cannot be confirmed', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc);
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc);
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        // Reverse the ops so that the updates come before the create ops
+        await gatekeeper.importBatch(ops.reverse());
+
+        // On the first pass we can only verify the agent create op
+        const response1 = await gatekeeper.processEvents();
+        expect(response1.added).toBe(1);
+        expect(response1.deferred).toBe(3);
+
+        // On the second pass we can verify the agent update and the asset create
+        const response2 = await gatekeeper.processEvents();
+        expect(response2.added).toBe(2);
+        expect(response2.deferred).toBe(1);
+
+        // On the third pass we can verify the asset update
+        const response3 = await gatekeeper.processEvents();
+        expect(response3.added).toBe(1);
+        expect(response3.deferred).toBe(0);
+    });
 });
 
 describe('getQueue', () => {
