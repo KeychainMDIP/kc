@@ -18,7 +18,7 @@ function loadDb() {
         }
     }
 
-    return JSON.parse(JSON.stringify(dbCache));
+    return dbCache;
 }
 
 function writeDb(db) {
@@ -51,7 +51,7 @@ export async function start(name = 'mdip') {
 
 export async function stop() {
     saveDb(); // Save the current state one last time
-    
+
     if (saveLoopTimeoutId !== null) {
         clearTimeout(saveLoopTimeoutId); // Cancel the next scheduled saveLoop
         saveLoopTimeoutId = null; // Reset the timeout ID
@@ -86,7 +86,7 @@ export async function addEvent(did, event) {
 
 export async function getAllEvents() {
     const db = loadDb();
-    return db.dids;
+    return JSON.parse(JSON.stringify(db.dids));
 }
 
 export async function getEvents(did) {

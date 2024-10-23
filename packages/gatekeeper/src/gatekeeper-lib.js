@@ -613,9 +613,9 @@ async function importEvent(event) {
     }
 
     const did = event.did;
-    //console.time('getEvents');
+    console.time('getEvents');
     const currentEvents = await db.getEvents(did);
-    //console.timeEnd('getEvents');
+    console.timeEnd('getEvents');
 
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
@@ -665,7 +665,7 @@ async function importEvents() {
     let merged = 0;
 
     while (event) {
-        // console.time('importEvent');
+        console.time('importEvent');
         i += 1;
         try {
             const imported = await importEvent(event);
@@ -684,7 +684,7 @@ async function importEvents() {
             console.log(`import ${i}/${total}: deferred event for ${event.did}`);
 
         }
-        // console.timeEnd('importEvent');
+        console.timeEnd('importEvent');
         event = tempQueue.shift();
     }
 
@@ -700,13 +700,13 @@ export async function processEvents() {
     }
 
     let response;
-    //console.time('processEvents');
+    console.time('processEvents');
     isProcessingEvents = true;
 
     try {
-        //console.time('importEvents');
+        console.time('importEvents');
         response = await importEvents();
-        //console.timeEnd('importEvents');
+        console.timeEnd('importEvents');
 
         primeCache();
     }
@@ -716,7 +716,7 @@ export async function processEvents() {
         isProcessingEvents = false;
     }
 
-    //console.timeEnd('processEvents');
+    console.timeEnd('processEvents');
     return response;
 }
 
@@ -822,7 +822,8 @@ export async function importBatch(batch) {
 
     return {
         queued,
-        rejected
+        rejected,
+        total: eventsQueue.length
     };
 }
 

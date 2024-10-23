@@ -271,7 +271,7 @@ async function importLoop() {
     } catch (error) {
         console.error(`Error in verifyLoop: ${error}`);
     }
-    setTimeout(importLoop, 10 * 1000);
+    setTimeout(importLoop, 20 * 1000);
 }
 
 async function main() {
@@ -317,5 +317,5 @@ function formatBytes(bytes) {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-// Example: Report memory usage every 10 seconds
-setInterval(reportMemoryUsage, 10000);
+// Example: Report memory usage every 60 seconds
+setInterval(reportMemoryUsage, 60 * 1000);
