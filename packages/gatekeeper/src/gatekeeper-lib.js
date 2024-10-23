@@ -181,6 +181,42 @@ export async function verifyOperation(operation) {
     }
 }
 
+function verifyDIDFormat(did) {
+    if (!did || typeof did !== 'string' || !did.startsWith('did:')) {
+        return false;
+    }
+
+    return true;
+}
+
+function verifySignatureFormat(signature) {
+    if (!signature) {
+        return false;
+    }
+
+    const signedDate = new Date(signature.signed);
+
+    if (isNaN(signedDate.getTime())) {
+        return false;
+    }
+
+    if (!signature.hash) {
+        return false;
+    }
+
+    // Check if signature.hash is a hexadecimal string of length 64
+    const hex64Regex = /^[a-f0-9]{64}$/i;
+    if (!hex64Regex.test(signature.hash)) {
+        return false;
+    }
+
+    if (signature.signer) {
+        return verifyDIDFormat(signature.signer);
+    }
+
+    return true;
+}
+
 async function verifyCreateOperation(operation) {
     if (operation?.type !== "create") {
         throw new Error(exceptions.INVALID_OPERATION);
@@ -207,13 +243,7 @@ async function verifyCreateOperation(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
-    if (!operation.signature) {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
-
-    const signedDate = new Date(operation.signature.signed);
-
-    if (isNaN(signedDate.getTime())) {
+    if (!verifySignatureFormat(operation.signature)) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
@@ -252,6 +282,10 @@ async function verifyCreateOperation(operation) {
 }
 
 async function verifyUpdateOperation(operation, doc) {
+    if (!verifySignatureFormat(operation.signature)) {
+        return false;
+    }
+
     if (!doc?.didDocument) {
         return false;
     }
