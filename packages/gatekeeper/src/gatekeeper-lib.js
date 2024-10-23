@@ -183,32 +183,18 @@ export async function verifyOperation(operation) {
 }
 
 function verifyDIDFormat(did) {
-    if (!did || typeof did !== 'string' || !did.startsWith('did:')) {
-        return false;
-    }
-
-    return true;
+    return did && typeof did === 'string' && did.startsWith('did:');
 }
 
 function verifyDateFormat(time) {
     const date = new Date(time);
-
-    if (isNaN(date.getTime())) {
-        return false;
-    }
-
-    return true;
+    return !isNaN(date.getTime());
 }
 
 function verifyHashFormat(hash) {
-    // Check if signature.hash is a hexadecimal string of length 64
+    // Check if hash is a hexadecimal string of length 64
     const hex64Regex = /^[a-f0-9]{64}$/i;
-
-    if (!hex64Regex.test(hash)) {
-        return false;
-    }
-
-    return true;
+    return hex64Regex.test(hash);
 }
 
 function verifySignatureFormat(signature) {
@@ -224,6 +210,7 @@ function verifySignatureFormat(signature) {
         return false;
     }
 
+    // eslint-disable-next-line
     if (signature.signer && !verifyDIDFormat(signature.signer)) {
         return false;
     }
