@@ -211,6 +211,12 @@ async function verifyCreateOperation(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
+    const signedDate = new Date(operation.signature.signed);
+
+    if (isNaN(signedDate.getTime())) {
+        throw new Error(exceptions.INVALID_OPERATION);
+    }
+
     if (operation.mdip.type === 'agent') {
         if (!operation.publicJwk) {
             throw new Error(exceptions.INVALID_OPERATION);
@@ -419,6 +425,13 @@ export async function resolveDID(did, options = {}) {
 
     for (const { time, operation, registry, blockchain } of events) {
         if (operation.type === 'create') {
+            if (verify) {
+                const valid = await verifyCreateOperation(operation);
+
+                if (!valid) {
+                    throw new Error(exceptions.INVALID_OPERATION);
+                }
+            }
             continue;
         }
 
