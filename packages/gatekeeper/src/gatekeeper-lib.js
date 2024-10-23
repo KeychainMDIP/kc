@@ -165,41 +165,6 @@ export async function anchorSeed(seed) {
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
-async function verifyCreateAgent(operation) {
-    if (!operation.signature) {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
-
-    if (!operation.publicJwk) {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-
-    const msgHash = cipher.hashJSON(operationCopy);
-    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
-}
-
-async function verifyCreateAsset(operation) {
-    if (operation.controller !== operation.signature?.signer) {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
-
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
-
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
-    }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
-}
-
 export async function verifyOperation(operation) {
     try {
         if (operation.type === 'create') {
@@ -242,15 +207,72 @@ async function verifyCreateOperation(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
+    if (!operation.signature) {
+        throw new Error(exceptions.INVALID_OPERATION);
+    }
+
     if (operation.mdip.type === 'agent') {
-        return verifyCreateAgent(operation);
+        if (!operation.publicJwk) {
+            throw new Error(exceptions.INVALID_OPERATION);
+        }
+
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+
+        const msgHash = cipher.hashJSON(operationCopy);
+        return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
     }
 
     if (operation.mdip.type === 'asset') {
-        return verifyCreateAsset(operation);
+        if (operation.controller !== operation.signature?.signer) {
+            throw new Error(exceptions.INVALID_OPERATION);
+        }
+
+        const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
+
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
+}
+
+async function verifyUpdateOperation(operation, doc) {
+    if (!doc?.didDocument) {
+        return false;
+    }
+
+    if (doc.didDocument.controller) {
+        // This DID is an asset, verify with controller's keys
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
+        return verifyUpdateOperation(operation, controllerDoc);
+    }
+
+    if (!doc.didDocument.verificationMethod) {
+        return false;
+    }
+
+    const jsonCopy = copyJSON(operation);
+
+    const signature = jsonCopy.signature;
+    delete jsonCopy.signature;
+    const msgHash = cipher.hashJSON(jsonCopy);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        return false;
+    }
+
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
 export async function createDID(operation) {
@@ -353,36 +375,6 @@ export async function generateDoc(anchor) {
     }
 
     return doc;
-}
-
-async function verifyUpdateOperation(operation, doc) {
-    if (!doc?.didDocument) {
-        return false;
-    }
-
-    if (doc.didDocument.controller) {
-        // This DID is an asset, verify with controller's keys
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
-        return verifyUpdateOperation(operation, controllerDoc);
-    }
-
-    if (!doc.didDocument.verificationMethod) {
-        return false;
-    }
-
-    const jsonCopy = copyJSON(operation);
-
-    const signature = jsonCopy.signature;
-    delete jsonCopy.signature;
-    const msgHash = cipher.hashJSON(jsonCopy);
-
-    if (signature.hash && signature.hash !== msgHash) {
-        return false;
-    }
-
-    // TBD get the right signature, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, signature.value, publicJwk);
 }
 
 async function getEvents(did) {
