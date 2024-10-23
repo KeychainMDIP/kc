@@ -18,6 +18,7 @@ let helia = null;
 let ipfs = null;
 let eventsCache = {};
 let eventsQueue = [];
+let eventsSeen = {};
 let isProcessingEvents = false;
 
 export function copyJSON(json) {
@@ -189,29 +190,42 @@ function verifyDIDFormat(did) {
     return true;
 }
 
+function verifyDateFormat(time) {
+    const date = new Date(time);
+
+    if (isNaN(date.getTime())) {
+        return false;
+    }
+
+    return true;
+}
+
+function verifyHashFormat(hash) {
+    // Check if signature.hash is a hexadecimal string of length 64
+    const hex64Regex = /^[a-f0-9]{64}$/i;
+
+    if (!hex64Regex.test(hash)) {
+        return false;
+    }
+
+    return true;
+}
+
 function verifySignatureFormat(signature) {
     if (!signature) {
         return false;
     }
 
-    const signedDate = new Date(signature.signed);
-
-    if (isNaN(signedDate.getTime())) {
+    if (!verifyDateFormat(signature.signed)) {
         return false;
     }
 
-    if (!signature.hash) {
+    if (!verifyHashFormat(signature.hash)) {
         return false;
     }
 
-    // Check if signature.hash is a hexadecimal string of length 64
-    const hex64Regex = /^[a-f0-9]{64}$/i;
-    if (!hex64Regex.test(signature.hash)) {
+    if (signature.signer && !verifyDIDFormat(signature.signer)) {
         return false;
-    }
-
-    if (signature.signer) {
-        return verifyDIDFormat(signature.signer);
     }
 
     return true;
@@ -772,7 +786,7 @@ export async function verifyEvent(event) {
 
     const operation = event.operation;
 
-    if (!operation.signature?.value) {
+    if (!verifySignatureFormat(operation.signature)) {
         return false;
     }
 
@@ -841,26 +855,31 @@ export async function importBatch(batch) {
 
     let queued = 0;
     let rejected = 0;
+    let processed = 0;
 
     for (let i = 0; i < batch.length; i++) {
         const event = batch[i];
-        //console.time('verifyEvent');
         const ok = await verifyEvent(event);
-        //console.timeEnd('verifyEvent');
 
         if (ok) {
-            eventsQueue.push(event);
-            queued += 1;
+            const eventKey = `${event.registry}/${event.operation.signature.hash}`;
+            if (!eventsSeen[eventKey]) {
+                eventsSeen[eventKey] = true;
+                eventsQueue.push(event);
+                queued += 1;
+            }
+            else {
+                processed += 1;
+            }
         }
         else {
             rejected += 1;
         }
     }
 
-    //console.log(JSON.stringify({ updated, verified, failed }, null, 4));
-
     return {
         queued,
+        processed,
         rejected,
         total: eventsQueue.length
     };
