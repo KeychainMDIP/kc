@@ -21,7 +21,7 @@ let eventsQueue = [];
 let isProcessingEvents = false;
 
 export function copyJSON(json) {
-    return JSON.parse(JSON.stringify(json))
+    return JSON.parse(JSON.stringify(json));
 }
 
 export async function start(options = {}) {
@@ -200,7 +200,7 @@ async function verifyCreateAsset(operation) {
     return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
 }
 
-async function verifyOperation(operation) {
+export async function verifyOperation(operation) {
     try {
         if (operation.type === 'create') {
             return verifyCreateOperation(operation);
@@ -603,7 +603,6 @@ export async function removeDIDs(dids) {
 }
 
 async function importEvent(event) {
-
     if (!event.did) {
         if (event.operation.did) {
             event.did = event.operation.did;
@@ -647,6 +646,7 @@ async function importEvent(event) {
 
         if (ok) {
             db.addEvent(did, event);
+            delete eventsCache[did];
             return true;
         }
         else {
@@ -695,7 +695,6 @@ async function importEvents() {
 }
 
 export async function processEvents() {
-
     if (isProcessingEvents) {
         return;
     }
@@ -712,7 +711,6 @@ export async function processEvents() {
         primeCache();
     }
     catch (error) {
-
     }
     finally {
         isProcessingEvents = false;

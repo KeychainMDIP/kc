@@ -12,7 +12,8 @@ const mockConsole = {
 }
 
 beforeEach(async () => {
-    db_json.start();
+    db_json.start('test');
+    db_json.resetDb();
     await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
@@ -1664,13 +1665,19 @@ describe('processEvents', () => {
         for (let i = 0; i < N; i++) {
             doc.didDocumentData = { mock: `${i}` };
             const updateOp = await createUpdateOp(keypair, did, doc);
+            const verified = await gatekeeper.verifyOperation(updateOp);
+            expect(verified).toBe(true);
             await gatekeeper.updateDID(updateOp);
         }
 
         const ops = await gatekeeper.exportDID(did);
 
         await gatekeeper.resetDb();
-        await gatekeeper.importBatch(ops);
+
+        const { queued, rejected } = await gatekeeper.importBatch(ops);
+        expect(queued).toBe(N+1);
+        expect(rejected).toBe(0);
+
         const response = await gatekeeper.processEvents();
 
         expect(response.added).toBe(N+1);

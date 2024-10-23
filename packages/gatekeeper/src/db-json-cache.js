@@ -4,6 +4,7 @@ import * as exceptions from '@mdip/exceptions';
 const dataFolder = 'data';
 let dbName;
 let dbCache;
+let saveLoopTimeoutId = null;
 
 function loadDb() {
     if (!dbCache) {
@@ -17,7 +18,7 @@ function loadDb() {
         }
     }
 
-    return dbCache;
+    return JSON.parse(JSON.stringify(dbCache));
 }
 
 function writeDb(db) {
@@ -38,7 +39,8 @@ async function saveLoop() {
     } catch (error) {
         console.error(`Error in saveLoop: ${error}`);
     }
-    setTimeout(saveLoop, 60 * 1000);
+    // Schedule the next iteration of saveLoop
+    saveLoopTimeoutId = setTimeout(saveLoop, 60 * 1000);
 }
 
 export async function start(name = 'mdip') {
@@ -48,7 +50,12 @@ export async function start(name = 'mdip') {
 }
 
 export async function stop() {
-    saveDb();
+    saveDb(); // Save the current state one last time
+    
+    if (saveLoopTimeoutId !== null) {
+        clearTimeout(saveLoopTimeoutId); // Cancel the next scheduled saveLoop
+        saveLoopTimeoutId = null; // Reset the timeout ID
+    }
 }
 
 export async function resetDb() {
