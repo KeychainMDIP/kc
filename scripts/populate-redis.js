@@ -1,10 +1,6 @@
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
 
-await db_json.start('mdip');
-await db_redis.start('mdip');
-
-// eslint-disable-next-line
 async function copyDIDs() {
     const allEvents = await db_json.getAllEvents();
     const ids = Object.keys(allEvents);
@@ -53,21 +49,43 @@ async function restoreDIDs(cache) {
     }
 }
 
-console.time('copyDIDs');
-await copyDIDs();
-console.timeEnd('copyDIDs');
+// eslint-disable-next-line
+async function test() {
+    await db_json.start('mdip');
+    await db_redis.start('mdip');
 
-console.time('dumpDIDs');
-const cache = await dumpDIDs();
-console.timeEnd('dumpDIDs');
+    console.time('copyDIDs');
+    await copyDIDs();
+    console.timeEnd('copyDIDs');
 
-console.time('deleteDIDs');
-await deleteDIDs();
-console.timeEnd('deleteDIDs');
+    console.time('dumpDIDs');
+    const cache = await dumpDIDs();
+    console.timeEnd('dumpDIDs');
 
-console.time('restoreDIDs');
-await restoreDIDs(cache);
-console.timeEnd('restoreDIDs');
+    console.time('deleteDIDs');
+    await deleteDIDs();
+    console.timeEnd('deleteDIDs');
 
-await db_json.stop();
-await db_redis.stop();
+    console.time('restoreDIDs');
+    await restoreDIDs(cache);
+    console.timeEnd('restoreDIDs');
+
+    await db_json.stop();
+    await db_redis.stop();
+}
+
+async function copy() {
+    await db_json.start('mdip');
+    await db_redis.start('mdip');
+
+    console.time('copyDIDs');
+    await copyDIDs();
+    console.timeEnd('copyDIDs');
+
+    await db_json.stop();
+    await db_redis.stop();
+}
+
+//test();
+copy();
+
