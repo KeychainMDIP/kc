@@ -12,8 +12,9 @@ const mockConsole = {
 }
 
 beforeEach(async () => {
-    db_json.start();
-    await gatekeeper.start({ db: db_json, console: mockConsole });
+    db_json.start('test');
+    db_json.resetDb();
+    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
 afterEach(async () => {
@@ -24,6 +25,12 @@ describe('start', () => {
 
     afterEach(() => {
         mockFs.restore();
+    });
+
+    it('should prime the cache on demand', async () => {
+        mockFs({});
+
+        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -108,9 +115,33 @@ async function createUpdateOp(keypair, did, doc) {
 
     const operation = {
         type: "update",
-        did: did,
-        doc: doc,
-        prev: prev,
+        did,
+        doc,
+        prev,
+    };
+
+    const msgHash = cipher.hashJSON(operation);
+    const signature = cipher.signHash(msgHash, keypair.privateJwk);
+
+    return {
+        ...operation,
+        signature: {
+            signer: did,
+            signed: new Date().toISOString(),
+            hash: msgHash,
+            value: signature,
+        }
+    };
+}
+
+async function createDeleteOp(keypair, did) {
+    const current = await gatekeeper.resolveDID(did);
+    const prev = cipher.hashJSON(current);
+
+    const operation = {
+        type: "delete",
+        did,
+        prev
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -156,7 +187,13 @@ async function createAssetOp(agent, keypair, registry = 'local', validUntil = nu
 }
 
 describe('generateDoc', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
     it('should generate an agent doc from a valid anchor', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -192,6 +229,8 @@ describe('generateDoc', () => {
     });
 
     it('should generate an asset doc from a valid anchor', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -219,6 +258,8 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip missing from anchor', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         delete agentOp.mdip;
@@ -228,6 +269,8 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip version invalid', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 0);
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -236,6 +279,8 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip type invalid', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         agentOp.mdip.type = 'mock';
@@ -245,6 +290,8 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip registry invalid', async () => {
+        mockFs({});
+
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, 1, 'mock');
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -1075,9 +1122,10 @@ describe('importDIDs', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDIDs([did]);
 
-        const { verified } = await gatekeeper.importDIDs(ops);
+        await gatekeeper.importDIDs(ops);
+        const response = await gatekeeper.processEvents();
 
-        expect(verified).toBe(1);
+        expect(response.merged).toBe(1);
     });
 });
 
@@ -1201,177 +1249,6 @@ describe('importBatch', () => {
         mockFs.restore();
     });
 
-    it('should import a valid agent DID export', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        const { verified } = await gatekeeper.importBatch(ops);
-
-        expect(verified).toBe(1);
-    });
-
-    it('should import a valid asset DID export', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
-        const assetDID = await gatekeeper.createDID(assetOp);
-        const ops = await gatekeeper.exportDID(assetDID);
-
-        const { verified } = await gatekeeper.importBatch(ops);
-
-        expect(verified).toBe(1);
-    });
-
-    it('should report 0 ops imported when DID exists', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
-
-        expect(updated).toBe(0);
-        expect(verified).toBe(2);
-        expect(failed).toBe(0);
-    });
-
-    it('should update events when DID is imported from its native registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        ops[0].registry = 'TFTC';
-        ops[1].registry = 'TFTC';
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
-
-        expect(updated).toBe(2);
-        expect(verified).toBe(0);
-        expect(failed).toBe(0);
-    });
-
-    it('should resolve as confirmed when DID is imported from its native registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        ops[0].registry = 'TFTC';
-        ops[1].registry = 'TFTC';
-        await gatekeeper.importBatch(ops);
-
-        const doc2 = await gatekeeper.resolveDID(did);
-
-        expect(doc2.didDocumentMetadata.version).toBe(2);
-        expect(doc2.didDocumentMetadata.confirmed).toBe(true);
-    });
-
-    it('should not overwrite events when verified DID is later synced from another registry', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateOp);
-        const ops = await gatekeeper.exportDID(did);
-        ops[0].registry = 'TFTC';
-        ops[1].registry = 'TFTC';
-        await gatekeeper.importBatch(ops);
-
-        ops[0].registry = 'hyperswarm';
-        ops[1].registry = 'hyperswarm';
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
-
-        expect(updated).toBe(0);
-        expect(verified).toBe(2);
-        expect(failed).toBe(0);
-    });
-
-    it('should report 2 ops imported when DID deleted first', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
-        await gatekeeper.updateDID(updateOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        await gatekeeper.resetDb();
-
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
-
-        expect(updated).toBe(2);
-        expect(verified).toBe(0);
-        expect(failed).toBe(0);
-    });
-
-    it('should report N+1 ops imported for N updates', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const doc = await gatekeeper.resolveDID(did);
-
-        const N = 10;
-        for (let i = 0; i < N; i++) {
-            doc.didDocumentData = { mock: `${i}` };
-            const updateOp = await createUpdateOp(keypair, did, doc);
-            await gatekeeper.updateDID(updateOp);
-        }
-
-        const ops = await gatekeeper.exportDID(did);
-
-        await gatekeeper.resetDb();
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
-
-        expect(updated).toBe(N + 1);
-        expect(verified).toBe(0);
-        expect(failed).toBe(0);
-    });
-
-    it('should resolve an imported DID', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const ops = await gatekeeper.exportDID(did);
-
-        await gatekeeper.resetDb();
-
-        await gatekeeper.importBatch(ops);
-        const doc = await gatekeeper.resolveDID(did);
-
-        expect(doc.didDocument.id).toBe(did);
-    });
-
     it('should throw an exception on undefined', async () => {
         mockFs({});
 
@@ -1408,11 +1285,24 @@ describe('importBatch', () => {
     it('should report an error on non-transactions', async () => {
         mockFs({});
 
-        const { updated, verified, failed } = await gatekeeper.importBatch([1, 2, 3]);
+        const response = await gatekeeper.importBatch([1, 2, 3]);
 
-        expect(updated).toBe(0);
-        expect(verified).toBe(0);
-        expect(failed).toBe(3);
+        expect(response.rejected).toBe(3);
+    });
+
+    it('should report an error on invalid event time', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].time = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
     });
 
     it('should report an error on invalid operation', async () => {
@@ -1425,11 +1315,9 @@ describe('importBatch', () => {
 
         ops[0].operation = 'mock';
 
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.importBatch(ops);
 
-        expect(updated).toBe(0);
-        expect(verified).toBe(0);
-        expect(failed).toBe(1);
+        expect(response.rejected).toBe(1);
     });
 
     it('should report an error on invalid operation type', async () => {
@@ -1442,14 +1330,12 @@ describe('importBatch', () => {
 
         ops[0].operation.type = 'mock';
 
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.importBatch(ops);
 
-        expect(updated).toBe(0);
-        expect(verified).toBe(0);
-        expect(failed).toBe(1);
+        expect(response.rejected).toBe(1);
     });
 
-    it('should report an error on invalid operation signature', async () => {
+    it('should report an error on missing created time', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1457,16 +1343,14 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature = 'mock';
+        delete ops[0].operation.created;
 
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.importBatch(ops);
 
-        expect(updated).toBe(0);
-        expect(verified).toBe(0);
-        expect(failed).toBe(1);
+        expect(response.rejected).toBe(1);
     });
 
-    it('should report an error on invalid operation signature value', async () => {
+    it('should report an error on missing mdip metadata', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1474,13 +1358,385 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature.value = 'mock';
+        delete ops[0].operation.mdip;
 
-        const { updated, verified, failed } = await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.importBatch(ops);
 
-        expect(updated).toBe(0);
-        expect(verified).toBe(0);
-        expect(failed).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip version', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.version = -1;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.type = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid mdip registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.mdip.registry = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on missing operation signature', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[0].operation.signature;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on missing operation key', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[0].operation.publicJwk;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on incorrect controller', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const ops = await gatekeeper.exportDID(assetDID);
+
+        ops[0].operation.controller = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid update operation missing doc', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.doc;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid update operation missing did', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.did;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid delete operation', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const deleteOp = await createDeleteOp(keypair, did);
+        await gatekeeper.deleteDID(deleteOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        delete ops[1].operation.did;
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+    });
+});
+
+describe('processEvents', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should import a valid agent DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.merged).toBe(1);
+    });
+
+    it('should import a valid asset DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const ops = await gatekeeper.exportDID(assetDID);
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.merged).toBe(1);
+    });
+
+    it('should report 0 ops added when DID exists', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(0);
+        expect(response.merged).toBe(2);
+    });
+
+    it('should update events when DID is imported from its native registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(2);
+        expect(response.merged).toBe(0);
+    });
+
+    it('should resolve as confirmed when DID is imported from its native registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        const doc2 = await gatekeeper.resolveDID(did);
+
+        expect(doc2.didDocumentMetadata.version).toBe(2);
+        expect(doc2.didDocumentMetadata.confirmed).toBe(true);
+    });
+
+    it('should not overwrite events when verified DID is later synced from another registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
+        await gatekeeper.importBatch(ops);
+
+        ops[0].registry = 'hyperswarm';
+        ops[1].registry = 'hyperswarm';
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(0);
+        expect(response.merged).toBe(4);
+    });
+
+    it('should report 2 ops imported when DID deleted first', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(2);
+        expect(response.merged).toBe(0);
+    });
+
+    it('should report N+1 ops imported for N updates', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        const N = 10;
+        for (let i = 0; i < N; i++) {
+            doc.didDocumentData = { mock: `${i}` };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            const verified = await gatekeeper.verifyOperation(updateOp);
+            expect(verified).toBe(true);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.resetDb();
+
+        const { queued, rejected } = await gatekeeper.importBatch(ops);
+        expect(queued).toBe(N+1);
+        expect(rejected).toBe(0);
+
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(N+1);
+        expect(response.merged).toBe(0);
+    });
+
+    it('should resolve an imported DID', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+        const doc = await gatekeeper.resolveDID(did);
+
+        expect(doc.didDocument.id).toBe(did);
+    });
+
+    it('should defer operation validation when keys cannot be confirmed', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc);
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc);
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        // Reverse the ops so that the updates come before the create ops
+        await gatekeeper.importBatch(ops.reverse());
+
+        // On the first pass we can only verify the agent create op
+        const response1 = await gatekeeper.processEvents();
+        expect(response1.added).toBe(1);
+        expect(response1.deferred).toBe(3);
+
+        // On the second pass we can verify the agent update and the asset create
+        const response2 = await gatekeeper.processEvents();
+        expect(response2.added).toBe(2);
+        expect(response2.deferred).toBe(1);
+
+        // On the third pass we can verify the asset update
+        const response3 = await gatekeeper.processEvents();
+        expect(response3.added).toBe(1);
+        expect(response3.deferred).toBe(0);
     });
 });
 

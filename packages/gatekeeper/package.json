@@ -7,7 +7,9 @@
     "./lib": "./src/gatekeeper-lib.js",
     "./sdk": "./src/gatekeeper-sdk.js",
     "./db/json": "./src/db-json.js",
+    "./db/json-cache": "./src/db-json-cache.js",
     "./db/sqlite": "./src/db-sqlite.js",
+    "./db/redis": "./src/db-redis.js",
     "./db/mongodb": "./src/db-mongodb.js"
   },
   "scripts": {
@@ -25,6 +27,7 @@
     "helia": "^3.0.0",
     "mongodb": "^6.5.0",
     "multiformats": "^13.0.0",
+    "ioredis": "^5.4.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },

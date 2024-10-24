@@ -4,8 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as db_json_cache from '@mdip/gatekeeper/db/json-cache';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -13,10 +15,13 @@ EventEmitter.defaultMaxListeners = 100;
 
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
-        : db_json;
+        : (config.db === 'redis') ? db_redis
+            : (config.db === 'json') ? db_json
+                : (config.db === 'json-cache') ? db_json_cache
+                    : null;
 
-await db.start();
-await gatekeeper.start({ db });
+await db.start('mdip');
+await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
 const v1router = express.Router();
@@ -43,16 +48,6 @@ v1router.get('/ready', async (req, res) => {
 v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
-    } catch (error) {
-        res.status(500).send(error.toString());
-    }
-});
-
-// TBD temporary
-v1router.get('/db/reset', async (req, res) => {
-    try {
-        await gatekeeper.resetDb();
-        res.json(true);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -214,6 +209,34 @@ v1router.get('/registries', async (req, res) => {
     }
 });
 
+// TBD lock it down
+v1router.get('/db/reset', async (req, res) => {
+    try {
+        await gatekeeper.resetDb();
+        res.json(true);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/db/verify', async (req, res) => {
+    try {
+        const response = await gatekeeper.verifyDb();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/events/process', async (req, res) => {
+    try {
+        const response = await gatekeeper.processEvents();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
@@ -240,20 +263,20 @@ async function verifyLoop() {
     setTimeout(verifyLoop, 60 * 60 * 1000);
 }
 
+async function importLoop() {
+    try {
+        console.log(`importLoop: processingEvents...`);
+        const response = await gatekeeper.processEvents();
+        console.log(`importLoop: ${JSON.stringify(response)}`);
+    } catch (error) {
+        console.error(`Error in verifyLoop: ${error}`);
+    }
+    setTimeout(importLoop, 20 * 1000);
+}
+
 async function main() {
-    // if (config.verifyDb) {
-    //     const invalid = await gatekeeper.verifyDb();
-
-    //     if (invalid > 0) {
-    //         console.log(`${invalid} invalid DIDs removed from MDIP db`);
-    //     }
-    // }
-    // else {
-    //     const dids = await gatekeeper.getDIDs();
-    //     console.log(`Skipping db verification (${dids.length} DIDs)`);
-    // }
-
     await verifyLoop();
+    await importLoop();
 
     const registries = await gatekeeper.initRegistries(config.registries);
 
@@ -274,3 +297,25 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection caught', reason, promise);
 });
 
+function reportMemoryUsage() {
+    const memoryUsage = process.memoryUsage();
+
+    console.log('Memory Usage Report:');
+    console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
+    console.log(`  Heap Used: ${formatBytes(memoryUsage.heapUsed)} (Heap actually used)`);
+    console.log(`  External: ${formatBytes(memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    console.log(`  Array Buffers: ${formatBytes(memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+
+    console.log('------------------------------------');
+}
+
+function formatBytes(bytes) {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+// Example: Report memory usage every 60 seconds
+setInterval(reportMemoryUsage, 60 * 1000);

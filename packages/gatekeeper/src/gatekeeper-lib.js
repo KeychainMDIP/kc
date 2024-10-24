@@ -17,14 +17,21 @@ let db = null;
 let helia = null;
 let ipfs = null;
 let eventsCache = {};
+let eventsQueue = [];
+let eventsSeen = {};
+let isProcessingEvents = false;
 
 export function copyJSON(json) {
-    return JSON.parse(JSON.stringify(json))
+    return JSON.parse(JSON.stringify(json));
 }
 
 export async function start(options = {}) {
     if (options.db) {
         db = options.db;
+
+        if (options.primeCache) {
+            await primeCache();
+        }
     }
     else {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -49,6 +56,17 @@ export async function stop() {
 
     if (db) {
         await db.stop();
+    }
+}
+
+async function primeCache() {
+    try {
+        const allEvents = await db.getAllEvents();
+        for (const key of Object.keys(allEvents)) {
+            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
+        }
+    }
+    catch (error) {
     }
 }
 
@@ -77,7 +95,7 @@ export async function verifyDID(did) {
     return "OK";
 }
 
-export async function verifyDb(chatty=true) {
+export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
     }
@@ -86,19 +104,6 @@ export async function verifyDb(chatty=true) {
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
     let n = 0;
     let invalid = 0;
-
-    // prime the cache
-    try {
-        const allEvents = await db.getAllEvents();
-        for (const key of Object.keys(allEvents)) {
-            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-        }
-    }
-    catch (error) {
-        if (chatty) {
-            console.error(error);
-        }
-    }
 
     for (const did of dids) {
         n += 1;
@@ -113,7 +118,7 @@ export async function verifyDb(chatty=true) {
                 console.log(`${n} ${did} ${error}`);
             }
             invalid += 1;
-            await db.deleteEvents(did);
+            db.deleteEvents(did);
             delete eventsCache[did];
         }
     }
@@ -161,42 +166,59 @@ export async function anchorSeed(seed) {
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
-async function verifyCreateAgent(operation) {
-    if (!operation.signature) {
-        throw new Error(exceptions.INVALID_OPERATION);
+export async function verifyOperation(operation) {
+    try {
+        if (operation.type === 'create') {
+            return verifyCreateOperation(operation);
+        }
+
+        if (operation.type === 'update' || operation.type === 'delete') {
+            const doc = await resolveDID(operation.did);
+            return verifyUpdateOperation(operation, doc);
+        }
     }
-
-    if (!operation.publicJwk) {
-        throw new Error(exceptions.INVALID_OPERATION);
+    catch (error) {
+        return false;
     }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-
-    const msgHash = cipher.hashJSON(operationCopy);
-    return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
 }
 
-async function verifyCreateAsset(operation) {
-    if (operation.controller !== operation.signature?.signer) {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
-
-    const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
-
-    if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-        throw new Error(exceptions.INVALID_REGISTRY);
-    }
-
-    const operationCopy = copyJSON(operation);
-    delete operationCopy.signature;
-    const msgHash = cipher.hashJSON(operationCopy);
-    // TBD select the right key here, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+function verifyDIDFormat(did) {
+    return did && typeof did === 'string' && did.startsWith('did:');
 }
 
-async function verifyCreate(operation) {
+function verifyDateFormat(time) {
+    const date = new Date(time);
+    return !isNaN(date.getTime());
+}
+
+function verifyHashFormat(hash) {
+    // Check if hash is a hexadecimal string of length 64
+    const hex64Regex = /^[a-f0-9]{64}$/i;
+    return hex64Regex.test(hash);
+}
+
+function verifySignatureFormat(signature) {
+    if (!signature) {
+        return false;
+    }
+
+    if (!verifyDateFormat(signature.signed)) {
+        return false;
+    }
+
+    if (!verifyHashFormat(signature.hash)) {
+        return false;
+    }
+
+    // eslint-disable-next-line
+    if (signature.signer && !verifyDIDFormat(signature.signer)) {
+        return false;
+    }
+
+    return true;
+}
+
+async function verifyCreateOperation(operation) {
     if (operation?.type !== "create") {
         throw new Error(exceptions.INVALID_OPERATION);
     }
@@ -222,19 +244,80 @@ async function verifyCreate(operation) {
         throw new Error(exceptions.INVALID_REGISTRY);
     }
 
+    if (!verifySignatureFormat(operation.signature)) {
+        throw new Error(exceptions.INVALID_OPERATION);
+    }
+
     if (operation.mdip.type === 'agent') {
-        return verifyCreateAgent(operation);
+        if (!operation.publicJwk) {
+            throw new Error(exceptions.INVALID_OPERATION);
+        }
+
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+
+        const msgHash = cipher.hashJSON(operationCopy);
+        return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
     }
 
     if (operation.mdip.type === 'asset') {
-        return verifyCreateAsset(operation);
+        if (operation.controller !== operation.signature?.signer) {
+            throw new Error(exceptions.INVALID_OPERATION);
+        }
+
+        const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
+
+        if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
+            throw new Error(exceptions.INVALID_REGISTRY);
+        }
+
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = cipher.hashJSON(operationCopy);
+        // TBD select the right key here, not just the first one
+        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
     throw new Error(exceptions.INVALID_OPERATION);
 }
 
+async function verifyUpdateOperation(operation, doc) {
+    if (!verifySignatureFormat(operation.signature)) {
+        return false;
+    }
+
+    if (!doc?.didDocument) {
+        return false;
+    }
+
+    if (doc.didDocument.controller) {
+        // This DID is an asset, verify with controller's keys
+        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
+        return verifyUpdateOperation(operation, controllerDoc);
+    }
+
+    if (!doc.didDocument.verificationMethod) {
+        return false;
+    }
+
+    const jsonCopy = copyJSON(operation);
+
+    const signature = jsonCopy.signature;
+    delete jsonCopy.signature;
+    const msgHash = cipher.hashJSON(jsonCopy);
+
+    if (signature.hash && signature.hash !== msgHash) {
+        return false;
+    }
+
+    // TBD get the right signature, not just the first one
+    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+    return cipher.verifySig(msgHash, signature.value, publicJwk);
+}
+
 export async function createDID(operation) {
-    const valid = await verifyCreate(operation);
+    const valid = await verifyCreateOperation(operation);
 
     if (valid) {
         const did = await anchorSeed(operation);
@@ -335,36 +418,6 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function verifyUpdate(operation, doc) {
-
-    if (!doc?.didDocument) {
-        return false;
-    }
-
-    if (doc.didDocument.controller) {
-        const controllerDoc = await resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature.signed });
-        return verifyUpdate(operation, controllerDoc);
-    }
-
-    if (!doc.didDocument.verificationMethod) {
-        return false;
-    }
-
-    const jsonCopy = copyJSON(operation);
-
-    const signature = jsonCopy.signature;
-    delete jsonCopy.signature;
-    const msgHash = cipher.hashJSON(jsonCopy);
-
-    if (signature.hash && signature.hash !== msgHash) {
-        return false;
-    }
-
-    // TBD get the right signature, not just the first one
-    const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-    return cipher.verifySig(msgHash, signature.value, publicJwk);
-}
-
 async function getEvents(did) {
     let events = eventsCache[did];
 
@@ -379,7 +432,8 @@ async function getEvents(did) {
     return copyJSON(events);
 }
 
-export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+export async function resolveDID(did, options = {}) {
+    const { atTime, atVersion, confirm, verify } = options;
     const events = await getEvents(did);
 
     if (events.length === 0) {
@@ -406,6 +460,13 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
 
     for (const { time, operation, registry, blockchain } of events) {
         if (operation.type === 'create') {
+            if (verify) {
+                const valid = await verifyCreateOperation(operation);
+
+                if (!valid) {
+                    throw new Error(exceptions.INVALID_OPERATION);
+                }
+            }
             continue;
         }
 
@@ -420,7 +481,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
         }
 
         if (verify) {
-            const valid = await verifyUpdate(operation, doc);
+            const valid = await verifyUpdateOperation(operation, doc);
 
             if (!valid) {
                 throw new Error(exceptions.INVALID_OPERATION);
@@ -475,7 +536,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
 export async function updateDID(operation) {
     try {
         const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdate(operation, doc);
+        const updateValid = await verifyUpdateOperation(operation, doc);
 
         if (!updateValid) {
             return false;
@@ -574,115 +635,202 @@ export async function removeDIDs(dids) {
     }
 
     for (const did of dids) {
-        await db.deleteEvents(did);
+        db.deleteEvents(did);
         delete eventsCache[did];
     }
 
     return true;
 }
 
-async function importCreateEvent(event) {
-    try {
-        const valid = await verifyCreate(event.operation);
-
-        if (valid) {
-            const did = await anchorSeed(event.operation);
-            await db.addEvent(did, event);
-            return true;
-        }
-
-        return false;
-    }
-    catch {
-        return false;
-    }
-}
-
-async function importUpdateEvent(event) {
-    try {
-        const did = event.operation.did;
-        const doc = await resolveDID(did);
-        const updateValid = await verifyUpdate(event.operation, doc);
-
-        if (!updateValid) {
-            return false;
-        }
-
-        await db.addEvent(did, event);
-        return true;
-    }
-    catch (error) {
-        // console.error(error);
-        return false;
-    }
-}
-
-export async function importEvent(event) {
-
-    if (!event.registry || !event.time || !event.operation) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    let did;
-
-    try {
-        if (event.operation.type === 'create') {
-            did = await anchorSeed(event.operation);
+async function importEvent(event) {
+    if (!event.did) {
+        if (event.operation.did) {
+            event.did = event.operation.did;
         }
         else {
-            did = event.operation.did;
-        }
-
-        if (!did) {
-            throw new Error(exceptions.INVALID_OPERATION);
+            event.did = await anchorSeed(event.operation);
         }
     }
-    catch {
-        throw new Error(exceptions.INVALID_OPERATION);
-    }
 
-    const current = await exportDID(did);
+    const did = event.did;
+    console.time('getEvents');
+    const currentEvents = await db.getEvents(did);
+    console.timeEnd('getEvents');
 
-    if (current.length === 0) {
-        const ok = await importCreateEvent(event);
-
-        if (!ok) {
-            throw new Error(exceptions.INVALID_OPERATION);
-        }
-
-        return true;
-    }
-
-    const create = current[0];
-    const registry = create.operation.mdip.registry;
-    const match = current.find(item => item.operation.signature.value === event.operation.signature.value);
+    const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
     if (match) {
-        if (match.registry === registry) {
-            // Don't update if this op has already been validated on its native registry
+        const first = currentEvents[0];
+        const nativeRegistry = first.operation.mdip.registry;
+
+        if (match.registry === nativeRegistry) {
+            // If this event is already confirmed on the native registry, no need to update
             return false;
         }
 
-        if (event.registry === registry) {
+        if (event.registry === nativeRegistry) {
             // If this import is on the native registry, replace the current one
-            const index = current.indexOf(match);
-            current[index] = event;
-
-            db.setEvents(did, current);
+            const index = currentEvents.indexOf(match);
+            currentEvents[index] = event;
+            db.setEvents(did, currentEvents);
             delete eventsCache[did];
             return true;
         }
 
         return false;
     }
+    else {
+        //console.time('verifyOperation');
+        const ok = await verifyOperation(event.operation);
+        //console.timeEnd('verifyOperation');
 
-    const ok = await importUpdateEvent(event);
+        if (ok) {
+            db.addEvent(did, event);
+            delete eventsCache[did];
+            return true;
+        }
+        else {
+            throw new Error(exceptions.INVALID_OPERATION);
+        }
+    }
+}
 
-    if (!ok) {
-        throw new Error(exceptions.INVALID_OPERATION);
+async function importEvents() {
+    let deferredQueue = [];
+    let tempQueue = eventsQueue.splice(0, 1000);
+    const total = tempQueue.length;
+    let event = tempQueue.shift();
+    let i = 0;
+    let added = 0;
+    let merged = 0;
+
+    while (event) {
+        console.time('importEvent');
+        i += 1;
+        try {
+            const imported = await importEvent(event);
+
+            if (imported) {
+                added += 1;
+                console.log(`import ${i}/${total}: added event for ${event.did}`);
+            }
+            else {
+                merged += 1;
+                console.log(`import ${i}/${total}: merged event for ${event.did}`);
+            }
+        }
+        catch (error) {
+            deferredQueue.push(event);
+            console.log(`import ${i}/${total}: deferred event for ${event.did}`);
+
+        }
+        console.timeEnd('importEvent');
+        event = tempQueue.shift();
     }
 
-    delete eventsCache[did];
+    eventsQueue = [...eventsQueue, ...deferredQueue];
+    let deferred = eventsQueue.length;
+
+    return { added, merged, deferred };
+}
+
+export async function processEvents() {
+    if (isProcessingEvents) {
+        return;
+    }
+
+    let response;
+    console.time('processEvents');
+    isProcessingEvents = true;
+
+    try {
+        console.time('importEvents');
+        response = await importEvents();
+        console.timeEnd('importEvents');
+
+        primeCache();
+    }
+    catch (error) {
+    }
+    finally {
+        isProcessingEvents = false;
+    }
+
+    console.timeEnd('processEvents');
+    return response;
+}
+
+export async function verifyEvent(event) {
+    if (!event.registry || !event.time || !event.operation) {
+        return false;
+    }
+
+    const eventTime = new Date(event.time).getTime();
+
+    if (isNaN(eventTime)) {
+        return false;
+    }
+
+    const operation = event.operation;
+
+    if (!verifySignatureFormat(operation.signature)) {
+        return false;
+    }
+
+    if (operation.type === 'create') {
+        if (!operation.created) {
+            return false;
+        }
+
+        if (!operation.mdip) {
+            return false;
+        }
+
+        if (!validVersions.includes(operation.mdip.version)) {
+            return false;
+        }
+
+        if (!validTypes.includes(operation.mdip.type)) {
+            return false;
+        }
+
+        if (!validRegistries.includes(operation.mdip.registry)) {
+            return false;
+        }
+
+        // eslint-disable-next-line
+        if (operation.mdip.type === 'agent') {
+            if (!operation.publicJwk) {
+                return false;
+            }
+        }
+
+        // eslint-disable-next-line
+        if (operation.mdip.type === 'asset') {
+            if (operation.controller !== operation.signature?.signer) {
+                return false;
+            }
+        }
+    }
+    else if (operation.type === 'update') {
+        const doc = operation.doc;
+
+        if (!doc || !doc.didDocument || !doc.didDocumentMetadata || !doc.didDocumentData || !doc.mdip) {
+            return false;
+        }
+
+        if (!operation.did) {
+            return false;
+        }
+    }
+    else if (operation.type === 'delete') {
+        if (!operation.did) {
+            return false;
+        }
+    }
+    else {
+        return false;
+    }
 
     return true;
 }
@@ -692,30 +840,35 @@ export async function importBatch(batch) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    let verified = 0;
-    let updated = 0;
-    let failed = 0;
+    let queued = 0;
+    let rejected = 0;
+    let processed = 0;
 
-    for (const event of batch) {
-        try {
-            const imported = await importEvent(event);
+    for (let i = 0; i < batch.length; i++) {
+        const event = batch[i];
+        const ok = await verifyEvent(event);
 
-            if (imported) {
-                updated += 1;
+        if (ok) {
+            const eventKey = `${event.registry}/${event.operation.signature.hash}`;
+            if (!eventsSeen[eventKey]) {
+                eventsSeen[eventKey] = true;
+                eventsQueue.push(event);
+                queued += 1;
             }
             else {
-                verified += 1;
+                processed += 1;
             }
         }
-        catch (error) {
-            failed += 1;
+        else {
+            rejected += 1;
         }
     }
 
     return {
-        verified: verified,
-        updated: updated,
-        failed: failed,
+        queued,
+        processed,
+        rejected,
+        total: eventsQueue.length
     };
 }
 

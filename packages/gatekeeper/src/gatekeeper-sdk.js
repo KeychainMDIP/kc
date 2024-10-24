@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-export let URL = '';
+let URL = '';
+let API = '/api/v1';
 
 function throwError(error) {
     if (error.response) {
@@ -13,6 +14,7 @@ function throwError(error) {
 export async function start(options = {}) {
     if (options.url) {
         URL = options.url;
+        API = `${URL}${API}`;
     }
 
     if (options.waitUntilReady) {
@@ -70,7 +72,7 @@ export async function stop() {
 
 export async function listRegistries() {
     try {
-        const response = await axios.get(`${URL}/api/v1/registries`);
+        const response = await axios.get(`${API}/registries`);
         return response.data;
     }
     catch (error) {
@@ -80,7 +82,17 @@ export async function listRegistries() {
 
 export async function resetDb() {
     try {
-        const response = await axios.get(`${URL}/api/v1/db/reset`);
+        const response = await axios.get(`${API}/db/reset`);
+        return response.data;
+    }
+    catch (error) {
+        return false;
+    }
+}
+
+export async function verifyDb() {
+    try {
+        const response = await axios.get(`${API}/db/verify`);
         return response.data;
     }
     catch (error) {
@@ -90,7 +102,7 @@ export async function resetDb() {
 
 export async function isReady() {
     try {
-        const response = await axios.get(`${URL}/api/v1/ready`);
+        const response = await axios.get(`${API}/ready`);
         return response.data;
     }
     catch (error) {
@@ -100,7 +112,7 @@ export async function isReady() {
 
 export async function getVersion() {
     try {
-        const response = await axios.get(`${URL}/api/v1/version`);
+        const response = await axios.get(`${API}/version`);
         return response.data;
     }
     catch (error) {
@@ -110,7 +122,7 @@ export async function getVersion() {
 
 export async function createDID(operation) {
     try {
-        const response = await axios.post(`${URL}/api/v1/did/`, operation);
+        const response = await axios.post(`${API}/did/`, operation);
         return response.data;
     }
     catch (error) {
@@ -138,7 +150,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
             params += `verify=${verify}&`;
         }
 
-        const response = await axios.get(`${URL}/api/v1/did/${did}?${params}`);
+        const response = await axios.get(`${API}/did/${did}?${params}`);
         return response.data;
     }
     catch (error) {
@@ -148,7 +160,7 @@ export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {
 
 export async function updateDID(operation) {
     try {
-        const response = await axios.post(`${URL}/api/v1/did/${operation.did}`, operation);
+        const response = await axios.post(`${API}/did/${operation.did}`, operation);
         return response.data;
     }
     catch (error) {
@@ -158,7 +170,7 @@ export async function updateDID(operation) {
 
 export async function deleteDID(operation) {
     try {
-        const response = await axios.delete(`${URL}/api/v1/did/${operation.did}`, { data: operation });
+        const response = await axios.delete(`${API}/did/${operation.did}`, { data: operation });
         return response.data;
     }
     catch (error) {
@@ -168,7 +180,7 @@ export async function deleteDID(operation) {
 
 export async function getDIDs(options = {}) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/`, options);
+        const response = await axios.post(`${API}/dids/`, options);
         return response.data;
     }
     catch (error) {
@@ -178,7 +190,7 @@ export async function getDIDs(options = {}) {
 
 export async function exportDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/export`, { dids });
+        const response = await axios.post(`${API}/dids/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -188,7 +200,7 @@ export async function exportDIDs(dids) {
 
 export async function importDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/import`, dids);
+        const response = await axios.post(`${API}/dids/import`, dids);
         return response.data;
     }
     catch (error) {
@@ -198,7 +210,7 @@ export async function importDIDs(dids) {
 
 export async function exportBatch(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/batch/export`, { dids });
+        const response = await axios.post(`${API}/batch/export`, { dids });
         return response.data;
     }
     catch (error) {
@@ -208,7 +220,7 @@ export async function exportBatch(dids) {
 
 export async function importBatch(batch) {
     try {
-        const response = await axios.post(`${URL}/api/v1/batch/import`, batch);
+        const response = await axios.post(`${API}/batch/import`, batch);
         return response.data;
     }
     catch (error) {
@@ -218,7 +230,7 @@ export async function importBatch(batch) {
 
 export async function removeDIDs(dids) {
     try {
-        const response = await axios.post(`${URL}/api/v1/dids/remove`, dids);
+        const response = await axios.post(`${API}/dids/remove`, dids);
         return response.data;
     }
     catch (error) {
@@ -228,7 +240,7 @@ export async function removeDIDs(dids) {
 
 export async function getQueue(registry) {
     try {
-        const response = await axios.get(`${URL}/api/v1/queue/${registry}`);
+        const response = await axios.get(`${API}/queue/${registry}`);
         return response.data;
     }
     catch (error) {
@@ -238,7 +250,17 @@ export async function getQueue(registry) {
 
 export async function clearQueue(registry, events) {
     try {
-        const response = await axios.post(`${URL}/api/v1/queue/${registry}/clear`, events);
+        const response = await axios.post(`${API}/queue/${registry}/clear`, events);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
+export async function processEvents() {
+    try {
+        const response = await axios.post(`${API}/events/process`);
         return response.data;
     }
     catch (error) {

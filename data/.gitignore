@@ -2,6 +2,7 @@
 *.db
 ipfs/
 mongodb/
+redis/
 tesseract/
 tftc/
 tbtc/

@@ -185,6 +185,8 @@ async function relayMsg(msg) {
 }
 
 async function importBatch(batch) {
+    // The batch we receive from other hyperswarm nodes includes just operations.
+    // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
         const hash = cipher.hashJSON(batch);
 
@@ -211,9 +213,9 @@ async function importBatch(batch) {
 
         console.log(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
         console.time('importBatch');
-        const { verified, updated, failed } = await gatekeeper.importBatch(events);
+        const response = await gatekeeper.importBatch(events);
         console.timeEnd('importBatch');
-        console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+        console.log(`* ${JSON.stringify(response)}`);
         console.log(`${Object.keys(batchesSeen).length} batches seen`);
     }
     catch (error) {

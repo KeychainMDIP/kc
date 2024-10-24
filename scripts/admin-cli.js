@@ -29,6 +29,19 @@ program
     });
 
 program
+    .command('verify-did <did>')
+    .description('Return verified document associated with DID')
+    .action(async (did, confirm) => {
+        try {
+            const doc = await gatekeeper.resolveDID(did, { verify: true });
+            console.log(JSON.stringify(doc, null, 4));
+        }
+        catch (error) {
+            console.error(`cannot verify ${did}`);
+        }
+    });
+
+program
     .command('get-dids [updatedAfter] [updatedBefore] [confirm] [resolve]')
     .description('Fetch all DIDs')
     .action(async (updatedAfter, updatedBefore, confirm, resolve) => {
@@ -357,6 +370,19 @@ program
     });
 
 program
+    .command('verify-db')
+    .description('Verify all the DIDs in the db')
+    .action(async () => {
+        try {
+            const invalid = await gatekeeper.verifyDb();
+            console.log(`${invalid} invalid DIDs removed from MDIP db`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('resolve-seed-bank')
     .description('Resolves the seed bank ID')
     .action(async () => {
@@ -375,6 +401,19 @@ program
     .action(async () => {
         try {
             const response = await gatekeeper.listRegistries();
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('process-events')
+    .description('Process events queue')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.processEvents();
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
