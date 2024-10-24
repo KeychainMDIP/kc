@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+
+npm --prefix services/keymaster/client run build
+node services/keymaster/server/src/keymaster-api.js
