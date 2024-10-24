@@ -153,12 +153,9 @@ v1router.post('/ids/', async (req, res) => {
 v1router.get('/ids/:id', async (req, res) => {
     try {
         const docs = await keymaster.resolveId(req.params.id);
-        if (!docs) {
-            return res.status(404).send({ error: 'ID not found' });
-        }
         res.json({ docs });
     } catch (error) {
-        res.status(500).send({ error: error.toString() });
+        return res.status(404).send({ error: 'ID not found' });
     }
 });
 
@@ -212,12 +209,9 @@ v1router.post('/names', async (req, res) => {
 v1router.get('/names/:name', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.name);
-        if (!docs) {
-            return res.status(404).send({ error: 'Name not found' });
-        }
         res.json({ docs });
     } catch (error) {
-        res.status(500).send({ error: error.toString() });
+        res.status(404).send({ error: 'DID not found' });
     }
 });
 
@@ -291,12 +285,9 @@ v1router.post('/groups', async (req, res) => {
 v1router.get('/groups/:name', async (req, res) => {
     try {
         const group = await keymaster.getGroup(req.params.name);
-        if (!group) {
-            return res.status(404).send({ error: 'Group not found' });
-        }
         res.json({ group });
     } catch (error) {
-        res.status(500).send({ error: error.toString() });
+        return res.status(404).send({ error: 'Group not found' });
     }
 });
 
@@ -352,12 +343,9 @@ v1router.post('/schemas', async (req, res) => {
 v1router.get('/schemas/:id', async (req, res) => {
     try {
         const schema = await keymaster.getSchema(req.params.id);
-        if (!schema) {
-            return res.status(404).send({ error: 'Schema not found' });
-        }
         res.json({ schema });
     } catch (error) {
-        res.status(500).send({ error: error.toString() });
+        return res.status(404).send({ error: 'Schema not found' });
     }
 });
 
@@ -596,12 +584,9 @@ v1router.post('/assets/', async (req, res) => {
 v1router.get('/assets/:id', async (req, res) => {
     try {
         const asset = await keymaster.resolveAsset(req.params.id);
-        if (!asset) {
-            return res.status(404).send({ error: 'Asset not found' });
-        }
         res.json({ asset });
     } catch (error) {
-        res.status(500).send({ error: error.toString() });
+        return res.status(404).send({ error: 'Asset not found' });
     }
 });
 

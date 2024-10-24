@@ -67,6 +67,10 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
         // eslint-disable-next-line
     }, []);
 
+    function showError(error) {
+        window.alert(error.error || error);
+    }
+
     async function checkForChallenge() {
         try {
             if (challengeDID) {
@@ -74,7 +78,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 setWidget(true);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -118,7 +122,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedHeld('');
             setSelectedIssued('')
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -128,7 +132,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             await keymaster.setCurrentId(id);
             refreshAll();
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -151,7 +155,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             // The backup forces a change, triggering registration
             // const ok = await keymaster.backupId(currentId);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -161,7 +165,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -172,7 +176,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshAll();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -181,14 +185,14 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const ok = await keymaster.backupId(selectedId);
 
             if (ok) {
-                window.alert(`${selectedId} backup succeeded`);
+                showError(`${selectedId} backup succeeded`);
                 resolveId();
             }
             else {
-                window.alert(`${selectedId} backup failed`);
+                showError(`${selectedId} backup failed`);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -198,10 +202,10 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             if (did) {
                 const response = await keymaster.recoverId(did);
                 refreshAll();
-                window.alert(response);
+                showError(response);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -211,7 +215,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setChallenge(challenge);
             resolveChallenge(challenge);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -221,7 +225,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setAuthDID(did);
             setAuthString(JSON.stringify(asset, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -241,7 +245,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             }
             decryptResponse(response);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -255,7 +259,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setAuthDID(did);
             setAuthString(JSON.stringify(decrypted, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -264,15 +268,15 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const verify = await keymaster.verifyResponse(response);
 
             if (verify.match) {
-                window.alert("Response is VALID");
+                showError("Response is VALID");
                 setAccessGranted(true);
             }
             else {
-                window.alert("Response is NOT VALID");
+                showError("Response is NOT VALID");
                 setAccessGranted(false);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -286,7 +290,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setDisableSendResponse(true);
             axios.post(callback, { response });
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -376,7 +380,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             await keymaster.addName(aliasName, aliasDID);
             refreshNames();
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -387,7 +391,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshNames();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -397,7 +401,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedName(name);
             setAliasDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -418,7 +422,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedGroupName(name);
             refreshGroup(name);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -429,7 +433,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setMemberDID('');
             setMemberDocs('');
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -438,7 +442,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const docs = await keymaster.resolveDID(did);
             setMemberDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -447,7 +451,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             await keymaster.addGroupMember(selectedGroupName, did);
             refreshGroup(selectedGroupName);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -458,7 +462,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshGroup(selectedGroupName);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -479,7 +483,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedSchemaName(name);
             editSchema(name);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -490,7 +494,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setEditedSchemaName(schemaName);
             setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -499,7 +503,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
             await editSchema(editedSchemaName);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -509,7 +513,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setCredentialString(JSON.stringify(credentialBound, null, 4));
             setCredentialDID('');
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -520,7 +524,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             // Add did to issuedList
             setIssuedList(prevIssuedList => [...prevIssuedList, did]);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -530,7 +534,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setHeldList(heldList);
             setHeldString('');
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -540,7 +544,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setIssuedList(issuedList);
             setIssuedString('');
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -552,10 +556,10 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 setHeldDID('');
             }
             else {
-                window.alert("Credential not accepted");
+                showError("Credential not accepted");
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -566,7 +570,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshHeld();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -576,7 +580,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedHeld(did);
             setHeldString(JSON.stringify(doc, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -586,7 +590,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedHeld(did);
             setHeldString(JSON.stringify(doc, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -596,7 +600,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             resolveId();
             decryptCredential(did);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -606,7 +610,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             resolveId();
             decryptCredential(did);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -616,7 +620,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             resolveId();
             decryptCredential(did);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -658,7 +662,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setSelectedIssued(did);
             setIssuedString(JSON.stringify(doc, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -671,7 +675,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setIssuedString(issued);
             setIssuedEdit(true);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -681,7 +685,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             await keymaster.updateCredential(did, credential);
             decryptIssued(did);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -695,7 +699,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 setIssuedList(newIssuedList);
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -704,7 +708,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const response = await keymaster.decryptMnemonic();
             setMnemonicString(response);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -719,7 +723,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshAll();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -733,17 +737,17 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshAll();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
     async function backupWallet() {
         try {
             await keymaster.backupWallet();
-            window.alert('Wallet backup successful')
+            showError('Wallet backup successful')
 
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -754,7 +758,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 refreshAll();
             }
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -764,16 +768,16 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const { checked, invalid, deleted } = await keymaster.checkWallet();
 
             if (invalid === 0 && deleted === 0) {
-                window.alert(`${checked} DIDs checked, no problems found`);
+                showError(`${checked} DIDs checked, no problems found`);
             }
             else if (window.confirm(`${checked} DIDs checked\n${invalid} invalid DIDs found\n${deleted} deleted DIDs found\n\nFix wallet?`)) {
                 const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
-                window.alert(`${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`);
+                showError(`${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`);
                 refreshAll();
             }
 
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
         setCheckingWallet(false);
     }
@@ -783,7 +787,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             const wallet = await keymaster.loadWallet();
             setWalletString(JSON.stringify(wallet, null, 4));
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -812,7 +816,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                 };
 
                 reader.onerror = (error) => {
-                    window.alert(error);
+                    showError(error);
                 };
 
                 reader.readAsText(file);
@@ -821,7 +825,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             fileInput.click();
         }
         catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
@@ -840,7 +844,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().
             URL.revokeObjectURL(url);
         } catch (error) {
-            window.alert(error);
+            showError(error);
         }
     }
 
