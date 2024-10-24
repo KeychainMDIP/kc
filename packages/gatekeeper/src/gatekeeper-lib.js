@@ -118,7 +118,7 @@ export async function verifyDb(chatty = true) {
                 console.log(`${n} ${did} ${error}`);
             }
             invalid += 1;
-            await db.deleteEvents(did);
+            db.deleteEvents(did);
             delete eventsCache[did];
         }
     }
@@ -635,7 +635,7 @@ export async function removeDIDs(dids) {
     }
 
     for (const did of dids) {
-        await db.deleteEvents(did);
+        db.deleteEvents(did);
         delete eventsCache[did];
     }
 
