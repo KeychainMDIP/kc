@@ -374,8 +374,8 @@ program
     .description('Verify all the DIDs in the db')
     .action(async () => {
         try {
-            const invalid = await gatekeeper.verifyDb();
-            console.log(`${invalid} invalid DIDs removed from MDIP db`);
+            const response = await gatekeeper.verifyDb();
+            console.log(`${JSON.stringify(response)}`);
         }
         catch (error) {
             console.error(error);

@@ -250,13 +250,8 @@ app.use((req, res) => {
 
 async function verifyLoop() {
     try {
-        const invalid = await gatekeeper.verifyDb();
-
-        if (invalid > 0) {
-            console.log(`${invalid} invalid DIDs removed from MDIP db`);
-        }
-
-        console.log('DID verification loop waiting 60m...');
+        const response = await gatekeeper.verifyDb();
+        console.log(`DID verification loop ${JSON.stringify(response)} waiting 60m...`);
     } catch (error) {
         console.error(`Error in verifyLoop: ${error}`);
     }
