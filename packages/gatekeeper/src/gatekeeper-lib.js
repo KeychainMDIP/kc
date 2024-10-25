@@ -2,7 +2,6 @@ import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import { createHelia } from 'helia';
-import pLimit from 'p-limit';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
@@ -71,6 +70,30 @@ async function primeCache() {
     }
 }
 
+export async function verifyDID(did) {
+    const doc = await resolveDID(did, { verify: true });
+    const isoDate = doc?.mdip?.validUntil;
+
+    if (isoDate) {
+        const validUntil = new Date(isoDate);
+        const now = new Date();
+
+        // Check if validUntil is a valid date
+        if (isNaN(validUntil.getTime())) {
+            throw new Error(exceptions.INVALID_DID);
+        }
+
+        if (validUntil < now) {
+            return { expired: true, status: 'Expired' };
+        }
+
+        const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
+        return { expired: false, status: `Expires in ${minutesLeft} minutes` };
+    }
+
+    return { expired: false, status: "OK" };
+}
+
 export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
@@ -79,78 +102,43 @@ export async function verifyDb(chatty = true) {
     const keys = await db.getAllKeys();
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
     const total = dids.length;
-
+    let n = 0;
     let verified = 0;
     let expired = 0;
     let invalid = 0;
 
-    // Set concurrency limit to 100
-    const verifyQueue = pLimit(100);
-
-    async function verifyDID(did, index) {
+    for (const did of dids) {
+        n += 1;
         try {
-            const doc = await resolveDID(did, { verify: true });
-            const isoDate = doc?.mdip?.validUntil;
+            const { expired: didExpired, status } = await verifyDID(did);
 
-            if (isoDate) {
-                const validUntil = new Date(isoDate);
-                const now = new Date();
-
-                // Check if validUntil is a valid date
-                if (isNaN(validUntil.getTime())) {
-                    throw new Error('INVALID_DID');
-                }
-
-                if (validUntil < now) {
-                    // Expired DID
-                    if (chatty) {
-                        console.log(`removing ${index + 1}/${total} ${did} Expired`);
-                    }
-                    await db.deleteEvents(did);
-                    delete eventsCache[did];
-                    return { verified: 0, expired: 1, invalid: 0 };
-                }
-
-                const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
+            if (didExpired) {
                 if (chatty) {
-                    console.log(`verifying ${index + 1}/${total} ${did} Expires in ${minutesLeft} minutes`);
+                    console.log(`removing ${n}/${total} ${did} ${status}`);
                 }
-                return { verified: 1, expired: 0, invalid: 0 };
+                db.deleteEvents(did);
+                delete eventsCache[did];
+                expired += 1;
             }
-
-            // If no validUntil date, the DID is still valid
-            if (chatty) {
-                console.log(`verifying ${index + 1}/${total} ${did} OK`);
+            else {
+                if (chatty) {
+                    console.log(`verifying ${n}/${total} ${did} ${status}`);
+                }
+                verified += 1;
             }
-            return { verified: 1, expired: 0, invalid: 0 };
-
         }
         catch (error) {
-            // If there's an error resolving or verifying the DID, mark it as invalid
             if (chatty) {
-                console.log(`removing ${index + 1}/${total} ${did} ${error.message}`);
+                console.log(`removing ${n}/${total} ${did} ${error}`);
             }
-            await db.deleteEvents(did);
+            invalid += 1;
+            db.deleteEvents(did);
             delete eventsCache[did];
-            return { verified: 0, expired: 0, invalid: 1 };
         }
     }
 
-    // Use p-limit to control the concurrency of the verification process
-    const results = await Promise.all(
-        dids.map((did, index) =>
-            verifyQueue(() => verifyDID(did, index))
-        )
-    );
-
-    // Accumulate results from all verifications
-    verified = results.reduce((sum, result) => sum + result.verified, 0);
-    expired = results.reduce((sum, result) => sum + result.expired, 0);
-    invalid = results.reduce((sum, result) => sum + result.invalid, 0);
-
     if (chatty) {
         console.timeEnd('verifyDb');
-        console.log(`Verification complete. Total: ${total}, Verified: ${verified}, Expired: ${expired}, Invalid: ${invalid}`);
     }
 
     return { total, verified, expired, invalid };
