@@ -2163,25 +2163,7 @@ describe('verifyDb', () => {
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
-
-        expect(verified).toBe(2);
-        expect(expired).toBe(0);
-        expect(invalid).toBe(0);
-        expect(total).toBe(2);
-    });
-
-    it('should verify all DIDs in db with chatty enabled', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
-        await gatekeeper.createDID(assetOp);
-
-
-        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
 
         expect(verified).toBe(2);
         expect(expired).toBe(0);
@@ -2206,7 +2188,7 @@ describe('verifyDb', () => {
         // Can't verify a DID that has been updated if the controller is removed
         await gatekeeper.removeDIDs([agentDID]);
 
-        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
 
         expect(verified).toBe(0);
         expect(expired).toBe(0);
@@ -2237,7 +2219,7 @@ describe('verifyDb', () => {
         await gatekeeper.createDID(assetOp3);
 
 
-        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
 
         expect(verified).toBe(2);
         expect(expired).toBe(1);
