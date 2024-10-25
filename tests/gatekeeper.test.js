@@ -1425,6 +1425,51 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
+    it('should report an error on invalid operation signature date', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.signed = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature hash', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.hash = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature signer', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.signer = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
     it('should report an error on missing operation key', async () => {
         mockFs({});
 
@@ -2163,26 +2208,15 @@ describe('verifyDb', () => {
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const invalid = await gatekeeper.verifyDb(false);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
 
+        expect(verified).toBe(2);
+        expect(expired).toBe(0);
         expect(invalid).toBe(0);
+        expect(total).toBe(2);
     });
 
-    it('should verify all DIDs in db with chatty enabled', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
-        await gatekeeper.createDID(assetOp);
-
-        const invalid = await gatekeeper.verifyDb(true);
-
-        expect(invalid).toBe(0);
-    });
-
-    it('should removed invalid DIDs', async () => {
+    it('should remove invalid DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -2198,12 +2232,16 @@ describe('verifyDb', () => {
 
         // Can't verify a DID that has been updated if the controller is removed
         await gatekeeper.removeDIDs([agentDID]);
-        const invalid = await gatekeeper.verifyDb(false);
 
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
+
+        expect(verified).toBe(0);
+        expect(expired).toBe(0);
         expect(invalid).toBe(1);
+        expect(total).toBe(1);
     });
 
-    it('should removed expired DIDs', async () => {
+    it('should remove expired DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -2225,8 +2263,32 @@ describe('verifyDb', () => {
         const assetOp3 = await createAssetOp(agentDID, keypair, 'local', expires.toISOString());
         await gatekeeper.createDID(assetOp3);
 
-        const invalid = await gatekeeper.verifyDb(false);
 
-        expect(invalid).toBe(2);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
+
+        expect(verified).toBe(2);
+        expect(expired).toBe(1);
+        expect(invalid).toBe(1);
+        expect(total).toBe(4);
+    });
+});
+
+describe('checkDb', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should check all DIDs in db', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const { total } = await gatekeeper.checkDb();
+
+        expect(total).toBe(2);
     });
 });

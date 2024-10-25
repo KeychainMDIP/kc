@@ -84,15 +84,14 @@ export async function verifyDID(did) {
         }
 
         if (validUntil < now) {
-            // eslint-disable-next-line
-            throw 'Expired';
+            return { expired: true, status: 'Expired' };
         }
 
         const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
-        return `Expires in ${minutesLeft} minutes`;
+        return { expired: false, status: `Expires in ${minutesLeft} minutes` };
     }
 
-    return "OK";
+    return { expired: false, status: "OK" };
 }
 
 export async function verifyDb(chatty = true) {
@@ -100,22 +99,36 @@ export async function verifyDb(chatty = true) {
         console.time('verifyDb');
     }
 
-    const keys = await db.getAllKeys();
-    const dids = keys.map(key => `${config.didPrefix}:${key}`);
+    const dids = await getDIDs();
+    const total = dids.length;
     let n = 0;
+    let verified = 0;
+    let expired = 0;
     let invalid = 0;
 
     for (const did of dids) {
         n += 1;
         try {
-            const status = await verifyDID(did);
-            if (chatty) {
-                console.log(`${n} ${did} ${status}`);
+            const { expired: didExpired, status } = await verifyDID(did);
+
+            if (didExpired) {
+                if (chatty) {
+                    console.log(`removing ${n}/${total} ${did} ${status}`);
+                }
+                db.deleteEvents(did);
+                delete eventsCache[did];
+                expired += 1;
+            }
+            else {
+                if (chatty) {
+                    console.log(`verifying ${n}/${total} ${did} ${status}`);
+                }
+                verified += 1;
             }
         }
         catch (error) {
             if (chatty) {
-                console.log(`${n} ${did} ${error}`);
+                console.log(`removing ${n}/${total} ${did} ${error}`);
             }
             invalid += 1;
             db.deleteEvents(did);
@@ -127,7 +140,26 @@ export async function verifyDb(chatty = true) {
         console.timeEnd('verifyDb');
     }
 
-    return invalid;
+    return { total, verified, expired, invalid };
+}
+
+export async function checkDb() {
+    const dids = await getDIDs();
+    const total = dids.length;
+    let n = 0;
+
+    for (const did of dids) {
+        n += 1;
+        try {
+            await resolveDID(did);
+            console.log(`resolved ${n}/${total} ${did} OK`);
+        }
+        catch (error) {
+            console.log(`can't resolve ${n}/${total} ${did} ${error}`);
+        }
+    }
+
+    return { total };
 }
 
 export async function initRegistries(csvRegistries) {
@@ -434,7 +466,9 @@ async function getEvents(did) {
 
 export async function resolveDID(did, options = {}) {
     const { atTime, atVersion, confirm, verify } = options;
+    //console.time('getEvents');
     const events = await getEvents(did);
+    //console.timeEnd('getEvents');
 
     if (events.length === 0) {
         throw new Error(exceptions.INVALID_DID);
@@ -575,7 +609,8 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, resolve } = {}) {
+export async function getDIDs(options = {}) {
+    let { dids, updatedAfter, updatedBefore, confirm, verify, resolve } = options;
     if (!dids) {
         const keys = await db.getAllKeys();
         dids = keys.map(key => `${config.didPrefix}:${key}`);
@@ -587,7 +622,7 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
         const response = [];
 
         for (const did of dids) {
-            const doc = await resolveDID(did, { confirm: confirm });
+            const doc = await resolveDID(did, { confirm, verify });
             const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
 
             if (start && updated <= start) {
@@ -736,27 +771,21 @@ async function importEvents() {
 
 export async function processEvents() {
     if (isProcessingEvents) {
-        return;
+        return { busy: true };
     }
 
     let response;
-    console.time('processEvents');
     isProcessingEvents = true;
 
     try {
         console.time('importEvents');
         response = await importEvents();
         console.timeEnd('importEvents');
-
-        primeCache();
     }
     catch (error) {
     }
-    finally {
-        isProcessingEvents = false;
-    }
 
-    console.timeEnd('processEvents');
+    isProcessingEvents = false;
     return response;
 }
 
