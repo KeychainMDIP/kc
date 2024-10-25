@@ -2163,9 +2163,12 @@ describe('verifyDb', () => {
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const invalid = await gatekeeper.verifyDb(false);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
 
+        expect(verified).toBe(2);
+        expect(expired).toBe(0);
         expect(invalid).toBe(0);
+        expect(total).toBe(2);
     });
 
     it('should verify all DIDs in db with chatty enabled', async () => {
@@ -2177,9 +2180,13 @@ describe('verifyDb', () => {
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const invalid = await gatekeeper.verifyDb(true);
 
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+
+        expect(verified).toBe(2);
+        expect(expired).toBe(0);
         expect(invalid).toBe(0);
+        expect(total).toBe(2);
     });
 
     it('should removed invalid DIDs', async () => {
@@ -2198,9 +2205,13 @@ describe('verifyDb', () => {
 
         // Can't verify a DID that has been updated if the controller is removed
         await gatekeeper.removeDIDs([agentDID]);
-        const invalid = await gatekeeper.verifyDb(false);
 
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+
+        expect(verified).toBe(0);
+        expect(expired).toBe(0);
         expect(invalid).toBe(1);
+        expect(total).toBe(1);
     });
 
     it('should removed expired DIDs', async () => {
@@ -2225,8 +2236,12 @@ describe('verifyDb', () => {
         const assetOp3 = await createAssetOp(agentDID, keypair, 'local', expires.toISOString());
         await gatekeeper.createDID(assetOp3);
 
-        const invalid = await gatekeeper.verifyDb(false);
 
-        expect(invalid).toBe(2);
+        const { verified, expired, invalid, total } = await gatekeeper.verifyDb(false);
+
+        expect(verified).toBe(2);
+        expect(expired).toBe(1);
+        expect(invalid).toBe(1);
+        expect(total).toBe(4);
     });
 });
