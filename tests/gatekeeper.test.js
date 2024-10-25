@@ -2216,7 +2216,7 @@ describe('verifyDb', () => {
         expect(total).toBe(2);
     });
 
-    it('should removed invalid DIDs', async () => {
+    it('should remove invalid DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -2241,7 +2241,7 @@ describe('verifyDb', () => {
         expect(total).toBe(1);
     });
 
-    it('should removed expired DIDs', async () => {
+    it('should remove expired DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -2270,5 +2270,25 @@ describe('verifyDb', () => {
         expect(expired).toBe(1);
         expect(invalid).toBe(1);
         expect(total).toBe(4);
+    });
+});
+
+describe('checkDb', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should check all DIDs in db', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const { total } = await gatekeeper.checkDb();
+
+        expect(total).toBe(2);
     });
 });

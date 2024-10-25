@@ -143,31 +143,23 @@ export async function verifyDb(chatty = true) {
     return { total, verified, expired, invalid };
 }
 
-export async function checkDb(chatty = true) {
+export async function checkDb() {
     const dids = await getDIDs();
     const total = dids.length;
     let n = 0;
-    let remove = [];
 
     for (const did of dids) {
         n += 1;
         try {
             await resolveDID(did);
-            console.log(`resolving ${n}/${total} ${did} OK`);
+            console.log(`resolved ${n}/${total} ${did} OK`);
         }
         catch (error) {
-            if (chatty) {
-                console.log(`removing ${n}/${total} ${did} ${error}`);
-            }
-            remove.push(did);
+            console.log(`can't resolve ${n}/${total} ${did} ${error}`);
         }
     }
 
-    if (remove.length > 0) {
-        await removeDIDs(remove);
-    }
-
-    return { total, removed: remove.length };
+    return { total };
 }
 
 export async function initRegistries(csvRegistries) {
