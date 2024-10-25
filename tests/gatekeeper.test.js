@@ -1425,6 +1425,51 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
+    it('should report an error on invalid operation signature date', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.signed = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature hash', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.hash = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
+    it('should report an error on invalid operation signature signer', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].operation.signature.signer = 'mock';
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.rejected).toBe(1);
+    });
+
     it('should report an error on missing operation key', async () => {
         mockFs({});
 
