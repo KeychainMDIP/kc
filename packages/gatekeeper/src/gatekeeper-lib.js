@@ -740,23 +740,17 @@ export async function processEvents() {
     }
 
     let response;
-    console.time('processEvents');
     isProcessingEvents = true;
 
     try {
         console.time('importEvents');
         response = await importEvents();
         console.timeEnd('importEvents');
-
-        primeCache();
     }
     catch (error) {
     }
-    finally {
-        isProcessingEvents = false;
-    }
 
-    console.timeEnd('processEvents');
+    isProcessingEvents = false;
     return response;
 }
 
