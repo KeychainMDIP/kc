@@ -84,15 +84,14 @@ export async function verifyDID(did) {
         }
 
         if (validUntil < now) {
-            // eslint-disable-next-line
-            throw 'Expired';
+            return { expired: true, status: 'Expired' };
         }
 
         const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
-        return `Expires in ${minutesLeft} minutes`;
+        return { expired: false, status: `Expires in ${minutesLeft} minutes` };
     }
 
-    return "OK";
+    return { expired: false, status: "OK" };
 }
 
 export async function verifyDb(chatty = true) {
@@ -102,20 +101,35 @@ export async function verifyDb(chatty = true) {
 
     const keys = await db.getAllKeys();
     const dids = keys.map(key => `${config.didPrefix}:${key}`);
+    const total = dids.length;
     let n = 0;
+    let verified = 0;
+    let expired = 0;
     let invalid = 0;
 
     for (const did of dids) {
         n += 1;
         try {
-            const status = await verifyDID(did);
-            if (chatty) {
-                console.log(`${n} ${did} ${status}`);
+            const { expired: didExpired, status } = await verifyDID(did);
+
+            if (didExpired) {
+                if (chatty) {
+                    console.log(`removing ${n}/${total} ${did} ${status}`);
+                }
+                db.deleteEvents(did);
+                delete eventsCache[did];
+                expired += 1;
+            }
+            else {
+                if (chatty) {
+                    console.log(`verifying ${n}/${total} ${did} ${status}`);
+                }
+                verified += 1;
             }
         }
         catch (error) {
             if (chatty) {
-                console.log(`${n} ${did} ${error}`);
+                console.log(`removing ${n}/${total} ${did} ${error}`);
             }
             invalid += 1;
             db.deleteEvents(did);
@@ -127,7 +141,7 @@ export async function verifyDb(chatty = true) {
         console.timeEnd('verifyDb');
     }
 
-    return invalid;
+    return { total, verified, expired, invalid };
 }
 
 export async function initRegistries(csvRegistries) {
@@ -740,23 +754,17 @@ export async function processEvents() {
     }
 
     let response;
-    console.time('processEvents');
     isProcessingEvents = true;
 
     try {
         console.time('importEvents');
         response = await importEvents();
         console.timeEnd('importEvents');
-
-        primeCache();
     }
     catch (error) {
     }
-    finally {
-        isProcessingEvents = false;
-    }
 
-    console.timeEnd('processEvents');
+    isProcessingEvents = false;
     return response;
 }
 
