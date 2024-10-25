@@ -99,8 +99,7 @@ export async function verifyDb(chatty = true) {
         console.time('verifyDb');
     }
 
-    const keys = await db.getAllKeys();
-    const dids = keys.map(key => `${config.didPrefix}:${key}`);
+    const dids = await getDIDs();
     const total = dids.length;
     let n = 0;
     let verified = 0;
@@ -142,6 +141,33 @@ export async function verifyDb(chatty = true) {
     }
 
     return { total, verified, expired, invalid };
+}
+
+export async function checkDb(chatty = true) {
+    const dids = await getDIDs();
+    const total = dids.length;
+    let n = 0;
+    let remove = [];
+
+    for (const did of dids) {
+        n += 1;
+        try {
+            await resolveDID(did);
+            console.log(`resolving ${n}/${total} ${did} OK`);
+        }
+        catch (error) {
+            if (chatty) {
+                console.log(`removing ${n}/${total} ${did} ${error}`);
+            }
+            remove.push(did);
+        }
+    }
+
+    if (remove.length > 0) {
+        await removeDIDs(remove);
+    }
+
+    return { total, removed: remove.length };
 }
 
 export async function initRegistries(csvRegistries) {
@@ -448,7 +474,9 @@ async function getEvents(did) {
 
 export async function resolveDID(did, options = {}) {
     const { atTime, atVersion, confirm, verify } = options;
+    //console.time('getEvents');
     const events = await getEvents(did);
+    //console.timeEnd('getEvents');
 
     if (events.length === 0) {
         throw new Error(exceptions.INVALID_DID);
@@ -589,7 +617,8 @@ export async function deleteDID(operation) {
     return updateDID(operation);
 }
 
-export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, resolve } = {}) {
+export async function getDIDs(options = {}) {
+    let { dids, updatedAfter, updatedBefore, confirm, verify, resolve } = options;
     if (!dids) {
         const keys = await db.getAllKeys();
         dids = keys.map(key => `${config.didPrefix}:${key}`);
@@ -601,7 +630,7 @@ export async function getDIDs({ dids, updatedAfter, updatedBefore, confirm, reso
         const response = [];
 
         for (const did of dids) {
-            const doc = await resolveDID(did, { confirm: confirm });
+            const doc = await resolveDID(did, { confirm, verify });
             const updated = new Date(doc.didDocumentMetadata.updated || doc.didDocumentMetadata.created);
 
             if (start && updated <= start) {
@@ -750,7 +779,7 @@ async function importEvents() {
 
 export async function processEvents() {
     if (isProcessingEvents) {
-        return;
+        return { busy: true };
     }
 
     let response;
