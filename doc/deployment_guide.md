@@ -194,18 +194,118 @@ WARNING: Changes to these variables are likely to **break** the Docker Compose f
 | KC_TBTC_FEE_INC=0 |  | 
 
 ### Customizing docker-compose.yml 
-Another important file controlling the behavior of an MDIP node is the `docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file show how each components is launched.
+Another important file controlling the behavior of an MDIP node is the `kc/docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file shows and explains how each components is launched.
 
 Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the docker-compose.yml file by removing the `tess-node` and `tess-mediator` sections.
 
-Operators wanting to operate MDIP in a Kubernetes or other type of virtualized environments will find the environment variable dependencies for each MDIP component in the `docker-compose.yml` file. 
+Operators wanting to operate MDIP in a Kubernetes or other type of virtualized environments will find the environment variable dependencies for each MDIP component in the `kc/docker-compose.yml` file. 
+
+#### gatekeeper service
+Below is the MDIP `gatekeeper` definition. 
+- environment: this section contains environment variables *required* by a particular service
+- volumes: this section defines the persistent storage data directory *required* for a particular service
+- ports: this section defines the host port number that will be used by a particular service (gatekeeper default: 4224)
+  
+```
+services:
+  gatekeeper:
+    build:
+      context: .
+      dockerfile: Dockerfile.gatekeeper
+    image: keychainmdip/gatekeeper
+    environment:
+      - KC_GATEKEEPER_PORT=4224
+      - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
+      - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
+    volumes:
+      - ./data:/app/gatekeeper/data
+    user: "${KC_UID}:${KC_GID}"
+    ports:
+      - "4224:4224"
+```
+
+#### keymaster service
+Likewize, the MDIP `keymaster` has a Docker service definition in the `docker-compose.yml` file. An operator wanting to setup only a Keymaster service pointed to a 3rd party Hosted Gatekeeper server could customize their node to only launch only the `keymaster` service (keymaster default port: 4226)
+```
+  keymaster:
+    build:
+      context: .
+      dockerfile: Dockerfile.keymaster
+    image: keychainmdip/keymaster
+    environment:
+      - KC_KEYMASTER_PORT=4226
+      - KC_GATEKEEPER_URL=${KC_GATEKEEPER_URL}
+    volumes:
+      - ./data:/app/keymaster/data
+    user: "${KC_UID}:${KC_GID}"
+    ports:
+      - "4226:4226"
+```
+
+#### hyperswarm service
+The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm) to distribute its known DIDs and DID Documents. The following section of the `kc/docker-compose.yml` file containerises `hyperswarm` service for MDIP. Note that the `KC_NODE_NAME` environment variable is exposed to the hyperswarm network as the vanity name for the node. 
+```
+  hyperswarm:
+    build:
+      context: .
+      dockerfile: Dockerfile.hyperswarm
+    image: keychainmdip/hyperswarm-mediator
+    environment:
+      - KC_NODE_NAME=${KC_NODE_NAME}
+      - KC_GATEKEEPER_URL=${KC_GATEKEEPER_URL}
+    volumes:
+      - ./data:/app/hyperswarm/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - gatekeeper
+```
+
+#### registry services (Bitcoin Testnet4 example)
+MDIP uses immutable ledgers to record evidence of a decentralized consensus on the order of operations that form the history of a DID. The MDIP protocol is blockchain agnostic and provides 2 Testnet examples to demonstrate the protocol's portability: Bitcoin Testnet4 and Feathercoin Testnet. Each DID is registered on a blockchain selected by the end-user at the time of creation. DID operations are batched and exported by the MDIP Mediator to its associated Blockchain Node. 
+
+In the example below, we use a generic bitcoin-code node configured to operate on testnet4. A similar service configuration block for Feathercoin Testnet is provided in the `kc` repository.
+
+```
+  tbtc-node:
+    image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
+    volumes:
+      - ./data/tbtc:/root/.bitcoin
+
+  tbtc-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.sat
+    image: keychainmdip/satoshi-mediator
+    environment:
+      - KC_GATEKEEPER_URL=${KC_GATEKEEPER_URL}
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=TBTC
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_HOST=tbtc-node
+      - KC_SAT_PORT=48332
+      - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
+      - KC_SAT_USER=${KC_TBTC_USER}
+      - KC_SAT_PASS=${KC_TBTC_PASS}
+      - KC_SAT_WALLET=${KC_TBTC_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_TBTC_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_TBTC_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_TBTC_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
+    volumes:
+      - ./data:/app/satoshi/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - tbtc-node
+```
+
 
 ### Launching the MDIP Node
 
-NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the installation of all npm package dependencies for MDIP.
+NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the `clean` installation of all npm package dependencies for MDIP. 
 
 ```
-npm i
+npm ci
 ```
 
 The next step will create and launch the docker containers. 
@@ -265,17 +365,99 @@ The `./kc show-wallet` command will show an updated JSON wallet containing the n
 
 #### DID Registries Setup
 
-MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the Registry contains the concensus on order of MDIP operations. 
+MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the Registry contains the concensus on order of MDIP operations. Some releases may also have the Tesseract (TESS) registry, which is being deprecated in post-0.3-beta releases. 
 
-By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The following command will create that wallet; the Bitcoin Testnet node is configured to store its data in the `data/tbtc` directory.
+By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The following command will create that wallet; the Bitcoin Testnet4 node is configured to store its data in the `data/tbtc` directory.
 
 ```
 ./scripts/tbtc-cli createwallet mdip
 ```
 
+We can then create a new Bitcoin Testnet4 address with the following command: 
+```
+./scripts/tbtc-cli getnewaddress
+```
 
-./scripts/tbtc-cli 
-- Registries setup
+The new Bitcoin Testnet4 address should be used to *fund* the server's Bitcoin Testnet4 wallet. Below are 2 currently operational Testnet4 faucets:
+- [https://mempool.space/testnet4/faucet](https://mempool.space/testnet4/faucet)
+- [https://coinfaucet.eu/en/btc-testnet4/](https://coinfaucet.eu/en/btc-testnet4/)
+
+You can view the `unconfirmed_balance` and `balance` of your wallet with the following command: 
+```
+./scripts/tbtc-cli/getwalletinfo
+```
+
+The `tbtc-cli` script passes the command line arguments to the standard bitcoin node wallet operating inside the `tbtc-node` docker container. The commands above should also be replicated for other supported blockchains (ex: `./scripts/tftc-cli`).
+
+### Automated Restart using Systemd
+
+Systemd ([https://systemd.io/](https://systemd.io/)) is a popular service manager for Linux OS. The following simple configuration file can be used to launch an mdip node.  
+```
+[Unit]
+Description=MDIP Daemon Service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mdip/kc
+ExecStart=/home/mdip/kc/start-node
+User=mdip
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The copy/paste the content above in a `/etc/systemd/system/mdip.service` service file for systemd. You will need `sudo` or `root` privileges in order to change your server's autostart services. Once the service file is created, you can launch your mdip node with the following command:
+```
+sudo systemctl daemon-reload
+sudo systemctl start mdip
+```
+
+To view the status of your node, you can use `journalctl` :
+```
+systemctl status mdip
+```
+
+To view the continuous logs of your node, you can use
+```
+journalctl -f -u mdip
+```
+
+### Understanding MDIP Logs and Launch Process
+
+When you first launch an MDIP node, there will be multiple stages of readiness including: 
+1. MDIP Docker Containers Preparation 
+2. MDIP Gatekeeper Synchronization with MDIP Network ( <-- node operational here)
+3. Blockchain Node Synchronization with Blockchain Network
+4. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry ( <-- DIDs history validated here)
+
+Below are log examples indicating your MDIP Node's stage of readyness.
+
+#### Log sample of MDIP Docker Containers preparation
+Each MDIP component in the chart above operates in its own Docker Container. 
+
+```
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #0 building with "default" instance using docker driver
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #1 [gatekeeper internal] load build definition from Dockerfile.gatekeeper
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #1 transferring dockerfile: 505B done
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #1 DONE 0.0s
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #3 [tbtc-mediator internal] load build definition from Dockerfile.sat
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #3 transferring dockerfile: 415B done
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #3 DONE 0.0s
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #4 [tftc-node internal] load build definition from Dockerfile.ftc
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #4 transferring dockerfile: 556B done
+Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #4 DONE 0.0s
+...
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-gatekeeper-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-keymaster-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-hyperswarm-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-mongodb-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tftc-node-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tbtc-node-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tftc-mediator-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tbtc-mediator-1  Created
+Oct 28 16:34:14 mdip-gatekeeper start-node[703710]: Attaching to gatekeeper-1, hyperswarm-1, keymaster-1, mongodb-1, tbtc-mediator-1, tbtc-node-1, tftc-mediator-1, tftc-node-1
+```
+
 - Systemd setup
 - nginx setup
 
