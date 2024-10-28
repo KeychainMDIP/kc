@@ -283,7 +283,7 @@ async function main() {
     console.timeEnd('checkDb');
     console.log(`check: ${JSON.stringify(check)}`);
 
-    setTimeout(importLoop, 60 * 1000);
+    //setTimeout(importLoop, 60 * 1000);
     setTimeout(verifyLoop, 60 * 60 * 1000);
 
     const registries = await gatekeeper.initRegistries(config.registries);

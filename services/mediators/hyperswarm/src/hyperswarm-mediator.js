@@ -17,7 +17,6 @@ const BATCH_SIZE = 100;
 const PROTOCOL = '/MDIP/v24.10.01';
 
 const nodes = {};
-const batchesSeen = {};
 
 // Keep track of all connections
 let connections = [];
@@ -95,12 +94,6 @@ async function createBatch() {
     return allEvents.map(event => event.operation);
 }
 
-function cacheBatch(batch) {
-    const hash = cipher.hashJSON(batch);
-    batchesSeen[hash] = true;
-    console.log(`batch in db: ${shortName(hash)}`);
-}
-
 function logBatch(batch, name) {
     const debugFolder = 'data/debug';
 
@@ -116,24 +109,6 @@ function logBatch(batch, name) {
     const batchfile = `${debugFolder}/${hash}-${name}.json`;
     const batchJSON = JSON.stringify(batch, null, 4);
     fs.writeFileSync(batchfile, batchJSON);
-}
-
-async function initializeBatchesSeen() {
-    const batch = await createBatch();
-
-    logBatch(batch, config.nodeName);
-
-    let chunk = [];
-    for (const events of batch) {
-        chunk.push(events);
-
-        if (chunk.length >= BATCH_SIZE) {
-            cacheBatch(chunk);
-            chunk = [];
-        }
-    }
-
-    cacheBatch(chunk);
 }
 
 async function shareDb(conn) {
@@ -189,14 +164,6 @@ async function importBatch(batch) {
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
         const hash = cipher.hashJSON(batch);
-
-        if (batchesSeen[hash]) {
-            console.log(`importBatch: already seen ${shortName(hash)}...`);
-            return;
-        }
-
-        batchesSeen[hash] = true;
-
         const events = [];
         const now = new Date();
         const isoTime = now.toISOString();
@@ -216,7 +183,6 @@ async function importBatch(batch) {
         const response = await gatekeeper.importBatch(events);
         console.timeEnd('importBatch');
         console.log(`* ${JSON.stringify(response)}`);
-        console.log(`${Object.keys(batchesSeen).length} batches seen`);
     }
     catch (error) {
         console.error(`importBatch error: ${error}`);
@@ -240,6 +206,10 @@ async function mergeBatch(batch) {
     }
 
     await importBatch(chunk);
+    console.time('processEvents');
+    const response = await gatekeeper.processEvents();
+    console.timeEnd('processEvents');
+    console.log(`mergeBatch: ${JSON.stringify(response)}`);
 }
 
 let importQueue = asyncLib.queue(async function (task, callback) {
@@ -426,7 +396,7 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
-    await initializeBatchesSeen();
+
     await connectionLoop();
     await exportLoop();
 }
