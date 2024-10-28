@@ -706,11 +706,23 @@ server {
 ```
 
 ## Using an MDIP Node
+This section contains tips and information on how to get started with your new MDIP node. 
 
 ### Basic Tests and Common Links
-- Gatekeeper Public Web Wallet
+The MDIP Gatekeeper offers a developer-friend identity wallet on port 4224 that can be used to interact with the protocol. 
+
+![Screenshot 2024-10-28 at 17 09 19](https://github.com/user-attachments/assets/6763e0a6-706b-418f-bd28-33efa6ea0cca)
+
+Most of the Keymaster functions are available over the Keymaster WebUI. Documentation for the Keymaster WebUI is available on the [keychain.org](https://keychain.org/docs/keychain/clients/webui/) website.
+
+#### Private Server-Side Wallet
+
+MDIP is a peer-to-peer system. Interactions between human users and server hosts are 
+
 - Keymaster Private Wallet (web and cli)
 - Gatekeeper API (private or public)
+
+## Appendix (TBD)
 
 ### Securing a generic system or website with MDIP
 - nginx mdip-auth session router setup 
@@ -720,3 +732,8 @@ server {
 - Installing auth-demo
 - Using auth-demo
 - Customizing auth-demo
+
+### MDIP Integration Guide
+- Keymaster API
+- Client and server keys
+  
