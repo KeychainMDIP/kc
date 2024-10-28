@@ -15,7 +15,7 @@ Services provided by a *Full* or *"Trustless" Node* includes:
 4. One or more Registry Mediator System(s) for DIDs and MDIP operations registration.
 5. One or mode Blockchain Network for decentralized consensus on order of DID operations.
 
-### Communication Between MDIP Nodes
+### Node Communication
 
 At the end of this installation guide, a full MDIP Node will expose limited and selected services over HTTP/SSL on port 443. All other ports can be firewalled. MDIP Nodes communicate with each other during the documents Distribution and Registration processes. 
 
@@ -23,7 +23,7 @@ At the end of this installation guide, a full MDIP Node will expose limited and 
   
 - Document Registration is *immutable* and performed using the MDIP Satoshi Mediator and associated Blockchain software. DIDs are registered on a ledger to evidence an order of operation across all MDIP nodes. Registration of a DID is a parallel asynchronous process that occurs at "block" speed.
 
-### Creating MDIP Operations
+### MDIP Operations
 
 A system is said to be an MDIP Client if it implements MDIP Keymaster functionality. The MDIP Keymaster library and tools made available in this repository implement functionality to create valid MDIP operations. MDIP Keymaster is available as a REST OpenAPI interface, Command Line Interface, Web User Interface, NodeJS and Python SDKs, npm library, with more additions planned.
 
@@ -58,7 +58,7 @@ While perhaps not optimal for a production environment, developement environment
 - kc-tftc-node is a generic Feathercoin Testnet node
 - kc-tbtc-node is a generic [Bitcoin Testnet4](https://github.com/bitcoin/bitcoin/pull/29775) node
 
-## Systems Requirement
+## Systems Requirements
 The resource estimates and recommendations below are early estimates and are still under development. 
 
 MDIP operations begin when the MDIP Gatekeeper receives a request from a Keymaster client. From the perspective of a Keymaster (MDIP client), all Gatekeepers are *the same* in the sense that they expose the same MDIP interfaces (REST OpenAPI API and WebUI). MDIP Gatekeepers Nodes do not have any visibility in the keys held securely by each MDIP Keymaster Client.
@@ -78,7 +78,7 @@ MDIP components communicate with one another using their respective APIs. It is 
 - NodeJS v.18.15.0
 - git cli configured as alternative to manual download
 
-### Operating System Preparations
+### Operating System Preparation
 MDIP requires minimal system preparation. All MDIP services are implemented in NodeJS, compiled and containerized using Docker and launched using Docker Compose. The repository (see directory structure review below) contains convenient shell scripts used to configure and manage an MDIP node.
 
 It is recommended that a user account be created to run all MDIP components; the account's UID and GID will be required to configure the MDIP Docker containers. Likewise, proper disk space must be prepared and allocated for the MDIP node. All MDIP services write their data files in a `data` subdirectory, which can be sized according to a node's desired data retention policy.
@@ -193,7 +193,7 @@ WARNING: Changes to these variables are likely to **break** the Docker Compose f
 | KC_TBTC_FEE_MAX=0.00000600 | Bitcoin Testnet transaction maximum fee |
 | KC_TBTC_FEE_INC=0 |  | 
 
-### Customizing docker-compose.yml 
+### Customizing the docker-compose.yml services
 Another important file controlling the behavior of an MDIP node is the `kc/docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file shows and explains how each components is launched.
 
 Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the docker-compose.yml file by removing the `tess-node` and `tess-mediator` sections.
@@ -260,7 +260,7 @@ The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm)
       - gatekeeper
 ```
 
-#### registry services (Bitcoin Testnet4 example)
+#### registry services (TBTC)
 MDIP uses immutable ledgers to record evidence of a decentralized consensus on the order of operations that form the history of a DID. The MDIP protocol is blockchain agnostic and provides 2 Testnet examples to demonstrate the protocol's portability: Bitcoin Testnet4 and Feathercoin Testnet. Each DID is registered on a blockchain selected by the end-user at the time of creation. DID operations are batched and exported by the MDIP Mediator to its associated Blockchain Node. 
 
 In the example below, we use a generic bitcoin-code node configured to operate on testnet4. A similar service configuration block for Feathercoin Testnet is provided in the `kc` repository.
@@ -299,7 +299,7 @@ In the example below, we use a generic bitcoin-code node configured to operate o
       - tbtc-node
 ```
 
-### Install local CLI Dependencies
+### Install Local CLI Dependencies
 
 NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the `clean` installation of all npm package dependencies for MDIP. 
 
@@ -423,6 +423,11 @@ To view the continuous logs of your node, you can use
 journalctl -f -u mdip
 ```
 
+Once the node is operating normally, the system can be configured to auto-start with the following: 
+```
+sudo systemctl enable mdip
+```
+
 ### Understanding MDIP Logs and Launch Process
 
 When you first launch an MDIP node, there will be multiple stages of readiness including: 
@@ -434,7 +439,7 @@ When you first launch an MDIP node, there will be multiple stages of readiness i
 
 Below are log examples indicating your MDIP Node's stage of readyness.
 
-#### Log samples: MDIP Docker Containers preparation
+#### Log samples: Docker Containers
 As we have seen, each MDIP component operates in its own Docker Container. The first logs seen when launching MDIP for the first time is the preparation of the Docker containers. 
 
 In subsequent launches the dockerfiles will be rebuilt or reused depending on whether the source files have changed.
@@ -461,7 +466,7 @@ Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tftc-mediator-
 Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tbtc-mediator-1  Created
 Oct 28 16:34:14 mdip-gatekeeper start-node[703710]: Attaching to gatekeeper-1, hyperswarm-1, keymaster-1, mongodb-1, tbtc-mediator-1, tbtc-node-1, tftc-mediator-1, tftc-node-1
 ```
-#### Log samples: of MDIP Gatekeeper
+#### Log samples: MDIP Gatekeeper Service
 Upon launch, the gatekeeper process will attempt to conntect to its configured hyperswarm distribution process. 
 
 The gatekeeper will build a local collection of published DIDs and begin verification of each document. Once available, the Gatekeeper will report being `ready` when queried on its local API: `curl http://localhost:4224/api/v1/ready`.
@@ -541,7 +546,7 @@ Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     }
 Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      | }
 ```
 
-#### Log samples: Blockchain Node (example: Bitcoin Testnet4)
+#### Log samples: Blockchain Node (tBTC)
 The `kc/docker-compose.yml` script will launch Bitcoin Testnet4 and Feathercoin Testnet nodes to be used as DID registries. 
 
 The following logs are generated when the Bitcoin node is launched. Note the default use of `testnet4="1"` in the Bitcoin configuration file now located in `kc/data/tbtc/bitcoin.conf`. Customizations to the connectivity between MDIP and its repositories must be reflected in both configurations files (registry and MDIP). 
@@ -594,7 +599,7 @@ Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-2
 ...
 ```
 
-#### Log samples: MDIP Mediator (ex: tBTC)
+#### Log samples: MDIP Mediator (tBTC)
 The `kc/docker-compose.yml` default configuration will launch an MDIP Satoshi Mediator process configured to import/export with the Bitcoin Testnet4 blockchain. 
 
 The logs below show the MDIP Mediator successfully exporting the a DID update operation to the TBTC registry.
@@ -621,7 +626,84 @@ Oct 28 16:37:18 mdip-gatekeeper start-node[706734]: gatekeeper-1     | POST /api
 Oct 28 16:37:18 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | export loop waiting 1 minute(s)...
 ```
 
-- nginx setup
+## Secure Hosting an MDIP Node with nginx
+nginx [https://nginx.org/](https://nginx.org/) is a popular web server and reverse proxy available for most operating systems. 
+
+nginx can be used to control and throttle access to server ports and hosted services like MDIP. The configuration files presented here are for educational purposes. Securing a server for online operations involves more than protecting a few ports; this document limits itself to MDIP-specific ports and services.
+
+### Important MDIP Ports and Endpoints
+
+A full MDIP node launched using the provided `kc/docker-compose.yml` configuration will only expose 2 new service ports on the Host machine:
+```
+keychainmdip/keymaster   0.0.0.0:4226->4226/tcp   kc-keymaster-1
+keychainmdip/gatekeeper  0.0.0.0:4224->4224/tcp   kc-gatekeeper-1
+```
+
+When using Docker as an operating environment, other ports are used within the Docker network to mediate with 3rd party systems. 
+```
+mongo:latest             27017/tcp kc-mongodb-1
+bitcoin-core:v27.99.0    48332/tcp kc-tbtc-node-1
+feathercoind             19337/tcp kc-tftc-node-1
+```
+
+None of the ports listed above should ever be directly addressable from the Internet. It is recommended that a firewall be setup to prevent access to these services.
+
+### Basic nginx Hosting
+The nginx configuration file below can be used to launch a live MDIP node that exposes only read-only gatekeeper end-points. 
+
+```
+#
+# Basic read-only MDIP Gatekeeper server routes configuration for nginx
+#
+server {
+    server_name mdip.mydomain.net; # Replace with your domain name
+    access_log /var/log/mdip-node; 
+
+    # Block POST and DELETE requests 
+    if ($request_method !~ ^(GET|HEAD)$ ) {
+      return 405;
+    }
+
+    # Returns {true} when server is ready
+    location /api/v1/ready {
+        proxy_pass http://localhost:4224/api/v1/ready;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        allow all;
+    }
+
+    # Allows public queries of Node's database
+    location /api/v1/did {
+        proxy_pass http://localhost:4224/api/v1/did;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        allow all;
+    }
+
+    # Returns blockchain registries supported by the Node
+    location /api/v1/registries {
+        proxy_pass http://localhost:4224/api/v1/registries;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        allow all;
+    }
+
+    # Returns node protocol version
+    location /api/v1/version {
+        proxy_pass http://localhost:4224/api/v1/version;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        allow all;
+    }
+
+    # Provides a generic MDIP Wallet web user interface with browser-side keys
+    location / {
+	      proxy_pass http://localhost:4224;
+	      proxy_set_header Host $host;
+	      proxy_cache_bypass $http_upgrade;
+        allow all;
+    }
+```
 
 ## Using an MDIP Node
 
