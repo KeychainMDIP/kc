@@ -1165,7 +1165,21 @@ export async function unpublishCredential(did) {
     throw new Error(exceptions.INVALID_PARAMETER);
 }
 
-export async function createChallenge(challengeSpec, options = {}) {
+export async function createChallenge(challenge = {}, options = {}) {
+
+    if (typeof challenge !== 'object' || Array.isArray(challenge)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (typeof options !== 'object' || Array.isArray(challenge)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    if (challenge.credentials && !Array.isArray(challenge.credentials)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+
+        // TBD validate each credential spec
+    }
 
     if (!options.registry) {
         options.registry = ephemeralRegistry;
@@ -1177,27 +1191,7 @@ export async function createChallenge(challengeSpec, options = {}) {
         options.validUntil = expires.toISOString();
     }
 
-    if (!challengeSpec) {
-        challengeSpec = {};
-    }
-
-    if (typeof challengeSpec !== 'object' || Array.isArray(challengeSpec)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    if (!challengeSpec.challenge) {
-        challengeSpec.challenge = {};
-    }
-
-    if (!challengeSpec.challenge.credentials) {
-        challengeSpec.challenge.credentials = [];
-    }
-
-    if (!Array.isArray(challengeSpec.challenge.credentials)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
-    return createAsset(challengeSpec, options);
+    return createAsset({ challenge }, options);
 }
 
 async function findMatchingCredential(credential) {
@@ -1279,24 +1273,22 @@ export async function createResponse(challengeDID, options = {}) {
     const requestor = doc.didDocument.controller;
     const { challenge } = await resolveAsset(challengeDID);
 
-    if (!challenge?.credentials) {
+    if (!challenge) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // TBD check challenge.ephemeral for expired?
+    // TBD check challenge isValid for expired?
 
     const matches = [];
 
-    for (let credential of challenge.credentials) {
-        const vc = await findMatchingCredential(credential);
+    if (challenge.credentials) {
+        for (let credential of challenge.credentials) {
+            const vc = await findMatchingCredential(credential);
 
-        if (vc) {
-            matches.push(vc);
+            if (vc) {
+                matches.push(vc);
+            }
         }
-    }
-
-    if (!matches) {
-        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     const pairs = [];
@@ -1307,21 +1299,19 @@ export async function createResponse(challengeDID, options = {}) {
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
-    const requested = challenge.credentials.length;
+    const requested = challenge.credentials?.length ?? 0;
     const fulfilled = matches.length;
     const match = (requested === fulfilled);
 
     const response = {
-        response: {
-            challenge: challengeDID,
-            credentials: pairs,
-            requested: requested,
-            fulfilled: fulfilled,
-            match: match,
-        }
+        challenge: challengeDID,
+        credentials: pairs,
+        requested: requested,
+        fulfilled: fulfilled,
+        match: match
     };
 
-    return await encryptJSON(response, requestor, options);
+    return await encryptJSON({ response }, requestor, options);
 }
 
 export async function verifyResponse(responseDID, options = {}) {
@@ -1392,7 +1382,7 @@ export async function verifyResponse(responseDID, options = {}) {
     }
 
     response.vps = vps;
-    response.match = vps.length === challenge.credentials.length;
+    response.match = vps.length === (challenge.credentials?.length ?? 0);
     response.responder = responseDoc.didDocument.controller;
 
     return response;
