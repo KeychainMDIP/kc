@@ -1811,15 +1811,10 @@ describe('createChallenge', () => {
         const alice = await keymaster.createId('Alice');
         const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
-        const expectedChallenge = {
-            challenge: {
-                credentials: []
-            }
-        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+        expect(doc.didDocumentData).toStrictEqual({ challenge: {} });
 
         const now = new Date();
         const validUntil = new Date(doc.mdip.validUntil);
@@ -1833,17 +1828,12 @@ describe('createChallenge', () => {
 
         const alice = await keymaster.createId('Alice');
         const validUntil = '2025-01-01';
-        const did = await keymaster.createChallenge(null, { validUntil });
+        const did = await keymaster.createChallenge({}, { validUntil });
         const doc = await keymaster.resolveDID(did);
-        const expectedChallenge = {
-            challenge: {
-                credentials: []
-            }
-        };
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentData).toStrictEqual(expectedChallenge);
+        expect(doc.didDocumentData).toStrictEqual({ challenge: {} });
         expect(doc.mdip.validUntil).toBe(validUntil);
     });
 
@@ -1857,21 +1847,20 @@ describe('createChallenge', () => {
 
         const credentialDid = await keymaster.createSchema(mockSchema);
         const challenge = {
-            challenge: {
-                credentials: [
-                    {
-                        schema: credentialDid,
-                        issuers: [alice, bob]
-                    }
-                ]
-            }
+            credentials: [
+                {
+                    schema: credentialDid,
+                    issuers: [alice, bob]
+                }
+            ]
         };
+
         const did = await keymaster.createChallenge(challenge);
         const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
         expect(doc.didDocument.controller).toBe(alice);
-        expect(doc.didDocumentData).toStrictEqual(challenge);
+        expect(doc.didDocumentData).toStrictEqual({ challenge });
     });
 
     it('should throw an exception if challenge spec is invalid', async () => {
@@ -1889,9 +1878,7 @@ describe('createChallenge', () => {
 
         try {
             await keymaster.createChallenge({
-                challenge: {
-                    credentials: 123
-                }
+                credentials: 123
             });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
@@ -1907,7 +1894,7 @@ describe('createChallenge', () => {
 
         try {
             const validUntil = 'mockDate';
-            await keymaster.createChallenge(null, { validUntil });
+            await keymaster.createChallenge({}, { validUntil });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
@@ -1947,14 +1934,12 @@ describe('createResponse', () => {
         await keymaster.setCurrentId('Victor');
 
         const challenge = {
-            challenge: {
-                credentials: [
-                    {
-                        schema: credentialDid,
-                        issuers: [alice]
-                    }
-                ]
-            }
+            credentials: [
+                {
+                    schema: credentialDid,
+                    issuers: [alice]
+                }
+            ]
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
@@ -2027,8 +2012,7 @@ describe('verifyResponse', () => {
         const bob = await keymaster.createId('Bob');
 
         await keymaster.setCurrentId('Alice');
-        const challenge = { credentials: [] };
-        const challengeDID = await keymaster.createChallenge(challenge);
+        const challengeDID = await keymaster.createChallenge();
 
         await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
@@ -2069,13 +2053,11 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
 
         const challenge = {
-            challenge: {
-                credentials: [
-                    {
-                        schema: credential1,
-                    },
-                ]
-            }
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
@@ -2107,13 +2089,11 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
 
         const challenge = {
-            challenge: {
-                credentials: [
-                    {
-                        schema: credential1,
-                    },
-                ]
-            }
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
         };
         const challengeDID = await keymaster.createChallenge(challenge);
 
@@ -2171,26 +2151,24 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
 
         const challenge = {
-            challenge: {
-                credentials: [
-                    {
-                        schema: schema1,
-                        issuers: [alice]
-                    },
-                    {
-                        schema: schema2,
-                        issuers: [alice]
-                    },
-                    {
-                        schema: schema3,
-                        issuers: [bob]
-                    },
-                    {
-                        schema: schema4,
-                        issuers: [bob]
-                    },
-                ]
-            }
+            credentials: [
+                {
+                    schema: schema1,
+                    issuers: [alice]
+                },
+                {
+                    schema: schema2,
+                    issuers: [alice]
+                },
+                {
+                    schema: schema3,
+                    issuers: [bob]
+                },
+                {
+                    schema: schema4,
+                    issuers: [bob]
+                },
+            ]
         };
         const challengeDID = await keymaster.createChallenge(challenge, { registry: 'local' });
 
