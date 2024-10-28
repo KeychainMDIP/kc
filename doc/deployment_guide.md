@@ -299,8 +299,7 @@ In the example below, we use a generic bitcoin-code node configured to operate o
       - tbtc-node
 ```
 
-
-### Launching the MDIP Node
+### Install local CLI Dependencies
 
 NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the `clean` installation of all npm package dependencies for MDIP. 
 
@@ -308,7 +307,9 @@ NodeJS dependencies should be resolved both locally on the Host and within the D
 npm ci
 ```
 
-The next step will create and launch the docker containers. 
+## Launching and Running an MDIP Node
+
+Once the server requirements and dependencies are resolved, the next step will create and launch the docker containers. 
 ```
 ./start-node
 ```
@@ -427,13 +428,16 @@ journalctl -f -u mdip
 When you first launch an MDIP node, there will be multiple stages of readiness including: 
 1. MDIP Docker Containers Preparation 
 2. MDIP Gatekeeper Synchronization with MDIP Network ( <-- node operational here)
-3. Blockchain Node Synchronization with Blockchain Network
-4. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry ( <-- DIDs history validated here)
+3. MDIP Keymaster Connects to Gatekeeper once ready ( <-- server wallet connects to node)
+4. Blockchain Node Synchronization with Blockchain Network
+5. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry ( <-- DIDs history validated here)
 
 Below are log examples indicating your MDIP Node's stage of readyness.
 
-#### Log sample of MDIP Docker Containers preparation
-Each MDIP component in the chart above operates in its own Docker Container. 
+#### Log samples: MDIP Docker Containers preparation
+As we have seen, each MDIP component operates in its own Docker Container. The first logs seen when launching MDIP for the first time is the preparation of the Docker containers. 
+
+In subsequent launches the dockerfiles will be rebuilt or reused depending on whether the source files have changed.
 
 ```
 Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #0 building with "default" instance using docker driver
@@ -457,13 +461,167 @@ Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tftc-mediator-
 Oct 28 16:34:14 mdip-gatekeeper start-node[703710]:  Container kc-tbtc-mediator-1  Created
 Oct 28 16:34:14 mdip-gatekeeper start-node[703710]: Attaching to gatekeeper-1, hyperswarm-1, keymaster-1, mongodb-1, tbtc-mediator-1, tbtc-node-1, tftc-mediator-1, tftc-node-1
 ```
+#### Log samples: of MDIP Gatekeeper
+Upon launch, the gatekeeper process will attempt to conntect to its configured hyperswarm distribution process. 
 
-- Systemd setup
+The gatekeeper will build a local collection of published DIDs and begin verification of each document. Once available, the Gatekeeper will report being `ready` when queried on its local API: `curl http://localhost:4224/api/v1/ready`.
+```
+...
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 59 did:test:z3v8AuaZDB5DyvYMXkaZBijtaoUZEAQVHShuffr6dRWtQmnL62W OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 60 did:test:z3v8AuaZjo9EKqTJLSW9DGTXFerRjCsH9Fp3Pmnv35F6njZm7aB OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 61 did:test:z3v8AuaUkujpZggLmWFG7DFqL5gmCo9bner2RZU8cD5EPwZcv8N OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 62 did:test:z3v8AuaWK2415KF3vaMLuGdizvzPSzcpzeRPKBykoAcK1twXwhP OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 63 did:test:z3v8AuaX8nDuXtLHrLAGmgfeVwCGfX9nMmZPTVbCDfaoiGvLuTv OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 64 did:test:z3v8AuabChKbzYnyw8TDH8wUzeVQa2AQGLGP32q27emzepDjQ3d OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 65 did:test:z3v8Auacu1CNBsHcadzwm2SYwkLMEuSeHhhncpUhhRKqZfL3tMP OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 66 did:test:z3v8AuadTptkdez7A2DoNjMRcqzUEVzQvBaUDLL9ufKTWskk87o OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 67 did:test:z3v8AuaiV29JNgqgVeaVrNj51rQu9YtkWgpuezkjWeUUqxsi6WA OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 68 did:test:z3v8AuaUqS7xVKXJCbkYHFt7qijszix3T39wVxUXL29P46YE2gu OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 69 did:test:z3v8AuahGKB5bJgCY4kvFGdKCyNP8QgM47Yd2tzcEUsN6EkygUn OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 70 did:test:z3v8AuaesXqNNmMENhZSuQSeqGbKdy5cogDUPduzWgdhnvKb5jF OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 71 did:test:z3v8AuagPcWQffRpfE7oHxccQVJAdk4sk4oNW6SAjPYD3syNAa8 OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 72 did:test:z3v8AuaW5UNaQ9u5bd4m6QX4aL82bP9cfuh93ZgvyryzhkjkGs9 OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 73 did:test:z3v8AuaTDz8s7wBZwhKcfnV59wEq2JoEi2FbcJJrE576AKuDvTa OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 74 did:test:z3v8Auai62TXdGDf3rnXHENaDzYM7NAdFeiz8kDhRV7Ch1L8FHv OK
+Oct 28 16:34:20 mdip-gatekeeper start-node[703710]: gatekeeper-1     | 75 did:test:z3v8AuaYGdCpWyLKfcoP2if1CDTA74zGnh1VDReXuhe5zY3pSdt OK
+...
+Oct 28 16:35:30 mdip-gatekeeper start-node[705212]: gatekeeper-1     | 6987 did:test:z3v8AuaiDEX5skrxB1bHH4aE5Jp6QcubQ7gqnpPWwFpedVSxtsF OK
+Oct 28 16:35:30 mdip-gatekeeper start-node[705212]: gatekeeper-1     | verifyDb: 56.681s
+Oct 28 16:35:30 mdip-gatekeeper start-node[705212]: gatekeeper-1     | Server is running on port 4224, persisting with json
+Oct 28 16:35:30 mdip-gatekeeper start-node[705212]: gatekeeper-1     | Supported registries: hyperswarm,TBTC,TFTC
+Oct 28 16:35:32 mdip-gatekeeper node[95272]: Gatekeeper service is ready!
+Oct 28 16:35:32 mdip-gatekeeper start-node[705212]: gatekeeper-1     | GET /api/v1/ready 200 - 7.745 ms 
+```
+
+#### Log samples: MDIP Keymaster Service  
+The logs below show a keymaster service connecting to a gatekeeper once the gatekeeper reports being ready for connections. 
+
+The keymaster process is an **administrative** tool and should not be exposed to unauthorized users and never to the public. The *key*master service running on port `4226` operates the server's MDIP identity used to issue challenges, decrypt documents, etc. The Keymaster will report being `ready` when queried on its local API: `curl http://localhost:4226/api/v1/ready`.
+```
+Oct 28 16:35:34 mdip-gatekeeper start-node[705212]: hyperswarm-1     | Gatekeeper service is ready!
+Oct 28 16:35:34 mdip-gatekeeper start-node[705212]: keymaster-1      | Gatekeeper service is ready!
+Oct 28 16:35:34 mdip-gatekeeper start-node[705212]: keymaster-1      | keymaster server running on port 4226
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      | current ID: mynodeID
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: gatekeeper-1     | GET /api/v1/did/did:test:z3v8AuaebRuWwQNHLvSXPD59KoTqTky7cvDSJ88Tnjf9gp2ULTe 200 - 28.696 ms 
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      | {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     "@context": "https://w3id.org/did-resolution/v1",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     "didDocument": {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "@context": [
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |             "https://www.w3.org/ns/did/v1"
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         ],
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "id": "did:test:z3v8AuaebRuWwQNYLvSXPDIKoTqTky7cvDSJ88Tnjf9gp2ULTe",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "verificationMethod": [
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |             {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                 "id": "#key-1",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                 "controller": "did:test:z3v8AuaebRuWwQNYLvSXPDIKoTqTky7cvDSJ88Tnjf9gp2ULTe",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                 "type": "EcdsaSecp256k1VerificationKey2019",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                 "publicKeyJwk": {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                     "kty": "EC",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                     "crv": "secp256k1",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                     "x": "TVlYpOylDZr1BlIBKMU3295t_vkeBxPIwGhXg84",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                     "y": "XHoeZ6UQiHy390YTnTfuimLKWfNMnGOikSLGUkw"
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |                 }
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |             }
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         ],
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "authentication": [
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |             "#key-1"
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         ]
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     },
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     "didDocumentMetadata": {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "created": "2024-10-16T18:11:50.850Z",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "version": 1,
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "confirmed": true
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     },
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     "didDocumentData": {},
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     "mdip": {
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "version": 1,
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "type": "agent",
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |         "registry": "TBTC"
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     }
+Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      | }
+```
+
+#### Log samples: Blockchain Node (example: Bitcoin Testnet4)
+The `kc/docker-compose.yml` script will launch Bitcoin Testnet4 and Feathercoin Testnet nodes to be used as DID registries. 
+
+The following logs are generated when the Bitcoin node is launched. Note the default use of `testnet4="1"` in the Bitcoin configuration file now located in `kc/data/tbtc/bitcoin.conf`. Customizations to the connectivity between MDIP and its repositories must be reflected in both configurations files (registry and MDIP). 
+```
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.770935Z Bitcoin Core version v27.99.0-2f7d9aec4d04 (release build)
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.771013Z Script verification uses 5 additional threads
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.771092Z Using the 'sse4(1way),sse41(4way),avx2(8way)' SHA256 implementation
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.879674Z Using RdSeed as an additional entropy source
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.879677Z Using RdRand as an additional entropy source
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881323Z Default data directory /root/.bitcoin
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881331Z Using data directory /root/.bitcoin/testnet4
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881342Z Config file: /root/.bitcoin/bitcoin.conf
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881359Z Config file arg: debug="0"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881368Z Config file arg: debugexclude="libevent"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881375Z Config file arg: debugexclude="leveldb"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881381Z Config file arg: debugexclude="tor"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881387Z Config file arg: discover="0"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881394Z Config file arg: keypool="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881404Z Config file arg: logtimemicros="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881413Z Config file arg: mocktime="0"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881442Z Config file arg: rest="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881452Z Config file arg: rpcpassword=****
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881463Z Config file arg: rpcuser=****
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881472Z Config file arg: server="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881484Z Config file arg: testnet4="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881494Z Config file arg: txindex="1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881502Z Config file arg: uacomment="mdip-1"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881510Z Config file arg: [testnet4] rpcallowip="0.0.0.0/0"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881517Z Config file arg: [testnet4] rpcbind="0.0.0.0"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881524Z Config file arg: [testnet4] wallet="mdip"
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881532Z Command-line arg: printtoconsole=""
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881540Z Using at most 125 automatic connections (1048576 file descriptors available)
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.881712Z scheduler thread start
+Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.885815Z Binding RPC on address 0.0.0.0 port 48332
+...
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.583276Z Initializing chainstate Chainstate [ibd] @ height -1 (null)
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.583358Z Opening LevelDB in /root/.bitcoin/testnet4/chainstate
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.598581Z Opened LevelDB successfully
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.598679Z Using obfuscation key for /root/.bitcoin/testnet4/chainstate: bba716c40aa18d67
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.631910Z Loaded best chain: hashBestChain=000000000000000f3b85cc00b4126131accec6e0e95a649eeb7c8b4fa38b5e81 height=52414 date=2024-10-27T20:11:36Z progress=1.000000
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.638516Z Opening LevelDB in /root/.bitcoin/testnet4/chainstate
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651019Z Opened LevelDB successfully
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651113Z Using obfuscation key for /root/.bitcoin/testnet4/chainstate: bba716c40aa18d67
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651142Z [Chainstate [ibd] @ height 52414 (000000000000000f3b85cc00b4126131accec6e0e95a649eeb7c8b4fa38b5e81)] resized coinsdb cache to 8.0 MiB
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651153Z [Chainstate [ibd] @ height 52414 (000000000000000f3b85cc00b4126131accec6e0e95a649eeb7c8b4fa38b5e81)] resized coinstip cache to 384.0 MiB
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651173Z init message: Verifying blocks…
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651189Z Verifying last 6 blocks at level 3
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.651212Z Verification progress: 0%
+Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:05.679435Z Verification progress: 16%
+...
+```
+
+#### Log samples: MDIP Mediator (ex: tBTC)
+The `kc/docker-compose.yml` default configuration will launch an MDIP Satoshi Mediator process configured to import/export with the Bitcoin Testnet4 blockchain. 
+
+The logs below show the MDIP Mediator successfully exporting the a DID update operation to the TBTC registry.
+```
+Oct 28 16:37:09 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | Waiting for TBTC node...
+Oct 28 16:37:11 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | current block height: 52581
+Oct 28 16:37:11 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | import loop waiting 1 minute(s)...
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | [
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |     {
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |         "type": "update",
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |         "did": "did:test:z3v8AuabA1TdC1GDvGoYkEXsESoJThCyuRekbn3fELkeGSGJa1e",
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |         "doc": {
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |     }
+Oct 28 16:37:15 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | ]
+...
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | {
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |     "hex": "0200000000010172471d5072fe4b3cca7b1280d12e3ae419bf021358f7fbde00c07bd9faf886a50100000000fdffffff0200000000000000003e6a3c6469643a746573743a7a3376384175616258426d4e4d50784c4454596e4655724c5173667835526a414479343348506a355758666f384e7546764a57c2450000000000001600141b3544273e9a63b04cba431d086563a780f84c15024730440220068107db0675ed3fe6c32b6a4f5e2523c26ddcdaed812fc9be5858eb3cbcb9ea022005a9a9d7927424112e87719835aa8f7f17df6b1373c32d1764f5528d085a17730121027e15ea510377a03013154c70e66a9851db5591e428c370f51e12f6bbd3a7016400000000",
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  |     "complete": true
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | }
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | 0.00017858000000000001
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T19:43:17.461639Z [mdip] AddToWallet 4b52dfa95d7b9472147b2821a33c59cdd52bf1444b6c0feed4e7c8c0d9a6f798  new InMempool
+Oct 28 16:37:17 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | Transaction broadcast with txid: 4b52dfa95d7b9472147b2821a33c59cdd52bf1444b6c0feed4e7c8c0d9a6f798
+Oct 28 16:37:18 mdip-gatekeeper start-node[706734]: gatekeeper-1     | POST /api/v1/queue/TBTC/clear 200 650.769 ms - 4
+Oct 28 16:37:18 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | export loop waiting 1 minute(s)...
+```
+
 - nginx setup
-
-### Automating Launch
-- Systemd setup
-- ReLaunch & Test
 
 ## Using an MDIP Node
 
