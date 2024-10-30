@@ -1,4 +1,8 @@
-# Keychain MDIP Full Trustless Node Deployment Guide
+---
+title: Keychain MDIP Full Trustless Node Deployment Guide
+sidebar_label: Deployment
+slug: deployment
+---
 
 Keychain MDIP is a suite of software tools, libraries, and services that implement the Multi-Dimensional Identity Protocol as defined and documented at [keychain.org](https://keychain.org). This document refers to the [MDIP v.0.3-beta release](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta).
 
@@ -431,11 +435,12 @@ sudo systemctl enable mdip
 ### Understanding MDIP Logs and Launch Process
 
 When you first launch an MDIP node, there will be multiple stages of readiness including: 
+
 1. MDIP Docker Containers Preparation 
-2. MDIP Gatekeeper Synchronization with MDIP Network ( <-- node operational here)
-3. MDIP Keymaster Connects to Gatekeeper once ready ( <-- server wallet connects to node)
-4. Blockchain Node Synchronization with Blockchain Network
-5. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry ( <-- DIDs history validated here)
+1. MDIP Gatekeeper Synchronization with MDIP Network ( node operational here)
+1. MDIP Keymaster Connects to Gatekeeper once ready ( server wallet connects to node)
+1. Blockchain Node Synchronization with Blockchain Network
+1. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry (DIDs history validated here)
 
 Below are log examples indicating your MDIP Node's stage of readyness.
 
