@@ -4,29 +4,29 @@ sidebar_label: Deployment
 slug: deployment
 ---
 
-Keychain MDIP is a suite of software tools, libraries, and services that implement the Multi-Dimensional Identity Protocol as defined and documented at [keychain.org](https://keychain.org). This document refers to the [MDIP v.0.3-beta release](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta).
+Keychain MDIP is a suite of software tools, libraries, and services that implement the Multi-Dimensional Identity Protocol as defined and documented by the [MDIP DID Scheme](/docs/mdip/scheme). This document refers to the [MDIP v.0.3-beta release](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta).
 
-There are countless ways to deploy MDIP technology. These guidelines reflect current lessons learned and best practices. Feedback, recommendations, and additional best practices are welcome. Recommendations can be sent by opening an [issue](https://github.com/KeychainMDIP/kc/issues) against this document to share your experience with MDIP; these may be incorporated in future versions of this document.
+There are countless ways to deploy MDIP technology. These guidelines reflect current lessons learned and best practices. Feedback, recommendations, and additional best practices are welcome. Recommendations can be sent by opening an [issue](https://github.com/KeychainMDIP/kc/issues) against this document to share your experience with MDIP; these may be incorporated in future versions of this document. You can also comment diretly at the bottom of any docs page, provided you have a GitHub account.
 
 ## What is an MDIP Node?
 
-MDIP *Nodes* provide the services required to interact with other MDIP nodes in a fully peer-to-peer trustless fashion; the network of Nodes being able to reach bysantine consensus on sequences of user-generated MDIP DID operations. An MDIP Node is composed of multiple subsystems, each providing essential services for protocol operations.
+MDIP **nodes** provide the services required to interact with other MDIP nodes in a fully peer-to-peer trustless fashion; the network of nodes being able to reach bysantine consensus on sequences of user-generated MDIP DID operations. An MDIP node is composed of multiple subsystems, each providing essential services for protocol operations.
 
-Services provided by a *Full* or *"Trustless" Node* includes:
+Services provided by a **Full** or **"Trustless"** node includes:
 
-1. MDIP Gatekeeper API for DID operations
-1. Local Database and Storage for DIDs and MDIP operations retention
-1. Data Swarming Protocol for DIDs and MDIP operations distribution
-1. One or more Registry Mediator System(s) for DIDs and MDIP operations registration.
-1. One or mode Blockchain Network for decentralized consensus on order of DID operations.
+1. MDIP Gatekeeper API for DID operations.
+1. Local database and storage for DIDs and MDIP operations retention.
+1. Data Swarming Protocol for DIDs and MDIP operations distribution.
+1. One or more registry mediator systems for DIDs and MDIP operations registration.
+1. One or mode blockchain networks for decentralized consensus on order of DID operations.
 
 ### Node Communication
 
-At the end of this installation guide, a full MDIP Node will expose limited and selected services over HTTP/SSL on port 443. All other ports can be firewalled. MDIP Nodes communicate with each other during the documents Distribution and Registration processes.
+At the end of this installation guide, a full MDIP node will expose limited and selected services over HTTP/SSL on port 443. All other ports can be firewalled. MDIP nodes communicate with each other during the documents Distribution and Registration processes.
 
 - Document Distribution is *fast* and performed using the [Hyperswarm Protocol](https://github.com/holepunchto/hyperswarm). When a Keymaster Client presents a valid MDIP operation to the Gatekeeper API, the Gatekeeper communicates the operation to other Gatekeepers over a public Hyperswarm channel. Distribution of a DID is near-real-time.
   
-- Document Registration is *immutable* and performed using the MDIP Satoshi Mediator and associated Blockchain software. DIDs are registered on a ledger to evidence an order of operation across all MDIP nodes. Registration of a DID is a parallel asynchronous process that occurs at "block" speed.
+- Document Registration is *immutable* and performed using the MDIP Satoshi Mediator and associated blockchain software. DIDs are registered on a ledger to evidence an order of operation across all MDIP nodes. Registration of a DID is a parallel asynchronous process that occurs at "block" speed.
 
 ### MDIP Operations
 
@@ -34,7 +34,7 @@ A system is said to be an MDIP Client if it implements MDIP Keymaster functional
 
 Each Keymaster Client manages a **private seed and key** used to sign or decrypt MDIP operations for a specific wallet.
 
-MDIP Nodes that need to issue MDIP Challenges, verify Responses, issue Credentials, etc will need an MDIP Keymaster to manage the server's MDIP Wallet containing the keys to the server's identity on the network.
+MDIP nodes that need to issue MDIP Challenges, verify Responses, issue Credentials, etc will need an MDIP Keymaster to manage the server's MDIP Wallet containing the keys to the server's identity on the network.
 
 MDIP operators can interact with their server's Keymaster in multiple ways:
 
@@ -67,13 +67,13 @@ While perhaps not optimal for a production environment, developement environment
 
 ## Systems Requirements
 
-The resource estimates and recommendations below are early estimates and are still under development. 
+The resource estimates and recommendations below are early estimates and are still under development.
 
-MDIP operations begin when the MDIP Gatekeeper receives a request from a Keymaster client. From the perspective of a Keymaster (MDIP client), all Gatekeepers are *the same* in the sense that they expose the same MDIP interfaces (REST OpenAPI API and WebUI). MDIP Gatekeepers Nodes do not have any visibility in the keys held securely by each MDIP Keymaster Client.
+MDIP operations begin when the MDIP Gatekeeper receives a request from a Keymaster client. From the perspective of a Keymaster (MDIP client), all Gatekeepers are *the same* in the sense that they expose the same MDIP interfaces (REST OpenAPI API and WebUI). MDIP Gatekeepers nodes do not have any visibility in the keys held securely by each MDIP Keymaster Client.
 
 Another important consideration when running an MDIP node are the blockchain registries. Testnet registries are resource-friendly, but operating a full Bitcoin node requires significant resources that are beyond the scope of this document. The MDIP Satoshi Mediator can be configured to connect to any of the supported networks.
 
-MDIP components communicate with one another using their respective APIs. It is possible although not necessary to deploy any MDIP component on dedicated machines. Excluding Blockchain Nodes, the MDIP Gatekeeper is the most resource hungry subsystem in terms of CPU, Memory, and Disk usage. The requirements below assume all components share the same hardware environment.
+MDIP components communicate with one another using their respective APIs. It is possible although not necessary to deploy any MDIP component on dedicated machines. Excluding blockchain nodes, the MDIP Gatekeeper is the most resource hungry subsystem in terms of CPU, Memory, and Disk usage. The requirements below assume all components share the same hardware environment.
 
 ### Hardware Resources
 
@@ -104,7 +104,7 @@ It is recommended that a user account be created to run all MDIP components; the
   - automatically mounted on system reboot (ex: `/mnt/mdip-data`) 
   - grant `mdip` uid/gid write permission
 - Procure & configure fixed public-facing server IP address
-  - configure DNS sub-domain to point to MDIP Node fixed IP address
+  - configure DNS sub-domain to point to MDIP node fixed IP address
   - example: `mdip.yourdomain.dev.	300	IN	A	34.66.0.100`
 - Install & configure `git` command-line interface for `mdip` user
   - see: [git-scm.com](https://git-scm.com/downloads/linux)
@@ -129,7 +129,7 @@ This will checkout the current LTS v0.3-beta version. More adventurous node oper
 
 ### MDIP Directory Structure
 
-Once a local copy of the repository is available, we can look at important parts of the repository: 
+Once a local copy of the repository is available, we can look at important parts of the repository:
 
 | filename | notes |
 |----------|-------|
@@ -286,7 +286,7 @@ The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm)
 
 #### registry services (TBTC)
 
-MDIP uses immutable ledgers to record evidence of a decentralized consensus on the order of operations that form the history of a DID. The MDIP protocol is blockchain agnostic and provides 2 Testnet examples to demonstrate the protocol's portability: Bitcoin Testnet4 and Feathercoin Testnet. Each DID is registered on a blockchain selected by the end-user at the time of creation. DID operations are batched and exported by the MDIP Mediator to its associated Blockchain Node.
+MDIP uses immutable ledgers to record evidence of a decentralized consensus on the order of operations that form the history of a DID. The MDIP protocol is blockchain agnostic and provides 2 Testnet examples to demonstrate the protocol's portability: Bitcoin Testnet4 and Feathercoin Testnet. Each DID is registered on a blockchain selected by the end-user at the time of creation. DID operations are batched and exported by the MDIP Mediator to its associated blockchain node.
 
 In the example below, we use a generic bitcoin-code node configured to operate on testnet4. A similar service configuration block for Feathercoin Testnet is provided in the `kc` repository.
 
@@ -349,7 +349,7 @@ docker compose build "$@"
 docker compose up "$@"
 ```
 
-The *build* process will download numerous containers and dependencies as defined in the repository's Dockerfiles. The *up* command will launch the MDIP Node. The MDIP Node is considered `online` once the following messages appear in the Gatekeeper logs:
+The *build* process will download numerous containers and dependencies as defined in the repository's Dockerfiles. The *up* command will launch the MDIP node. The MDIP node is considered `online` once the following messages appear in the Gatekeeper logs:
 
 ```log
 Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Server is running on port 4224, persisting with json
@@ -358,7 +358,7 @@ Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | GET /api
 Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: hyperswarm-1     | Gatekeeper service is ready!
 ```
 
-Likewise, the MDIP Node's Keymaster becomes available once the following logs are seen:
+Likewise, the MDIP node's Keymaster becomes available once the following logs are seen:
 
 ```log
 Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | Gatekeeper service is ready!
@@ -376,7 +376,7 @@ This section will also cover automated launch of MDIP Services using [systemd](h
 
 #### Node Agent DID Creation
 
-The MDIP Node's Keymaster wallet is located in `data/wallet.json`. There are two clients available to manage your server wallet:
+The MDIP node's Keymaster wallet is located in `data/wallet.json`. There are two clients available to manage your server wallet:
 
 - `kc` Command Line Interface
 - Keymaster Web User Interface on `http://localhost:4226`
@@ -387,7 +387,7 @@ This document will provide examples using the `kc` CLI tool. The following comma
 ./kc create-wallet
 ```
 
-We can now create an Agent DID for our MDIP Node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable. The following command will create this new DID and schedule it for registration on the Bitcoin Blockchain (to be configured below).
+We can now create an Agent DID for our MDIP node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable. The following command will create this new DID and schedule it for registration on the Bitcoin blockchain (to be configured below).
 
 ```bash
 ./kc create-id mynodeDID TBTC
@@ -474,10 +474,10 @@ When you first launch an MDIP node, there will be multiple stages of readiness i
 1. MDIP Docker Containers Preparation
 1. MDIP Gatekeeper Synchronization with MDIP Network ( node operational here)
 1. MDIP Keymaster Connects to Gatekeeper once ready ( server wallet connects to node)
-1. Blockchain Node Synchronization with Blockchain Network
-1. MDIP Mediator Discovery of MDIP Operations on Blockchain Registry (DIDs history validated here)
+1. Blockchain node Synchronization with blockchain network
+1. MDIP Mediator Discovery of MDIP Operations on blockchain registry (DIDs history validated here)
 
-Below are log examples indicating your MDIP Node's stage of readyness.
+Below are log examples indicating your MDIP node's stage of readyness.
 
 #### Log samples: Docker Containers
 
@@ -726,7 +726,7 @@ server {
         allow all;
     }
 
-    # Allows public queries of Node's database
+    # Allows public queries of node's database
     location /api/v1/did {
         proxy_pass http://localhost:4224/api/v1/did;
         proxy_set_header Host $host;
@@ -734,7 +734,7 @@ server {
         allow all;
     }
 
-    # Returns blockchain registries supported by the Node
+    # Returns blockchain registries supported by the node
     location /api/v1/registries {
         proxy_pass http://localhost:4224/api/v1/registries;
         proxy_set_header Host $host;
