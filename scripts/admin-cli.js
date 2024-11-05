@@ -112,6 +112,7 @@ program
             }
             console.timeEnd('resolveDID(did, { confirm: false })');
 
+            batch = [];
             console.time('getDIDs({ dids: batch, confirm: false, resolve: true })');
             for (const did of dids) {
                 batch.push(did);
@@ -134,6 +135,19 @@ program
                     await gatekeeper.resolveDID(did, { verify: true });
                 }
                 console.timeEnd('resolveDID(did, { verify: true })');
+
+                batch = [];
+                console.time('getDIDs({ dids: batch, verify: true, resolve: true })');
+                for (const did of dids) {
+                    batch.push(did);
+
+                    if (batch.length > 99) {
+                        await gatekeeper.getDIDs({ dids: batch, verify: true, resolve: true });
+                        batch = [];
+                    }
+                }
+                await gatekeeper.getDIDs({ dids: batch, verify: true, resolve: true });
+                console.timeEnd('getDIDs({ dids: batch, verify: true, resolve: true })');
             }
         }
         catch (error) {
