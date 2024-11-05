@@ -22,15 +22,21 @@ Services provided by a **Full** or **"Trustless"** node includes:
 
 ### Node Communication
 
-At the end of this installation guide, a full MDIP node will expose limited and selected services over HTTP/SSL on port 443. All other ports can be firewalled. MDIP nodes communicate with each other during the documents Distribution and Registration processes.
+At the end of this installation guide, a full MDIP node will expose limited and selected services over HTTP/SSL on port 443. All other ports can be firewalled. MDIP nodes communicate with each other during the documents distribution and registration processes.
 
-- Document Distribution is *fast* and performed using the [Hyperswarm Protocol](https://github.com/holepunchto/hyperswarm). When a Keymaster Client presents a valid MDIP operation to the Gatekeeper API, the Gatekeeper communicates the operation to other Gatekeepers over a public Hyperswarm channel. Distribution of a DID is near-real-time.
+- Document Distribution is fast and performed using the [Hyperswarm Protocol](https://github.com/holepunchto/hyperswarm). When a Keymaster Client presents a valid MDIP operation to the Gatekeeper API, the Gatekeeper communicates the operation to other Gatekeepers over a public Hyperswarm channel. Distribution of a DID is near-real-time.
   
-- Document Registration is *immutable* and performed using the MDIP Satoshi Mediator and associated blockchain software. DIDs are registered on a ledger to evidence an order of operation across all MDIP nodes. Registration of a DID is a parallel asynchronous process that occurs at "block" speed.
+- Document Registration is immutable and performed using the MDIP Satoshi Mediator and associated blockchain software. DIDs are registered on a ledger to evidence an order of operation across all MDIP nodes. Registration of a DID is a parallel asynchronous process that occurs at "block" speed.
 
 ### MDIP Operations
 
-A system is said to be an MDIP Client if it implements MDIP Keymaster functionality. The MDIP Keymaster library and tools made available in this repository implement functionality to create valid MDIP operations. MDIP Keymaster is available as a REST OpenAPI interface, Command Line Interface, Web User Interface, NodeJS and Python SDKs, npm library, with more additions planned.
+A system is said to be an MDIP Client if it implements MDIP Keymaster functionality. The MDIP Keymaster library and tools made available in this repository implement functionality to create valid MDIP operations. MDIP Keymaster is available in the following implementations, with more additions planned:
+
+- REST OpenAPI interface,
+- Command Line Interface,
+- Web User Interface,
+- NodeJS and Python SDKs,
+- NPMnpm library.
 
 Each Keymaster Client manages a **private seed and key** used to sign or decrypt MDIP operations for a specific wallet.
 
@@ -38,9 +44,9 @@ MDIP nodes that need to issue MDIP Challenges, verify Responses, issue Credentia
 
 MDIP operators can interact with their server's Keymaster in multiple ways:
 
-- use the `./kc` CLI tool or
-- use the Keymaster WebUI at `http://localhost:4226` or
-- use the Keymaster REST OpenAPI at `http://localhost:4226/api/v1/`
+- use the `./kc` CLI tool,
+- use the Keymaster WebUI at `http://localhost:4226`,
+- use the Keymaster REST OpenAPI at `http://localhost:4226/api/v1/`.
 
 The MDIP [Integration Guide](integration_guide.md) focuses on Keymaster deployments, Keymaster OpenAPI interface, and integration of MDIP wallet functionality with 3rd party applications.
 
@@ -48,9 +54,9 @@ The MDIP [Integration Guide](integration_guide.md) focuses on Keymaster deployme
 
 ![MDIP-components](https://github.com/user-attachments/assets/c88a33f0-aa61-48b9-a62a-ca956f1038d9)
 
-All the MDIP components illustrated above are composed together using Docker Compose in the official ['kc' v.0.3-beta repository](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta). The repository provides a simple [`start-node`](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/start-node) script that will compile, dockerize, and launch all required MDIP components. The convenience of this script will be preserved as we explore configuration and deployment options below.
+All the MDIP components illustrated above are composed together using Docker Compose in the official ['kc' v.0.3-beta](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta) release. The release provides a simple [`start-node`](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/start-node) script that will compile, dockerize, and launch all required MDIP components. The convenience of this script will be preserved as we explore configuration and deployment options below.
 
-Note that each MDIP components can also be manually launched using native nodeJS commands. The Dockerfile for each component will reveal the particular shell command being executed within the Docker environment. Using the [Dockerfile.gatekeeper](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/Dockerfile.gatekeeper) as an example, we see the command used to launch the Gatekeeper API:
+Each MDIP component can also be manually launched using native nodeJS commands. The dockerfile for each component will reveal the particular shell command being executed within the Docker environment. Using [Dockerfile.gatekeeper](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/Dockerfile.gatekeeper) as an example, we see the command used to launch the Gatekeeper API:
 `CMD ["node", "server/src/gatekeeper-api.js"]`
 
 While perhaps not optimal for a production environment, developement environments can be deployed with all the required components on a single moderately-sized server. The statistics below demonstrate a typical development environment:
@@ -59,7 +65,7 @@ While perhaps not optimal for a production environment, developement environment
 
 - kc-gatekeeper-1 is the [MDIP Gatekeeper](https://keychain.org/docs/mdip/scheme) API process.
 - kc-keymaster-1 is a [Keymaster API](https://keychain.org/docs/keychain/library/api/) to manage the server's MDIP identity.
-- kc-hyperswarm-1 is the document distribution protocol built on [Hyperswarm](https://github.com/holepunchto/hyperswarm).
+- kc-hyperswarm-1 is the document distribution protocol service built on [Hyperswarm](https://github.com/holepunchto/hyperswarm).
 - kc-tftc-mediator-1 is the MDIP Mediator for [Feathercoin Testnet](https://feathercoin.com/)
 - kc-tbtc-mediator-1 is the MDIP Mediator for [Bitcoin Testnet](https://github.com/bitcoin/)
 - kc-tftc-node is a generic Feathercoin Testnet node
@@ -86,38 +92,41 @@ MDIP components communicate with one another using their respective APIs. It is 
 - Linux OS v.5+
 - Up-to-date Docker
 - NodeJS v.18.15.0
-- git cli configured as alternative to manual download
+- `git` is optional; you can download an archive of the software manually.
 
 ### Operating System Preparation
 
-MDIP requires minimal system preparation. All MDIP services are implemented in NodeJS, compiled and containerized using Docker and launched using Docker Compose. The repository (see directory structure review below) contains convenient shell scripts used to configure and manage an MDIP node.
+MDIP requires minimal system preparation. All MDIP services are implemented in NodeJS, compiled and containerized using Docker and launched using Docker Compose. The repository contains convenient shell scripts used to configure and manage an MDIP node (see directory structure review below).
 
 It is recommended that a user account be created to run all MDIP components; the account's UID and GID will be required to configure the MDIP Docker containers. Likewise, proper disk space must be prepared and allocated for the MDIP node. All MDIP services write their data files in a `data` subdirectory, which can be sized according to a node's desired data retention policy.
 
 ### OS Preparation Checklist
 
-- Create a `mdip` user account for MDIP
-  - note uid/gid numerical values returned by `id` command
-  - grant `sudo` privileges for admin convenience 
-- Create a data disk:
-  - sufficient disk space allocated (80Gb+)
-  - automatically mounted on system reboot (ex: `/mnt/mdip-data`) 
-  - grant `mdip` uid/gid write permission
-- Procure & configure fixed public-facing server IP address
-  - configure DNS sub-domain to point to MDIP node fixed IP address
-  - example: `mdip.yourdomain.dev.	300	IN	A	34.66.0.100`
-- Install & configure `git` command-line interface for `mdip` user
-  - see: [git-scm.com](https://git-scm.com/downloads/linux)
-- Install nginx reverse-proxy engine
-  - see: [docs.nginx.com](https://docs.nginx.com/nginx/admin-guide/installing-nginx/installing-nginx-open-source/)
-- Install `certbot` for SSL certificate support
-  - see: [certbot.eff.org](https://certbot.eff.org/instructions?ws=nginx&os=snap&tab=standard)
+1. Create a `mdip` user account for MDIP:
+    - Note the `uid` and `gid` numerical values returned by the `id` command.
+    - Grant `sudo` privileges for admin convenience.
+
+1. Create a data mount or provision space on existing mounts:
+    - Sufficient disk space allocated should be 80Gb+.
+    - If mounted as a unique drive, it should be automatically mounted on system reboot (ex: `/mnt/mdip-data`).
+    - Grant the `mdip` user and group write permissions.
+
+1. Procure & configure a fixed public-facing server IP address:
+    - Configure a DNS domain or subdomain to point to the MDIP node's fixed IP address. For example: `mdip.yourdomain.dev.	300	IN	A	198.51.100.5`
+
+1. Unless downloading MDIP manually, install & configure `git` for the `mdip` user. See: [git-scm.com](https://git-scm.com/downloads/linux) for more information
+
+1. Install nginx for use as a reverse proxy. See: [docs.nginx.com](https://docs.nginx.com/nginx/admin-guide/installing-nginx/installing-nginx-open-source/) for more information.
+
+1. Unless you have an existing or preferred certificate issuer, install `certbot` for SSL certificate support. See: [certbot.eff.org](https://certbot.eff.org/instructions?ws=nginx&os=snap&tab=standard) for more information.
 
 ## Installation and Configuration
 
 The installation and configuration instructions below provide only one of the countless ways to deploy MDIP functionality. System administrators and node operators should expect to make numerous additional local configurations to match their particular needs and environments.
 
-Once the server environment is prepared, we begin the installation of MDIP. MDIP can be cloned from its source repository using the following commands:
+Once the server environment is prepared, we can begin the installation of MDIP.
+
+Clone MDIP from its source repository:
 
 ```bash
 git clone https://github.com/KeychainMDIP/kc
@@ -125,39 +134,39 @@ cd kc
 git checkout v0.3-beta
 ```
 
-This will checkout the current LTS v0.3-beta version. More adventurous node operators can consider the `main` nightly branch at their own risks!
+This will checkout the current LTS v0.3-beta version. More adventurous node operators can consider the `main` nightly branch at their own risk!
 
 ### MDIP Directory Structure
 
 Once a local copy of the repository is available, we can look at important parts of the repository:
 
-| filename | notes |
+| Path/File | Contents/Description |
 |----------|-------|
-| /data    | this directory will contain the data repositories for each MDIP components |
-| /doc     | this directory contains a full local copy of the [MDIP documentation](https://keychain.org/docs/keychain/clients/cli/) |
-| /packages | this directory contains MDIP npm packages |
+| /data    | Data repositories for each MDIP components |
+| /doc     | MDIP documentation |
+| /packages | MDIP npm packages |
 | /packages/cipher | MDIP cryptography utilities for encryption/decryption and creating/verifying signatures |
 | /packages/exceptions | Standard MDIP exception strings |
-| /packages/gatekeeper | node library and SDK for MDIP gatekeeper |
-| /packages/keymaster | node library and SDK for MDIP keymaster |
-| /scripts | this directory contains useful MDIP command line interface scripts |
+| /packages/gatekeeper | Node library and SDK for MDIP gatekeeper |
+| /packages/keymaster | Node library and SDK for MDIP keymaster |
+| /scripts | MDIP command line interface scripts |
 | /scripts/admin-cli.js | MDIP admin-cli tool to manage registry status, batching, queuing, import/export functions |
-| /scripts/keychain-cli.js | MDIP cli tool to manage local `data/wallet.json` file |
-| /scripts/tbtc-cli | Bitcoin Testnet cli tool to connect to TBTC Docker container | 
-| /scripts/tbtc-logs | Bitcoin Testnet log viewer tool connecting autoimatically to TBTC Docker container |
-| /services | this directory contains the source code for each MDIP REST API service |
-| /services/gatekeeper/client | this directory contains a Keymaster WebUI client; exposed as `http://localhost:4224` |
-| /services/gatekeeper/server | this directory contains the Gatekeeper API server; exposed as `http://localhost:4224/api/v1/` |
-| /services/keymaster/client | this directory contains a PRIVATE Keymaster WebUI client to manage local `data/wallet.json` file; exposed as `http://localhost:4226` |
-| /services/keymaster/server | this directory contains the PRIVATE Keymaster API server to interface with local `data/wallet.json` file; exposed as `http://localhost:4226/api/v1/` |
-| /tests    | this directory contains useful test suites for the gatekeeper, keymaster, and complete MDIP workflow examples |
-| /docker-compose.yml | this file contains the suite of Docker services that will be launched; advanced customization only! |
-| /package.json | npm package dependencies required to launch MDIP components. |
-| /sample.env | sample configuration file. Copy this file to a local .env file. Edit and configure .env file to your local needs |
-| /admin | this will run the MDIP admin tool |
-| /kc | this will run the Keychain command line interface client |
-| /start-node | this command will launch the local node, including downloading docker containers, compiling source, and launching services as configured |
-| /stop-node | this command will stop local node services |
+| /scripts/keychain-cli.js | MDIP cli tool to manage the local `data/wallet.json` file |
+| /scripts/tbtc-cli | Bitcoin Testnet cli tool to connect to the TBTC Docker container |
+| /scripts/tbtc-logs | Bitcoin Testnet log viewer tool, connecting automatically to the TBTC Docker container |
+| /services | Source code for each MDIP REST API service |
+| /services/gatekeeper/client | Keymaster WebUI client; exposed as `http://localhost:4224` |
+| /services/gatekeeper/server | Gatekeeper API server; exposed as `http://localhost:4224/api/v1/` |
+| /services/keymaster/client | A **private** Keymaster WebUI client to manage the local `data/wallet.json` file; exposed as `http://localhost:4226` |
+| /services/keymaster/server | The **private** Keymaster API server to interface with the local `data/wallet.json` file; exposed as `http://localhost:4226/api/v1/` |
+| /tests    | Test suites for the gatekeeper, keymaster, and complete MDIP workflow examples |
+| /docker-compose.yml | The primary compose file for the suite of Docker services that will be launched; advanced customization only! |
+| /package.json | NPM package dependencies required to launch MDIP components. |
+| /sample.env | Sample configuration file. Copy this file to a local `.env` file. Edit and configure `.env` to your local needs |
+| /admin | The MDIP admin tool |
+| /kc | The Keychain command line interface client |
+| /start-node | This script launches the local node, including downloading docker containers, compiling source, and launching services as configured |
+| /stop-node | Stops local node services |
 
 ### MDIP Environment Configuration
 
