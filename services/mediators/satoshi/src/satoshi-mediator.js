@@ -150,8 +150,10 @@ async function importBatches() {
                 await importBatch(db, item);
             }
             catch (error) {
-                console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
-                continue;
+                // OK if DID not found, we'll just try again later
+                if (error.error !== 'DID not found') {
+                    console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
+                }
             }
         }
     }

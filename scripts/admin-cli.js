@@ -112,6 +112,7 @@ program
             }
             console.timeEnd('resolveDID(did, { confirm: false })');
 
+            batch = [];
             console.time('getDIDs({ dids: batch, confirm: false, resolve: true })');
             for (const did of dids) {
                 batch.push(did);
@@ -134,6 +135,19 @@ program
                     await gatekeeper.resolveDID(did, { verify: true });
                 }
                 console.timeEnd('resolveDID(did, { verify: true })');
+
+                batch = [];
+                console.time('getDIDs({ dids: batch, verify: true, resolve: true })');
+                for (const did of dids) {
+                    batch.push(did);
+
+                    if (batch.length > 99) {
+                        await gatekeeper.getDIDs({ dids: batch, verify: true, resolve: true });
+                        batch = [];
+                    }
+                }
+                await gatekeeper.getDIDs({ dids: batch, verify: true, resolve: true });
+                console.timeEnd('getDIDs({ dids: batch, verify: true, resolve: true })');
             }
         }
         catch (error) {
@@ -223,16 +237,22 @@ program
     });
 
 program
-    .command('import-batch <file>')
+    .command('import-batch-file <file> [registry]')
     .description('Import batch of events')
-    .action(async (file) => {
+    .action(async (file, registry) => {
+        if (!registry) {
+            registry = 'local';
+        }
+
         try {
             const contents = fs.readFileSync(file).toString();
-            const batch = JSON.parse(contents);
+            let batch = JSON.parse(contents);
             let chunk = [];
 
-            for (const events of batch) {
-                chunk.push(events);
+            for (const event of batch) {
+                event.registry = registry;
+
+                chunk.push(event);
 
                 if (chunk.length >= 100) {
                     const response = await gatekeeper.importBatch(chunk);
@@ -303,28 +323,7 @@ program
     });
 
 program
-    .command('clear-queue <registry> <batch>')
-    .description('Clear a registry queue')
-    .action(async (registry, batch) => {
-        try {
-            const events = await keymaster.resolveAsset(batch);
-            console.log(JSON.stringify(events, null, 4));
-            const ok = await gatekeeper.clearQueue(registry, events);
-
-            if (ok) {
-                console.log("Batch cleared");
-            }
-            else {
-                console.log("Error: batch not cleared");
-            }
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('import-batch <did> [registry]')
+    .command('import-batch-did <did> [registry]')
     .description('Import a batch')
     .action(async (did, registry) => {
         try {
@@ -350,6 +349,27 @@ program
             const { verified, updated, failed } = await gatekeeper.importBatch(batch);
             console.timeEnd('importBatch');
             console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('clear-queue <registry> <batch>')
+    .description('Clear a registry queue')
+    .action(async (registry, batch) => {
+        try {
+            const events = await keymaster.resolveAsset(batch);
+            console.log(JSON.stringify(events, null, 4));
+            const ok = await gatekeeper.clearQueue(registry, events);
+
+            if (ok) {
+                console.log("Batch cleared");
+            }
+            else {
+                console.log("Error: batch not cleared");
+            }
         }
         catch (error) {
             console.error(error);

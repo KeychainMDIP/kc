@@ -731,13 +731,14 @@ async function importEvent(event) {
 }
 
 async function importEvents() {
-    let deferredQueue = [];
-    let tempQueue = eventsQueue.splice(0, 1000);
+    let tempQueue = eventsQueue;
     const total = tempQueue.length;
     let event = tempQueue.shift();
     let i = 0;
     let added = 0;
     let merged = 0;
+
+    eventsQueue = [];
 
     while (event) {
         console.time('importEvent');
@@ -755,7 +756,7 @@ async function importEvents() {
             }
         }
         catch (error) {
-            deferredQueue.push(event);
+            eventsQueue.push(event);
             console.log(`import ${i}/${total}: deferred event for ${event.did}`);
 
         }
@@ -763,10 +764,7 @@ async function importEvents() {
         event = tempQueue.shift();
     }
 
-    eventsQueue = [...eventsQueue, ...deferredQueue];
-    let deferred = eventsQueue.length;
-
-    return { added, merged, deferred };
+    return { added, merged };
 }
 
 export async function processEvents() {
@@ -774,19 +772,32 @@ export async function processEvents() {
         return { busy: true };
     }
 
-    let response;
     isProcessingEvents = true;
 
+    let added = 0;
+    let merged = 0;
+    let done = false;
+
     try {
-        console.time('importEvents');
-        response = await importEvents();
-        console.timeEnd('importEvents');
+        while (!done) {
+            console.time('importEvents');
+            const response = await importEvents();
+            console.timeEnd('importEvents');
+
+            added += response.added;
+            merged += response.merged;
+
+            done = (response.added === 0 && response.merged === 0);
+        }
     }
     catch (error) {
     }
 
+    console.log(JSON.stringify(eventsQueue, null, 4));
+    eventsQueue = [];
+
     isProcessingEvents = false;
-    return response;
+    return { added, merged };
 }
 
 export async function verifyEvent(event) {

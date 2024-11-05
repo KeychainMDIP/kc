@@ -258,32 +258,12 @@ async function verifyLoop() {
     setTimeout(verifyLoop, 60 * 60 * 1000);
 }
 
-async function importLoop() {
-    let response;
-
-    try {
-        console.log(`importLoop: processingEvents...`);
-        response = await gatekeeper.processEvents();
-        console.log(`importLoop: ${JSON.stringify(response)}`);
-    } catch (error) {
-        console.error(`Error in verifyLoop: ${error}`);
-    }
-
-    if (response.added > 0 || response.merged > 0) {
-        setTimeout(importLoop, 0);
-    }
-    else {
-        setTimeout(importLoop, 20 * 1000);
-    }
-}
-
 async function main() {
     console.time('checkDb');
     const check = await gatekeeper.checkDb();
     console.timeEnd('checkDb');
     console.log(`check: ${JSON.stringify(check)}`);
 
-    setTimeout(importLoop, 60 * 1000);
     setTimeout(verifyLoop, 60 * 60 * 1000);
 
     const registries = await gatekeeper.initRegistries(config.registries);
