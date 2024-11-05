@@ -244,20 +244,10 @@ program
             registry = 'local';
         }
 
-        function shuffleArray(array) {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-            }
-            return array;
-        }
-
         try {
             const contents = fs.readFileSync(file).toString();
             let batch = JSON.parse(contents);
             let chunk = [];
-
-            //batch = shuffleArray(batch);
 
             for (const event of batch) {
                 event.registry = registry;
