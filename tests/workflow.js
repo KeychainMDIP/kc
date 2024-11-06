@@ -2,6 +2,7 @@ import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as ipfs_lib from '@mdip/ipfs/lib';
 import * as cipher from '@mdip/cipher/node';
 
 const mockSchema = {
@@ -145,7 +146,8 @@ async function runWorkflow() {
 
 async function main() {
     await db_json.start('mdip-workflow');
-    await gatekeeper.start({ db: db_json });
+    await ipfs_lib.start();
+    await gatekeeper.start({ db: db_json, ipfs: ipfs_lib });
     await keymaster.start({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();
