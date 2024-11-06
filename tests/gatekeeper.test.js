@@ -28,69 +28,6 @@ afterAll(async () => {
     await ipfs_lib.stop();
 });
 
-describe('start', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should prime the cache on demand', async () => {
-        mockFs({});
-
-        await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: true });
-    });
-
-    it('should throw exception on invalid parameters', async () => {
-        mockFs({});
-
-        try {
-            await gatekeeper.start();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
-        }
-        catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
-        }
-    });
-});
-
-describe('anchorSeed', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should create DID from operation', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did = await gatekeeper.anchorSeed(mockTxn);
-
-        expect(did.startsWith('did:test:')).toBe(true);
-    });
-
-    it('should create same DID from same operation with date included', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did1 = await gatekeeper.anchorSeed(mockTxn);
-        const did2 = await gatekeeper.anchorSeed(mockTxn);
-
-        expect(did1 === did2).toBe(true);
-    });
-});
-
 async function createAgentOp(keypair, version = 1, registry = 'local') {
     const operation = {
         type: "create",
@@ -192,6 +129,90 @@ async function createAssetOp(agent, keypair, registry = 'local', validUntil = nu
         }
     };
 }
+
+describe('start', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should prime the cache on demand', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        await gatekeeper.createDID(agentOp);
+
+        await gatekeeper.stop();
+        await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: true });
+    });
+
+    it('should throw exception on invalid parameters', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.start();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await gatekeeper.start({ db: db_json });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+
+        try {
+            await gatekeeper.start({ ipfs: ipfs_lib });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+});
+
+describe('anchorSeed', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create DID from operation', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+        const did = await gatekeeper.anchorSeed(mockTxn);
+
+        expect(did.startsWith('did:test:')).toBe(true);
+    });
+
+    it('should create same DID from same operation with date included', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+        const did1 = await gatekeeper.anchorSeed(mockTxn);
+        const did2 = await gatekeeper.anchorSeed(mockTxn);
+
+        expect(did1 === did2).toBe(true);
+    });
+});
 
 describe('generateDoc', () => {
     afterEach(() => {
