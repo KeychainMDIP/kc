@@ -1,7 +1,7 @@
-import { json } from '@helia/json';
+//import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
-import { createHelia } from 'helia';
+//import { createHelia } from 'helia';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
@@ -14,7 +14,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let helia = null;
 let ipfs = null;
 let eventsCache = {};
 let eventsQueue = [];
@@ -37,21 +36,23 @@ export async function start(options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
+    if (options.ipfs) {
+        ipfs = options.ipfs;
+    }
+    else {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
     // Only used for unit testing
     if (options.console) {
         // eslint-disable-next-line
         console = options.console;
     }
-
-    if (!ipfs) {
-        helia = await createHelia();
-        ipfs = json(helia);
-    }
 }
 
 export async function stop() {
-    if (helia) {
-        helia.stop();
+    if (ipfs) {
+        await ipfs.stop();
     }
 
     if (db) {

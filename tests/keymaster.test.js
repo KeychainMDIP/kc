@@ -5,12 +5,14 @@ import * as keymaster from '@mdip/keymaster/lib';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as ipfs_lib from '@mdip/ipfs/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as exceptions from '@mdip/exceptions';
 
 beforeEach(async () => {
-    db_json.start('mdip');
-    await gatekeeper.start({ db: db_json });
+    await db_json.start('mdip');
+    await ipfs_lib.start();
+    await gatekeeper.start({ db: db_json, ipfs: ipfs_lib });
     await keymaster.start({ gatekeeper, wallet, cipher });
 });
 

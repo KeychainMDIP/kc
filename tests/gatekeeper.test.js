@@ -2,6 +2,7 @@ import mockFs from 'mock-fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
+import * as ipfs_lib from '@mdip/ipfs/lib';
 import * as exceptions from '@mdip/exceptions';
 
 const mockConsole = {
@@ -12,9 +13,10 @@ const mockConsole = {
 }
 
 beforeEach(async () => {
-    db_json.start('test');
-    db_json.resetDb();
-    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
+    await db_json.start('test');
+    await db_json.resetDb();
+    await ipfs_lib.start();
+    await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: false });
 });
 
 afterEach(async () => {
@@ -30,7 +32,7 @@ describe('start', () => {
     it('should prime the cache on demand', async () => {
         mockFs({});
 
-        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
+        await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {

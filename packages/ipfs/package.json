@@ -1,0 +1,25 @@
+{
+  "name": "@mdip/ipfs",
+  "version": "0.3.0",
+  "description": "MDIP IPFS lib",
+  "type": "module",
+  "exports": {
+    "./lib": "./src/ipfs-lib.js",
+    "./sdk": "./src/ipfs-sdk.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@helia/json": "^2.0.0",
+    "axios": "^1.7.7",
+    "helia": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeychainMDIP/kc.git"
+  }
+}
