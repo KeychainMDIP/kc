@@ -43,7 +43,6 @@ export async function start(options = {}) {
 }
 
 export async function stop() {
-    return gatekeeper.stop();
 }
 
 export async function listRegistries() {

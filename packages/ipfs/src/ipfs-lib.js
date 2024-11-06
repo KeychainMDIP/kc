@@ -11,7 +11,7 @@ export async function start() {
 
 export async function stop() {
     if (helia) {
-        await helia.stop();
+        return helia.stop();
     }
 }
 

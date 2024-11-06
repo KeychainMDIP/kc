@@ -12,16 +12,33 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
-beforeEach(async () => {
+beforeAll(async () => {
     await db_json.start('test');
-    await db_json.resetDb();
     await ipfs_lib.start();
     await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: false });
 });
 
-afterEach(async () => {
-    await gatekeeper.stop();
+beforeEach(async () => {
+    await db_json.resetDb();  // Reset database for each test to ensure isolation
 });
+
+afterAll(async () => {
+    await gatekeeper.stop();
+    await db_json.stop();
+    await ipfs_lib.stop();
+});
+
+
+// beforeEach(async () => {
+//     await db_json.start('test');
+//     db_json.resetDb();
+//     //await ipfs_lib.start();
+//     await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: false });
+// });
+
+// afterEach(async () => {
+//     await gatekeeper.stop();
+// });
 
 describe('start', () => {
 

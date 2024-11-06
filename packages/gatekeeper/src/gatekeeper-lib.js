@@ -1,7 +1,5 @@
-//import { json } from '@helia/json';
 import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
-//import { createHelia } from 'helia';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
@@ -51,13 +49,6 @@ export async function start(options = {}) {
 }
 
 export async function stop() {
-    if (ipfs) {
-        await ipfs.stop();
-    }
-
-    if (db) {
-        await db.stop();
-    }
 }
 
 async function primeCache() {
