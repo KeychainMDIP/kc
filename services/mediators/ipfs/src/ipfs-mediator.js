@@ -15,7 +15,6 @@ async function addOperationToIPFS(operation, n, k) {
 async function importOperations() {
     const dids = await gatekeeper.getDIDs();
 
-    //console.log(JSON.stringify(dids, null, 4));
     console.log(`DIDs count: ${dids.length}`);
 
     const batchSize = config.batchSize;
@@ -75,12 +74,8 @@ async function main() {
         chatty: true,
     });
 
-    if (config.interval > 0) {
-        console.log(`Saving operations every ${config.interval} minute(s) with batch size ${config.batchSize} and concurrency ${config.concurrency}`);
-        importLoop();
-    }
-
-    await gatekeeper.stop();
+    console.log(`Storing operations every ${config.interval} minute(s) with batch size ${config.batchSize} and concurrency ${config.concurrency}`);
+    setTimeout(importLoop, config.interval * 60 * 1000);
 }
 
 main();
