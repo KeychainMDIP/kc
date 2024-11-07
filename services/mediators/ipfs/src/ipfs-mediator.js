@@ -9,7 +9,7 @@ const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
 async function addOperationToIPFS(operation, n, k) {
     const data = JSON.parse(canonicalize(operation));
     const cid = await ipfs.add(data);
-    console.log(`DID ${n} event ${k} ${cid.toString(base58btc)}`);
+    console.log(`DID:${n} op:${k} ${cid.toString(base58btc)}`);
 }
 
 async function importOperations() {

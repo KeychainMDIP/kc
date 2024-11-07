@@ -352,7 +352,8 @@ export async function createDID(operation) {
                 registry: 'local',
                 time: operation.created,
                 ordinal: 0,
-                operation: operation
+                operation,
+                did
             });
 
             // Create events are distributed only by hyperswarm
@@ -573,7 +574,8 @@ export async function updateDID(operation) {
             registry: 'local',
             time: operation.signature.signed,
             ordinal: 0,
-            operation: operation
+            operation,
+            did: operation.did
         });
 
         delete eventsCache[operation.did];
