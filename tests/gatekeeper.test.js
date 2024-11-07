@@ -2,7 +2,6 @@ import mockFs from 'mock-fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
-import * as ipfs_lib from '@mdip/ipfs/lib';
 import * as exceptions from '@mdip/exceptions';
 
 const mockConsole = {
@@ -14,8 +13,7 @@ const mockConsole = {
 
 beforeAll(async () => {
     await db_json.start('test');
-    await ipfs_lib.start();
-    await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: false });
+    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
 beforeEach(async () => {
@@ -25,7 +23,6 @@ beforeEach(async () => {
 afterAll(async () => {
     await gatekeeper.stop();
     await db_json.stop();
-    await ipfs_lib.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {
@@ -144,7 +141,7 @@ describe('start', () => {
         await gatekeeper.createDID(agentOp);
 
         await gatekeeper.stop();
-        await gatekeeper.start({ db: db_json, ipfs: ipfs_lib, console: mockConsole, primeCache: true });
+        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -152,22 +149,6 @@ describe('start', () => {
 
         try {
             await gatekeeper.start();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
-        }
-        catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
-        }
-
-        try {
-            await gatekeeper.start({ db: db_json });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
-        }
-        catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
-        }
-
-        try {
-            await gatekeeper.start({ ipfs: ipfs_lib });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {

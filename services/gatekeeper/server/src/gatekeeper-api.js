@@ -8,7 +8,6 @@ import * as db_json_cache from '@mdip/gatekeeper/db/json-cache';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
-import * as ipfs from '@mdip/ipfs/lib';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -22,8 +21,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
                     : null;
 
 await db.start('mdip');
-await ipfs.start();
-await gatekeeper.start({ db, ipfs, primeCache: true });
+await gatekeeper.start({ db, primeCache: true });
 
 const app = express();
 const v1router = express.Router();

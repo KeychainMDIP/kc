@@ -4,3 +4,4 @@ tmp/
 custodials
 coverage/
 **/*.log
+.clinic/

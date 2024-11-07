@@ -1,19 +1,40 @@
-import * as ipfs from '@mdip/ipfs/lib';
+import mockFs from 'mock-fs';
+import IPFS from '@mdip/ipfs/obj';
 import { base58btc } from 'multiformats/bases/base58';
 
-beforeEach(async () => {
-    await ipfs.start();
+describe('start', () => {
+    it('should ignore a second call to start', async () => {
+        const ipfs = await IPFS.create();
+        await ipfs.start();
+        await ipfs.stop();
+    });
 });
 
-afterEach(async () => {
-    await ipfs.stop();
+describe('stop', () => {
+    it('should ignore a second call to stop', async () => {
+        const ipfs = await IPFS.create();
+        await ipfs.stop();
+        await ipfs.stop();
+    });
 });
 
 describe('add', () => {
     it('should create CID from data', async () => {
-
+        const ipfs = await IPFS.create();
         const cid = await ipfs.add('mock');
         const cidStr = cid.toString(base58btc);
+        await ipfs.stop();
+
+        expect(cidStr).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
+    });
+
+    it('should create CID from data with fs blockstore', async () => {
+        mockFs({});
+        const ipfs = await IPFS.create({ datadir: 'ipfs' });
+        const cid = await ipfs.add('mock');
+        const cidStr = cid.toString(base58btc);
+        await ipfs.stop();
+        mockFs.restore();
 
         expect(cidStr).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
     });
@@ -21,9 +42,22 @@ describe('add', () => {
 
 describe('get', () => {
     it('should return data from CID', async () => {
-
+        const ipfs = await IPFS.create();
         const cid = await ipfs.add('mock');
         const data = await ipfs.get(cid);
+        await ipfs.stop();
+
+        expect(data).toBe('mock');
+    });
+
+    it('should return data from CID with fs blockstore', async () => {
+        mockFs({});
+
+        const ipfs = await IPFS.create({ datadir: 'ipfs' });
+        const cid = await ipfs.add('mock');
+        const data = await ipfs.get(cid);
+        await ipfs.stop();
+        mockFs.restore();
 
         expect(data).toBe('mock');
     });

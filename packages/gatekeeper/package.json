@@ -21,10 +21,8 @@
   "dependencies": {
     "@mdip/cipher": "*",
     "@mdip/exceptions": "*",
-    "@helia/json": "^2.0.0",
     "axios": "^1.7.7",
     "dotenv": "^16.4.5",
-    "helia": "^3.0.0",
     "mongodb": "^6.5.0",
     "multiformats": "^13.0.0",
     "ioredis": "^5.4.1",

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./lib": "./src/ipfs-lib.js",
+    "./obj": "./src/ipfs-obj.js",
     "./sdk": "./src/ipfs-sdk.js"
   },
   "scripts": {
@@ -16,6 +17,7 @@
   "dependencies": {
     "@helia/json": "^2.0.0",
     "axios": "^1.7.7",
+    "blockstore-fs": "^2.0.2",
     "helia": "^3.0.0"
   },
   "repository": {

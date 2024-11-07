@@ -2,6 +2,7 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
+import IPFS from '@mdip/ipfs/obj';
 import config from './config.js';
 
 const validVersions = [1];
@@ -12,11 +13,11 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let ipfs = null;
 let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
 let isProcessingEvents = false;
+const ipfs = new IPFS();
 
 export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json));
@@ -34,21 +35,17 @@ export async function start(options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (options.ipfs) {
-        ipfs = options.ipfs;
-    }
-    else {
-        throw new Error(exceptions.INVALID_PARAMETER);
-    }
-
     // Only used for unit testing
     if (options.console) {
         // eslint-disable-next-line
         console = options.console;
     }
+
+    return ipfs.start();
 }
 
 export async function stop() {
+    return ipfs.stop();
 }
 
 async function primeCache() {
@@ -186,7 +183,9 @@ export async function resetDb() {
 }
 
 export async function anchorSeed(seed) {
+    //console.time('>>ipfs.add');
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
+    //console.timeEnd('>>ipfs.add');
     return `${config.didPrefix}:${cid.toString(base58btc)}`;
 }
 
