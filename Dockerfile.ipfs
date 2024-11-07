@@ -1,0 +1,19 @@
+# Use the official Node.js as the base image
+FROM node:18.15.0
+
+# Set the working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json to the working directory
+COPY package*.json ./
+COPY packages/ ./packages/
+
+# Install dependencies
+RUN npm ci
+
+COPY services/mediators/ipfs ./ipfs/
+WORKDIR /app/ipfs
+RUN npm ci
+
+# Run...
+CMD ["node", "src/ipfs-mediator.js"]
