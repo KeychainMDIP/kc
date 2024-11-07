@@ -140,102 +140,102 @@ This will checkout the current LTS v0.3-beta version. More adventurous node oper
 
 Once a local copy of the repository is available, we can look at important parts of the repository:
 
-| Path/File | Contents/Description |
-|----------|-------|
-| /data    | Data repositories for each MDIP components |
-| /doc     | MDIP documentation |
-| /packages | MDIP npm packages |
-| /packages/cipher | MDIP cryptography utilities for encryption/decryption and creating/verifying signatures |
-| /packages/exceptions | Standard MDIP exception strings |
-| /packages/gatekeeper | Node library and SDK for MDIP gatekeeper |
-| /packages/keymaster | Node library and SDK for MDIP keymaster |
-| /scripts | MDIP command line interface scripts |
-| /scripts/admin-cli.js | MDIP admin-cli tool to manage registry status, batching, queuing, import/export functions |
-| /scripts/keychain-cli.js | MDIP cli tool to manage the local `data/wallet.json` file |
-| /scripts/tbtc-cli | Bitcoin Testnet cli tool to connect to the TBTC Docker container |
-| /scripts/tbtc-logs | Bitcoin Testnet log viewer tool, connecting automatically to the TBTC Docker container |
-| /services | Source code for each MDIP REST API service |
-| /services/gatekeeper/client | Keymaster WebUI client; exposed as `http://localhost:4224` |
-| /services/gatekeeper/server | Gatekeeper API server; exposed as `http://localhost:4224/api/v1/` |
-| /services/keymaster/client | A **private** Keymaster WebUI client to manage the local `data/wallet.json` file; exposed as `http://localhost:4226` |
-| /services/keymaster/server | The **private** Keymaster API server to interface with the local `data/wallet.json` file; exposed as `http://localhost:4226/api/v1/` |
-| /tests    | Test suites for the gatekeeper, keymaster, and complete MDIP workflow examples |
-| /docker-compose.yml | The primary compose file for the suite of Docker services that will be launched; advanced customization only! |
-| /package.json | NPM package dependencies required to launch MDIP components. |
-| /sample.env | Sample configuration file. Copy this file to a local `.env` file. Edit and configure `.env` to your local needs |
-| /admin | The MDIP admin tool |
-| /kc | The Keychain command line interface client |
-| /start-node | This script launches the local node, including downloading docker containers, compiling source, and launching services as configured |
-| /stop-node | Stops local node services |
+| Path/File                   | Contents/Description                                                                                                                 |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| /data                       | Data repositories for each MDIP components                                                                                           |
+| /doc                        | MDIP documentation                                                                                                                   |
+| /packages                   | MDIP npm packages                                                                                                                    |
+| /packages/cipher            | MDIP cryptography utilities for encryption/decryption and creating/verifying signatures                                              |
+| /packages/exceptions        | Standard MDIP exception strings                                                                                                      |
+| /packages/gatekeeper        | Node library and SDK for MDIP gatekeeper                                                                                             |
+| /packages/keymaster         | Node library and SDK for MDIP keymaster                                                                                              |
+| /scripts                    | MDIP command line interface scripts                                                                                                  |
+| /scripts/admin-cli.js       | MDIP admin-cli tool to manage registry status, batching, queuing, import/export functions                                            |
+| /scripts/keychain-cli.js    | MDIP cli tool to manage the local `data/wallet.json` file                                                                            |
+| /scripts/tbtc-cli           | Bitcoin Testnet cli tool to connect to the TBTC Docker container                                                                     |
+| /scripts/tbtc-logs          | Bitcoin Testnet log viewer tool, connecting automatically to the TBTC Docker container                                               |
+| /services                   | Source code for each MDIP REST API service                                                                                           |
+| /services/gatekeeper/client | Keymaster WebUI client; exposed as `http://localhost:4224`                                                                           |
+| /services/gatekeeper/server | Gatekeeper API server; exposed as `http://localhost:4224/api/v1/`                                                                    |
+| /services/keymaster/client  | A **private** Keymaster WebUI client to manage the local `data/wallet.json` file; exposed as `http://localhost:4226`                 |
+| /services/keymaster/server  | The **private** Keymaster API server to interface with the local `data/wallet.json` file; exposed as `http://localhost:4226/api/v1/` |
+| /tests                      | Test suites for the gatekeeper, keymaster, and complete MDIP workflow examples                                                       |
+| /docker-compose.yml         | The primary compose file for the suite of Docker services that will be launched; advanced customization only!                        |
+| /package.json               | NPM package dependencies required to launch MDIP components.                                                                         |
+| /sample.env                 | Sample configuration file. Copy this file to a local `.env` file. Edit and configure `.env` to your local needs                      |
+| /admin                      | The MDIP admin tool                                                                                                                  |
+| /kc                         | The Keychain command line interface client                                                                                           |
+| /start-node                 | This script launches the local node, including downloading docker containers, compiling source, and launching services as configured |
+| /stop-node                  | Stops local node services                                                                                                            |
 
 ### MDIP Environment Configuration
 
-Configuration of an MDIP node is mainly done by editing a copy of the `sample.env` file into a locally customized `.env` file. Each command below should be executed from the `$HOME/kc` directory created when cloning the repository in the previous step.
+Configuration of an MDIP node is mainly done by editing a copy of the `sample.env` file into a locally customized `.env` file. Each command below should be executed from the `kc/` directory created when cloning the repository in the previous step:
 
 ```bash
 cp sample.env .env
-vi .env
+vim .env #or your preferred editor
 ```
 
-The `.env` file will include the following customizable environment variables. At a minimum, make sure to configure the `#General` variables.
+The `.env` file includes the following customizable environment variables. At a minimum, make sure to configure the `#General` variables.
 
-| environment variable | description |
-|----------------------|-------------|
-| # General            |             |
-| KC_UID=1000          | value of your `mdip` user's uid |
-| KC_GID=1000          | value of your `mdip` user's gid |
-| KC_NODE_NAME=mynodeName | node name publicly visible over hyperswarm network |
-| KC_NODE_ID=mynodeDID | MDIP Agent DID from local data/wallet.json file used to issue Challenges, Credentials as the server app |
-|                      |             |
-| # Gatekeeper         |             |
-| KC_DEBUG=false       |             |
-| KC_GATEKEEPER_DB=json | type of local data storage; leave as json for now with more options coming out soon |
-| KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC | list of DID registries supported by this node. TESS is being deprecated and can be removed if present |
-| KC_GATEKEEPER_PORT=4224 | default MDIP port for Gatekeeper API |
-| KC_GATEKEEPER_VERIFY_DB=true |     |
-|                      |             |
-| # CLI                |             |
-| KC_GATEKEEPER_URL=http://localhost:4224 | this URL is used for client-facing apps, to be replaced with an SSL address once setup |
-| # KC_KEYMASTER_URL=http://localhost:4226 | commented: clients use in-process keymaster library; set: uses localhost:4226 keymaster API |
+| Variable                   | Default Value          | Description                                                                                          |
+|----------------------------|------------------------|------------------------------------------------------------------------------------------------------|
+| # General                  |                        |                                                                                                      |
+| `KC_UID`                   | `1000`                 | The `mdip` user's uid                                                                                |
+| `KC_GID`                   | `1000`                 | The `mdip` user's gid                                                                                |
+| `KC_NODE_NAME`             | `mynodeName`           | The node name publicly visible on the hyperswarm network                                             |
+| `KC_NODE_ID`               | `mynodeDID`            | MDIP Agent DID from `data/wallet.json`, used to issue challenges and credentials from the server app |
+|                            |                        |                                                                                                      |
+| # Gatekeeper               |                        |                                                                                                      |
+| `KC_DEBUG`                 | `false`                |                                                                                                      |
+| `KC_GATEKEEPER_DB`         | `json`                 | Type of local data storage; leave as json for now with more options coming soon                      |
+| `KC_GATEKEEPER_REGISTRIES` | `hyperswarm,TBTC,TFTC` | List of DID registries supported by this node. `TESS` is deprecated and can be removed if present    |
+| `KC_GATEKEEPER_PORT`       | `4224`                 | Default MDIP port for the Gatekeeper API                                                             |
+| `KC_GATEKEEPER_VERIFY_DB`  | `true`                 |                                                                                                      |
+|                            |                        |                                                                                                      |
+| # CLI                      |                        |                                                                                                      |
+| `KC_GATEKEEPER_URL`        | http://localhost:4224  | URL for client-facing apps, to be replaced with an `https` address once configured                   |
+| `# KC_KEYMASTER_URL`       | http://localhost:4226  | Commented: clients use in-process keymaster library.<br/>Set: uses `localhost:4226` keymaster API    |
 
-Following these initial Gatekeeper configuration variables, the file will contain MDIP Registry Mediator configuration variables. The following block of variables is repeated for each *Satoshi Mediator* network. The Bitcoin Testnet block is used as an example here. No changes are needed in these blocks. The TESS registry was used in the early development of the protocol and is being deprecated; KC_TESS_* variables can be removed. 
+Following these initial Gatekeeper configuration variables, the file contains MDIP Registry Mediator configuration variables. The following block of variables is repeated for each *Satoshi Mediator* network. The Bitcoin Testnet block is used as an example here. No changes are needed in these blocks. The TESS registry was used in the early development of the protocol and is being deprecated; KC_TESS_* variables can be removed.
 
 WARNING: Changes to these variables are likely to **break** the Docker Compose functionality.
 
-| environment variable | description |
-|----------------------|-------------|
-| # Bitcoin testnet4 mediator |      |
-| KC_TBTC_HOST=localhost | host name for Bitcoin Testnet node |
-| KC_TBTC_CHAIN=TBTC | MDIP registry name for Bitcoin Testnet network |
-| KC_TBTC_NETWORK=testnet |  |
-| KC_TBTC_START_BLOCK=38000 |  |
-| KC_TBTC_PORT=48332 | Bitcoin Testnet node RPC port |
-| KC_TBTC_USER=testnet4 | Bitcoin Testnet node RPC user |
-| KC_TBTC_PASS=testnet4 | Bitcoin Testnet node RPC password |
-| KC_TBTC_WALLET=mdip | Name of Bitcoin Testnet wallet to draw funds for transaction fees |
-| KC_TBTC_IMPORT_INTERVAL=1 | MDIP Satoshi Mediator import loop wait interval (in minutes) |
-| KC_TBTC_EXPORT_INTERVAL=1 | MDIP Satoshi Mediator export loop wait interval (in minutes) |
-| KC_TBTC_FEE_MIN=0.00000200 | Bitcoin Testnet transaction minimum fee |
-| KC_TBTC_FEE_MAX=0.00000600 | Bitcoin Testnet transaction maximum fee |
-| KC_TBTC_FEE_INC=0 |  |
+| Variable                    | Default Value | Description                                                                |
+|-----------------------------|---------------|----------------------------------------------------------------------------|
+| # Bitcoin testnet4 mediator |               |                                                                            |
+| `KC_TBTC_HOST`              | `localhost`   | Host name for the Bitcoin Testnet node                                     |
+| `KC_TBTC_CHAIN`             | `TBTC`        | MDIP registry name for the Bitcoin Testnet network                         |
+| `KC_TBTC_NETWORK`           | `testnet`     |                                                                            |
+| `KC_TBTC_START_BLOCK`       | `38000`       |                                                                            |
+| `KC_TBTC_PORT`              | `48332`       | Bitcoin Testnet node RPC port                                              |
+| `KC_TBTC_USER`              | `testnet4`    | Bitcoin Testnet node RPC user                                              |
+| `KC_TBTC_PASS`              | `testnet4`    | Bitcoin Testnet node RPC password                                          |
+| `KC_TBTC_WALLET`            | `mdip`        | Name of the Bitcoin Testnet wallet to draw funds from for transaction fees |
+| `KC_TBTC_IMPORT_INTERVAL`   | `1`           | MDIP Satoshi Mediator import loop wait interval (in minutes)               |
+| `KC_TBTC_EXPORT_INTERVAL`   | `1`           | MDIP Satoshi Mediator export loop wait interval (in minutes)               |
+| `KC_TBTC_FEE_MIN`           | `0.00000200`  | Bitcoin Testnet transaction minimum fee                                    |
+| `KC_TBTC_FEE_MAX`           | `0.00000600`  | Bitcoin Testnet transaction maximum fee                                    |
+| `KC_TBTC_FEE_INC`           | `0`           |                                                                            |
 
 ### Customizing the docker-compose.yml services
 
 Another important file controlling the behavior of an MDIP node is the `kc/docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file shows and explains how each components is launched.
 
-Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the docker-compose.yml file by removing the `tess-node` and `tess-mediator` sections.
+Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the `docker-compose.yml` file by removing the `tess-node` and `tess-mediator` sections.
 
-Operators wanting to operate MDIP in a Kubernetes or other type of virtualized environments will find the environment variable dependencies for each MDIP component in the `kc/docker-compose.yml` file.
+Operators wanting to operate MDIP in a Kubernetes or similar virtualized environment will find the environment variable dependencies for each MDIP component in the `kc/docker-compose.yml` file.
 
-#### gatekeeper service
+#### Gatekeeper Service
 
 Below is the MDIP `gatekeeper` definition.
 
-- environment: this section contains environment variables *required* by a particular service
-- volumes: this section defines the persistent storage data directory *required* for a particular service
-- ports: this section defines the host port number that will be used by a particular service (gatekeeper default: 4224)
+- `environment`: this section contains environment variables *required* by a particular service
+- `volumes`: this section defines the persistent storage data directory *required* for a particular service
+- `ports`: this section defines the host port number that will be used by a particular service (gatekeeper default: 4224)
 
-```yml
+```yaml
 services:
   gatekeeper:
     build:
@@ -253,11 +253,11 @@ services:
       - "4224:4224"
 ```
 
-#### keymaster service
+#### Keymaster Service
 
-Likewize, the MDIP `keymaster` has a Docker service definition in the `docker-compose.yml` file. An operator wanting to setup only a Keymaster service pointed to a 3rd party Hosted Gatekeeper server could customize their node to only launch only the `keymaster` service (keymaster default port: 4226)
+Likewize, the MDIP `keymaster` has a Docker service definition in the `docker-compose.yml` file. An operator wanting to set up a standalone Keymaster service pointed to a 3rd party Hosted Gatekeeper server could customize their node to launch only the `keymaster` service (keymaster default port: 4226):
 
-```yml
+```yaml
   keymaster:
     build:
       context: .
@@ -273,11 +273,11 @@ Likewize, the MDIP `keymaster` has a Docker service definition in the `docker-co
       - "4226:4226"
 ```
 
-#### hyperswarm service
+#### Hyperswarm Service
 
-The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm) to distribute its known DIDs and DID Documents. The following section of the `kc/docker-compose.yml` file containerises `hyperswarm` service for MDIP. Note that the `KC_NODE_NAME` environment variable is exposed to the hyperswarm network as the vanity name for the node.
+The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm) to distribute its known DIDs and DID Documents. The following section of the `docker-compose.yml` file defines the `hyperswarm` service for MDIP. Note that the `KC_NODE_NAME` environment variable is exposed to the hyperswarm network as the vanity name for the node:
 
-```yml
+```yaml
   hyperswarm:
     build:
       context: .
@@ -293,13 +293,13 @@ The MDIP Gatekeeper uses [Hyperswarm](https://github.com/holepunchto/hyperswarm)
       - gatekeeper
 ```
 
-#### registry services (TBTC)
+#### Registry Services (TBTC)
 
 MDIP uses immutable ledgers to record evidence of a decentralized consensus on the order of operations that form the history of a DID. The MDIP protocol is blockchain agnostic and provides 2 Testnet examples to demonstrate the protocol's portability: Bitcoin Testnet4 and Feathercoin Testnet. Each DID is registered on a blockchain selected by the end-user at the time of creation. DID operations are batched and exported by the MDIP Mediator to its associated blockchain node.
 
-In the example below, we use a generic bitcoin-code node configured to operate on testnet4. A similar service configuration block for Feathercoin Testnet is provided in the `kc` repository.
+In the example below, we use a generic bitcoin-code node configured to operate on testnet4. A similar service configuration block for Feathercoin Testnet is provided in the `kc` repository:
 
-```yml
+```yaml
   tbtc-node:
     image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
     volumes:
@@ -335,7 +335,9 @@ In the example below, we use a generic bitcoin-code node configured to operate o
 
 ### Install Local CLI Dependencies
 
-NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts. The following command will launch the `clean` installation of all npm package dependencies for MDIP.
+NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts.
+
+The following command will launch the `clean` installation of all npm package dependencies for MDIP:
 
 ```bash
 npm ci
@@ -343,7 +345,7 @@ npm ci
 
 ## Launching and Running an MDIP Node
 
-Once the server requirements and dependencies are resolved, the next step will create and launch the docker containers.
+Once the server requirements and dependencies are resolved, the next step will create and launch the docker containers:
 
 ```bash
 ./start-node
@@ -358,7 +360,9 @@ docker compose build "$@"
 docker compose up "$@"
 ```
 
-The *build* process will download numerous containers and dependencies as defined in the repository's Dockerfiles. The *up* command will launch the MDIP node. The MDIP node is considered `online` once the following messages appear in the Gatekeeper logs:
+Note that this will run the node in the current terminal session. Later on, we'll set up a service to run the node as a system daemon.
+
+The `build` process will download numerous containers and dependencies as defined in the repository's Dockerfiles. The `up` command will launch the MDIP node. The MDIP node is considered `online` once the following messages appear in the Gatekeeper logs:
 
 ```log
 Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Server is running on port 4224, persisting with json
@@ -379,7 +383,7 @@ We will resolve the `No current ID` error in the next section.
 
 ### Post-Launch Server Configuration
 
-Now that our MDIP Node is online, we can create an agent DID for the Node and setup the wallets for blockchain registries.
+Now that our MDIP Node is online, we can create an agent DID for the Node and set up the wallets for blockchain registries.
 
 This section will also cover automated launch of MDIP Services using [systemd](https://systemd.io/) and protection of selected MDIP API end-points using a combination of [nginx](https://nginx.org/) as a reverse-proxy and [certbot](https://certbot.eff.org/) for SSL certificates.
 
@@ -387,8 +391,8 @@ This section will also cover automated launch of MDIP Services using [systemd](h
 
 The MDIP node's Keymaster wallet is located in `data/wallet.json`. There are two clients available to manage your server wallet:
 
-- `kc` Command Line Interface
-- Keymaster Web User Interface on `http://localhost:4226`
+- `kc`, the command line interface.
+- the Keymaster web interface on `http://localhost:4226`.
 
 This document will provide examples using the `kc` CLI tool. The following command will create a new wallet and show its content:
 
@@ -396,25 +400,29 @@ This document will provide examples using the `kc` CLI tool. The following comma
 ./kc create-wallet
 ```
 
-We can now create an Agent DID for our MDIP node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable. The following command will create this new DID and schedule it for registration on the Bitcoin blockchain (to be configured below).
+We can now create an Agent DID for our MDIP node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable.
+
+The following command will create this new DID and schedule it for registration on the Bitcoin blockchain (to be configured below):
 
 ```bash
 ./kc create-id mynodeDID TBTC
 ```
 
-The `./kc show-wallet` command will show an updated JSON wallet containing the newly created DID. To resolve a specific DID Document, use the command `./kc resolve-did mynodeDID` and replace mynodeDID with a specific DID or aliased name.
+The `./kc show-wallet` command will show an updated JSON wallet containing the newly created DID. To resolve a specific DID Document, use the command `./kc resolve-did mynodeDID` and replace `mynodeDID` with a specific DID or aliased name.
 
 #### DID Registries Setup
 
-MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the Registry contains the concensus on order of MDIP operations. Some releases may also have the Tesseract (TESS) registry, which is being deprecated in post-0.3-beta releases.
+MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the registry contains the concensus on order of MDIP operations. Some releases may also have the Tesseract (TESS) registry, which is being deprecated in post-0.3-beta releases.
 
-By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The following command will create that wallet; the Bitcoin Testnet4 node is configured to store its data in the `data/tbtc` directory.
+By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The Bitcoin Testnet4 node is configured to store its data in the `data/tbtc` directory.
+
+The following command will create that wallet in the expected directory:
 
 ```bash
 ./scripts/tbtc-cli createwallet mdip
 ```
 
-We can then create a new Bitcoin Testnet4 address with the following command:
+We can then create a new Bitcoin Testnet4 address:
 
 ```bash
 ./scripts/tbtc-cli getnewaddress
@@ -435,9 +443,9 @@ The `tbtc-cli` script passes the command line arguments to the standard bitcoin 
 
 ### Automated Restart using Systemd
 
-Systemd ([https://systemd.io/](https://systemd.io/)) is a popular service manager for Linux OS. The following simple configuration file can be used to launch an mdip node.  
+Systemd ([https://systemd.io/](https://systemd.io/)) is a popular service manager for Linux. The following simple configuration file can be used to launch an mdip node.  
 
-```systemd
+```systemd title="/etc/systemd/system/mdip.service"
 [Unit]
 Description=MDIP Daemon Service
 
@@ -451,26 +459,26 @@ User=mdip
 WantedBy=multi-user.target
 ```
 
-The copy/paste the content above in a `/etc/systemd/system/mdip.service` service file for systemd. You will need `sudo` or `root` privileges in order to change your server's autostart services. Once the service file is created, you can launch your mdip node with the following command:
+You will need `sudo` or `root` privileges in order to change your server's autostart services. Once the service file is created, you can launch your mdip node with the following command:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl start mdip
 ```
 
-To view the status of your node, you can use `journalctl` :
+To view the status of your node, run:
 
 ```bash
 systemctl status mdip
 ```
 
-To view the continuous logs of your node, you can use
+To view the continuous logs of your node, you can use `journalctl`:
 
 ```bash
 journalctl -f -u mdip
 ```
 
-Once the node is operating normally, the system can be configured to auto-start with the following: 
+Once the node is operating normally, the system can be configured to auto-start the service:
 
 ```bash
 sudo systemctl enable mdip
@@ -478,21 +486,21 @@ sudo systemctl enable mdip
 
 ### Understanding MDIP Logs and Launch Process
 
-When you first launch an MDIP node, there will be multiple stages of readiness including:
+When you first launch an MDIP node, there are multiple stages of readiness including:
 
-1. MDIP Docker Containers Preparation
-1. MDIP Gatekeeper Synchronization with MDIP Network ( node operational here)
-1. MDIP Keymaster Connects to Gatekeeper once ready ( server wallet connects to node)
-1. Blockchain node Synchronization with blockchain network
-1. MDIP Mediator Discovery of MDIP Operations on blockchain registry (DIDs history validated here)
+1. MDIP Docker containers preparation,
+1. MDIP Gatekeeper synchronization with the MDIP network (the node comes operational here),
+1. MDIP Keymaster connects to Gatekeeper once ready (server wallet connects to node),
+1. Blockchain node synchronization with blockchain network,
+1. MDIP Mediator discovery of MDIP oOperations on blockchain registry (DIDs history validated here).
 
 Below are log examples indicating your MDIP node's stage of readyness.
 
 #### Log samples: Docker Containers
 
-As we have seen, each MDIP component operates in its own Docker Container. The first logs seen when launching MDIP for the first time is the preparation of the Docker containers.
+As we have seen, each MDIP component operates in its own Docker container. The first logs seen when launching MDIP for the first time is the preparation of the Docker containers.
 
-In subsequent launches the dockerfiles will be rebuilt or reused depending on whether the source files have changed.
+In subsequent launches the dockerfiles will be rebuilt or reused depending on whether the source files have changed:
 
 ```log
 Oct 28 16:34:14 mdip-gatekeeper start-node[703548]: #0 building with "default" instance using docker driver
@@ -519,9 +527,9 @@ Oct 28 16:34:14 mdip-gatekeeper start-node[703710]: Attaching to gatekeeper-1, h
 
 #### Log samples: MDIP Gatekeeper Service
 
-Upon launch, the gatekeeper process will attempt to conntect to its configured hyperswarm distribution process. 
+Upon launch, the gatekeeper process will attempt to conntect to its configured hyperswarm distribution process.
 
-The gatekeeper will build a local collection of published DIDs and begin verification of each document. Once available, the Gatekeeper will report being `ready` when queried on its local API: `curl http://localhost:4224/api/v1/ready`.
+The gatekeeper will build a local collection of published DIDs and begin verification of each document:
 
 ```log
 ...
@@ -551,11 +559,17 @@ Oct 28 16:35:32 mdip-gatekeeper node[95272]: Gatekeeper service is ready!
 Oct 28 16:35:32 mdip-gatekeeper start-node[705212]: gatekeeper-1     | GET /api/v1/ready 200 - 7.745 ms 
 ```
 
+Once available, the Gatekeeper will report being `ready` when queried on its local API:
+
+```bash
+curl http://localhost:4224/api/v1/ready`
+```
+
 #### Log samples: MDIP Keymaster Service
 
-The logs below show a keymaster service connecting to a gatekeeper once the gatekeeper reports being ready for connections.
+The logs below show a Keymaster service connecting to a Gatekeeper, once the Gatekeeper reports being ready for connections.
 
-The keymaster process is an **administrative** tool and should not be exposed to unauthorized users and never to the public. The *key*master service running on port `4226` operates the server's MDIP identity used to issue challenges, decrypt documents, etc. The Keymaster will report being `ready` when queried on its local API: `curl http://localhost:4226/api/v1/ready`.
+The Keymaster process is an *administrative* tool and should not be exposed to unauthorized users, and *never* to the public. The *key*master service running on port `4226` operates the server's MDIP identity, used to issue challenges, decrypt documents, etc:
 
 ```log
 Oct 28 16:35:34 mdip-gatekeeper start-node[705212]: hyperswarm-1     | Gatekeeper service is ready!
@@ -601,11 +615,13 @@ Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      |     }
 Oct 28 16:35:35 mdip-gatekeeper start-node[705212]: keymaster-1      | }
 ```
 
+Once ready, the Keymaster will report being `ready` when queried on its local API: `curl http://localhost:4226/api/v1/ready`.
+
 #### Log samples: Blockchain Node (tBTC)
 
 The `kc/docker-compose.yml` script will launch Bitcoin Testnet4 and Feathercoin Testnet nodes to be used as DID registries.
 
-The following logs are generated when the Bitcoin node is launched. Note the default use of `testnet4="1"` in the Bitcoin configuration file now located in `kc/data/tbtc/bitcoin.conf`. Customizations to the connectivity between MDIP and its repositories must be reflected in both configurations files (registry and MDIP).
+The following logs are generated when the Bitcoin node is launched:
 
 ```log
 Oct 28 16:37:04 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-28T16:37:04.770935Z Bitcoin Core version v27.99.0-2f7d9aec4d04 (release build)
@@ -656,11 +672,13 @@ Oct 28 16:37:05 mdip-gatekeeper start-node[706734]: tbtc-node-1      | 2024-10-2
 ...
 ```
 
+Note the default use of `testnet4="1"` in the Bitcoin configuration file, now located in `kc/data/tbtc/bitcoin.conf`. Customizations to the connectivity between MDIP and its repositories must be reflected in both configurations files (registry and MDIP).
+
 #### Log samples: MDIP Mediator (tBTC)
 
 The `kc/docker-compose.yml` default configuration will launch an MDIP Satoshi Mediator process configured to import/export with the Bitcoin Testnet4 blockchain.
 
-The logs below show the MDIP Mediator successfully exporting the a DID update operation to the TBTC registry.
+The logs below show the MDIP Mediator successfully exporting the a DID update operation to the TBTC registry:
 
 ```log
 Oct 28 16:37:09 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | Waiting for TBTC node...
@@ -687,9 +705,9 @@ Oct 28 16:37:18 mdip-gatekeeper start-node[706734]: tbtc-mediator-1  | export lo
 
 ## Secure Hosting an MDIP Node with nginx
 
-nginx [https://nginx.org/](https://nginx.org/) is a popular web server and reverse proxy available for most operating systems.
+Nginx [https://nginx.org/](https://nginx.org/) is a popular web server and reverse proxy available for most operating systems.
 
-nginx can be used to control and throttle access to server ports and hosted services like MDIP. The configuration files presented here are for educational purposes. Securing a server for online operations involves more than protecting a few ports; this document limits itself to MDIP-specific ports and services.
+Nginx can be used to control and throttle access to server ports and hosted services like MDIP. The configuration files presented here are for educational purposes. Securing a server for online operations involves more than protecting a few ports; this document limits itself to MDIP-specific ports and services.
 
 ### Important MDIP Ports and Endpoints
 
@@ -708,11 +726,11 @@ bitcoin-core:v27.99.0    48332/tcp kc-tbtc-node-1
 feathercoind             19337/tcp kc-tftc-node-1
 ```
 
-None of the ports listed above should ever be directly addressable from the Internet. It is recommended that a firewall be setup to prevent access to these services.
+None of the ports listed above should *ever* be directly addressable from the Internet. It is recommended that a firewall be setup to prevent access to these services.
 
 ### Basic nginx Hosting
 
-The nginx configuration file below can be used to launch a live MDIP node that exposes only read-only gatekeeper end-points.
+The nginx configuration file below can be used to launch a live MDIP node that exposes only read-only Gatekeeper end-points.
 
 ```nginx
 #
@@ -774,15 +792,15 @@ This section contains tips and information on how to get started with your new M
 
 ### Basic Tests and Common Links
 
-The MDIP Gatekeeper offers a developer-friend identity wallet on port 4224 that can be used to interact with the protocol.
+The MDIP Gatekeeper offers a developer-friend identity wallet on port `4224` that can be used to interact with the protocol.
 
 ![Screenshot 2024-10-28 at 17 09 19](https://github.com/user-attachments/assets/6763e0a6-706b-418f-bd28-33efa6ea0cca)
 
-Most of the Keymaster functions are available over the Keymaster WebUI. Documentation for the Keymaster WebUI is available on the [keychain.org](https://keychain.org/docs/keychain/clients/webui/) website.
+Most of the Keymaster functions are available over the Keymaster web UI. Documentation for the Keymaster web UI is available in the [Keymaster Web UI](/docs/keychain/clients/webui/) section.
 
 #### Private Server-Side Wallet
 
-MDIP is a peer-to-peer system. Interactions between human users and server hosts are
+MDIP is a peer-to-peer system. Interactions between human users and server hosts are:
 
 - Keymaster Private Wallet (web and cli)
 - Gatekeeper API (private or public)
