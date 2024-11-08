@@ -1626,6 +1626,51 @@ describe('processEvents', () => {
         expect(response.merged).toBe(1);
     });
 
+    it('should import a valid batch export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        // create on hyperswarm because exportBatch will not export local DIDs
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const batch = await gatekeeper.exportBatch();
+
+        await gatekeeper.importBatch(batch);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.merged).toBe(2);
+    });
+
+    it('should import a batch export with missing event dids', async () => {
+        // This simulates an import from hyperswarm-mediator which receives only operations and creates events without DIDs
+        // (TBD revisit whether events should be created with DIDs in advance of import)
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        // create on hyperswarm because exportBatch will not export local DIDs
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(agentDID);
+        const updateOp = await createUpdateOp(keypair, agentDID, doc);
+        await gatekeeper.updateDID(updateOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        await gatekeeper.createDID(assetOp);
+        const batch = await gatekeeper.exportBatch();
+
+        await gatekeeper.resetDb();
+
+        for (const event of batch) {
+            delete event.did;
+        }
+
+        await gatekeeper.importBatch(batch);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(3);
+    });
+
     it('should report 0 ops added when DID exists', async () => {
         mockFs({});
 
