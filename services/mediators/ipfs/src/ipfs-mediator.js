@@ -57,7 +57,9 @@ async function importOperations() {
 
 async function importLoop() {
     try {
+        console.time('importOperations');
         await importOperations();
+        console.timeEnd('importOperations');
         console.log(`import loop waiting ${config.interval} minute(s)...`);
     } catch (error) {
         console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
