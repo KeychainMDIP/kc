@@ -52,6 +52,7 @@ async function importOperations() {
             n += 1;
         }
     }
+    await Promise.all(promises);
 }
 
 async function importLoop() {
