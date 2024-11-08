@@ -51,7 +51,7 @@ services:
     depends_on:
       - gatekeeper
 
-  hyperswarm:
+  hypr-mediator:
     build:
       context: .
       dockerfile: Dockerfile.hyperswarm
