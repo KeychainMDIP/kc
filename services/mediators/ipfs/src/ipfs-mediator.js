@@ -25,12 +25,10 @@ async function importOperations() {
         const didBatch = dids.slice(i, i + batchSize);
         const exports = await gatekeeper.exportDIDs(didBatch);
 
-        for (const events of exports) {
-            n += 1;
-            const createEvent = events[0];
-            console.log(`DID ${n} ${createEvent.did}`);
+        for (const didEvents of exports) {
+            console.log(`DID ${n} ${dids[n]}`);
 
-            const mdip = createEvent.operation.mdip;
+            const mdip = didEvents[0].operation.mdip;
 
             if (mdip.registry === 'local') {
                 console.log("skipping local");
@@ -42,8 +40,8 @@ async function importOperations() {
                 continue;
             }
 
-            for (let k in events) {
-                const event = events[k];
+            for (let k in didEvents) {
+                const event = didEvents[k];
                 promises.push(addOperationToIPFS(event.operation, n, k));
 
                 if (promises.length >= config.concurrency) {
@@ -51,6 +49,8 @@ async function importOperations() {
                     promises = [];
                 }
             }
+
+            n += 1;
         }
     }
 }
