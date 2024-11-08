@@ -1,4 +1,5 @@
-FROM ubuntu:22.04
+# Specifying platform explicitly here is a temp workaround for MacOS
+FROM --platform=linux/amd64 ubuntu:22.04
 RUN apt-get update && \
         apt-get install -y wget && \
         apt-get install net-tools
