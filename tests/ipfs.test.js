@@ -1,5 +1,5 @@
 import mockFs from 'mock-fs';
-import IPFS from '@mdip/ipfs/obj';
+import IPFS from '@mdip/ipfs';
 import { base58btc } from 'multiformats/bases/base58';
 
 describe('start', () => {

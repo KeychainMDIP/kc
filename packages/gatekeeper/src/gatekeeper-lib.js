@@ -2,7 +2,7 @@ import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
-import IPFS from '@mdip/ipfs/obj';
+import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
 const validVersions = [1];

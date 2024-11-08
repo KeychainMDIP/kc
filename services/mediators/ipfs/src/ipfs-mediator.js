@@ -1,7 +1,7 @@
 import canonicalize from 'canonicalize';
 import { base58btc } from 'multiformats/bases/base58';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
-import IPFS from '@mdip/ipfs/obj';
+import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
 const ipfs = await IPFS.create({ datadir: 'data/ipfs' });

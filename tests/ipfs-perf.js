@@ -1,5 +1,5 @@
 
-import IPFS from '@mdip/ipfs/obj';
+import IPFS from '@mdip/ipfs';
 import * as uuid from 'uuid';
 
 //const ipfs = new IPFS({ datadir: 'data/ipfs' });

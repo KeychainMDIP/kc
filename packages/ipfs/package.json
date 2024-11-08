@@ -4,8 +4,8 @@
   "description": "MDIP IPFS lib",
   "type": "module",
   "exports": {
+    ".": "./src/ipfs-obj.js",
     "./lib": "./src/ipfs-lib.js",
-    "./obj": "./src/ipfs-obj.js",
     "./sdk": "./src/ipfs-sdk.js"
   },
   "scripts": {
