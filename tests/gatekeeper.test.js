@@ -1634,7 +1634,7 @@ describe('processEvents', () => {
         const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
         const agentDID = await gatekeeper.createDID(agentOp);
         const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
-        const assetDID = await gatekeeper.createDID(assetOp);
+        await gatekeeper.createDID(assetOp);
         const batch = await gatekeeper.exportBatch();
 
         await gatekeeper.importBatch(batch);

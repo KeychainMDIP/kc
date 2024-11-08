@@ -1,4 +1,3 @@
-import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
@@ -186,7 +185,7 @@ export async function anchorSeed(seed) {
     //console.time('>>ipfs.add');
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
     //console.timeEnd('>>ipfs.add');
-    return `${config.didPrefix}:${cid.toString(base58btc)}`;
+    return `${config.didPrefix}:${cid}`;
 }
 
 export async function verifyOperation(operation) {

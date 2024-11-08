@@ -1,5 +1,4 @@
 import canonicalize from 'canonicalize';
-import { base58btc } from 'multiformats/bases/base58';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
@@ -9,7 +8,7 @@ const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
 async function addOperationToIPFS(operation, n, k) {
     const data = JSON.parse(canonicalize(operation));
     const cid = await ipfs.add(data);
-    console.log(`DID:${n} op:${k} ${cid.toString(base58btc)}`);
+    console.log(`DID:${n} op:${k} ${cid}`);
 }
 
 async function importOperations() {

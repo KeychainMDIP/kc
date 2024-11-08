@@ -1,6 +1,5 @@
 import mockFs from 'mock-fs';
 import IPFS from '@mdip/ipfs';
-import { base58btc } from 'multiformats/bases/base58';
 
 describe('start', () => {
     it('should ignore a second call to start', async () => {
@@ -22,21 +21,19 @@ describe('add', () => {
     it('should create CID from data', async () => {
         const ipfs = await IPFS.create();
         const cid = await ipfs.add('mock');
-        const cidStr = cid.toString(base58btc);
         await ipfs.stop();
 
-        expect(cidStr).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
+        expect(cid).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
     });
 
     it('should create CID from data with fs blockstore', async () => {
         mockFs({});
         const ipfs = await IPFS.create({ datadir: 'ipfs' });
         const cid = await ipfs.add('mock');
-        const cidStr = cid.toString(base58btc);
         await ipfs.stop();
         mockFs.restore();
 
-        expect(cidStr).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
+        expect(cid).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
     });
 });
 

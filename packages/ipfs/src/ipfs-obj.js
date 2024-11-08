@@ -1,6 +1,8 @@
 import { createHelia } from 'helia';
 import { json } from '@helia/json';
 import { FsBlockstore } from 'blockstore-fs';
+import { CID } from 'multiformats';
+import { base58btc } from 'multiformats/bases/base58';
 
 class IPFS {
     constructor(config = {}) {
@@ -35,10 +37,12 @@ class IPFS {
     }
 
     async add(data) {
-        return this.ipfs.add(data);
+        const cid = await this.ipfs.add(data);
+        return cid.toString(base58btc);
     }
 
-    async get(cid) {
+    async get(b58cid) {
+        const cid = CID.parse(b58cid);
         return this.ipfs.get(cid);
     }
 
