@@ -116,7 +116,8 @@ async function scanBlocks() {
 async function importBatch(item) {
     if (item.imported && item.processed) {
         const processed = item.processed.added + item.processed.merged;
-        if (item.imported.total === processed) {
+        // Importing an update (e.g. key change) could trigger the validation of many pending ops
+        if (processed >= item.imported.total) {
             return;
         }
     }
@@ -146,9 +147,6 @@ async function importBatch(item) {
     item.imported.total = batch.length;
     if (item.imported.queued > 0) {
         item.processed = await gatekeeper.processEvents();
-    }
-    else {
-        item.processed = null;
     }
     console.log(JSON.stringify(item, null, 4));
 }
