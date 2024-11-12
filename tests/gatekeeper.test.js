@@ -1768,7 +1768,7 @@ describe('processEvents', () => {
         expect(doc.didDocument.id).toBe(did);
     });
 
-    it('should handle deferred operation validation when keys cannot be confirmed', async () => {
+    it('should handle processing events in any order', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -1780,7 +1780,7 @@ describe('processEvents', () => {
 
         const assetOp = await createAssetOp(agentDID, keypair);
         const assetDID = await gatekeeper.createDID(assetOp);
-        const assetDoc = await gatekeeper.resolveDID(agentDID);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
         const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc);
         await gatekeeper.updateDID(updateOp2);
 
@@ -1792,6 +1792,57 @@ describe('processEvents', () => {
 
         const response1 = await gatekeeper.processEvents();
         expect(response1.added).toBe(4);
+    });
+
+    it('should handle deferred operation validation when asset ownership changes', async () => {
+        mockFs({});
+
+        const keypair1 = cipher.generateRandomJwk();
+        const agentOp1 = await createAgentOp(keypair1, 1, 'TFTC');
+        const agentDID1 = await gatekeeper.createDID(agentOp1);
+
+        const keypair2 = cipher.generateRandomJwk();
+        const agentOp2 = await createAgentOp(keypair2, 1, 'TFTC');
+        const agentDID2 = await gatekeeper.createDID(agentOp2);
+
+        const assetOp = await createAssetOp(agentDID1, keypair1, 'TFTC');
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc1 = await gatekeeper.resolveDID(assetDID);
+
+        // agent1 transfers ownership of asset to agent2
+        assetDoc1.didDocument.controller = agentDID2;
+        const updateOp1 = await createUpdateOp(keypair1, assetDID, assetDoc1);
+        await gatekeeper.updateDID(updateOp1);
+
+        // agent2 transfers ownership of asset back to agent1
+        assetDoc1.didDocument.controller = agentDID1;
+        const updateOp2 = await createUpdateOp(keypair2, assetDID, assetDoc1);
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const events = dids.flat();
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(events);
+
+        const response1 = await gatekeeper.processEvents();
+        expect(response1.added).toBe(events.length);
+
+        const assetDoc2 = await gatekeeper.resolveDID(assetDID);
+        expect(assetDoc2.didDocumentMetadata.version).toBe(3);
+        expect(assetDoc2.didDocumentMetadata.confirmed).toBe(false);
+
+        for (const event of events) {
+            event.registry = 'TFTC';
+        }
+
+        await gatekeeper.importBatch(events);
+
+        const response2 = await gatekeeper.processEvents();
+        expect(response2.added).toBe(events.length);
+
+        const assetDoc3 = await gatekeeper.resolveDID(assetDID);
+        expect(assetDoc3.didDocumentMetadata.version).toBe(3);
+        expect(assetDoc3.didDocumentMetadata.confirmed).toBe(true);
     });
 });
 
