@@ -115,7 +115,8 @@ async function scanBlocks() {
 
 async function importBatch(item) {
     if (item.imported && item.processed) {
-        if (item.imported.total === (item.processed.added + item.processed.merged)) {
+        const processed = item.processed.added + item.processed.merged;
+        if (item.imported.total === processed) {
             return;
         }
     }
