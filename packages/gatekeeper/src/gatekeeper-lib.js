@@ -794,10 +794,10 @@ export async function processEvents() {
     }
 
     console.log(JSON.stringify(eventsQueue, null, 4));
-    eventsQueue = [];
+    const pending = eventsQueue.length;
 
     isProcessingEvents = false;
-    return { added, merged };
+    return { added, merged, pending };
 }
 
 export async function verifyEvent(event) {
