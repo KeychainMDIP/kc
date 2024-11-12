@@ -5,10 +5,10 @@ import * as db_json from '@mdip/gatekeeper/db/json';
 import * as exceptions from '@mdip/exceptions';
 
 const mockConsole = {
-    log: () => {},
-    error: () => {},
-    time: () => {},
-    timeEnd: () => {},
+    log: () => { },
+    error: () => { },
+    time: () => { },
+    timeEnd: () => { },
 }
 
 beforeEach(async () => {
@@ -823,6 +823,28 @@ describe('resolveDID', () => {
 
         const doc = await gatekeeper.resolveDID(did, { atVersion: expected.didDocumentMetadata.version });
         expect(doc).toStrictEqual(expected);
+    });
+
+    it('should resolve all specified versions', async () => {
+
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        // Add 10 versions
+        for (let i = 0; i < 10; i++) {
+            const update = await gatekeeper.resolveDID(did);
+            update.didDocumentData = { mock: 1 };
+            const updateOp = await createUpdateOp(keypair, did, update);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        for (let i = 0; i < 10; i++) {
+            const doc = await gatekeeper.resolveDID(did, { atVersion: i+1 });
+            expect(doc.didDocumentMetadata.version).toBe(i+1);
+        }
     });
 
     it('should resolve a valid asset DID', async () => {
@@ -1720,12 +1742,12 @@ describe('processEvents', () => {
         await gatekeeper.resetDb();
 
         const { queued, rejected } = await gatekeeper.importBatch(ops);
-        expect(queued).toBe(N+1);
+        expect(queued).toBe(N + 1);
         expect(rejected).toBe(0);
 
         const response = await gatekeeper.processEvents();
 
-        expect(response.added).toBe(N+1);
+        expect(response.added).toBe(N + 1);
         expect(response.merged).toBe(0);
     });
 

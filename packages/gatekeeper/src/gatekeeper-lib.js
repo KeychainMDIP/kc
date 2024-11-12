@@ -508,6 +508,10 @@ export async function resolveDID(did, options = {}) {
             break;
         }
 
+        if (atVersion && version === atVersion) {
+            break;
+        }
+
         confirmed = confirmed && mdip.registry === registry;
 
         if (confirm && !confirmed) {
@@ -557,10 +561,6 @@ export async function resolveDID(did, options = {}) {
             }
 
             // console.error(`unknown type ${operation.type}`);
-        }
-
-        if (atVersion && version === atVersion) {
-            break;
         }
     }
 
