@@ -1417,6 +1417,20 @@ describe('bindCredential', () => {
         expect(vc.credential.email).toEqual(expect.any(String));
     });
 
+    it('should create a bound credential with provided default', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createSchema(mockSchema);
+
+        const credential = { email: 'bob@mock.com' };
+        const vc = await keymaster.bindCredential(credentialDid, userDid, { credential });
+
+        expect(vc.issuer).toBe(userDid);
+        expect(vc.credentialSubject.id).toBe(userDid);
+        expect(vc.credential.email).toEqual(credential.email);
+    });
+
     it('should create a bound credential for a different user', async () => {
         mockFs({});
 

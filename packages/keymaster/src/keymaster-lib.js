@@ -978,7 +978,7 @@ export async function testAgent(id) {
 }
 
 export async function bindCredential(schemaId, subjectId, options = {}) {
-    let { validFrom, validUntil } = options;
+    let { validFrom, validUntil, credential } = options;
 
     if (!validFrom) {
         validFrom = new Date().toISOString();
@@ -986,9 +986,12 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
 
     const id = await fetchIdInfo();
     const type = await lookupDID(schemaId);
-    const schema = await resolveAsset(type);
-    const credential = generateSchema(schema);
     const subjectDID = await lookupDID(subjectId);
+
+    if (!credential) {
+        const schema = await resolveAsset(type);
+        credential = generateSchema(schema);
+    }
 
     return {
         "@context": [
