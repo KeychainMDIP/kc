@@ -1,4 +1,3 @@
-import { JSONSchemaFaker } from "json-schema-faker";
 import * as exceptions from '@mdip/exceptions';
 
 let gatekeeper = null;
@@ -979,7 +978,7 @@ export async function testAgent(id) {
 }
 
 export async function bindCredential(schemaId, subjectId, options = {}) {
-    let { validFrom, validUntil } = options;
+    let { validFrom, validUntil, credential } = options;
 
     if (!validFrom) {
         validFrom = new Date().toISOString();
@@ -987,9 +986,12 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
 
     const id = await fetchIdInfo();
     const type = await lookupDID(schemaId);
-    const schema = await resolveAsset(type);
-    const credential = JSONSchemaFaker.generate(schema);
     const subjectDID = await lookupDID(subjectId);
+
+    if (!credential) {
+        const schema = await resolveAsset(type);
+        credential = generateSchema(schema);
+    }
 
     return {
         "@context": [
@@ -1573,18 +1575,33 @@ export async function listGroups(owner) {
 
 function validateSchema(schema) {
     try {
-        if (!Object.keys(schema).includes('$schema')) {
-            throw new Error(exceptions.INVALID_PARAMETER);
-        }
-
         // Attempt to instantiate the schema
-        JSONSchemaFaker.generate(schema);
+        generateSchema(schema);
+        return true;
     }
-    catch {
+    catch (error) {
+        return false;
+    }
+}
+
+function generateSchema(schema) {
+    const properties = Object.keys(schema);
+
+    if (!properties.includes('$schema')) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return true;
+    if (!properties.includes('properties')) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
+
+    let template = {};
+
+    for (const property of Object.keys(schema.properties)) {
+        template[property] = "TBD";
+    }
+
+    return template;
 }
 
 export async function createSchema(schema, options = {}) {
@@ -1592,7 +1609,9 @@ export async function createSchema(schema, options = {}) {
         schema = defaultSchema;
     }
 
-    validateSchema(schema);
+    if (!validateSchema(schema)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 
     return createAsset(schema, options);
 }
@@ -1601,12 +1620,14 @@ export async function getSchema(id) {
     return resolveAsset(id);
 }
 
-export async function setSchema(id, newSchema) {
-    validateSchema(newSchema);
+export async function setSchema(id, schema) {
+    if (!validateSchema(schema)) {
+        throw new Error(exceptions.INVALID_PARAMETER);
+    }
 
     const doc = await resolveDID(id);
     const did = doc.didDocument.id;
-    doc.didDocumentData = newSchema;
+    doc.didDocumentData = schema;
 
     return updateDID(did, doc);
 }
@@ -1646,8 +1667,6 @@ export async function listSchemas(owner) {
 }
 
 export async function createTemplate(id) {
-    //JSONSchemaFaker.option("alwaysFakeOptionals", true);
-
     const isSchema = await testSchema(id);
 
     if (!isSchema) {
@@ -1656,7 +1675,7 @@ export async function createTemplate(id) {
 
     const schemaDID = await lookupDID(id);
     const schema = await resolveAsset(schemaDID);
-    const template = JSONSchemaFaker.generate(schema);
+    const template = generateSchema(schema);
 
     template['$schema'] = schemaDID;
 

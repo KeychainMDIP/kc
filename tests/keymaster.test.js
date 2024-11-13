@@ -1398,50 +1398,6 @@ const mockSchema = {
     "type": "object"
 };
 
-describe('createSchema', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should create a credential from a schema', async () => {
-        mockFs({});
-
-        await keymaster.createId('Bob');
-
-        const did = await keymaster.createSchema(mockSchema);
-        const doc = await keymaster.resolveDID(did);
-
-        expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentData).toStrictEqual(mockSchema);
-    });
-});
-
-describe('listSchemas', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should return list of schemas', async () => {
-        mockFs({});
-
-        await keymaster.createId('Bob');
-
-        const schema1 = await keymaster.createSchema();
-        const schema2 = await keymaster.createSchema();
-        const schema3 = await keymaster.createSchema();
-        const group1 = await keymaster.createGroup('mockGroup');
-
-        const schemas = await keymaster.listSchemas();
-
-        expect(schemas.includes(schema1)).toBe(true);
-        expect(schemas.includes(schema2)).toBe(true);
-        expect(schemas.includes(schema3)).toBe(true);
-        expect(schemas.includes(group1)).toBe(false);
-    });
-});
-
 describe('bindCredential', () => {
 
     afterEach(() => {
@@ -1459,6 +1415,20 @@ describe('bindCredential', () => {
         expect(vc.issuer).toBe(userDid);
         expect(vc.credentialSubject.id).toBe(userDid);
         expect(vc.credential.email).toEqual(expect.any(String));
+    });
+
+    it('should create a bound credential with provided default', async () => {
+        mockFs({});
+
+        const userDid = await keymaster.createId('Bob');
+        const credentialDid = await keymaster.createSchema(mockSchema);
+
+        const credential = { email: 'bob@mock.com' };
+        const vc = await keymaster.bindCredential(credentialDid, userDid, { credential });
+
+        expect(vc.issuer).toBe(userDid);
+        expect(vc.credentialSubject.id).toBe(userDid);
+        expect(vc.credential.email).toEqual(credential.email);
     });
 
     it('should create a bound credential for a different user', async () => {
@@ -3497,6 +3467,18 @@ describe('createSchema', () => {
         mockFs.restore();
     });
 
+    it('should create a credential from a schema', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const did = await keymaster.createSchema(mockSchema);
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocumentData).toStrictEqual(mockSchema);
+    });
+
     it('should create a default schema', async () => {
         mockFs({});
 
@@ -3517,7 +3499,6 @@ describe('createSchema', () => {
         expect(doc.didDocumentData).toStrictEqual(mockSchema);
     });
 
-
     it('should throw an exception on create invalid schema', async () => {
         mockFs({});
 
@@ -3529,6 +3510,44 @@ describe('createSchema', () => {
         } catch (error) {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
         }
+    });
+
+    it('should throw an exception on schema missing properties', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.createSchema({ "$schema": "http://json-schema.org/draft-07/schema#" });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        } catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+});
+
+describe('listSchemas', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of schemas', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const schema1 = await keymaster.createSchema();
+        const schema2 = await keymaster.createSchema();
+        const schema3 = await keymaster.createSchema();
+        const group1 = await keymaster.createGroup('mockGroup');
+
+        const schemas = await keymaster.listSchemas();
+
+        expect(schemas.includes(schema1)).toBe(true);
+        expect(schemas.includes(schema2)).toBe(true);
+        expect(schemas.includes(schema3)).toBe(true);
+        expect(schemas.includes(group1)).toBe(false);
     });
 });
 
