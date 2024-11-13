@@ -3499,7 +3499,6 @@ describe('createSchema', () => {
         expect(doc.didDocumentData).toStrictEqual(mockSchema);
     });
 
-
     it('should throw an exception on create invalid schema', async () => {
         mockFs({});
 
@@ -3507,6 +3506,19 @@ describe('createSchema', () => {
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        } catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+
+    it('should throw an exception on schema missing properties', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.createSchema({ "$schema": "http://json-schema.org/draft-07/schema#" });
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
             expect(error.message).toBe(exceptions.INVALID_PARAMETER);
