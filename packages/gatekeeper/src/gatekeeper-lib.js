@@ -16,7 +16,7 @@ let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
 let isProcessingEvents = false;
-const ipfs = new IPFS();
+const ipfs = new IPFS({ minimal: true });
 
 export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json));

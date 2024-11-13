@@ -18,22 +18,32 @@ describe('stop', () => {
 });
 
 describe('add', () => {
+    const data = 'mock';
+    const hash ='z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa';
+
     it('should create CID from data', async () => {
-        const ipfs = await IPFS.create();
+        const ipfs = await IPFS.create(data);
         const cid = await ipfs.add('mock');
         await ipfs.stop();
 
-        expect(cid).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
+        expect(cid).toBe(hash);
+    });
+
+    it('should create CID from data without using helia', async () => {
+        const ipfs = await IPFS.create({ minimal: true });
+        const cid = await ipfs.add(data);
+
+        expect(cid).toBe(hash);
     });
 
     it('should create CID from data with fs blockstore', async () => {
         mockFs({});
         const ipfs = await IPFS.create({ datadir: 'ipfs' });
-        const cid = await ipfs.add('mock');
+        const cid = await ipfs.add(data);
         await ipfs.stop();
         mockFs.restore();
 
-        expect(cid).toBe('z3v8AuadAh7dTMdMUPJpnRg1duVrHEcwfKvqzr7mdnH6ceyrtoa');
+        expect(cid).toBe(hash);
     });
 });
 

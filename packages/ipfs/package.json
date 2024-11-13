@@ -4,9 +4,7 @@
   "description": "MDIP IPFS lib",
   "type": "module",
   "exports": {
-    ".": "./src/ipfs-obj.js",
-    "./lib": "./src/ipfs-lib.js",
-    "./sdk": "./src/ipfs-sdk.js"
+    ".": "./src/ipfs.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
