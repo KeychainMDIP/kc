@@ -508,6 +508,10 @@ export async function resolveDID(did, options = {}) {
             break;
         }
 
+        if (atVersion && version === atVersion) {
+            break;
+        }
+
         confirmed = confirmed && mdip.registry === registry;
 
         if (confirm && !confirmed) {
@@ -557,10 +561,6 @@ export async function resolveDID(did, options = {}) {
             }
 
             // console.error(`unknown type ${operation.type}`);
-        }
-
-        if (atVersion && version === atVersion) {
-            break;
         }
     }
 
@@ -794,10 +794,10 @@ export async function processEvents() {
     }
 
     console.log(JSON.stringify(eventsQueue, null, 4));
-    eventsQueue = [];
+    const pending = eventsQueue.length;
 
     isProcessingEvents = false;
-    return { added, merged };
+    return { added, merged, pending };
 }
 
 export async function verifyEvent(event) {

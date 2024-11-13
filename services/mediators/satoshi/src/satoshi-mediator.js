@@ -113,7 +113,15 @@ async function scanBlocks() {
     }
 }
 
-async function importBatch(db, item) {
+async function importBatch(item) {
+    if (item.imported && item.processed) {
+        const processed = item.processed.added + item.processed.merged;
+        // Importing an update (e.g. key change) could trigger the validation of many pending ops
+        if (processed >= item.imported.total) {
+            return;
+        }
+    }
+
     console.log(JSON.stringify(item, null, 4));
 
     const queue = await keymaster.resolveAsset(item.did);
@@ -135,9 +143,11 @@ async function importBatch(db, item) {
     }
 
     console.log(JSON.stringify(batch, null, 4));
-    const imported = await gatekeeper.importBatch(batch);
-    item.imported = imported;
-    writeDb(db);
+    item.imported = await gatekeeper.importBatch(batch);
+    item.imported.total = batch.length;
+    if (item.imported.queued > 0) {
+        item.processed = await gatekeeper.processEvents();
+    }
     console.log(JSON.stringify(item, null, 4));
 }
 
@@ -145,18 +155,18 @@ async function importBatches() {
     const db = loadDb();
 
     for (const item of db.discovered) {
-        if (!item.imported) {
-            try {
-                await importBatch(db, item);
-            }
-            catch (error) {
-                // OK if DID not found, we'll just try again later
-                if (error.error !== 'DID not found') {
-                    console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
-                }
+        try {
+            await importBatch(item);
+        }
+        catch (error) {
+            // OK if DID not found, we'll just try again later
+            if (error.error !== 'DID not found') {
+                console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
             }
         }
     }
+
+    writeDb(db);
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -429,13 +439,13 @@ async function main() {
 
     if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);
-        importLoop();
+        setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
         console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
-        exportLoop();
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 
     await keymaster.stop();

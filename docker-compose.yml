@@ -69,6 +69,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ftc
+    image: keychainmdip/ftc-node
     volumes:
       - ./data/tftc:/root/.feathercoin
 
