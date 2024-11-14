@@ -89,7 +89,7 @@ MDIP components communicate with one another using their respective APIs. It is 
 
 ### Software Dependencies
 
-- Linux OS v.5+
+- Linux OS - Tested using Debian GNU/Linux 11
 - Up-to-date Docker
 - NodeJS v.18.15.0
 - `git` is optional; you can download an archive of the software manually.
