@@ -64,7 +64,7 @@ While perhaps not optimal for a production environment, developement environment
 ![MDIP-resources](https://github.com/user-attachments/assets/7d63d4dc-fa51-4254-b9ad-94b91d98f78d)
 
 - kc-gatekeeper-1 is the MDIP Gatekeeper, a reference implementation of the [MDIP DID Scheme] (https://keychain.org/docs/mdip/scheme) exposing a REST API interface.
-- kc-keymaster-1 is a [Keymaster API](https://keychain.org/docs/keychain/library/api/) to manage the server's MDIP identity.
+- kc-keymaster-1 is the MDIP Keymaster, which provides an interface to the server's keymaster wallet and expose a REST [Keymaster API](https://keychain.org/docs/keychain/library/api/) to manage the server's MDIP identity.
 - kc-hyperswarm-1 is the document distribution protocol service built on [Hyperswarm](https://github.com/holepunchto/hyperswarm).
 - kc-tftc-mediator-1 is the MDIP Mediator for [Feathercoin Testnet](https://feathercoin.com/)
 - kc-tbtc-mediator-1 is the MDIP Mediator for [Bitcoin Testnet](https://github.com/bitcoin/)
