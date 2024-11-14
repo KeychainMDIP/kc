@@ -1,6 +1,6 @@
 {
   "name": "@mdip/cipher",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MDIP cipher lib",
   "type": "module",
   "exports": {
@@ -14,11 +14,11 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@mdip/browser-hdkey": "^0.1.8",
     "@noble/ciphers": "^0.4.1",
     "@noble/hashes": "^1.3.3",
     "@noble/secp256k1": "^2.0.0",
     "bip39": "^3.1.0",
-    "browser-hdkey": "github:KeychainMDIP/browser-hdkey",
     "buffer": "^6.0.3",
     "canonicalize": "^2.0.0",
     "hdkey": "^2.1.0",
