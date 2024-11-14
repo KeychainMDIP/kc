@@ -1,12 +1,11 @@
 import { MongoClient } from 'mongodb';
-import config from './config.js';
 import * as exceptions from '@mdip/exceptions';
 
 let client;
 let db;
 
 export async function start(dbName = 'mdip') {
-    client = new MongoClient(config.mongodbUrl || 'mongodb://localhost:27017');
+    client = new MongoClient(process.env.KC_MONGODB_URL || 'mongodb://localhost:27017');
     await client.connect();
     db = client.db(dbName);
     await db.collection('dids').createIndex({ id: 1 });
