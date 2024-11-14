@@ -48,7 +48,7 @@ MDIP operators can interact with their server's Keymaster in multiple ways:
 - use the Keymaster WebUI at `http://localhost:4226`,
 - use the Keymaster REST OpenAPI at `http://localhost:4226/api/v1/`.
 
-The MDIP [Integration Guide](integration_guide.md) focuses on Keymaster deployments, Keymaster OpenAPI interface, and integration of MDIP wallet functionality with 3rd party applications.
+The MDIP [Integration Guide](https://github.com/KeychainMDIP/kc/blob/ab36a8a7b3b6bbb60de93c0b9516f8629fa4f690/doc/integration_guide.md) focuses on Keymaster deployments, Keymaster OpenAPI interface, and integration of MDIP wallet functionality with 3rd party applications.
 
 ### MDIP Components
 
