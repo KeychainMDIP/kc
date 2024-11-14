@@ -10,28 +10,43 @@ npm install @mdip/ipfs
 
 ## Usage
 
-### Library
-
-The library must be configured by calling the start function:
-
-### REST SDK
-
-The SDK is used to communicate with an IPFS REST API service.
+### basic use
 
 ```js
-import * as ipfs from '@mdip/ipfs/sdk';
+import IPFS from '@mdip/ipfs';
 
-// Try connecting to the gatekeeper service every second,
-// and start reporting (chatty) if not connected after 5 attempts
-await ipfs.start({
-    url: 'http://gatekeeper-host:4224',
-    waitUntilReady: true,
-    intervalSeconds: 1,
-    chatty: false,
-    becomeChattyAfter: 5
-});
+const ipfs = new IPFS();
 
-const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
-const docs = await gatekeeper.resolveDID(did);
-console.log(JSON.stringify(docs, null, 4));
+await ipfs.start();
+
+const data = { data: 'whatever' };
+const cid = await ipfs.add(data);
+const retrieve = await ipfs.get(cid); // retrieve == data
+
+await ipfs.stop();
+```
+
+### create factory
+
+The static factory method `create` can be used to create and start an IPFS instance:
+
+```js
+const ipfs = await IPFS.create();
+```
+
+### FS blockstore mode
+
+Passing `datadir` in options to `start` or `create` will persist the data to the specified folder.
+
+```js
+const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
+```
+
+### minimal mode
+
+Starting IPFS in `minimal` mode avoids starting a Helia IPFS server.
+Only `add` works to generate CIDs. Nothing is persisted so `get` always returns null.
+
+```js
+const ipfs = await IPFS.create({ minimal: true });
 ```
