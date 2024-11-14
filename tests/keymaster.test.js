@@ -9,13 +9,15 @@ import * as wallet from '@mdip/keymaster/db/json';
 import * as exceptions from '@mdip/exceptions';
 
 beforeEach(async () => {
-    db_json.start('mdip');
+    await db_json.start('mdip');
     await gatekeeper.start({ db: db_json });
     await keymaster.start({ gatekeeper, wallet, cipher });
 });
 
 afterEach(async () => {
     await keymaster.stop();
+    await gatekeeper.stop();
+    await db_json.stop();
 });
 
 describe('start', () => {

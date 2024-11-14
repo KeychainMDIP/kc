@@ -1,7 +1,7 @@
 node_modules/
 tmp/
-ipfs/
 .env
 custodials
 coverage/
 **/*.log
+.clinic/

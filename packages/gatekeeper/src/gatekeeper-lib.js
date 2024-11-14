@@ -1,9 +1,7 @@
-import { json } from '@helia/json';
-import { base58btc } from 'multiformats/bases/base58';
 import canonicalize from 'canonicalize';
-import { createHelia } from 'helia';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
+import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
 const validVersions = [1];
@@ -14,12 +12,11 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let helia = null;
-let ipfs = null;
 let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
 let isProcessingEvents = false;
+const ipfs = new IPFS({ minimal: true });
 
 export function copyJSON(json) {
     return JSON.parse(JSON.stringify(json));
@@ -43,20 +40,11 @@ export async function start(options = {}) {
         console = options.console;
     }
 
-    if (!ipfs) {
-        helia = await createHelia();
-        ipfs = json(helia);
-    }
+    return ipfs.start();
 }
 
 export async function stop() {
-    if (helia) {
-        helia.stop();
-    }
-
-    if (db) {
-        await db.stop();
-    }
+    return ipfs.stop();
 }
 
 async function primeCache() {
@@ -194,8 +182,10 @@ export async function resetDb() {
 }
 
 export async function anchorSeed(seed) {
+    //console.time('>>ipfs.add');
     const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    return `${config.didPrefix}:${cid.toString(base58btc)}`;
+    //console.timeEnd('>>ipfs.add');
+    return `${config.didPrefix}:${cid}`;
 }
 
 export async function verifyOperation(operation) {
@@ -361,7 +351,8 @@ export async function createDID(operation) {
                 registry: 'local',
                 time: operation.created,
                 ordinal: 0,
-                operation: operation
+                operation,
+                did
             });
 
             // Create events are distributed only by hyperswarm
@@ -582,7 +573,8 @@ export async function updateDID(operation) {
             registry: 'local',
             time: operation.signature.signed,
             ordinal: 0,
-            operation: operation
+            operation,
+            did: operation.did
         });
 
         delete eventsCache[operation.did];

@@ -1,13 +1,10 @@
 {
-  "name": "@mdip/keymaster",
+  "name": "@mdip/ipfs",
   "version": "0.3.0",
-  "description": "MDIP Keymaster",
+  "description": "MDIP IPFS lib",
   "type": "module",
   "exports": {
-    "./lib": "./src/keymaster-lib.js",
-    "./sdk": "./src/keymaster-sdk.js",
-    "./db/json": "./src/db-wallet-json.js",
-    "./db/web": "./src/db-wallet-web.js"
+    ".": "./src/ipfs.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,8 +13,11 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/exceptions": "*",
-    "axios": "^1.7.7"
+    "@helia/json": "^2.0.0",
+    "axios": "^1.7.7",
+    "blockstore-fs": "^2.0.2",
+    "helia": "^3.0.0",
+    "multiformats": "^13.0.0"
   },
   "repository": {
     "type": "git",

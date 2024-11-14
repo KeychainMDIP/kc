@@ -11,77 +11,18 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
-beforeEach(async () => {
-    db_json.start('test');
-    db_json.resetDb();
+beforeAll(async () => {
+    await db_json.start('test');
     await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
 });
 
-afterEach(async () => {
+beforeEach(async () => {
+    await db_json.resetDb();  // Reset database for each test to ensure isolation
+});
+
+afterAll(async () => {
     await gatekeeper.stop();
-});
-
-describe('start', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should prime the cache on demand', async () => {
-        mockFs({});
-
-        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
-    });
-
-    it('should throw exception on invalid parameters', async () => {
-        mockFs({});
-
-        try {
-            await gatekeeper.start();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
-        }
-        catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
-        }
-    });
-});
-
-describe('anchorSeed', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should create DID from operation', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did = await gatekeeper.anchorSeed(mockTxn);
-
-        expect(did.startsWith('did:test:')).toBe(true);
-    });
-
-    it('should create same DID from same operation with date included', async () => {
-        mockFs({});
-
-        const mockTxn = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                registry: "mockRegistry"
-            }
-        };
-        const did1 = await gatekeeper.anchorSeed(mockTxn);
-        const did2 = await gatekeeper.anchorSeed(mockTxn);
-
-        expect(did1 === did2).toBe(true);
-    });
+    await db_json.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {
@@ -185,6 +126,74 @@ async function createAssetOp(agent, keypair, registry = 'local', validUntil = nu
         }
     };
 }
+
+describe('start', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should prime the cache on demand', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        await gatekeeper.createDID(agentOp);
+
+        await gatekeeper.stop();
+        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
+    });
+
+    it('should throw exception on invalid parameters', async () => {
+        mockFs({});
+
+        try {
+            await gatekeeper.start();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+});
+
+describe('anchorSeed', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create DID from operation', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+        const did = await gatekeeper.anchorSeed(mockTxn);
+
+        expect(did.startsWith('did:test:')).toBe(true);
+    });
+
+    it('should create same DID from same operation with date included', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+        const did1 = await gatekeeper.anchorSeed(mockTxn);
+        const did2 = await gatekeeper.anchorSeed(mockTxn);
+
+        expect(did1 === did2).toBe(true);
+    });
+});
 
 describe('generateDoc', () => {
     afterEach(() => {
@@ -1615,6 +1624,51 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
 
         expect(response.merged).toBe(1);
+    });
+
+    it('should import a valid batch export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        // create on hyperswarm because exportBatch will not export local DIDs
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        await gatekeeper.createDID(assetOp);
+        const batch = await gatekeeper.exportBatch();
+
+        await gatekeeper.importBatch(batch);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.merged).toBe(2);
+    });
+
+    it('should import a batch export with missing event dids', async () => {
+        // This simulates an import from hyperswarm-mediator which receives only operations and creates events without DIDs
+        // (TBD revisit whether events should be created with DIDs in advance of import)
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        // create on hyperswarm because exportBatch will not export local DIDs
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(agentDID);
+        const updateOp = await createUpdateOp(keypair, agentDID, doc);
+        await gatekeeper.updateDID(updateOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        await gatekeeper.createDID(assetOp);
+        const batch = await gatekeeper.exportBatch();
+
+        await gatekeeper.resetDb();
+
+        for (const event of batch) {
+            delete event.did;
+        }
+
+        await gatekeeper.importBatch(batch);
+        const response = await gatekeeper.processEvents();
+
+        expect(response.added).toBe(3);
     });
 
     it('should report 0 ops added when DID exists', async () => {
