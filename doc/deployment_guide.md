@@ -805,20 +805,4 @@ MDIP is a peer-to-peer system. Interactions between human users and server hosts
 - Keymaster Private Wallet (web and cli)
 - Gatekeeper API (private or public)
 
-## Appendix (TBD)
 
-### Securing a generic system or website with MDIP
-
-- nginx mdip-auth session router setup
-- mdip challenge/response examples
-
-### MDIP authentication demo site
-
-- Installing auth-demo
-- Using auth-demo
-- Customizing auth-demo
-
-### MDIP Integration Guide
-
-- Keymaster API
-- Client and server keys
