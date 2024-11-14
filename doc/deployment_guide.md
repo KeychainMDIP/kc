@@ -90,8 +90,8 @@ MDIP components communicate with one another using their respective APIs. It is 
 ### Software Dependencies
 
 - Linux OS - Tested using Debian GNU/Linux 11
-- Up-to-date Docker
-- NodeJS v.18.15.0
+- Docker version 27+
+- NodeJS v.18.15.0+
 - `git` is optional; you can download an archive of the software manually.
 
 ### Operating System Preparation
@@ -104,7 +104,7 @@ It is recommended that a user account be created to run all MDIP components; the
 
 1. Create a `mdip` user account for MDIP:
     - Note the `uid` and `gid` numerical values returned by the `id` command.
-    - Grant `sudo` privileges for admin convenience.
+    - Optionally grant `sudo` privileges for admin convenience.
 
 1. Create a data mount or provision space on existing mounts:
     - Sufficient disk space allocated should be 80Gb+.
