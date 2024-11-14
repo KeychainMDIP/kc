@@ -21,6 +21,7 @@
   "dependencies": {
     "@mdip/cipher": "*",
     "@mdip/exceptions": "*",
+    "@mdip/ipfs": "*",
     "axios": "^1.7.7",
     "canonicalize": "^2.0.0",
     "dotenv": "^16.4.5",

@@ -16,7 +16,6 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/cipher": "*",
     "@mdip/exceptions": "*",
     "axios": "^1.7.7"
   },
