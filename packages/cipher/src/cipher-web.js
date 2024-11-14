@@ -9,7 +9,7 @@ import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
 
 // vv Browser specific modifications
-import HDKey from 'browser-hdkey';
+import HDKey from '@mdip/browser-hdkey';
 // ^^ Browser specific modifications
 
 // Polyfill for synchronous signatures
