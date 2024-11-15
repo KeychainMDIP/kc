@@ -935,6 +935,47 @@ program
         }
     });
 
+program
+    .command('perf-test')
+    .description('Keymaster performance test')
+    .action(async () => {
+        try {
+            const myID = await keymaster.getCurrentId();
+            const doc = await keymaster.resolveDID(myID);
+            const myDID = doc.didDocument.id;
+            const expires = new Date();
+            expires.setMinutes(expires.getMinutes() + 1);
+            const testOptions = { registry: 'local', validUntil: expires.toISOString() };
+
+            console.time('createSchema');
+            const schemaDID = await keymaster.createSchema(undefined, testOptions);
+            console.timeEnd('createSchema');
+            console.log(`schemaDID: ${schemaDID}`);
+
+            console.time('total');
+            for (let i = 0; i < 100; i++) {
+                console.time('bindCredential');
+                const credential = await keymaster.bindCredential(schemaDID, myDID);
+                console.timeEnd('bindCredential');
+                console.log(`credential: ${JSON.stringify(credential, null, 4)}`);
+
+                console.time('issueCredential');
+                const credentialDID = await keymaster.issueCredential(credential, testOptions);
+                console.timeEnd('issueCredential');
+                console.log(`credentialDID: ${credentialDID}`);
+
+                console.time('decryptJSON');
+                const credentialDoc = await keymaster.decryptJSON(credentialDID);
+                console.timeEnd('decryptJSON');
+                console.log(`credentialDoc: ${JSON.stringify(credentialDoc, null, 4)}`);
+            }
+            console.timeEnd('total');
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
 async function run() {
     if (keymasterURL) {
         keymaster = keymaster_sdk;
