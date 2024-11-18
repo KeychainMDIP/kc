@@ -269,10 +269,8 @@ async function verifyCreateOperation(operation) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 
-    if (operation.mdip.validUntil) {
-        if (!verifyDateFormat(operation.mdip.validUntil)) {
-            throw new Error(exceptions.INVALID_OPERATION);
-        }
+    if (operation.mdip.validUntil && !verifyDateFormat(operation.mdip.validUntil)) {
+        throw new Error(exceptions.INVALID_OPERATION);
     }
 
     if (operation.mdip.type === 'agent') {
