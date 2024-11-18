@@ -936,10 +936,14 @@ program
     });
 
 program
-    .command('perf-test')
-    .description('Keymaster performance test')
-    .action(async () => {
+    .command('perf-test [N]')
+    .description('Performance test to create N credentials')
+    .action(async (N) => {
         try {
+            if (!N) {
+                N = 100;
+            }
+
             const myID = await keymaster.getCurrentId();
             const doc = await keymaster.resolveDID(myID);
             const myDID = doc.didDocument.id;
@@ -953,21 +957,18 @@ program
             console.log(`schemaDID: ${schemaDID}`);
 
             console.time('total');
-            for (let i = 0; i < 100; i++) {
+            for (let i = 0; i < N; i++) {
                 console.time('bindCredential');
                 const credential = await keymaster.bindCredential(schemaDID, myDID);
                 console.timeEnd('bindCredential');
-                console.log(`credential: ${JSON.stringify(credential, null, 4)}`);
 
                 console.time('issueCredential');
                 const credentialDID = await keymaster.issueCredential(credential, testOptions);
                 console.timeEnd('issueCredential');
-                console.log(`credentialDID: ${credentialDID}`);
 
                 console.time('decryptJSON');
-                const credentialDoc = await keymaster.decryptJSON(credentialDID);
+                await keymaster.decryptJSON(credentialDID);
                 console.timeEnd('decryptJSON');
-                console.log(`credentialDoc: ${JSON.stringify(credentialDoc, null, 4)}`);
             }
             console.timeEnd('total');
         }
