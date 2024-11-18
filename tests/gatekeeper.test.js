@@ -2343,6 +2343,36 @@ describe('verifyDb', () => {
         expect(total).toBe(2);
     });
 
+    it('should get same results with cached verifications', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const verify1 = await gatekeeper.verifyDb();
+        const verify2 = await gatekeeper.verifyDb();
+
+        expect(verify1).toStrictEqual(verify2);
+    });
+
+    it('should get same results with chatty turned off', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const verify1 = await gatekeeper.verifyDb();
+        const verify2 = await gatekeeper.verifyDb({ chatty: false });
+
+        expect(verify1).toStrictEqual(verify2);
+    });
+
     it('should remove invalid DIDs', async () => {
         mockFs({});
 
