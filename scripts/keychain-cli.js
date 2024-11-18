@@ -938,15 +938,9 @@ program
 program
     .command('perf-test [N]')
     .description('Performance test to create N credentials')
-    .action(async (N) => {
+    .action(async (N = 100) => {
         try {
-            if (!N) {
-                N = 100;
-            }
-
-            const myID = await keymaster.getCurrentId();
-            const doc = await keymaster.resolveDID(myID);
-            const myDID = doc.didDocument.id;
+            const currentID = await keymaster.getCurrentId();
             const expires = new Date();
             expires.setMinutes(expires.getMinutes() + 1);
             const testOptions = { registry: 'local', validUntil: expires.toISOString() };
@@ -958,8 +952,10 @@ program
 
             console.time('total');
             for (let i = 0; i < N; i++) {
+                console.log(`credential ${i + 1}/${N}`);
+
                 console.time('bindCredential');
-                const credential = await keymaster.bindCredential(schemaDID, myDID);
+                const credential = await keymaster.bindCredential(schemaDID, currentID);
                 console.timeEnd('bindCredential');
 
                 console.time('issueCredential');

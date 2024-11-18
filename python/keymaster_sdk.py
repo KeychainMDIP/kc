@@ -44,6 +44,10 @@ def resolveId(id):
     response = proxy_request('GET', f'{KEYMASTER_API}/ids/{id}')
     return response['docs']
 
+def createSchema(schema, options={}):
+    response = proxy_request('POST', f'{KEYMASTER_API}/schemas', json={"schema": schema, "options": options})
+    return response['did']
+
 def bindCredential(schema, subject, options={}):
     response = proxy_request('POST', f'{KEYMASTER_API}/credentials/bind', json={"schema": schema, "subject": subject, "options": options})
     return response['credential']

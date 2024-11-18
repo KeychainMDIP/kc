@@ -1,7 +1,6 @@
 import keymaster_sdk as keymaster
 import json
-
-emailSchema = 'did:test:z3v8Auaha4rszsBwMyApaY9eUR1pipjGASYvqqfuXiXhxA8DXmo'
+from datetime import datetime, timedelta
 
 def main():
     try:
@@ -17,11 +16,20 @@ def main():
         docs = keymaster.resolveId(currentId)
         print(json.dumps(docs, indent=4))
 
-        credential = keymaster.bindCredential(emailSchema, currentId)
+        expires = datetime.now() + timedelta(minutes=1)
+
+        test_options = {
+            'registry': 'local',
+            'validUntil': expires.isoformat()
+        }
+
+        schema = keymaster.createSchema(None, test_options)
+
+        credential = keymaster.bindCredential(schema, currentId)
         print(json.dumps(credential, indent=4))
 
-        for i in range(5):
-            vcDID = keymaster.issueCredential(credential)
+        for i in range(100):
+            vcDID = keymaster.issueCredential(credential, test_options)
             print(f"VC {i}: {vcDID}")
 
     except Exception as e:
