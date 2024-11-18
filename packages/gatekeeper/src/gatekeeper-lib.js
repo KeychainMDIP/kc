@@ -91,6 +91,7 @@ export async function verifyDb(chatty = true) {
             invalid += 1;
             await db.deleteEvents(did);
             delete eventsCache[did];
+            continue;
         }
 
         if (validUntil) {
@@ -178,6 +179,7 @@ export async function listRegistries() {
 export async function resetDb() {
     await db.resetDb();
     eventsCache = {};
+    verifiedDIDs = {};
 }
 
 export async function anchorSeed(seed) {
