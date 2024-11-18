@@ -15,6 +15,7 @@ let db = null;
 let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
+let verifiedDIDs = {};
 let isProcessingEvents = false;
 const ipfs = new IPFS({ minimal: true });
 
@@ -58,69 +59,69 @@ async function primeCache() {
     }
 }
 
-export async function verifyDID(did) {
-    const doc = await resolveDID(did, { verify: true });
-    const isoDate = doc?.mdip?.validUntil;
+export async function verifyDb(options = { chatty: true }) {
+    const { chatty } = options;
+    const dids = await getDIDs();
+    const total = dids.length;
+    let n = 0;
+    let expired = 0;
+    let invalid = 0;
+    let verified = Object.keys(verifiedDIDs).length;
 
-    if (isoDate) {
-        const validUntil = new Date(isoDate);
-        const now = new Date();
-
-        // Check if validUntil is a valid date
-        if (isNaN(validUntil.getTime())) {
-            throw new Error(exceptions.INVALID_DID);
-        }
-
-        if (validUntil < now) {
-            return { expired: true, status: 'Expired' };
-        }
-
-        const minutesLeft = Math.round((validUntil.getTime() - now.getTime()) / 60 / 1000);
-        return { expired: false, status: `Expires in ${minutesLeft} minutes` };
-    }
-
-    return { expired: false, status: "OK" };
-}
-
-export async function verifyDb(chatty = true) {
     if (chatty) {
         console.time('verifyDb');
     }
 
-    const dids = await getDIDs();
-    const total = dids.length;
-    let n = 0;
-    let verified = 0;
-    let expired = 0;
-    let invalid = 0;
-
     for (const did of dids) {
         n += 1;
-        try {
-            const { expired: didExpired, status } = await verifyDID(did);
 
-            if (didExpired) {
+        if (verifiedDIDs[did]) {
+            continue;
+        }
+
+        let validUntil = null;
+
+        try {
+            const doc = await resolveDID(did, { verify: true });
+            validUntil = doc.mdip.validUntil;
+        }
+        catch (error) {
+            if (chatty) {
+                console.log(`removing ${n}/${total} ${did} invalid`);
+            }
+            invalid += 1;
+            await db.deleteEvents(did);
+            delete eventsCache[did];
+            continue;
+        }
+
+        if (validUntil) {
+            const expires = new Date(validUntil);
+            const now = new Date();
+
+            if (expires < now) {
                 if (chatty) {
-                    console.log(`removing ${n}/${total} ${did} ${status}`);
+                    console.log(`removing ${n}/${total} ${did} expired`);
                 }
-                db.deleteEvents(did);
+                await db.deleteEvents(did);
                 delete eventsCache[did];
                 expired += 1;
             }
             else {
+                const minutesLeft = Math.round((expires.getTime() - now.getTime()) / 60 / 1000);
+
                 if (chatty) {
-                    console.log(`verifying ${n}/${total} ${did} ${status}`);
+                    console.log(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
                 }
                 verified += 1;
             }
         }
-        catch (error) {
+        else {
             if (chatty) {
-                console.log(`removing ${n}/${total} ${did} ${error}`);
+                console.log(`verifying ${n}/${total} ${did} OK`);
             }
-            invalid += 1;
-            db.deleteEvents(did);
-            delete eventsCache[did];
+            verifiedDIDs[did] = true;
+            verified += 1;
         }
     }
 
@@ -179,6 +180,7 @@ export async function listRegistries() {
 export async function resetDb() {
     await db.resetDb();
     eventsCache = {};
+    verifiedDIDs = {};
 }
 
 export async function anchorSeed(seed) {
@@ -267,6 +269,10 @@ async function verifyCreateOperation(operation) {
     }
 
     if (!verifySignatureFormat(operation.signature)) {
+        throw new Error(exceptions.INVALID_OPERATION);
+    }
+
+    if (operation.mdip.validUntil && !verifyDateFormat(operation.mdip.validUntil)) {
         throw new Error(exceptions.INVALID_OPERATION);
     }
 

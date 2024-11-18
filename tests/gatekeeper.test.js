@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-    await db_json.resetDb();  // Reset database for each test to ensure isolation
+    await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
 afterAll(async () => {
@@ -458,6 +458,7 @@ describe('createDID', () => {
         const agent = await gatekeeper.createDID(agentOp);
 
         try {
+            // inconsistent registry
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             await gatekeeper.createDID(assetOp);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
@@ -467,6 +468,7 @@ describe('createDID', () => {
         }
 
         try {
+            // invalid controller
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             assetOp.controller = 'mock';
             await gatekeeper.createDID(assetOp);
@@ -476,8 +478,18 @@ describe('createDID', () => {
         }
 
         try {
+            // invalid signature
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             assetOp.signature = null;
+            await gatekeeper.createDID(assetOp);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        } catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+        }
+
+        try {
+            // invalid validUntil date
+            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm', 'mock');
             await gatekeeper.createDID(assetOp);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         } catch (error) {
@@ -2331,6 +2343,36 @@ describe('verifyDb', () => {
         expect(total).toBe(2);
     });
 
+    it('should get same results with cached verifications', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const verify1 = await gatekeeper.verifyDb();
+        const verify2 = await gatekeeper.verifyDb();
+
+        expect(verify1).toStrictEqual(verify2);
+    });
+
+    it('should get same results with chatty turned off', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const verify1 = await gatekeeper.verifyDb();
+        const verify2 = await gatekeeper.verifyDb({ chatty: false });
+
+        expect(verify1).toStrictEqual(verify2);
+    });
+
     it('should remove invalid DIDs', async () => {
         mockFs({});
 
@@ -2368,23 +2410,18 @@ describe('verifyDb', () => {
         const assetOp1 = await createAssetOp(agentDID, keypair, 'local', validUntil);
         await gatekeeper.createDID(assetOp1);
 
-        // create asset with invalid date
-        const assetOp2 = await createAssetOp(agentDID, keypair, 'local', 'mock');
-        await gatekeeper.createDID(assetOp2);
-
         // create asset that expires later
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
         const assetOp3 = await createAssetOp(agentDID, keypair, 'local', expires.toISOString());
         await gatekeeper.createDID(assetOp3);
 
-
         const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
 
         expect(verified).toBe(2);
         expect(expired).toBe(1);
-        expect(invalid).toBe(1);
-        expect(total).toBe(4);
+        expect(invalid).toBe(0);
+        expect(total).toBe(3);
     });
 });
 

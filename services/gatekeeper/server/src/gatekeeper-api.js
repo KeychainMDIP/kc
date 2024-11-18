@@ -248,14 +248,15 @@ app.use((req, res) => {
     }
 });
 
-async function verifyLoop() {
+async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
-        console.log(`DID verification loop ${JSON.stringify(response)} waiting 60m...`);
-    } catch (error) {
-        console.error(`Error in verifyLoop: ${error}`);
+        console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
     }
-    setTimeout(verifyLoop, 60 * 60 * 1000);
+    catch (error) {
+        console.error(`Error in DID garbage collection: ${error}`);
+    }
+    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
 
 async function main() {
@@ -264,7 +265,8 @@ async function main() {
     console.timeEnd('checkDb');
     console.log(`check: ${JSON.stringify(check)}`);
 
-    setTimeout(verifyLoop, 60 * 60 * 1000);
+    console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
+    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 
     const registries = await gatekeeper.initRegistries(config.registries);
 

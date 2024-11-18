@@ -935,6 +935,44 @@ program
         }
     });
 
+program
+    .command('perf-test [N]')
+    .description('Performance test to create N credentials')
+    .action(async (N = 100) => {
+        try {
+            const currentID = await keymaster.getCurrentId();
+            const expires = new Date();
+            expires.setMinutes(expires.getMinutes() + 1);
+            const testOptions = { registry: 'local', validUntil: expires.toISOString() };
+
+            console.time('createSchema');
+            const schemaDID = await keymaster.createSchema(undefined, testOptions);
+            console.timeEnd('createSchema');
+            console.log(`schemaDID: ${schemaDID}`);
+
+            console.time('total');
+            for (let i = 0; i < N; i++) {
+                console.log(`credential ${i + 1}/${N}`);
+
+                console.time('bindCredential');
+                const credential = await keymaster.bindCredential(schemaDID, currentID);
+                console.timeEnd('bindCredential');
+
+                console.time('issueCredential');
+                const credentialDID = await keymaster.issueCredential(credential, testOptions);
+                console.timeEnd('issueCredential');
+
+                console.time('decryptJSON');
+                await keymaster.decryptJSON(credentialDID);
+                console.timeEnd('decryptJSON');
+            }
+            console.timeEnd('total');
+        }
+        catch (error) {
+            console.error(error.message);
+        }
+    });
+
 async function run() {
     if (keymasterURL) {
         keymaster = keymaster_sdk;
