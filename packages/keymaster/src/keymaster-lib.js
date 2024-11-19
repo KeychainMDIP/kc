@@ -1792,7 +1792,7 @@ export async function viewPoll(poll) {
             results.tally[vote].count += 1;
         }
 
-        const roster = await resolveAsset(data.roster);
+        const roster = await getGroup(data.roster);
         const total = roster.members.length;
 
         results.votes = {
