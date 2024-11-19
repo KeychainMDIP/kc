@@ -3293,7 +3293,7 @@ describe('getPoll', () => {
         expect(poll).toStrictEqual(template);
     });
 
-    it('should return null if non-group DID specified', async () => {
+    it('should return null if non-poll DID specified', async () => {
         mockFs({});
 
         const agentDID = await keymaster.createId('Bob');
@@ -3302,7 +3302,7 @@ describe('getPoll', () => {
         expect(group).toBe(null);
     });
 
-    it('should raise an exception if no DID specified', async () => {
+    it('should raise an exception if no poll DID specified', async () => {
         mockFs({});
 
         try {
