@@ -1032,7 +1032,7 @@ describe('updateDID', () => {
         const dataUpdated = { name: 'updated' };
         doc.didDocumentData = dataUpdated;
 
-        const ok = await keymaster.updateDID(dataDid, doc);
+        const ok = await keymaster.updateDID(doc);
         const doc2 = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
@@ -1057,7 +1057,7 @@ describe('updateDID', () => {
 
         await keymaster.setCurrentId('Alice');
 
-        const ok = await keymaster.updateDID(dataDid, doc);
+        const ok = await keymaster.updateDID(doc);
         const doc2 = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
@@ -3523,7 +3523,7 @@ describe('createSchema', () => {
         const doc = await keymaster.resolveDID(did);
 
         expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentData).toStrictEqual(mockSchema);
+        expect(doc.didDocumentData.schema).toStrictEqual(mockSchema);
     });
 
     it('should create a default schema', async () => {
@@ -3533,7 +3533,7 @@ describe('createSchema', () => {
         const did = await keymaster.createSchema();
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocumentData).toStrictEqual(keymaster.defaultSchema);
+        expect(doc.didDocumentData.schema).toStrictEqual(keymaster.defaultSchema);
     });
 
     it('should create a simple schema', async () => {
@@ -3543,7 +3543,7 @@ describe('createSchema', () => {
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocumentData).toStrictEqual(mockSchema);
+        expect(doc.didDocumentData.schema).toStrictEqual(mockSchema);
     });
 
     it('should throw an exception on create invalid schema', async () => {
@@ -3609,6 +3609,16 @@ describe('getSchema', () => {
 
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
+        const schema = await keymaster.getSchema(did);
+
+        expect(schema).toStrictEqual(mockSchema);
+    });
+
+    it('should return the old style schema (TEMP during did:test)', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset(mockSchema);
         const schema = await keymaster.getSchema(did);
 
         expect(schema).toStrictEqual(mockSchema);
