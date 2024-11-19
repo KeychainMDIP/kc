@@ -1728,31 +1728,42 @@ export async function createPoll(poll, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(poll, options);
+    return createAsset({ poll }, options);
 }
 
-export async function viewPoll(poll) {
-    const id = await fetchIdInfo();
-    const doc = await resolveDID(poll);
-    const data = doc.didDocumentData;
+export async function getPoll(id) {
+    const asset = await resolveAsset(id);
 
-    if (!data || !data.options || !data.deadline) {
+    // TEMP during did:test, return old version poll
+    if (asset.options) {
+        return asset;
+    }
+
+    return asset.poll || null;
+}
+
+export async function viewPoll(pollId) {
+    const id = await fetchIdInfo();
+    const poll = await getPoll(pollId);
+
+    if (!poll || !poll.options || !poll.deadline) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
     let hasVoted = false;
 
-    if (data.ballots) {
-        hasVoted = !!data.ballots[id.did];
+    if (poll.ballots) {
+        hasVoted = !!poll.ballots[id.did];
     }
 
-    const voteExpired = Date(data.deadline) > new Date();
-    const isEligible = await testGroup(data.roster, id.did);
+    const voteExpired = Date(poll.deadline) > new Date();
+    const isEligible = await testGroup(poll.roster, id.did);
+    const doc = await resolveDID(pollId);
 
     const view = {
-        description: data.description,
-        options: data.options,
-        deadline: data.deadline,
+        description: poll.description,
+        options: poll.options,
+        deadline: poll.deadline,
         isOwner: (doc.didDocument.controller === id.did),
         isEligible: isEligible,
         voteExpired: voteExpired,
@@ -1773,29 +1784,29 @@ export async function viewPoll(poll) {
             count: 0,
         });
 
-        for (let i = 0; i < data.options.length; i++) {
+        for (let i = 0; i < poll.options.length; i++) {
             results.tally.push({
                 vote: i + 1,
-                option: data.options[i],
+                option: poll.options[i],
                 count: 0,
             });
         }
 
-        for (let voter in data.ballots) {
-            const ballot = data.ballots[voter];
+        for (let voter in poll.ballots) {
+            const ballot = poll.ballots[voter];
             const decrypted = await decryptJSON(ballot.ballot);
             const vote = decrypted.vote;
             results.ballots.push({
                 ...ballot,
                 voter: voter,
                 vote: vote,
-                option: data.options[vote - 1],
+                option: poll.options[vote - 1],
             });
             voted += 1;
             results.tally[vote].count += 1;
         }
 
-        const roster = await getGroup(data.roster);
+        const roster = await getGroup(poll.roster);
         const total = roster.members.length;
 
         results.votes = {
@@ -1811,14 +1822,14 @@ export async function viewPoll(poll) {
     return view;
 }
 
-export async function votePoll(poll, vote, options = {}) {
+export async function votePoll(pollId, vote, options = {}) {
     const { spoil } = options;
     const id = await fetchIdInfo();
-    const didPoll = await lookupDID(poll);
+    const didPoll = await lookupDID(pollId);
     const doc = await resolveDID(didPoll);
-    const data = doc.didDocumentData;
-    const eligible = await testGroup(data.roster, id.did);
-    const expired = (Date(data.deadline) > new Date());
+    const poll = await getPoll(pollId);
+    const eligible = await testGroup(poll.roster, id.did);
+    const expired = (Date(poll.deadline) > new Date());
     const owner = doc.didDocument.controller;
 
     if (!eligible) {
@@ -1838,7 +1849,7 @@ export async function votePoll(poll, vote, options = {}) {
         };
     }
     else {
-        const max = data.options.length;
+        const max = poll.options.length;
         vote = parseInt(vote);
 
         if (!Number.isInteger(vote) || vote < 1 || vote > max) {
@@ -1875,56 +1886,57 @@ export async function updatePoll(ballot) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const docPoll = await resolveDID(dataBallot.poll);
-    const dataPoll = docPoll.didDocumentData;
+    const didPoll = dataBallot.poll;
+    const docPoll = await resolveDID(didPoll);
     const didOwner = docPoll.didDocument.controller;
+    const poll = await getPoll(didPoll);
 
     if (id.did !== didOwner) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const eligible = await testGroup(dataPoll.roster, didVoter);
+    const eligible = await testGroup(poll.roster, didVoter);
 
     if (!eligible) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const expired = (Date(dataPoll.deadline) > new Date());
+    const expired = (Date(poll.deadline) > new Date());
 
     if (expired) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const max = dataPoll.options.length;
+    const max = poll.options.length;
     const vote = parseInt(dataBallot.vote);
 
     if (!vote || vote < 0 || vote > max) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    if (!dataPoll.ballots) {
-        dataPoll.ballots = {};
+    if (!poll.ballots) {
+        poll.ballots = {};
     }
 
-    dataPoll.ballots[didVoter] = {
+    poll.ballots[didVoter] = {
         ballot: didBallot,
         received: new Date().toISOString(),
     };
 
-    return updateDID(docPoll);
+    return updateAsset(didPoll, { poll });
 }
 
-export async function publishPoll(poll, options = {}) {
+export async function publishPoll(pollId, options = {}) {
     const { reveal } = options;
     const id = await fetchIdInfo();
-    const doc = await resolveDID(poll);
+    const doc = await resolveDID(pollId);
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const view = await viewPoll(poll);
+    const view = await viewPoll(pollId);
 
     if (!view.results.final) {
         throw new Error(exceptions.INVALID_PARAMETER);
@@ -1934,21 +1946,23 @@ export async function publishPoll(poll, options = {}) {
         delete view.results.ballots;
     }
 
-    doc.didDocumentData.results = view.results;
+    const poll = await getPoll(pollId);
+    poll.results = view.results;
 
-    return updateDID(doc);
+    return updateAsset(pollId, { poll });
 }
 
-export async function unpublishPoll(poll) {
+export async function unpublishPoll(pollId) {
     const id = await fetchIdInfo();
-    const doc = await resolveDID(poll);
+    const doc = await resolveDID(pollId);
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    delete doc.didDocumentData.results;
+    const poll = await getPoll(pollId);
+    delete poll.results;
 
-    return await updateDID(doc);
+    return updateAsset(pollId, { poll });
 }
