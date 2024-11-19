@@ -3126,9 +3126,9 @@ describe('createPoll', () => {
         template.roster = rosterDid;
 
         const did = await keymaster.createPoll(template);
-        const data = await keymaster.resolveAsset(did);
+        const asset = await keymaster.resolveAsset(did);
 
-        expect(data).toStrictEqual(template);
+        expect(asset.poll).toStrictEqual(template);
     });
 
     it('should not create a poll from an invalid template', async () => {
@@ -3380,10 +3380,10 @@ describe('updatePoll', () => {
         const ballotDid = await keymaster.votePoll(pollDid, 1);
 
         const ok = await keymaster.updatePoll(ballotDid);
-        const pollData = await keymaster.resolveAsset(pollDid);
+        const poll = await keymaster.getPoll(pollDid);
 
         expect(ok).toBe(true);
-        expect(pollData.ballots[bobDid].ballot).toBe(ballotDid);
+        expect(poll.ballots[bobDid].ballot).toBe(ballotDid);
     });
 
     it('should reject non-ballots', async () => {
@@ -3425,30 +3425,30 @@ describe('publishPoll', () => {
         await keymaster.updatePoll(ballotDid);
         const ok = await keymaster.publishPoll(pollDid);
 
-        const pollData = await keymaster.resolveAsset(pollDid);
+        const poll = await keymaster.getPoll(pollDid);
 
         expect(ok).toBe(true);
-        expect(pollData.results.final).toBe(true);
-        expect(pollData.results.votes.eligible).toBe(1);
-        expect(pollData.results.votes.pending).toBe(0);
-        expect(pollData.results.votes.received).toBe(1);
-        expect(pollData.results.tally.length).toBe(4);
-        expect(pollData.results.tally[0]).toStrictEqual({
+        expect(poll.results.final).toBe(true);
+        expect(poll.results.votes.eligible).toBe(1);
+        expect(poll.results.votes.pending).toBe(0);
+        expect(poll.results.votes.received).toBe(1);
+        expect(poll.results.tally.length).toBe(4);
+        expect(poll.results.tally[0]).toStrictEqual({
             vote: 0,
             option: 'spoil',
             count: 0,
         });
-        expect(pollData.results.tally[1]).toStrictEqual({
+        expect(poll.results.tally[1]).toStrictEqual({
             vote: 1,
             option: 'yes',
             count: 1,
         });
-        expect(pollData.results.tally[2]).toStrictEqual({
+        expect(poll.results.tally[2]).toStrictEqual({
             vote: 2,
             option: 'no',
             count: 0,
         });
-        expect(pollData.results.tally[3]).toStrictEqual({
+        expect(poll.results.tally[3]).toStrictEqual({
             vote: 3,
             option: 'abstain',
             count: 0,
@@ -3467,11 +3467,11 @@ describe('publishPoll', () => {
         const ballotDid = await keymaster.votePoll(pollDid, 1);
         await keymaster.updatePoll(ballotDid);
         const ok = await keymaster.publishPoll(pollDid, { reveal: true });
-        const pollData = await keymaster.resolveAsset(pollDid);
+        const poll = await keymaster.getPoll(pollDid);
 
         expect(ok).toBe(true);
-        expect(pollData.results.ballots.length).toBe(1);
-        expect(pollData.results.ballots[0]).toStrictEqual({
+        expect(poll.results.ballots.length).toBe(1);
+        expect(poll.results.ballots[0]).toStrictEqual({
             ballot: ballotDid,
             voter: bobDid,
             vote: 1,
@@ -3501,10 +3501,10 @@ describe('unpublishPoll', () => {
         await keymaster.publishPoll(pollDid);
         const ok = await keymaster.unpublishPoll(pollDid);
 
-        const pollData = await keymaster.resolveAsset(pollDid);
+        const poll = await keymaster.getPoll(pollDid);
 
         expect(ok).toBe(true);
-        expect(pollData.results).toBe(undefined);
+        expect(poll.results).toBe(undefined);
     });
 });
 
