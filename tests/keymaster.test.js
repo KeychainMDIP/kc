@@ -2366,8 +2366,31 @@ describe('createGroup', () => {
         expect(doc.didDocument.controller).toBe(ownerDid);
 
         const expectedGroup = {
-            name: groupName,
-            members: [],
+            group: {
+                name: groupName,
+                members: [],
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedGroup);
+    });
+
+    it('should create a new group with members', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const groupName = 'mockGroup';
+        const groupDid = await keymaster.createGroup(groupName, { members: [ownerDid] });
+        const doc = await keymaster.resolveDID(groupDid);
+
+        expect(doc.didDocument.id).toBe(groupDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+
+        const expectedGroup = {
+            group: {
+                name: groupName,
+                members: [ownerDid],
+            }
         };
 
         expect(doc.didDocumentData).toStrictEqual(expectedGroup);
@@ -2492,14 +2515,17 @@ describe('addGroupMember', () => {
         await keymaster.addGroupMember(groupDid, dataDid);
         await keymaster.addGroupMember(groupDid, dataDid);
 
-        const data = await keymaster.addGroupMember(groupDid, dataDid);
+        const ok = await keymaster.addGroupMember(groupDid, dataDid);
+        expect(ok).toBe(true);
+
+        const group = await keymaster.getGroup(groupDid);
 
         const expectedGroup = {
             name: groupName,
             members: [dataDid],
         };
 
-        expect(data).toStrictEqual(expectedGroup);
+        expect(group).toStrictEqual(expectedGroup);
     });
 
     it('should not increment version when adding a member a 2nd time', async () => {
@@ -2536,9 +2562,9 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(groupDid, dataDid);
         }
 
-        const data = await keymaster.resolveAsset(groupDid);
+        const group = await keymaster.getGroup(groupDid);
 
-        expect(data.members.length).toBe(memberCount);
+        expect(group.members.length).toBe(memberCount);
     });
 
     it('should not add a non-DID to the group', async () => {
@@ -2697,14 +2723,17 @@ describe('removeGroupMember', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
         await keymaster.addGroupMember(groupDid, dataDid);
 
-        const data = await keymaster.removeGroupMember(groupDid, dataDid);
+        const ok = await keymaster.removeGroupMember(groupDid, dataDid);
+        expect(ok).toBe(true);
+
+        const group = await keymaster.getGroup(groupDid);
 
         const expectedGroup = {
             name: groupName,
             members: [],
         };
 
-        expect(data).toStrictEqual(expectedGroup);
+        expect(group).toStrictEqual(expectedGroup);
     });
 
     it('should remove a DID alias from a group', async () => {
@@ -2720,14 +2749,17 @@ describe('removeGroupMember', () => {
         const alias = 'mockAlias';
         await keymaster.addName(alias, dataDid);
 
-        const data = await keymaster.removeGroupMember(groupDid, alias);
+        const ok = await keymaster.removeGroupMember(groupDid, alias);
+        expect(ok).toBe(true);
+
+        const group = await keymaster.getGroup(groupDid);
 
         const expectedGroup = {
             name: groupName,
             members: [],
         };
 
-        expect(data).toStrictEqual(expectedGroup);
+        expect(group).toStrictEqual(expectedGroup);
     });
 
     it('should be OK to remove a DID that is not in the group', async () => {
@@ -2739,14 +2771,17 @@ describe('removeGroupMember', () => {
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
 
-        const data = await keymaster.removeGroupMember(groupDid, dataDid);
+        const ok = await keymaster.removeGroupMember(groupDid, dataDid);
+        expect(ok).toBe(true);
+
+        const group = await keymaster.getGroup(groupDid);
 
         const expectedGroup = {
             name: groupName,
             members: [],
         };
 
-        expect(data).toStrictEqual(expectedGroup);
+        expect(group).toStrictEqual(expectedGroup);
     });
 
     it('should not increment version when removing a non-existent member', async () => {
@@ -2987,6 +3022,30 @@ describe('getGroup', () => {
         expect(group.members).toStrictEqual([]);
     });
 
+    it('should return old style group (TEMP during did:test)', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const oldGroup = {
+            name: 'mock',
+            members: [],
+        };
+        const groupDid = await keymaster.createAsset(oldGroup);
+
+        const group = await keymaster.getGroup(groupDid);
+
+        expect(group).toStrictEqual(oldGroup);
+    });
+
+    it('should return null if non-group DID specified', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const group = await keymaster.getGroup(agentDID);
+
+        expect(group).toBe(null);
+    });
+
     it('should raise an exception if no DID specified', async () => {
         mockFs({});
 
@@ -2998,21 +3057,7 @@ describe('getGroup', () => {
             expect(error.message).toBe(exceptions.INVALID_DID);
         }
     });
-
-    it('should raise an exception non-group DID specified', async () => {
-        mockFs({});
-
-        try {
-            const agentDID = await keymaster.createId('Bob');
-            await keymaster.getGroup(agentDID);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
-        }
-        catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
-        }
-    });
 });
-
 
 describe('listGroups', () => {
 

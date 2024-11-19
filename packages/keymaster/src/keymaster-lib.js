@@ -780,6 +780,14 @@ export async function resolveAsset(did) {
     return null;
 }
 
+export async function updateAsset(did, data) {
+    const doc = await resolveDID(did);
+
+    doc.didDocumentData = data;
+
+    return updateDID(did, doc);
+}
+
 export async function createId(name, options = {}) {
     let { registry } = options;
 
@@ -1392,32 +1400,31 @@ export async function verifyResponse(responseDID, options = {}) {
 export async function createGroup(name, options = {}) {
     const group = {
         name: name,
-        members: []
+        members: options.members || []
     };
 
-    return createAsset(group, options);
+    return createAsset({ group }, options);
 }
 
 export async function getGroup(id) {
-    const isGroup = await testGroup(id);
+    const asset = await resolveAsset(id);
 
-    if (!isGroup) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+    // TEMP during did:test, return old version groups
+    if (asset.members) {
+        return asset;
     }
 
-    return resolveAsset(id);
+    return asset.group || null;
 }
 
 export async function addGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
-    const doc = await resolveDID(groupDID);
-    const data = doc.didDocumentData;
+    const memberDID = await lookupDID(memberId);
 
-    if (!data.members || !Array.isArray(data.members)) {
+    // Can't add a group to itself
+    if (memberDID === groupDID) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
-
-    const memberDID = await lookupDID(memberId);
 
     try {
         // test for valid member DID
@@ -1427,14 +1434,15 @@ export async function addGroupMember(groupId, memberId) {
         throw new Error(exceptions.INVALID_DID);
     }
 
-    // If already a member, return immediately
-    if (data.members.includes(memberDID)) {
-        return data;
+    const group = await getGroup(groupId);
+
+    if (!group?.members) {
+        throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    // Can't add a group to itself
-    if (memberDID === groupDID) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+    // If already a member, return immediately
+    if (group.members.includes(memberDID)) {
+        return true;
     }
 
     // Can't add a mutual membership relation
@@ -1444,29 +1452,21 @@ export async function addGroupMember(groupId, memberId) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const members = new Set(data.members);
+    const members = new Set(group.members);
     members.add(memberDID);
-    data.members = Array.from(members);
+    group.members = Array.from(members);
 
-    const ok = await updateDID(groupDID, doc);
-
-    if (!ok) {
-        throw new Error(exceptions.UPDATE_FAILED);
-    }
-
-    return ok;
+    return updateAsset(groupDID, { group });
 }
 
 export async function removeGroupMember(groupId, memberId) {
     const groupDID = await lookupDID(groupId);
-    const doc = await resolveDID(groupDID);
-    const data = doc.didDocumentData;
+    const memberDID = await lookupDID(memberId);
+    const group = await getGroup(groupDID);
 
-    if (!data.members) {
+    if (!group?.members) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
-
-    const memberDID = await lookupDID(memberId);
 
     try {
         // test for valid member DID
@@ -1477,55 +1477,37 @@ export async function removeGroupMember(groupId, memberId) {
     }
 
     // If not already a member, return immediately
-    if (!data.members.includes(memberDID)) {
-        return data;
-    }
-
-    const members = new Set(data.members);
-    members.delete(memberDID);
-    data.members = Array.from(members);
-
-    const ok = await updateDID(groupDID, doc);
-
-    if (!ok) {
-        throw new Error(exceptions.UPDATE_FAILED);
-    }
-
-    return data;
-}
-
-export async function testGroup(group, member) {
-    const didGroup = await lookupDID(group);
-
-    if (!didGroup) {
-        return false;
-    }
-
-    const doc = await resolveDID(didGroup);
-
-    if (!doc) {
-        return false;
-    }
-
-    const data = doc.didDocumentData;
-
-    if (!data) {
-        return false;
-    }
-
-    if (!Array.isArray(data.members)) {
-        return false;
-    }
-
-    if (!member) {
+    if (!group.members.includes(memberDID)) {
         return true;
     }
 
-    const didMember = await lookupDID(member);
-    let isMember = data.members.includes(didMember);
+    const members = new Set(group.members);
+    members.delete(memberDID);
+    group.members = Array.from(members);
+
+    return updateAsset(groupDID, { group });
+}
+
+export async function testGroup(groupId, memberId) {
+    const group = await getGroup(groupId);
+
+    if (!group) {
+        return false;
+    }
+
+    if (!Array.isArray(group.members)) {
+        return false;
+    }
+
+    if (!memberId) {
+        return true;
+    }
+
+    const didMember = await lookupDID(memberId);
+    let isMember = group.members.includes(didMember);
 
     if (!isMember) {
-        for (const did of data.members) {
+        for (const did of group.members) {
             isMember = await testGroup(did, didMember);
 
             if (isMember) {
@@ -1536,19 +1518,6 @@ export async function testGroup(group, member) {
 
     return isMember;
 }
-
-export const defaultSchema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": "object",
-    "properties": {
-        "propertyName": {
-            "type": "string"
-        }
-    },
-    "required": [
-        "propertyName"
-    ]
-};
 
 export async function listGroups(owner) {
     const id = await fetchIdInfo(owner);
@@ -1571,6 +1540,19 @@ export async function listGroups(owner) {
 
     return schemas;
 }
+
+export const defaultSchema = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "propertyName": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "propertyName"
+    ]
+};
 
 function validateSchema(schema) {
     try {
@@ -1810,7 +1792,7 @@ export async function viewPoll(poll) {
             results.tally[vote].count += 1;
         }
 
-        const roster = await resolveAsset(data.roster);
+        const roster = await getGroup(data.roster);
         const total = roster.members.length;
 
         results.votes = {
