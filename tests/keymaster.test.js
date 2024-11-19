@@ -3257,6 +3257,64 @@ describe('createPoll', () => {
     });
 });
 
+describe('getPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the specified poll', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createPoll(template);
+        const poll = await keymaster.getPoll(did);
+
+        expect(poll).toStrictEqual(template);
+    });
+
+    it('should return old style poll (TEMP during did:test)', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const did = await keymaster.createAsset(template);
+        const poll = await keymaster.getPoll(did);
+
+        expect(poll).toStrictEqual(template);
+    });
+
+    it('should return null if non-group DID specified', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const group = await keymaster.getPoll(agentDID);
+
+        expect(group).toBe(null);
+    });
+
+    it('should raise an exception if no DID specified', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.getPoll();
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_DID);
+        }
+    });
+});
+
 describe('viewPoll', () => {
 
     afterEach(() => {
