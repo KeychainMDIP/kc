@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES5", // Support older browsers if needed
+    "module": "ESNext", // Use ESNext module system
+    "lib": ["DOM", "ESNext"],
+    "declaration": true, // Generate declaration files
+    "jsx": "react", // JSX transpilation for React
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist" // Output the compiled code and type definitions to dist
+  },
+  "include": ["src/**/*"], // Include all .ts and .tsx files in src
+  "exclude": ["node_modules", "dist"] // Exclude node_modules and dist
+}

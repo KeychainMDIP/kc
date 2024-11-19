@@ -2,12 +2,18 @@
   "name": "@mdip/ipfs",
   "version": "0.4.0",
   "description": "MDIP IPFS lib",
-  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": "./src/ipfs.js"
+    ".": "./src/ipfs.ts"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsup",
+    "test": "echo 'no tests yet'"
   },
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
@@ -18,6 +24,10 @@
     "blockstore-fs": "^2.0.2",
     "helia": "^3.0.0",
     "multiformats": "^13.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "4.9.4"
   },
   "repository": {
     "type": "git",
