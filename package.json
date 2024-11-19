@@ -25,6 +25,7 @@
     "eslint-plugin-sonarjs": "^1.0.4",
     "jest": "^29.7.0",
     "mock-fs": "^5.2.0",
+    "prettier-plugin-sort-imports": "^1.7.2",
     "@swc/core": "^1.7.26"
   }
 }

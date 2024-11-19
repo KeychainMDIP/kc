@@ -1,10 +1,10 @@
-import { createHelia, Helia } from "helia";
-import { json } from "@helia/json";
-import { FsBlockstore } from "blockstore-fs";
-import { CID } from "multiformats";
-import { base58btc } from "multiformats/bases/base58";
-import * as jsonCodec from "multiformats/codecs/json";
-import * as sha256 from "multiformats/hashes/sha2";
+import { base58btc } from 'multiformats/bases/base58';
+import * as jsonCodec from 'multiformats/codecs/json';
+import * as sha256 from 'multiformats/hashes/sha2';
+import { FsBlockstore } from 'blockstore-fs';
+import { createHelia, Helia } from 'helia';
+import { CID } from 'multiformats';
+import { json } from '@helia/json';
 
 interface IPFSConfig {
   minimal?: boolean;
@@ -12,8 +12,8 @@ interface IPFSConfig {
 }
 
 interface IPFSInstance {
-  add(data: any): Promise<CID>;
-  get(cid: CID): Promise<any>;
+  add(data: any): Promise;
+  get(cid: CID): Promise;
 }
 
 class IPFS {
@@ -27,7 +27,7 @@ class IPFS {
     this.ipfs = null;
   }
 
-  async start(): Promise<void> {
+  async start(): Promise {
     if (this.helia || this.config.minimal) {
       return;
     }
@@ -42,7 +42,7 @@ class IPFS {
     this.ipfs = json(this.helia);
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise {
     if (this.helia) {
       await this.helia.stop();
       this.helia = null;
@@ -50,7 +50,7 @@ class IPFS {
     }
   }
 
-  async add(data: any): Promise<string> {
+  async add(data: any): Promise {
     let cid: CID;
 
     if (this.ipfs) {
@@ -64,7 +64,7 @@ class IPFS {
     return cid.toString(base58btc);
   }
 
-  async get(b58cid: string): Promise<any | null> {
+  async get(b58cid: string): Promise {
     if (this.ipfs) {
       const cid = CID.parse(b58cid);
       return this.ipfs.get(cid);
@@ -74,7 +74,7 @@ class IPFS {
   }
 
   // Factory method
-  static async create(config: IPFSConfig): Promise<IPFS> {
+  static async create(config: IPFSConfig): Promise {
     const instance = new IPFS(config);
     await instance.start();
     return instance;

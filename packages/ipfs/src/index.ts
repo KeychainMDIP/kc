@@ -1,1 +1,1 @@
-export { default as IPFS } from "./ipfs";
+export { default as IPFS } from './ipfs';

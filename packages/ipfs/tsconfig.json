@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES5", // Support older browsers if needed
+    "target": "ESNext", // Support older browsers if needed
     "module": "ESNext", // Use ESNext module system
     "lib": ["DOM", "ESNext"],
     "declaration": true, // Generate declaration files

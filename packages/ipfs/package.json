@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "format": "prettier --parser typescript --write \"src/**/*.{js,jsx,ts,tsx}\"",
     "test": "echo 'no tests yet'"
   },
   "keywords": [],
@@ -26,6 +27,7 @@
     "multiformats": "^13.0.0"
   },
   "devDependencies": {
+    "prettier": "2.6.2",
     "tsup": "^8.3.0",
     "typescript": "4.9.4"
   },
