@@ -661,7 +661,8 @@ export async function verifySignature(obj) {
     }
 }
 
-export async function updateDID(did, doc) {
+export async function updateDID(doc) {
+    const did = doc.didDocument.id;
     const current = await resolveDID(did);
     const prev = cipher.hashJSON(current);
 
@@ -785,7 +786,7 @@ export async function updateAsset(did, data) {
 
     doc.didDocumentData = data;
 
-    return updateDID(did, doc);
+    return updateDID(doc);
 }
 
 export async function createId(name, options = {}) {
@@ -885,7 +886,7 @@ export async function backupId(controller = null) {
     const vaultDid = await createAsset({ backup: backup }, { registry, controller });
 
     doc.didDocumentData.vault = vaultDid;
-    return updateDID(id.did, doc);
+    return updateDID(doc);
 }
 
 export async function recoverId(did) {
@@ -931,7 +932,7 @@ export async function rotateKeys() {
     vmethod.publicKeyJwk = keypair.publicJwk;
     doc.didDocument.authentication = [vmethod.id];
 
-    const ok = await updateDID(id.did, doc);
+    const ok = await updateDID(doc);
 
     if (ok) {
         id.index = nextIndex;
@@ -996,7 +997,7 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
     const subjectDID = await lookupDID(subjectId);
 
     if (!credential) {
-        const schema = await resolveAsset(type);
+        const schema = await getSchema(type);
         credential = generateSchema(schema);
     }
 
@@ -1063,7 +1064,7 @@ export async function updateCredential(did, credential) {
         cipher_receiver: cipher_receiver,
     };
 
-    return updateDID(did, doc);
+    return updateDID(doc);
 }
 
 export async function revokeCredential(credential) {
@@ -1148,7 +1149,7 @@ export async function publishCredential(did, options = {}) {
 
     doc.didDocumentData.manifest[credential] = vc;
 
-    const ok = await updateDID(id.did, doc);
+    const ok = await updateDID(doc);
 
     if (ok) {
         return vc;
@@ -1166,7 +1167,7 @@ export async function unpublishCredential(did) {
 
     if (credential && manifest && Object.keys(manifest).includes(credential)) {
         delete manifest[credential];
-        await updateDID(id.did, doc);
+        await updateDID(doc);
 
         return `OK credential ${did} removed from manifest`;
     }
@@ -1594,11 +1595,18 @@ export async function createSchema(schema, options = {}) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    return createAsset(schema, options);
+    return createAsset({ schema }, options);
 }
 
 export async function getSchema(id) {
-    return resolveAsset(id);
+    const asset = await resolveAsset(id);
+
+    // TEMP during did:test, return old version schemas
+    if (asset.properties) {
+        return asset;
+    }
+
+    return asset.schema || null;
 }
 
 export async function setSchema(id, schema) {
@@ -1606,11 +1614,7 @@ export async function setSchema(id, schema) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const doc = await resolveDID(id);
-    const did = doc.didDocument.id;
-    doc.didDocumentData = schema;
-
-    return updateDID(did, doc);
+    return updateAsset(id, { schema });
 }
 
 // TBD add optional 2nd parameter that will validate JSON against the schema
@@ -1618,7 +1622,7 @@ export async function testSchema(id) {
     const schema = await getSchema(id);
 
     // TBD Need a better way because any random object with keys can be a valid schema
-    if (Object.keys(schema).length === 0) {
+    if (!schema || Object.keys(schema).length === 0) {
         return false;
     }
 
@@ -1655,7 +1659,7 @@ export async function createTemplate(id) {
     }
 
     const schemaDID = await lookupDID(id);
-    const schema = await resolveAsset(schemaDID);
+    const schema = await getSchema(schemaDID);
     const template = generateSchema(schema);
 
     template['$schema'] = schemaDID;
@@ -1729,8 +1733,7 @@ export async function createPoll(poll, options = {}) {
 
 export async function viewPoll(poll) {
     const id = await fetchIdInfo();
-    const didPoll = await lookupDID(poll);
-    const doc = await resolveDID(didPoll);
+    const doc = await resolveDID(poll);
     const data = doc.didDocumentData;
 
     if (!data || !data.options || !data.deadline) {
@@ -1857,7 +1860,7 @@ export async function updatePoll(ballot) {
     const id = await fetchIdInfo();
 
     const didBallot = await lookupDID(ballot);
-    const docBallot = await resolveDID(didBallot);
+    const docBallot = await resolveDID(ballot);
     const didVoter = docBallot.didDocument.controller;
     let dataBallot;
 
@@ -1872,8 +1875,7 @@ export async function updatePoll(ballot) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }
 
-    const didPoll = await lookupDID(dataBallot.poll);
-    const docPoll = await resolveDID(didPoll);
+    const docPoll = await resolveDID(dataBallot.poll);
     const dataPoll = docPoll.didDocumentData;
     const didOwner = docPoll.didDocument.controller;
 
@@ -1909,14 +1911,13 @@ export async function updatePoll(ballot) {
         received: new Date().toISOString(),
     };
 
-    return updateDID(didPoll, docPoll);
+    return updateDID(docPoll);
 }
 
 export async function publishPoll(poll, options = {}) {
     const { reveal } = options;
     const id = await fetchIdInfo();
-    const didPoll = await lookupDID(poll);
-    const doc = await resolveDID(didPoll);
+    const doc = await resolveDID(poll);
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
@@ -1935,13 +1936,12 @@ export async function publishPoll(poll, options = {}) {
 
     doc.didDocumentData.results = view.results;
 
-    return updateDID(didPoll, doc);
+    return updateDID(doc);
 }
 
 export async function unpublishPoll(poll) {
     const id = await fetchIdInfo();
-    const didPoll = await lookupDID(poll);
-    const doc = await resolveDID(didPoll);
+    const doc = await resolveDID(poll);
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
@@ -1950,5 +1950,5 @@ export async function unpublishPoll(poll) {
 
     delete doc.didDocumentData.results;
 
-    return await updateDID(didPoll, doc);
+    return await updateDID(doc);
 }
