@@ -115,15 +115,42 @@ async function shareDb(conn) {
     try {
         const batch = await createBatch();
 
-        const msg = {
-            type: 'batch',
-            data: batch,
-            relays: [],
-            node: config.nodeName,
-        };
+        if (!batch || batch.length === 0) {
+            return;
+        }
 
-        const json = JSON.stringify(msg);
-        conn.write(json);
+        let chunk = [];
+        let msg = null;
+        let json = null;
+        let n = 0;
+
+        for (const op of batch) {
+            chunk.push(op);
+            n += 1;
+
+            msg = {
+                type: 'batch',
+                data: chunk,
+                relays: [],
+                node: config.nodeName,
+            };
+
+            if (n % 100 === 0) {
+                json = JSON.stringify(msg);
+
+                if (json.length > 4000000) {
+                    conn.write(json);
+                    console.log(`>>> sent ${chunk.length} ops ${n}/${batch.length} ${json.length} bytes`);
+                    chunk = [];
+                }
+            }
+        }
+
+        if (chunk.length > 0) {
+            json = JSON.stringify(msg);
+            conn.write(json);
+            console.log(`>>> sent ${chunk.length} ops ${n}/${batch.length} ${json.length} bytes`);
+        }
     }
     catch (error) {
         console.log(error);
