@@ -119,11 +119,7 @@ async function importBatch(item) {
     }
 
     if (item.imported && item.processed) {
-        const processed = item.processed.added + item.processed.merged;
-        // Importing an update (e.g. key change) could trigger the validation of many pending ops
-        if (processed >= item.imported.total) {
-            return;
-        }
+        return;
     }
 
     const asset = await keymaster.resolveAsset(item.did);
