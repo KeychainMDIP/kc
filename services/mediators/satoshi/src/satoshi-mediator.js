@@ -114,17 +114,24 @@ async function scanBlocks() {
 }
 
 async function importBatch(item) {
+    if (item.error) {
+        return;
+    }
+
     if (item.imported && item.processed) {
-        const processed = item.processed.added + item.processed.merged;
-        // Importing an update (e.g. key change) could trigger the validation of many pending ops
-        if (processed >= item.imported.total) {
-            return;
-        }
+        return;
+    }
+
+    const asset = await keymaster.resolveAsset(item.did);
+    const queue = asset.batch || asset;
+
+    // Skip badly formatted batches
+    if (!queue || !Array.isArray(queue) || queue.length === 0) {
+        return;
     }
 
     console.log(JSON.stringify(item, null, 4));
 
-    const queue = await keymaster.resolveAsset(item.did);
     const batch = [];
 
     for (let i = 0; i < queue.length; i++) {
@@ -143,11 +150,15 @@ async function importBatch(item) {
     }
 
     console.log(JSON.stringify(batch, null, 4));
-    item.imported = await gatekeeper.importBatch(batch);
-    item.imported.total = batch.length;
-    if (item.imported.queued > 0) {
+
+    try {
+        item.imported = await gatekeeper.importBatch(batch);
         item.processed = await gatekeeper.processEvents();
     }
+    catch (error) {
+        item.error = JSON.stringify(error);
+    }
+
     console.log(JSON.stringify(item, null, 4));
 }
 
@@ -328,7 +339,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const did = await keymaster.createAsset(batch, { registry: REGISTRY, controller: config.nodeID });
+        const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
@@ -408,6 +419,18 @@ async function main() {
     if (!config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
         return;
+    }
+
+    if (config.reimport) {
+        const db = loadDb();
+
+        for (const item of db.discovered) {
+            delete item.imported;
+            delete item.processed;
+            delete item.error;
+        }
+
+        writeDb(db);
     }
 
     await waitForChain();
