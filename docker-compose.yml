@@ -95,6 +95,7 @@ services:
       - KC_SAT_FEE_MIN=${KC_TFTC_FEE_MIN}
       - KC_SAT_FEE_MAX=${KC_TFTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TFTC_FEE_INC}
+      - KC_SAT_REIMPORT=${KC_TFTC_REIMPORT}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -128,6 +129,7 @@ services:
       - KC_SAT_FEE_MIN=${KC_TBTC_FEE_MIN}
       - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
       - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
+      - KC_SAT_REIMPORT=${KC_TBTC_REIMPORT}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"

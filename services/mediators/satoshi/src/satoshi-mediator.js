@@ -114,6 +114,10 @@ async function scanBlocks() {
 }
 
 async function importBatch(item) {
+    if (item.error) {
+        return;
+    }
+
     if (item.imported && item.processed) {
         const processed = item.processed.added + item.processed.merged;
         // Importing an update (e.g. key change) could trigger the validation of many pending ops
@@ -150,7 +154,15 @@ async function importBatch(item) {
     }
 
     console.log(JSON.stringify(batch, null, 4));
-    item.imported = await gatekeeper.importBatch(batch);
+
+    try {
+        item.imported = await gatekeeper.importBatch(batch);
+    }
+    catch (error) {
+        item.error = JSON.stringify(error);
+        return;
+    }
+
     item.imported.total = batch.length;
     if (item.imported.queued > 0) {
         item.processed = await gatekeeper.processEvents();
@@ -415,6 +427,18 @@ async function main() {
     if (!config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
         return;
+    }
+
+    if (config.reimport) {
+        const db = loadDb();
+
+        for (const item of db.discovered) {
+            delete item.imported;
+            delete item.processed;
+            delete item.error;
+        }
+
+        writeDb(db);
     }
 
     await waitForChain();
