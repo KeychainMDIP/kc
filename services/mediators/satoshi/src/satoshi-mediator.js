@@ -153,16 +153,12 @@ async function importBatch(item) {
 
     try {
         item.imported = await gatekeeper.importBatch(batch);
+        item.processed = await gatekeeper.processEvents();
     }
     catch (error) {
         item.error = JSON.stringify(error);
-        return;
     }
 
-    item.imported.total = batch.length;
-    if (item.imported.queued > 0) {
-        item.processed = await gatekeeper.processEvents();
-    }
     console.log(JSON.stringify(item, null, 4));
 }
 
