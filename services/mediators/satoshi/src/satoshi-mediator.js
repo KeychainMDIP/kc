@@ -122,9 +122,16 @@ async function importBatch(item) {
         }
     }
 
+    const asset = await keymaster.resolveAsset(item.did);
+    const queue = asset.batch || asset;
+
+    // Skip badly formatted batches
+    if (!queue || !Array.isArray(queue) || queue.length === 0) {
+        return;
+    }
+
     console.log(JSON.stringify(item, null, 4));
 
-    const queue = await keymaster.resolveAsset(item.did);
     const batch = [];
 
     for (let i = 0; i < queue.length; i++) {
@@ -328,7 +335,7 @@ async function anchorBatch() {
     console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
-        const did = await keymaster.createAsset(batch, { registry: REGISTRY, controller: config.nodeID });
+        const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
