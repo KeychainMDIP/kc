@@ -62,7 +62,7 @@ While perhaps not optimal for a production environment, developement environment
 
 ![MDIP-resources](./mdip-resource-usage.png)
 
-- kc-gatekeeper-1 is the MDIP Gatekeeper, a reference implementation of the [MDIP DID Scheme] (https://keychain.org/docs/mdip/scheme) exposing a REST API interface.
+- kc-gatekeeper-1 is the MDIP Gatekeeper, a reference implementation of the [MDIP DID Scheme](/docs/mdip/scheme) exposing a REST API interface.
 - kc-keymaster-1 is the MDIP Keymaster, which provides an interface to the server's keymaster wallet and expose a REST [Keymaster API](https://keychain.org/docs/keychain/library/api/) to manage the server's MDIP identity.
 - kc-hyperswarm-1 is the document distribution protocol service built on [Hyperswarm](https://github.com/holepunchto/hyperswarm).
 - kc-tftc-mediator-1 is the MDIP Mediator for [Feathercoin Testnet](https://feathercoin.com/)
@@ -88,7 +88,7 @@ MDIP components communicate with one another using their respective APIs. It is 
 
 ### Software Dependencies
 
-- Linux OS - Tested using Debian GNU/Linux 11
+- Linux - Tested using Debian GNU/Linux 11
 - Docker version 27+
 - NodeJS v.18.15.0+
 - `git` is optional; you can download an archive of the software manually.
@@ -103,7 +103,7 @@ It is recommended that a user account be created to run all MDIP components; the
 
 1. Create a `mdip` user account for MDIP:
     - Note the `uid` and `gid` numerical values returned by the `id` command.
-    - Optionally grant `sudo` privileges for admin convenience.
+    - Optionally grant `sudo` privileges for administration convenience.
 
 1. Create a data mount or provision space on existing mounts:
     - Sufficient disk space allocated should be 80Gb+.
@@ -725,7 +725,7 @@ bitcoin-core:v27.99.0    48332/tcp kc-tbtc-node-1
 feathercoind             19337/tcp kc-tftc-node-1
 ```
 
-None of the ports listed above should *ever* be directly addressable from the Internet. It is recommended that a firewall be setup to prevent access to these services.
+None of the ports listed above should *ever* be directly addressable from the Internet. It is recommended that a firewall be set up to prevent access to these services.
 
 ### Basic nginx Hosting
 
@@ -803,5 +803,3 @@ MDIP is a peer-to-peer system. Interactions between human users and server hosts
 
 - Keymaster Private Wallet (web and cli)
 - Gatekeeper API (private or public)
-
-
