@@ -135,13 +135,21 @@ function sendBatch(conn, batch) {
 
 async function shareDb(conn) {
     try {
-        console.time('exportBatch');
-        const allEvents = await gatekeeper.exportBatch();
-        console.timeEnd('exportBatch');
-        console.log(`${allEvents.length} events fetched`);
+        console.time('exportBatch in chunks');
+        const batchSize = 1000; // export DIDs in batches of 1000 for scalability
+        const dids = await gatekeeper.getDIDs();
+        let allEvents = [];
+
+        for (let i = 0; i < dids.length; i += batchSize) {
+            const didBatch = dids.slice(i, i + batchSize);
+            const exports = await gatekeeper.exportBatch(didBatch);
+            allEvents = allEvents.concat(exports);
+        }
+        console.timeEnd('exportBatch in chunks');
 
         // hyperswarm distributes only operations
         const batch = allEvents.map(event => event.operation);
+        console.log(`${batch.length} operations fetched`);
 
         if (!batch || batch.length === 0) {
             return;
@@ -233,7 +241,10 @@ async function mergeBatch(batch) {
         }
     }
 
-    await importBatch(chunk);
+    if (chunk.length > 0) {
+        await importBatch(chunk);
+    }
+
     console.time('processEvents');
     const response = await gatekeeper.processEvents();
     console.timeEnd('processEvents');
