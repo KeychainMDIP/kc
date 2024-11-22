@@ -4,6 +4,7 @@ import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
+import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
 
 const REGISTRY = config.chain;
@@ -107,7 +108,7 @@ async function scanBlocks() {
     }
 
     for (let height = start; height <= blockCount; height++) {
-        console.log(height);
+        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
         blockCount = await client.getBlockCount();
     }
@@ -149,7 +150,7 @@ async function importBatch(item) {
         });
     }
 
-    console.log(JSON.stringify(batch, null, 4));
+    // console.log(JSON.stringify(batch, null, 4));
 
     try {
         item.imported = await gatekeeper.importBatch(batch);
@@ -397,20 +398,74 @@ async function waitForChain() {
 
     while (!isReady) {
         try {
-            const walletInfo = await client.getWalletInfo();
-            console.log(JSON.stringify(walletInfo, null, 4));
-
-            const address = await client.getNewAddress('funds', 'bech32');
-            console.log(`Send ${config.chain} to ${address}`);
-
+            const blockchainInfo = await client.getBlockchainInfo();
+            console.log("Blockchain Info:", JSON.stringify(blockchainInfo, null, 4));
             isReady = true;
-        }
-        catch {
+        } catch (error) {
             console.log(`Waiting for ${config.chain} node...`);
         }
 
         if (!isReady) {
             await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+
+    try {
+        await client.createWallet(config.wallet);
+        console.log(`Wallet '${config.wallet}' created successfully.`);
+    } catch (error) {
+        // If wallet already exists, log a message
+        if (error.message.includes("already exists")) {
+            console.log(`Wallet '${config.wallet}' already exists.`);
+        } else {
+            console.error("Error creating wallet:", error);
+            return false;
+        }
+    }
+
+    try {
+        const walletInfo = await client.getWalletInfo();
+        console.log("Wallet Info:", JSON.stringify(walletInfo, null, 4));
+    } catch (error) {
+        console.error("Error fetching wallet info:", error);
+        return false;
+    }
+
+    try {
+        const address = await client.getNewAddress('funds', 'bech32');
+        console.log(`Send ${config.chain} to address: ${address}`);
+    } catch (error) {
+        console.error("Error generating new address:", error);
+        return false;
+    }
+
+    return true;
+}
+
+async function waitForNodeID() {
+    let isReady = false;
+
+    while (!isReady) {
+        try {
+            await keymaster.resolveDID(config.nodeID);
+            console.log(`Using node ID '${config.nodeID}'`);
+            isReady = true;
+        }
+        catch {
+            try {
+                await keymaster.createId(config.nodeID);
+                console.log(`Created node ID '${config.nodeID}'`);
+                isReady = true;
+            }
+            catch (error) {
+                if (error.message === exceptions.INVALID_PARAMETER) {
+                    console.log(`Waiting for gatekeeper to sync...`);
+                }
+            }
+        }
+
+        if (!isReady) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
         }
     }
 }
@@ -433,7 +488,11 @@ async function main() {
         writeDb(db);
     }
 
-    await waitForChain();
+    const ok = await waitForChain();
+
+    if (!ok) {
+        return;
+    }
 
     await gatekeeper.start({
         url: config.gatekeeperURL,
@@ -441,24 +500,9 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
+
     await keymaster.start({ gatekeeper, wallet, cipher });
-
-    try {
-        await keymaster.resolveDID(config.nodeID);
-        console.log(`Using node ID '${config.nodeID}'`);
-    }
-    catch {
-        try {
-            await keymaster.createId(config.nodeID);
-            console.log(`Created node ID '${config.nodeID}'`);
-        }
-        catch (error) {
-            console.log(`Cannot create node ID '${config.nodeID}'`, error);
-            return;
-        }
-    }
-
-    console.log(`Using keymaster ID ${config.nodeID}`);
+    await waitForNodeID();
 
     if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);
