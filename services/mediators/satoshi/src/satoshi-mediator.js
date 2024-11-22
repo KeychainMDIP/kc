@@ -150,7 +150,7 @@ async function importBatch(item) {
         });
     }
 
-    console.log(JSON.stringify(batch, null, 4));
+    // console.log(JSON.stringify(batch, null, 4));
 
     try {
         item.imported = await gatekeeper.importBatch(batch);
