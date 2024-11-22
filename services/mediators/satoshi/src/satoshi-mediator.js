@@ -400,14 +400,9 @@ async function waitForChain() {
         try {
             const blockchainInfo = await client.getBlockchainInfo();
             console.log("Blockchain Info:", JSON.stringify(blockchainInfo, null, 4));
-            isReady = true; // If the above call succeeds, set isReady to true
+            isReady = true;
         } catch (error) {
-
-            if (error.code === 'ECONNREFUSED') {
-                console.log(`Waiting for ${config.chain} node...`);
-            } else {
-                console.error("Error connecting to blockchain:", error);
-            }
+            console.log(`Waiting for ${config.chain} node...`);
         }
 
         if (!isReady) {
