@@ -108,7 +108,7 @@ async function scanBlocks() {
     }
 
     for (let height = start; height <= blockCount; height++) {
-        console.log(height);
+        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
         blockCount = await client.getBlockCount();
     }
@@ -396,7 +396,6 @@ async function waitForChain() {
 
     console.log(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
 
-    // Step 1: Wait until the blockchain is ready
     while (!isReady) {
         try {
             const blockchainInfo = await client.getBlockchainInfo();
@@ -416,7 +415,6 @@ async function waitForChain() {
         }
     }
 
-    // Step 2: Create the wallet if it does not already exist
     try {
         await client.createWallet(config.wallet);
         console.log(`Wallet '${config.wallet}' created successfully.`);
@@ -430,21 +428,6 @@ async function waitForChain() {
         }
     }
 
-    // Step 3: Load the wallet
-    try {
-        await client.loadWallet(config.wallet);
-        console.log(`Wallet '${config.wallet}' loaded successfully.`);
-    } catch (error) {
-        // If wallet is already loaded, log a message
-        if (error.message.includes("already loaded")) {
-            console.log(`Wallet '${config.wallet}' is already loaded.`);
-        } else {
-            console.error("Error loading wallet:", error);
-            return false;
-        }
-    }
-
-    // Step 4: Get wallet info
     try {
         const walletInfo = await client.getWalletInfo();
         console.log("Wallet Info:", JSON.stringify(walletInfo, null, 4));
@@ -453,7 +436,6 @@ async function waitForChain() {
         return false;
     }
 
-    // Step 5: Get a new address
     try {
         const address = await client.getNewAddress('funds', 'bech32');
         console.log(`Send ${config.chain} to address: ${address}`);
