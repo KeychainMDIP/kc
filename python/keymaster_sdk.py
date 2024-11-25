@@ -48,6 +48,10 @@ def createSchema(schema, options={}):
     response = proxy_request('POST', f'{KEYMASTER_API}/schemas', json={"schema": schema, "options": options})
     return response['did']
 
+def createTemplate(schema):
+    response = proxy_request('POST', f'{KEYMASTER_API}/schemas/did/template', json={"schema": schema})
+    return response['template']
+
 def bindCredential(schema, subject, options={}):
     response = proxy_request('POST', f'{KEYMASTER_API}/credentials/bind', json={"schema": schema, "subject": subject, "options": options})
     return response['credential']
@@ -55,3 +59,7 @@ def bindCredential(schema, subject, options={}):
 def issueCredential(credential, options={}):
     response = proxy_request('POST', f'{KEYMASTER_API}/credentials/issued', json={"credential": credential, "options": options})
     return response['did']
+
+def decryptJSON(did):
+    response = proxy_request('POST', f'{KEYMASTER_API}/keys/decrypt/json', json={"did": did})
+    return response['json']
