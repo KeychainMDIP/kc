@@ -1020,6 +1020,10 @@ export async function bindCredential(schemaId, subjectId, options = {}) {
 export async function issueCredential(credential, options = {}) {
     const id = await fetchIdInfo();
 
+    if (options.schema && options.subject) {
+        credential = await bindCredential(options.schema, options.subject, { credential, ...options });
+    }
+
     if (credential.issuer !== id.did) {
         throw new Error(exceptions.INVALID_PARAMETER);
     }

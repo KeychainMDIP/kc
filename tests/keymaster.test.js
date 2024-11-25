@@ -1476,6 +1476,27 @@ describe('issueCredential', () => {
         expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
     });
 
+    it('should bind and issue a credential', async () => {
+        mockFs({});
+
+        const subject = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.createTemplate(schema);
+
+        const did = await keymaster.issueCredential(credential, { subject, schema });
+
+        const vc = await keymaster.decryptJSON(did);
+        expect(vc.issuer).toBe(subject);
+        expect(vc.credentialSubject.id).toBe(subject);
+        expect(vc.credential.email).toEqual(expect.any(String));
+
+        const isValid = await keymaster.verifySignature(vc);
+        expect(isValid).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
+    });
+
     it('should throw an exception if user is not issuer', async () => {
         mockFs({});
 
