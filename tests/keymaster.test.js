@@ -1458,16 +1458,44 @@ describe('issueCredential', () => {
     it('should issue a bound credential when user is issuer', async () => {
         mockFs({});
 
-        const userDid = await keymaster.createId('Bob');
-        const credentialDid = await keymaster.createSchema(mockSchema);
-        const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
+        const subject = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const boundCredential = await keymaster.bindCredential(schema, subject);
 
         const did = await keymaster.issueCredential(boundCredential);
 
         const vc = await keymaster.decryptJSON(did);
-        expect(vc.issuer).toBe(userDid);
-        expect(vc.credentialSubject.id).toBe(userDid);
+        expect(vc.issuer).toBe(subject);
+        expect(vc.credentialSubject.id).toBe(subject);
         expect(vc.credential.email).toEqual(expect.any(String));
+
+        const isValid = await keymaster.verifySignature(vc);
+        expect(isValid).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
+    });
+
+    it('should bind and issue a credential', async () => {
+        mockFs({});
+
+        const subject = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const unboundCredential = await keymaster.createTemplate(schema);
+
+        const now = new Date();
+        const validFrom = now.toISOString();
+        now.setFullYear(now.getFullYear() + 1);
+        const validUntil = now.toISOString();
+
+        const did = await keymaster.issueCredential(unboundCredential, { subject, schema, validFrom, validUntil });
+
+        const vc = await keymaster.decryptJSON(did);
+        expect(vc.issuer).toBe(subject);
+        expect(vc.credentialSubject.id).toBe(subject);
+        expect(vc.credential.email).toEqual(expect.any(String));
+        expect(vc.validFrom).toBe(validFrom);
+        expect(vc.validUntil).toBe(validUntil);
 
         const isValid = await keymaster.verifySignature(vc);
         expect(isValid).toBe(true);
@@ -1484,13 +1512,30 @@ describe('issueCredential', () => {
 
         await keymaster.setCurrentId('Alice');
 
-        const credentialDid = await keymaster.createSchema(mockSchema);
-        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const schema = await keymaster.createSchema(mockSchema);
+        const boundCredential = await keymaster.bindCredential(schema, bob);
 
         await keymaster.setCurrentId('Bob');
 
         try {
             await keymaster.issueCredential(boundCredential);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);
+        }
+        catch (error) {
+            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+        }
+    });
+
+    it('should throw an exception on unbound credential without binding options', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+
+        const schema = await keymaster.createSchema(mockSchema);
+        const unboundCredential = await keymaster.createTemplate(schema);
+
+        try {
+            await keymaster.issueCredential(unboundCredential);
             throw new Error(exceptions.EXPECTED_EXCEPTION);
         }
         catch (error) {
