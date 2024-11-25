@@ -1530,14 +1530,9 @@ describe('issueCredential', () => {
         mockFs({});
 
         await keymaster.createId('Alice');
-        const bob = await keymaster.createId('Bob');
-
-        await keymaster.setCurrentId('Alice');
 
         const schema = await keymaster.createSchema(mockSchema);
         const unboundCredential = await keymaster.createTemplate(schema);
-
-        await keymaster.setCurrentId('Bob');
 
         try {
             await keymaster.issueCredential(unboundCredential);
