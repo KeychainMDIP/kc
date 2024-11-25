@@ -57,6 +57,9 @@ jobs:
           - dockerfile: Dockerfile.satoshi
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:release
+          - dockerfile: Dockerfile.ipfs
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:release
     permissions:
       contents: read
       packages: write

@@ -56,6 +56,9 @@ jobs:
           - dockerfile: Dockerfile.satoshi
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.ipfs
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:${{ needs.generate.outputs.CALVER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -84,7 +87,7 @@ jobs:
           push: false
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ matrix.tags }}
-      
+
       - name: Run Anchore vulnerability scanner
         uses: anchore/scan-action@v3
         with:

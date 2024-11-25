@@ -67,6 +67,14 @@ async function importLoop() {
     setTimeout(importLoop, config.interval * 60 * 1000);
 }
 
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+});
+
 async function main() {
 
     await gatekeeper.start({
