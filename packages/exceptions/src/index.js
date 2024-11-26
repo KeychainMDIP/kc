@@ -11,19 +11,31 @@ export const INVALID_OPTION = 'Invalid option';
 export const UPDATE_FAILED = 'Update failed';
 export const EXPECTED_EXCEPTION = 'Expected to throw an exception';
 
+export class InvalidDIDError extends Error {
+    constructor(did) {
+        super(`${INVALID_DID}: ${did}`);
+        this.type = INVALID_DID;
+        this.did = did;
+    }
+}
+
 export class InvalidParameterError extends Error {
-    constructor(parameter) {
-        super(`${INVALID_PARAMETER}: ${parameter}`);
+    constructor(parameter, value) {
+        const message = value ? `${INVALID_PARAMETER}: ${parameter}=${value}` : `${INVALID_PARAMETER}: ${parameter}`;
+        super(message);
         this.type = INVALID_PARAMETER;
         this.parameter = parameter;
+        this.value = value;
     }
 }
 
 export class InvalidOptionError extends Error {
-    constructor(option) {
-        super(`${INVALID_OPTION}: ${option}`);
+    constructor(option, value) {
+        const message = value ? `${INVALID_OPTION}: ${option}=${value}` : `${INVALID_OPTION}: ${option}`;
+        super(message);
         this.type = INVALID_OPTION;
         this.option = option;
+        this.value = value;
     }
 }
 

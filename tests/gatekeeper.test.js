@@ -2316,7 +2316,8 @@ describe('initRegistries', () => {
             await gatekeeper.initRegistries("local, hyperswarm, mock");
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.parameter).toBe('registry');
+            expect(error.value).toBe('mock');
         }
     });
 });

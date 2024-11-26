@@ -165,7 +165,7 @@ export async function initRegistries(csvRegistries) {
                 supportedRegistries.push(registry);
             }
             else {
-                throw new Error(exceptions.INVALID_REGISTRY);
+                throw new InvalidParameterError('registry', registry);
             }
         }
     }
