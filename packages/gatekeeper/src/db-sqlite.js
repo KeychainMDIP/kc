@@ -39,8 +39,15 @@ export async function addEvent(did, event) {
     }
 
     const events = await getEvents(did);
-
     events.push(event);
+
+    return setEvents(did, events);
+}
+
+export async function setEvents(did, events) {
+    if (!did) {
+        throw new Error(exceptions.INVALID_DID);
+    }
 
     const id = did.split(':').pop();
     return db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
@@ -54,7 +61,7 @@ export async function getEvents(did) {
     try {
         const id = did.split(':').pop();
         const row = await db.get('SELECT * FROM dids WHERE id = ?', id);
-        
+
         if (row?.events) {
             return JSON.parse(row.events);
         }
