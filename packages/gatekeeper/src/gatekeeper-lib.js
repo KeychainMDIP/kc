@@ -1,6 +1,7 @@
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
+import { InvalidParameterError, InvalidOptionError } from '@mdip/exceptions';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
@@ -32,7 +33,7 @@ export async function start(options = {}) {
         }
     }
     else {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidOptionError('db');
     }
 
     // Only used for unit testing
