@@ -1292,6 +1292,35 @@ describe('importBatch', () => {
         mockFs.restore();
     });
 
+    it('should queue a valid agent DID export', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+    });
+
+    it('should report when event already processed', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(0);
+        expect(response.processed).toBe(1);
+    });
+
     it('should throw an exception on undefined', async () => {
         mockFs({});
 

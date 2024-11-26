@@ -33,6 +33,15 @@ export async function addEvent(did, event) {
     );
 }
 
+export async function setEvents(did, events) {
+    await deleteEvents(did);
+
+    // Add new events
+    for (const event of events) {
+        await addEvent(did, event);
+    }
+}
+
 export async function getEvents(did) {
     if (!did) {
         throw new Error(exceptions.INVALID_DID);
@@ -47,7 +56,6 @@ export async function getEvents(did) {
         return [];
     }
 }
-
 export async function deleteEvents(did) {
     if (!did) {
         throw new Error(exceptions.INVALID_DID);

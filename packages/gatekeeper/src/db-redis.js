@@ -39,15 +39,16 @@ export async function addEvent(did, event) {
 
     const key = didKey(did);
     const val = JSON.stringify(event);
-    redis.rpush(key, val);
+
+    return redis.rpush(key, val);
 }
 
 export async function setEvents(did, events) {
-    deleteEvents(did);
+    await deleteEvents(did);
 
     // Add new events
     for (const event of events) {
-        addEvent(did, event);
+        await addEvent(did, event);
     }
 }
 
