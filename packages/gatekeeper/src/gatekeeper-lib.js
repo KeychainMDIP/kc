@@ -756,7 +756,6 @@ async function importEvents() {
         catch (error) {
             eventsQueue.push(event);
             console.log(`import ${i}/${total}: deferred event for ${event.did}`);
-
         }
         //console.timeEnd('importEvent');
         event = tempQueue.shift();
