@@ -668,7 +668,7 @@ export async function removeDIDs(dids) {
     }
 
     for (const did of dids) {
-        db.deleteEvents(did);
+        await db.deleteEvents(did);
         delete eventsCache[did];
     }
 
@@ -686,9 +686,9 @@ async function importEvent(event) {
     }
 
     const did = event.did;
-    console.time('getEvents');
+    //console.time('getEvents');
     const currentEvents = await db.getEvents(did);
-    console.timeEnd('getEvents');
+    //console.timeEnd('getEvents');
 
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
@@ -705,7 +705,7 @@ async function importEvent(event) {
             // If this import is on the native registry, replace the current one
             const index = currentEvents.indexOf(match);
             currentEvents[index] = event;
-            db.setEvents(did, currentEvents);
+            await db.setEvents(did, currentEvents);
             delete eventsCache[did];
             return true;
         }
@@ -718,7 +718,7 @@ async function importEvent(event) {
         //console.timeEnd('verifyOperation');
 
         if (ok) {
-            db.addEvent(did, event);
+            await db.addEvent(did, event);
             delete eventsCache[did];
             return true;
         }
@@ -739,7 +739,7 @@ async function importEvents() {
     eventsQueue = [];
 
     while (event) {
-        console.time('importEvent');
+        //console.time('importEvent');
         i += 1;
         try {
             const imported = await importEvent(event);
@@ -758,7 +758,7 @@ async function importEvents() {
             console.log(`import ${i}/${total}: deferred event for ${event.did}`);
 
         }
-        console.timeEnd('importEvent');
+        //console.timeEnd('importEvent');
         event = tempQueue.shift();
     }
 
@@ -770,17 +770,17 @@ export async function processEvents() {
         return { busy: true };
     }
 
-    isProcessingEvents = true;
-
     let added = 0;
     let merged = 0;
     let done = false;
 
     try {
+        isProcessingEvents = true;
+
         while (!done) {
-            console.time('importEvents');
+            //console.time('importEvents');
             const response = await importEvents();
-            console.timeEnd('importEvents');
+            //console.timeEnd('importEvents');
 
             added += response.added;
             merged += response.merged;
@@ -789,13 +789,19 @@ export async function processEvents() {
         }
     }
     catch (error) {
+        console.log(error);
+    }
+    finally {
+        isProcessingEvents = false;
     }
 
-    console.log(JSON.stringify(eventsQueue, null, 4));
+    //console.log(JSON.stringify(eventsQueue, null, 4));
     const pending = eventsQueue.length;
+    const response = { added, merged, pending };
 
-    isProcessingEvents = false;
-    return { added, merged, pending };
+    console.log(`processEvents: ${JSON.stringify(response)}`);
+
+    return response;
 }
 
 export async function verifyEvent(event) {
