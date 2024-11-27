@@ -347,7 +347,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_VERSION);
+            expect(error.message).toBe('Invalid parameter: operation.mdip.version=2');
         }
     });
 
@@ -361,7 +361,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid parameter: operation.mdip.registry=mockRegistry');
         }
     });
 
@@ -376,7 +376,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_TYPE);
+            expect(error.message).toBe('Invalid parameter: operation.mdip.type=mock');
         }
     });
 
@@ -387,7 +387,7 @@ describe('createDID', () => {
             await gatekeeper.createDID();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: missing operation');
         }
 
         const keypair = cipher.generateRandomJwk();
@@ -398,7 +398,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: operation.type=mock');
         }
 
         try {
@@ -407,7 +407,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: missing operation.mdip');
         }
 
         try {
@@ -425,7 +425,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: operation.signature');
         }
 
         try {
@@ -434,7 +434,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: operation.publicJwk');
         }
     });
 
@@ -465,7 +465,7 @@ describe('createDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             // Can't let local IDs create assets on other registries
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid parameter: non-local registry=hyperswarm');
         }
 
         try {
@@ -475,7 +475,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: signer is not controller');
         }
 
         try {
@@ -485,7 +485,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: operation.signature');
         }
 
         try {
@@ -494,7 +494,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid parameter: operation.mdip.validUntil=mock');
         }
     });
 });

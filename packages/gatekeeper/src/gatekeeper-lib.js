@@ -244,42 +244,46 @@ function verifySignatureFormat(signature) {
 }
 
 async function verifyCreateOperation(operation) {
-    if (operation?.type !== "create") {
-        throw new Error(exceptions.INVALID_OPERATION);
+    if (!operation) {
+        throw new InvalidParameterError('missing operation');
     }
 
-    if (!operation.created) {
+    if (operation.type !== "create") {
+        throw new InvalidParameterError(`operation.type=${operation.type}`);
+    }
+
+    if (!verifyDateFormat(operation.created)) {
         // TBD ensure valid timestamp format
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidParameterError(`operation.created=${operation.created}`);
     }
 
     if (!operation.mdip) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidParameterError('missing operation.mdip');
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw new Error(exceptions.INVALID_VERSION);
+        throw new InvalidParameterError(`operation.mdip.version=${operation.mdip.version}`);
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw new Error(exceptions.INVALID_TYPE);
+        throw new InvalidParameterError(`operation.mdip.type=${operation.mdip.type}`);
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidParameterError(`operation.mdip.registry=${operation.mdip.registry}`);
     }
 
     if (!verifySignatureFormat(operation.signature)) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidParameterError('operation.signature');
     }
 
     if (operation.mdip.validUntil && !verifyDateFormat(operation.mdip.validUntil)) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidParameterError(`operation.mdip.validUntil=${operation.mdip.validUntil}`);
     }
 
     if (operation.mdip.type === 'agent') {
         if (!operation.publicJwk) {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidParameterError('operation.publicJwk');
         }
 
         const operationCopy = copyJSON(operation);
@@ -291,13 +295,13 @@ async function verifyCreateOperation(operation) {
 
     if (operation.mdip.type === 'asset') {
         if (operation.controller !== operation.signature?.signer) {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidParameterError('signer is not controller');
         }
 
         const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
         if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-            throw new Error(exceptions.INVALID_REGISTRY);
+            throw new InvalidParameterError(`non-local registry=${operation.mdip.registry}`);
         }
 
         const operationCopy = copyJSON(operation);
@@ -308,7 +312,7 @@ async function verifyCreateOperation(operation) {
         return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
-    throw new Error(exceptions.INVALID_OPERATION);
+    throw new InvalidParameterError(`operation.mdip.type=${peration.mdip.type}`);
 }
 
 async function verifyUpdateOperation(operation, doc) {
@@ -373,6 +377,7 @@ export async function createDID(operation) {
         return did;
     }
     else {
+        // invalid sig error?
         throw new Error(exceptions.INVALID_OPERATION);
     }
 }
