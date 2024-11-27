@@ -6,8 +6,9 @@ export const UPDATE_FAILED = 'Update failed';
 export class InvalidDIDError extends Error {
     static message = 'Invalid DID';
 
-    constructor() {
-        super(InvalidDIDError.message);
+    constructor(detail) {
+        const message = detail ? `${InvalidDIDError.message}: ${detail}` : InvalidDIDError.message;
+        super(message);
     }
 }
 
@@ -15,7 +16,8 @@ export class InvalidParameterError extends Error {
     static message = 'Invalid parameter';
 
     constructor(detail) {
-        super(`${InvalidParameterError.message}: ${detail}`);
+        const message = detail ? `${InvalidParameterError.message}: ${detail}` : InvalidParameterError.message;
+        super(message);
     }
 }
 
@@ -23,7 +25,8 @@ export class InvalidOperationError extends Error {
     static message = 'Invalid operation';
 
     constructor(detail) {
-        super(`${InvalidOperationError.message}: ${detail}`);
+        const message = detail ? `${InvalidOperationError.message}: ${detail}` : InvalidOperationError.message;
+        super(message);
     }
 }
 

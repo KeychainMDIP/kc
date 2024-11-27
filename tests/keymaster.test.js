@@ -35,7 +35,8 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
@@ -43,7 +44,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
@@ -51,7 +52,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
@@ -59,7 +60,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.cipher');
         }
 
         try {
@@ -67,7 +68,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
@@ -75,7 +76,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
@@ -83,7 +84,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.cipher');
         }
     });
 });
@@ -266,7 +267,7 @@ describe('newWallet', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: mnemonic');
         }
     });
 });
@@ -403,7 +404,8 @@ describe('createId', () => {
             await keymaster.createId(name);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 
@@ -593,7 +595,7 @@ describe('recoverId', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe(InvalidDIDError.message);
         }
     });
 });
@@ -770,7 +772,7 @@ describe('addName', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 
@@ -784,7 +786,7 @@ describe('addName', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 });
@@ -975,7 +977,8 @@ describe('createAsset', () => {
             await keymaster.createAsset();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -987,7 +990,7 @@ describe('createAsset', () => {
             await keymaster.createAsset("");
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -999,7 +1002,7 @@ describe('createAsset', () => {
             await keymaster.createAsset([]);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -1011,7 +1014,7 @@ describe('createAsset', () => {
             await keymaster.createAsset({});
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 });
@@ -1326,7 +1329,7 @@ describe('addSignature', () => {
             await keymaster.addSignature();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: obj');
         }
     });
 });
@@ -1523,7 +1526,7 @@ describe('issueCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
 
@@ -1540,7 +1543,7 @@ describe('issueCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
 });
@@ -1625,7 +1628,8 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
         try {
@@ -1635,7 +1639,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted JSON');
         }
 
         try {
@@ -1645,7 +1649,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did is not a credential');
         }
 
         try {
@@ -1653,7 +1657,8 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
@@ -1661,7 +1666,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
@@ -1671,7 +1676,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
@@ -1681,7 +1686,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
     });
 });
@@ -1896,7 +1901,7 @@ describe('createChallenge', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challenge');
         }
 
         try {
@@ -1906,7 +1911,7 @@ describe('createChallenge', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challenge.credentials');
         }
     });
 
@@ -1921,7 +1926,7 @@ describe('createChallenge', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.validUntil');
         }
     });
 });
@@ -2017,7 +2022,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challengeDID');
         }
     });
 });
@@ -2260,7 +2265,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
         try {
@@ -2377,7 +2382,7 @@ describe('unpublishCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did');
         }
     });
 
@@ -2394,7 +2399,7 @@ describe('unpublishCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did');
         }
     });
 });
@@ -2662,7 +2667,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe('Invalid DID: memberId');
         }
     });
 
@@ -2710,7 +2715,8 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
 
         try {
@@ -2718,7 +2724,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
 
@@ -2733,7 +2739,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe("Invalid parameter: can't add a group to itself");
         }
     });
 
@@ -2753,7 +2759,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe("Invalid parameter: can't create mutual membership");
         }
     });
 });
@@ -2897,7 +2903,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe('Invalid DID: memberId');
         }
     });
 
@@ -2953,7 +2959,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
 
         try {
@@ -2961,7 +2967,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
 });
@@ -3198,7 +3204,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll');
         }
 
         try {
@@ -3208,7 +3214,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.version');
         }
 
         try {
@@ -3218,7 +3224,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.description');
         }
 
         try {
@@ -3228,7 +3234,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.roster');
         }
 
         try {
@@ -3238,7 +3244,8 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
@@ -3248,7 +3255,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
@@ -3258,7 +3265,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
@@ -3268,7 +3275,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
@@ -3278,7 +3285,8 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
         try {
@@ -3288,7 +3296,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
         try {
@@ -3303,7 +3311,7 @@ describe('createPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
     });
 });
@@ -3446,7 +3454,7 @@ describe('votePoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: vote');
         }
     });
 
@@ -3466,7 +3474,7 @@ describe('votePoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: voter not in roster');
         }
     });
 });
@@ -3510,7 +3518,7 @@ describe('updatePoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: ballot');
         }
     });
 });
@@ -3664,7 +3672,8 @@ describe('createSchema', () => {
             await keymaster.createSchema({ mock: 'not a schema' });
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 
@@ -3677,7 +3686,7 @@ describe('createSchema', () => {
             await keymaster.createSchema({ "$schema": "http://json-schema.org/draft-07/schema#" });
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 });
@@ -3775,7 +3784,7 @@ describe('setSchema', () => {
             await keymaster.setSchema(did, { mock: 'not a schema' });
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 });
@@ -4154,7 +4163,7 @@ describe('getCredential', () => {
             await keymaster.getCredential(agentDID);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
 });
