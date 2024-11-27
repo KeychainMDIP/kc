@@ -3,7 +3,7 @@ import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as exceptions from '@mdip/exceptions';
-import { InvalidParameterError, InvalidOptionError, ExpectedExceptionError } from '@mdip/exceptions';
+import { InvalidParameterError, ExpectedExceptionError } from '@mdip/exceptions';
 
 const mockConsole = {
     log: () => { },
@@ -153,8 +153,7 @@ describe('start', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error instanceof InvalidOptionError).toBe(true);
-            expect(error.option).toBe('db');
+            expect(error.message).toBe('Invalid parameter: missing options.db');
         }
     });
 });
@@ -2316,8 +2315,7 @@ describe('initRegistries', () => {
             await gatekeeper.initRegistries("local, hyperswarm, mock");
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.parameter).toBe('registry');
-            expect(error.value).toBe('mock');
+            expect(error.message).toBe('Invalid parameter: registry=mock');
         }
     });
 });
