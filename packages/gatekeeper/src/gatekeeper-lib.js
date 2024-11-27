@@ -1,7 +1,10 @@
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
-import * as exceptions from '@mdip/exceptions';
-import { InvalidParameterError, InvalidOperationError } from '@mdip/exceptions';
+import {
+    InvalidDIDError,
+    InvalidParameterError,
+    InvalidOperationError
+} from '@mdip/exceptions';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
@@ -325,8 +328,7 @@ async function verifyUpdateOperation(operation, doc) {
     }
 
     if (doc.didDocumentMetadata?.deactivated) {
-        // TBD InvalidDIDError here?
-        throw new InvalidOperationError('deactivated');
+        throw new InvalidOperationError('DID deactivated');
     }
 
     if (doc.didDocument.controller) {
@@ -477,16 +479,12 @@ export async function resolveDID(did, options = {}) {
     //console.timeEnd('getEvents');
 
     if (events.length === 0) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const anchor = events[0];
     let doc = await generateDoc(anchor.operation);
     let mdip = doc?.mdip;
-
-    if (!mdip) {
-        throw new Error(exceptions.INVALID_DID);
-    }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
         // TBD What to return if DID was created after specified time?
@@ -504,7 +502,7 @@ export async function resolveDID(did, options = {}) {
                 const valid = await verifyCreateOperation(operation);
 
                 if (!valid) {
-                    throw new Error(exceptions.INVALID_OPERATION);
+                    throw new InvalidOperationError('signature');
                 }
             }
             continue;
@@ -528,7 +526,7 @@ export async function resolveDID(did, options = {}) {
             const valid = await verifyUpdateOperation(operation, doc);
 
             if (!valid) {
-                throw new Error(exceptions.INVALID_OPERATION);
+                throw new InvalidOperationError('signature');
             }
         }
 
@@ -563,7 +561,7 @@ export async function resolveDID(did, options = {}) {
         }
         else {
             if (verify) {
-                throw new Error(exceptions.INVALID_OPERATION);
+                throw new InvalidOperationError('signature');
             }
 
             // console.error(`unknown type ${operation.type}`);
@@ -667,7 +665,7 @@ export async function importDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('dids');
     }
 
     for (const did of dids) {
@@ -716,9 +714,7 @@ async function importEvent(event) {
         return false;
     }
     else {
-        //console.time('verifyOperation');
         const ok = await verifyOperation(event.operation);
-        //console.timeEnd('verifyOperation');
 
         if (ok) {
             await db.addEvent(did, event);
@@ -726,7 +722,7 @@ async function importEvent(event) {
             return true;
         }
         else {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidOperationError('signature');
         }
     }
 }
@@ -883,7 +879,7 @@ export async function verifyEvent(event) {
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('batch');
     }
 
     let queued = 0;
@@ -935,7 +931,7 @@ export async function exportBatch(dids) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidParameterError(`registry=${registry}`);
     }
 
     return db.getQueue(registry);
@@ -943,7 +939,7 @@ export async function getQueue(registry) {
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidParameterError(`registry=${registry}`);
     }
 
     return db.clearQueue(registry, events);

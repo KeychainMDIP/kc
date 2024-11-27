@@ -1,4 +1,5 @@
 import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/exceptions';
 
 let gatekeeper = null;
 let db = null;
@@ -751,7 +752,7 @@ export async function lookupDID(name) {
         }
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const wallet = await loadWallet();
@@ -1437,7 +1438,7 @@ export async function addGroupMember(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const group = await getGroup(groupId);
@@ -1479,7 +1480,7 @@ export async function removeGroupMember(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     // If not already a member, return immediately

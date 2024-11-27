@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/exceptions';
 
 let redis;
 let DB;
@@ -34,7 +34,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const key = didKey(did);
@@ -64,7 +64,7 @@ export async function getEvents(did) {
 
 export async function deleteEvents(did) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     return redis.del(didKey(did));

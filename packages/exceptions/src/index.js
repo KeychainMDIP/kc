@@ -1,4 +1,4 @@
-export const INVALID_DID = 'Invalid DID';
+//export const INVALID_DID = 'Invalid DID';
 export const INVALID_OPERATION = 'Invalid operation';
 export const INVALID_VERSION = 'Invalid version';
 export const INVALID_TYPE = 'Invalid type';
@@ -10,6 +10,14 @@ export const INVALID_PARAMETER = 'Invalid parameter';
 export const INVALID_OPTION = 'Invalid option';
 export const UPDATE_FAILED = 'Update failed';
 export const EXPECTED_EXCEPTION = 'Expected to throw an exception';
+
+export class InvalidDIDError extends Error {
+    static message = 'Invalid DID';
+
+    constructor() {
+        super(InvalidDIDError.message);
+    }
+}
 
 export class InvalidParameterError extends Error {
     constructor(message) {

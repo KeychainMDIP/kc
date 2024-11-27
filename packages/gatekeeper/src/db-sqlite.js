@@ -1,6 +1,6 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/exceptions';
 
 const dataFolder = 'data';
 
@@ -35,7 +35,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const events = await getEvents(did);
@@ -46,7 +46,7 @@ export async function addEvent(did, event) {
 
 export async function setEvents(did, events) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const id = did.split(':').pop();
@@ -55,7 +55,7 @@ export async function setEvents(did, events) {
 
 export async function getEvents(did) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     try {
@@ -76,7 +76,7 @@ export async function getEvents(did) {
 
 export async function deleteEvents(did) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const id = did.split(':').pop();

@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/exceptions';
 
 let client;
 let db;
@@ -21,7 +21,7 @@ export async function resetDb() {
 
 export async function addEvent(did, event) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const id = did.split(':').pop();
@@ -44,7 +44,7 @@ export async function setEvents(did, events) {
 
 export async function getEvents(did) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     try {
@@ -58,7 +58,7 @@ export async function getEvents(did) {
 }
 export async function deleteEvents(did) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const id = did.split(':').pop();

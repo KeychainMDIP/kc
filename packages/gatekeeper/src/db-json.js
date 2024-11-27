@@ -1,5 +1,5 @@
 import fs from 'fs';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/exceptions';
 
 const dataFolder = 'data';
 let dbName;
@@ -40,7 +40,7 @@ export async function addEvent(did, event) {
     const db = loadDb();
 
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const suffix = did.split(':').pop();
@@ -80,7 +80,7 @@ export async function getEvents(did) {
 
 export async function setEvents(did, events) {
     if (!did) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const db = loadDb();
