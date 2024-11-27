@@ -312,7 +312,7 @@ async function verifyCreateOperation(operation) {
         return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
-    throw new InvalidOperationError(`mdip.type=${peration.mdip.type}`);
+    throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
 }
 
 async function verifyUpdateOperation(operation, doc) {
@@ -381,8 +381,7 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        // invalid sig error?
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError('signature');
     }
 }
 

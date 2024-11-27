@@ -416,7 +416,8 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
