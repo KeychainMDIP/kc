@@ -690,6 +690,7 @@ export async function revokeDID(did) {
 
     const controller = current.didDocument.controller || current.didDocument.id;
     const signed = await addSignature(operation, controller);
+
     const ok = gatekeeper.deleteDID(signed);
 
     if (ok && current.didDocument.controller) {

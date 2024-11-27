@@ -1,7 +1,7 @@
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
 import * as exceptions from '@mdip/exceptions';
-import { InvalidParameterError } from '@mdip/exceptions';
+import { InvalidParameterError, InvalidOperationError } from '@mdip/exceptions';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
@@ -245,45 +245,45 @@ function verifySignatureFormat(signature) {
 
 async function verifyCreateOperation(operation) {
     if (!operation) {
-        throw new InvalidParameterError('missing operation');
+        throw new InvalidOperationError('missing');
     }
 
     if (operation.type !== "create") {
-        throw new InvalidParameterError(`operation.type=${operation.type}`);
+        throw new InvalidOperationError(`type=${operation.type}`);
     }
 
     if (!verifyDateFormat(operation.created)) {
         // TBD ensure valid timestamp format
-        throw new InvalidParameterError(`operation.created=${operation.created}`);
+        throw new InvalidOperationError(`created=${operation.created}`);
     }
 
     if (!operation.mdip) {
-        throw new InvalidParameterError('missing operation.mdip');
+        throw new InvalidOperationError('mdip');
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw new InvalidParameterError(`operation.mdip.version=${operation.mdip.version}`);
+        throw new InvalidOperationError(`mdip.version=${operation.mdip.version}`);
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw new InvalidParameterError(`operation.mdip.type=${operation.mdip.type}`);
+        throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw new InvalidParameterError(`operation.mdip.registry=${operation.mdip.registry}`);
+        throw new InvalidOperationError(`mdip.registry=${operation.mdip.registry}`);
     }
 
     if (!verifySignatureFormat(operation.signature)) {
-        throw new InvalidParameterError('operation.signature');
+        throw new InvalidOperationError('signature');
     }
 
     if (operation.mdip.validUntil && !verifyDateFormat(operation.mdip.validUntil)) {
-        throw new InvalidParameterError(`operation.mdip.validUntil=${operation.mdip.validUntil}`);
+        throw new InvalidOperationError(`mdip.validUntil=${operation.mdip.validUntil}`);
     }
 
     if (operation.mdip.type === 'agent') {
         if (!operation.publicJwk) {
-            throw new InvalidParameterError('operation.publicJwk');
+            throw new InvalidOperationError('publicJwk');
         }
 
         const operationCopy = copyJSON(operation);
@@ -295,13 +295,13 @@ async function verifyCreateOperation(operation) {
 
     if (operation.mdip.type === 'asset') {
         if (operation.controller !== operation.signature?.signer) {
-            throw new InvalidParameterError('signer is not controller');
+            throw new InvalidOperationError('signer is not controller');
         }
 
         const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
         if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-            throw new InvalidParameterError(`non-local registry=${operation.mdip.registry}`);
+            throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
         }
 
         const operationCopy = copyJSON(operation);
@@ -312,16 +312,21 @@ async function verifyCreateOperation(operation) {
         return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
-    throw new InvalidParameterError(`operation.mdip.type=${peration.mdip.type}`);
+    throw new InvalidOperationError(`mdip.type=${peration.mdip.type}`);
 }
 
 async function verifyUpdateOperation(operation, doc) {
     if (!verifySignatureFormat(operation.signature)) {
-        return false;
+        throw new InvalidOperationError('signature');
     }
 
     if (!doc?.didDocument) {
-        return false;
+        throw new InvalidOperationError('doc.didDocument');
+    }
+
+    if (doc.didDocumentMetadata?.deactivated) {
+        // TBD InvalidDIDError here?
+        throw new InvalidOperationError('deactivated');
     }
 
     if (doc.didDocument.controller) {
@@ -331,12 +336,11 @@ async function verifyUpdateOperation(operation, doc) {
     }
 
     if (!doc.didDocument.verificationMethod) {
-        return false;
+        throw new InvalidOperationError('doc.didDocument.verificationMethod');
     }
 
+    const signature = operation.signature;
     const jsonCopy = copyJSON(operation);
-
-    const signature = jsonCopy.signature;
     delete jsonCopy.signature;
     const msgHash = cipher.hashJSON(jsonCopy);
 
@@ -571,42 +575,36 @@ export async function resolveDID(did, options = {}) {
 }
 
 export async function updateDID(operation) {
-    try {
-        const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdateOperation(operation, doc);
+    const doc = await resolveDID(operation.did);
+    const updateValid = await verifyUpdateOperation(operation, doc);
 
-        if (!updateValid) {
-            return false;
-        }
-
-        const registry = doc.mdip.registry;
-
-        await db.addEvent(operation.did, {
-            registry: 'local',
-            time: operation.signature.signed,
-            ordinal: 0,
-            operation,
-            did: operation.did
-        });
-
-        delete eventsCache[operation.did];
-
-        if (registry === 'local') {
-            return true;
-        }
-
-        await db.queueOperation(registry, operation);
-
-        if (registry !== 'hyperswarm') {
-            await db.queueOperation('hyperswarm', operation);
-        }
-
-        return true;
-    }
-    catch (error) {
-        // console.error(error);
+    if (!updateValid) {
         return false;
     }
+
+    const registry = doc.mdip.registry;
+
+    await db.addEvent(operation.did, {
+        registry: 'local',
+        time: operation.signature.signed,
+        ordinal: 0,
+        operation,
+        did: operation.did
+    });
+
+    delete eventsCache[operation.did];
+
+    if (registry === 'local') {
+        return true;
+    }
+
+    await db.queueOperation(registry, operation);
+
+    if (registry !== 'hyperswarm') {
+        await db.queueOperation('hyperswarm', operation);
+    }
+
+    return true;
 }
 
 export async function deleteDID(operation) {

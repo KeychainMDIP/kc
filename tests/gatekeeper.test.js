@@ -3,7 +3,7 @@ import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as exceptions from '@mdip/exceptions';
-import { InvalidParameterError, ExpectedExceptionError } from '@mdip/exceptions';
+import { ExpectedExceptionError } from '@mdip/exceptions';
 
 const mockConsole = {
     log: () => { },
@@ -347,7 +347,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.mdip.version=2');
+            expect(error.message).toBe('Invalid operation: mdip.version=2');
         }
     });
 
@@ -361,7 +361,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.mdip.registry=mockRegistry');
+            expect(error.message).toBe('Invalid operation: mdip.registry=mockRegistry');
         }
     });
 
@@ -376,18 +376,18 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.mdip.type=mock');
+            expect(error.message).toBe('Invalid operation: mdip.type=mock');
         }
     });
 
-    it('should throw exception on invalid agent operation', async () => {
+    it('should throw exception on invalid create agent operation', async () => {
         mockFs({});
 
         try {
             await gatekeeper.createDID();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: missing operation');
+            expect(error.message).toBe('Invalid operation: missing');
         }
 
         const keypair = cipher.generateRandomJwk();
@@ -398,7 +398,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.type=mock');
+            expect(error.message).toBe('Invalid operation: type=mock');
         }
 
         try {
@@ -407,7 +407,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: missing operation.mdip');
+            expect(error.message).toBe('Invalid operation: mdip');
         }
 
         try {
@@ -425,7 +425,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.signature');
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
@@ -434,7 +434,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.publicJwk');
+            expect(error.message).toBe('Invalid operation: publicJwk');
         }
     });
 
@@ -451,7 +451,7 @@ describe('createDID', () => {
         expect(did.startsWith('did:test:')).toBe(true);
     });
 
-    it('should throw exception on invalid asset operation', async () => {
+    it('should throw exception on invalid create asset operation', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -465,7 +465,7 @@ describe('createDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             // Can't let local IDs create assets on other registries
-            expect(error.message).toBe('Invalid parameter: non-local registry=hyperswarm');
+            expect(error.message).toBe('Invalid operation: non-local registry=hyperswarm');
         }
 
         try {
@@ -475,7 +475,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: signer is not controller');
+            expect(error.message).toBe('Invalid operation: signer is not controller');
         }
 
         try {
@@ -485,7 +485,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.signature');
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
@@ -494,7 +494,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid parameter: operation.mdip.validUntil=mock');
+            expect(error.message).toBe('Invalid operation: mdip.validUntil=mock');
         }
     });
 });
@@ -1022,6 +1022,23 @@ describe('updateDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
 
         expect(ok).toBe(false);
+    });
+
+    it('should throw exception on invalid update operation', async () => {
+        mockFs({});
+
+        try {
+            const keypair = cipher.generateRandomJwk();
+            const agentOp = await createAgentOp(keypair);
+            const did = await gatekeeper.createDID(agentOp);
+            const doc = await gatekeeper.resolveDID(did);
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            delete updateOp.signature;
+            await gatekeeper.updateDID(updateOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
     });
 });
 

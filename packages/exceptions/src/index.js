@@ -17,6 +17,12 @@ export class InvalidParameterError extends Error {
     }
 }
 
+export class InvalidOperationError extends Error {
+    constructor(message) {
+        super(`Invalid operation: ${message}`);
+    }
+}
+
 // For unit tests
 export class ExpectedExceptionError extends Error {
     constructor() {

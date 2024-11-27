@@ -1707,7 +1707,7 @@ describe('revokeCredential', () => {
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
     });
 
-    it('should return false if verifiable credential is already revoked', async () => {
+    it('should throw exception if verifiable credential is already revoked', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
@@ -1722,8 +1722,12 @@ describe('revokeCredential', () => {
         expect(revoked.didDocument).toStrictEqual({});
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
 
-        const ok2 = await keymaster.revokeCredential(did);
-        expect(ok2).toBe(false);
+        try {
+            await keymaster.revokeCredential(did);
+            throw new Error(exceptions.EXPECTED_EXCEPTION);        }
+        catch (error) {
+            expect(error.message).toBe('Invalid operation: deactivated');
+        }
     });
 
     it('should throw exception if user does not control verifiable credential', async () => {
