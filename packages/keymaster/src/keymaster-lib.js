@@ -1,5 +1,5 @@
 import * as exceptions from '@mdip/exceptions';
-import { InvalidDIDError, InvalidParameterError } from '@mdip/exceptions';
+import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/exceptions';
 
 let gatekeeper = null;
 let db = null;
@@ -91,7 +91,7 @@ export async function newWallet(mnemonic, overwrite = false) {
 
     const ok = await db.saveWallet(wallet, overwrite)
     if (!ok) {
-        throw new Error(exceptions.UPDATE_FAILED);
+        throw new KeymasterError('save wallet failed');
     }
 
     return wallet;
@@ -417,7 +417,7 @@ export async function setCurrentId(name) {
         return saveWallet(wallet);
     }
     else {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 }
 
@@ -444,12 +444,12 @@ async function fetchIdInfo(id) {
         idInfo = wallet.ids[wallet.current];
 
         if (!idInfo) {
-            throw new Error(exceptions.NO_CURRENT_ID);
+            throw new KeymasterError('No current ID');
         }
     }
 
     if (!idInfo) {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 
     return idInfo;
@@ -592,7 +592,7 @@ export async function decryptMessage(did) {
         }
     }
 
-    throw new Error('Cannot decrypt');
+    throw new KeymasterError('cannot decrypt');
 }
 
 export async function encryptJSON(json, did, options = {}) {
@@ -765,7 +765,7 @@ export async function lookupDID(name) {
         return wallet.ids[name].did;
     }
 
-    throw new Error(exceptions.UNKNOWN_ID);
+    throw new UnknownIDError();
 }
 
 export async function resolveDID(did, options = {}) {
@@ -864,7 +864,7 @@ export async function removeId(name) {
         return true;
     }
     else {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 }
 
@@ -926,7 +926,7 @@ export async function rotateKeys() {
     const doc = await resolveDID(id.did);
 
     if (!doc.didDocumentMetadata.confirmed) {
-        throw new Error('Cannot rotate keys');
+        throw new KeymasterError('Cannot rotate keys');
     }
 
     const vmethod = doc.didDocument.verificationMethod[0];
@@ -943,7 +943,7 @@ export async function rotateKeys() {
         return doc;
     }
     else {
-        throw new Error('Cannot rotate keys');
+        throw new KeymasterError('Cannot rotate keys');
     }
 }
 
@@ -1162,7 +1162,7 @@ export async function publishCredential(did, options = {}) {
         return vc;
     }
     else {
-        throw new Error(exceptions.UPDATE_FAILED);
+        throw new KeymasterError(exceptions.UPDATE_FAILED);
     }
 }
 

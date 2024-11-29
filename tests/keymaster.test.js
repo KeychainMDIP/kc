@@ -6,8 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
-import * as exceptions from '@mdip/exceptions';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/exceptions';
+import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/exceptions';
 
 beforeEach(async () => {
     await db_json.start('mdip');
@@ -245,7 +244,7 @@ describe('newWallet', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UPDATE_FAILED);
+            expect(error.message).toBe('Keymaster: save wallet failed');
         }
     });
 
@@ -458,7 +457,7 @@ describe('removeId', () => {
             await keymaster.removeId(name2);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -494,7 +493,7 @@ describe('setCurrentId', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -645,7 +644,7 @@ describe('testAgent', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -738,7 +737,7 @@ describe('rotateKeys', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Cannot rotate keys');
+            expect(error.message).toBe('Keymaster: Cannot rotate keys');
         }
     });
 });
@@ -891,7 +890,7 @@ describe('resolveDID', () => {
             await keymaster.resolveDID('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -965,7 +964,8 @@ describe('createAsset', () => {
             await keymaster.createAsset(mockAnchor);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -1316,7 +1316,7 @@ describe('addSignature', () => {
             await keymaster.addSignature(mockJson);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -1757,7 +1757,7 @@ describe('revokeCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
     });
@@ -1998,7 +1998,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
         try {
@@ -2273,7 +2273,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
         try {
@@ -2368,7 +2368,7 @@ describe('unpublishCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -2515,7 +2515,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -2554,7 +2554,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -3751,7 +3751,7 @@ describe('getSchema', () => {
             await keymaster.getSchema('bogus');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -4123,7 +4123,7 @@ describe('listCredentials', () => {
             await keymaster.listCredentials('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -4151,7 +4151,7 @@ describe('getCredential', () => {
             await keymaster.getCredential('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -4216,7 +4216,7 @@ describe('removeCredential', () => {
             await keymaster.removeCredential('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -4294,7 +4294,7 @@ describe('setCurrentId', () => {
             await keymaster.setCurrentId('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });

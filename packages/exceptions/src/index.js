@@ -1,5 +1,3 @@
-export const UNKNOWN_ID = 'Unknown ID';
-export const NO_CURRENT_ID = 'No current ID';
 export const UPDATE_FAILED = 'Update failed';
 
 export class MDIPError extends Error {
@@ -32,6 +30,22 @@ export class InvalidOperationError extends MDIPError {
 
     constructor(detail) {
         super(InvalidOperationError.type, detail);
+    }
+}
+
+export class KeymasterError extends MDIPError {
+    static type = 'Keymaster';
+
+    constructor(detail) {
+        super(KeymasterError.type, detail);
+    }
+}
+
+export class UnknownIDError extends MDIPError {
+    static type = 'Unknown ID';
+
+    constructor(detail) {
+        super(UnknownIDError.type, detail);
     }
 }
 
