@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { InvalidDIDError } from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/common/exceptions';
 
 let redis;
 let DB;

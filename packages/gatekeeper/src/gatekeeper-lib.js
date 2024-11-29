@@ -4,7 +4,7 @@ import {
     InvalidDIDError,
     InvalidParameterError,
     InvalidOperationError
-} from '@mdip/exceptions';
+} from '@mdip/common/exceptions';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 

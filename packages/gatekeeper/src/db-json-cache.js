@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { InvalidDIDError } from '@mdip/exceptions';
+import { InvalidDIDError } from '@mdip/common/exceptions';
 
 const dataFolder = 'data';
 let dbName;
