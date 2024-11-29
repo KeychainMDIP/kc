@@ -1,9 +1,11 @@
 {
-  "name": "@mdip/exceptions",
+  "name": "@mdip/common",
   "version": "0.4.0",
-  "description": "MDIP exceptions",
+  "description": "MDIP common",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    "./errors": "./src/errors.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

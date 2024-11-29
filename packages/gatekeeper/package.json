@@ -20,7 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "@mdip/cipher": "*",
-    "@mdip/exceptions": "*",
+    "@mdip/common": "*",
     "@mdip/ipfs": "*",
     "axios": "^1.7.7",
     "canonicalize": "^2.0.0",

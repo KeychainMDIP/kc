@@ -4,8 +4,8 @@ import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
-import * as exceptions from '@mdip/exceptions';
 import config from './config.js';
+import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
 
@@ -458,7 +458,7 @@ async function waitForNodeID() {
                 isReady = true;
             }
             catch (error) {
-                if (error.message === exceptions.INVALID_PARAMETER) {
+                if (error.type === InvalidParameterError.type) {
                     console.log(`Waiting for gatekeeper to sync...`);
                 }
             }

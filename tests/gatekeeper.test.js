@@ -2,7 +2,7 @@ import mockFs from 'mock-fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
     log: () => { },
@@ -149,10 +149,10 @@ describe('start', () => {
 
         try {
             await gatekeeper.start();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: missing options.db');
         }
     });
 });
@@ -344,9 +344,9 @@ describe('createDID', () => {
 
         try {
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_VERSION);
+            expect(error.message).toBe('Invalid operation: mdip.version=2');
         }
     });
 
@@ -358,9 +358,9 @@ describe('createDID', () => {
 
         try {
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid operation: mdip.registry=mockRegistry');
         }
     });
 
@@ -373,20 +373,20 @@ describe('createDID', () => {
 
         try {
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_TYPE);
+            expect(error.message).toBe('Invalid operation: mdip.type=mock');
         }
     });
 
-    it('should throw exception on invalid agent operation', async () => {
+    it('should throw exception on invalid create agent operation', async () => {
         mockFs({});
 
         try {
             await gatekeeper.createDID();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: missing');
         }
 
         const keypair = cipher.generateRandomJwk();
@@ -395,45 +395,46 @@ describe('createDID', () => {
             const agentOp = await createAgentOp(keypair);
             agentOp.type = 'mock';
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: type=mock');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
             agentOp.mdip = null;
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: mdip');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
             agentOp.created = null;
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
             agentOp.signature = null;
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
             agentOp.publicJwk = null;
             await gatekeeper.createDID(agentOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: publicJwk');
         }
     });
 
@@ -450,7 +451,7 @@ describe('createDID', () => {
         expect(did.startsWith('did:test:')).toBe(true);
     });
 
-    it('should throw exception on invalid asset operation', async () => {
+    it('should throw exception on invalid create asset operation', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -461,10 +462,10 @@ describe('createDID', () => {
             // inconsistent registry
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             await gatekeeper.createDID(assetOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
             // Can't let local IDs create assets on other registries
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid operation: non-local registry=hyperswarm');
         }
 
         try {
@@ -472,9 +473,9 @@ describe('createDID', () => {
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             assetOp.controller = 'mock';
             await gatekeeper.createDID(assetOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: signer is not controller');
         }
 
         try {
@@ -482,18 +483,18 @@ describe('createDID', () => {
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
             assetOp.signature = null;
             await gatekeeper.createDID(assetOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
             // invalid validUntil date
             const assetOp = await createAssetOp(agent, keypair, 'hyperswarm', 'mock');
             await gatekeeper.createDID(assetOp);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_OPERATION);
+            expect(error.message).toBe('Invalid operation: mdip.validUntil=mock');
         }
     });
 });
@@ -863,8 +864,8 @@ describe('resolveDID', () => {
         }
 
         for (let i = 0; i < 10; i++) {
-            const doc = await gatekeeper.resolveDID(did, { atVersion: i+1 });
-            expect(doc.didDocumentMetadata.version).toBe(i+1);
+            const doc = await gatekeeper.resolveDID(did, { atVersion: i + 1 });
+            expect(doc.didDocumentMetadata.version).toBe(i + 1);
         }
     });
 
@@ -903,65 +904,74 @@ describe('resolveDID', () => {
 
         try {
             await gatekeeper.resolveDID();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID([]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID([1, 2, 3]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID({});
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID({ mock: 1 });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:xxx');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -1021,6 +1031,23 @@ describe('updateDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
 
         expect(ok).toBe(false);
+    });
+
+    it('should throw exception on invalid update operation', async () => {
+        mockFs({});
+
+        try {
+            const keypair = cipher.generateRandomJwk();
+            const agentOp = await createAgentOp(keypair);
+            const did = await gatekeeper.createDID(agentOp);
+            const doc = await gatekeeper.resolveDID(did);
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            delete updateOp.signature;
+            await gatekeeper.updateDID(updateOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
     });
 });
 
@@ -1191,9 +1218,10 @@ describe('removeDIDs', () => {
 
         try {
             await gatekeeper.resolveDID(did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 
@@ -1202,9 +1230,9 @@ describe('removeDIDs', () => {
 
         try {
             await gatekeeper.removeDIDs();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: dids');
         }
     });
 
@@ -1326,9 +1354,10 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: batch');
         }
     });
 
@@ -1337,9 +1366,9 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: batch');
         }
     });
 
@@ -1348,9 +1377,9 @@ describe('importBatch', () => {
 
         try {
             await gatekeeper.importBatch([]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: batch');
         }
     });
 
@@ -1968,9 +1997,10 @@ describe('getQueue', () => {
 
         try {
             await gatekeeper.getQueue('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: registry=mock');
         }
     });
 });
@@ -2065,9 +2095,9 @@ describe('clearQueue', () => {
 
         try {
             await gatekeeper.clearQueue('mock', []);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid parameter: registry=mock');
         }
     });
 });
@@ -2312,9 +2342,9 @@ describe('initRegistries', () => {
 
         try {
             await gatekeeper.initRegistries("local, hyperswarm, mock");
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_REGISTRY);
+            expect(error.message).toBe('Invalid parameter: registry=mock');
         }
     });
 });

@@ -6,7 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
 beforeEach(async () => {
     await db_json.start('mdip');
@@ -31,58 +31,59 @@ describe('start', () => {
 
         try {
             await keymaster.start();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
             await keymaster.start({ wallet, cipher });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
             await keymaster.start({ gatekeeper, cipher });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
             await keymaster.start({ gatekeeper, wallet });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.cipher');
         }
 
         try {
             await keymaster.start({ gatekeeper: {}, wallet, cipher });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
             await keymaster.start({ gatekeeper, wallet: {}, cipher });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
             await keymaster.start({ gatekeeper, wallet, cipher: {} });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.cipher');
         }
     });
 });
@@ -240,10 +241,10 @@ describe('newWallet', () => {
 
         try {
             await keymaster.newWallet();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UPDATE_FAILED);
+            expect(error.message).toBe('Keymaster: save wallet failed');
         }
     });
 
@@ -262,10 +263,10 @@ describe('newWallet', () => {
 
         try {
             await keymaster.newWallet([]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: mnemonic');
         }
     });
 });
@@ -400,9 +401,10 @@ describe('createId', () => {
 
         try {
             await keymaster.createId(name);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 
@@ -453,9 +455,9 @@ describe('removeId', () => {
 
         try {
             await keymaster.removeId(name2);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -488,10 +490,10 @@ describe('setCurrentId', () => {
 
         try {
             await keymaster.setCurrentId('Alice');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -589,10 +591,10 @@ describe('recoverId', () => {
 
         try {
             await keymaster.recoverId(did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -627,10 +629,10 @@ describe('testAgent', () => {
 
         try {
             await keymaster.testAgent();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 
@@ -639,10 +641,10 @@ describe('testAgent', () => {
 
         try {
             await keymaster.testAgent('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -732,10 +734,10 @@ describe('rotateKeys', () => {
 
         try {
             await keymaster.rotateKeys();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Cannot rotate keys');
+            expect(error.message).toBe('Keymaster: Cannot rotate keys');
         }
     });
 });
@@ -766,10 +768,10 @@ describe('addName', () => {
         try {
             await keymaster.addName('Jack', alice);
             await keymaster.addName('Jack', bob);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 
@@ -780,10 +782,10 @@ describe('addName', () => {
 
         try {
             await keymaster.addName('Alice', alice);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 });
@@ -886,9 +888,9 @@ describe('resolveDID', () => {
 
         try {
             await keymaster.resolveDID('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -960,9 +962,10 @@ describe('createAsset', () => {
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -972,9 +975,10 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -984,9 +988,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -996,9 +1000,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset([]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 
@@ -1008,9 +1012,9 @@ describe('createAsset', () => {
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset({});
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: data');
         }
     });
 });
@@ -1310,9 +1314,9 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature(mockJson);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -1323,9 +1327,9 @@ describe('addSignature', () => {
 
         try {
             await keymaster.addSignature();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: obj');
         }
     });
 });
@@ -1519,10 +1523,10 @@ describe('issueCredential', () => {
 
         try {
             await keymaster.issueCredential(boundCredential);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
 
@@ -1536,10 +1540,10 @@ describe('issueCredential', () => {
 
         try {
             await keymaster.issueCredential(unboundCredential);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
 });
@@ -1612,75 +1616,77 @@ describe('updateCredential', () => {
 
         try {
             await keymaster.updateCredential();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             // Pass agent DID instead of credential DID
             await keymaster.updateCredential(bob, vc);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
         try {
             // Pass cipher DID instead of credential DID
             const cipherDID = await keymaster.encryptMessage('mock', bob);
             await keymaster.updateCredential(cipherDID, vc);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted JSON');
         }
 
         try {
             // Pass cipher DID instead of credential DID
             const cipherDID = await keymaster.encryptJSON({ bob }, bob);
             await keymaster.updateCredential(cipherDID, vc);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did is not a credential');
         }
 
         try {
             await keymaster.updateCredential(did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
             await keymaster.updateCredential(did, {});
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
             const vc2 = gatekeeper.copyJSON(vc);
             delete vc2.credential;
             await keymaster.updateCredential(did, vc2);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
             const vc2 = gatekeeper.copyJSON(vc);
             delete vc2.credentialSubject;
             await keymaster.updateCredential(did, vc2);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: credential');
         }
     });
 });
@@ -1707,7 +1713,7 @@ describe('revokeCredential', () => {
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
     });
 
-    it('should return false if verifiable credential is already revoked', async () => {
+    it('should throw exception if verifiable credential is already revoked', async () => {
         mockFs({});
 
         const userDid = await keymaster.createId('Bob');
@@ -1722,8 +1728,13 @@ describe('revokeCredential', () => {
         expect(revoked.didDocument).toStrictEqual({});
         expect(revoked.didDocumentMetadata.deactivated).toBe(true);
 
-        const ok2 = await keymaster.revokeCredential(did);
-        expect(ok2).toBe(false);
+        try {
+            await keymaster.revokeCredential(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid operation: DID deactivated');
+        }
     });
 
     it('should throw exception if user does not control verifiable credential', async () => {
@@ -1743,10 +1754,10 @@ describe('revokeCredential', () => {
 
         try {
             await keymaster.revokeCredential(did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
     });
@@ -1887,20 +1898,20 @@ describe('createChallenge', () => {
 
         try {
             await keymaster.createChallenge([]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challenge');
         }
 
         try {
             await keymaster.createChallenge({
                 credentials: 123
             });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challenge.credentials');
         }
     });
 
@@ -1912,10 +1923,10 @@ describe('createChallenge', () => {
         try {
             const validUntil = 'mockDate';
             await keymaster.createChallenge({}, { validUntil });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: options.validUntil');
         }
     });
 });
@@ -1976,42 +1987,42 @@ describe('createResponse', () => {
 
         try {
             await keymaster.createResponse();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.createResponse('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
         try {
             await keymaster.createResponse('did:mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.createResponse('did:mock', { retries: 10, delay: 10 });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.createResponse(alice);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: challengeDID');
         }
     });
 });
@@ -2243,42 +2254,42 @@ describe('verifyResponse', () => {
 
         try {
             await keymaster.verifyResponse();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.verifyResponse(alice);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
         try {
             await keymaster.verifyResponse('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
 
         try {
             await keymaster.verifyResponse('did:mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.verifyResponse('did:mock', { retries: 10, delay: 10 });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -2354,10 +2365,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.NO_CURRENT_ID);
+            expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
@@ -2368,10 +2379,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential('did:test:mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did');
         }
     });
 
@@ -2385,10 +2396,10 @@ describe('unpublishCredential', () => {
 
         try {
             await keymaster.unpublishCredential(did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did');
         }
     });
 });
@@ -2501,10 +2512,10 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember(groupDid, 'mockAlias');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -2540,10 +2551,10 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember('mockAlias', dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -2621,42 +2632,42 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember(groupDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(groupDid, 100);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(groupDid, [1, 2, 3]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(groupDid, { name: 'mock' });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(groupDid, 'did:mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe('Invalid DID: memberId');
         }
     });
 
@@ -2669,50 +2680,51 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember(null, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(100, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember([1, 2, 3], dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember({ name: 'mock' }, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.addGroupMember(agentDid, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
 
         try {
             await keymaster.addGroupMember(dataDid, agentDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
 
@@ -2724,10 +2736,10 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember(groupDid, groupDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe("Invalid parameter: can't add a group to itself");
         }
     });
 
@@ -2744,10 +2756,10 @@ describe('addGroupMember', () => {
 
         try {
             await keymaster.addGroupMember(group3Did, group1Did);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe("Invalid parameter: can't create mutual membership");
         }
     });
 });
@@ -2856,42 +2868,42 @@ describe('removeGroupMember', () => {
 
         try {
             await keymaster.removeGroupMember(groupDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(groupDid, 100);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(groupDid, [1, 2, 3]);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(groupDid, { name: 'mock' });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(groupDid, 'did:mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe('Invalid DID: memberId');
         }
     });
 
@@ -2904,58 +2916,58 @@ describe('removeGroupMember', () => {
 
         try {
             await keymaster.removeGroupMember();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(null, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(100, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember([1, 2, 3], dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember({ name: 'mock' }, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await keymaster.removeGroupMember(agentDid, dataDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
 
         try {
             await keymaster.removeGroupMember(dataDid, agentDid);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
 });
@@ -3096,10 +3108,10 @@ describe('getGroup', () => {
 
         try {
             await keymaster.getGroup();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3189,100 +3201,102 @@ describe('createPoll', () => {
             const poll = JSON.parse(JSON.stringify(template));
             poll.type = "wrong type";
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.version = 0;
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.version');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.description;
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.description');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.roster;
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.roster');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.options;
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = ['one option'];
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.options = "not a list";
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             delete poll.deadline;
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
         try {
             const poll = JSON.parse(JSON.stringify(template));
             poll.deadline = "not a date";
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
         try {
@@ -3294,10 +3308,10 @@ describe('createPoll', () => {
 
             poll.deadline = lastWeek.toISOString();
             await keymaster.createPoll(poll);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
     });
 });
@@ -3352,10 +3366,10 @@ describe('getPoll', () => {
 
         try {
             await keymaster.getPoll();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3437,10 +3451,10 @@ describe('votePoll', () => {
 
         try {
             await keymaster.votePoll(pollDid, 5);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: vote');
         }
     });
 
@@ -3457,10 +3471,10 @@ describe('votePoll', () => {
 
         try {
             await keymaster.votePoll(pollDid, 5);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: voter not in roster');
         }
     });
 });
@@ -3501,10 +3515,10 @@ describe('updatePoll', () => {
 
         try {
             await keymaster.updatePoll(pollDid)
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: ballot');
         }
     });
 });
@@ -3656,9 +3670,10 @@ describe('createSchema', () => {
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 
@@ -3669,9 +3684,9 @@ describe('createSchema', () => {
 
         try {
             await keymaster.createSchema({ "$schema": "http://json-schema.org/draft-07/schema#" });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 });
@@ -3734,9 +3749,9 @@ describe('getSchema', () => {
 
         try {
             await keymaster.getSchema('bogus');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -3767,9 +3782,9 @@ describe('setSchema', () => {
 
         try {
             await keymaster.setSchema(did, { mock: 'not a schema' });
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 });
@@ -3806,9 +3821,9 @@ describe('testSchema', () => {
 
         try {
             await keymaster.testSchema();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3840,9 +3855,9 @@ describe('createTemplate', () => {
 
         try {
             await keymaster.createTemplate();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -4106,9 +4121,9 @@ describe('listCredentials', () => {
 
         try {
             await keymaster.listCredentials('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -4134,9 +4149,9 @@ describe('getCredential', () => {
 
         try {
             await keymaster.getCredential('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 
@@ -4146,9 +4161,9 @@ describe('getCredential', () => {
         try {
             const agentDID = await keymaster.createId('Rando');
             await keymaster.getCredential(agentDID);
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_PARAMETER);
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
 });
@@ -4188,9 +4203,9 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential();
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.INVALID_DID);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 
@@ -4199,9 +4214,9 @@ describe('removeCredential', () => {
 
         try {
             await keymaster.removeCredential('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });
@@ -4277,9 +4292,9 @@ describe('setCurrentId', () => {
 
         try {
             await keymaster.setCurrentId('mock');
-            throw new Error(exceptions.EXPECTED_EXCEPTION);
+            throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(exceptions.UNKNOWN_ID);
+            expect(error.type).toBe(UnknownIDError.type);
         }
     });
 });

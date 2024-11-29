@@ -1,4 +1,4 @@
-import * as exceptions from '@mdip/exceptions';
+import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 let gatekeeper = null;
 let db = null;
@@ -12,33 +12,33 @@ export async function start(options = {}) {
         gatekeeper = options.gatekeeper;
 
         if (!gatekeeper.createDID) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('options.gatekeeper');
         }
     }
     else {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('options.gatekeeper');
     }
 
     if (options.wallet) {
         db = options.wallet;
 
         if (!db.loadWallet) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('options.wallet');
         }
     }
     else {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('options.wallet');
     }
 
     if (options.cipher) {
         cipher = options.cipher;
 
         if (!cipher.verifySig) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('options.cipher');
         }
     }
     else {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('options.cipher');
     }
 }
 
@@ -85,12 +85,12 @@ export async function newWallet(mnemonic, overwrite = false) {
         }
     }
     catch (error) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('mnemonic');
     }
 
     const ok = await db.saveWallet(wallet, overwrite)
     if (!ok) {
-        throw new Error(exceptions.UPDATE_FAILED);
+        throw new KeymasterError('save wallet failed');
     }
 
     return wallet;
@@ -416,7 +416,7 @@ export async function setCurrentId(name) {
         return saveWallet(wallet);
     }
     else {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 }
 
@@ -443,12 +443,12 @@ async function fetchIdInfo(id) {
         idInfo = wallet.ids[wallet.current];
 
         if (!idInfo) {
-            throw new Error(exceptions.NO_CURRENT_ID);
+            throw new KeymasterError('No current ID');
         }
     }
 
     if (!idInfo) {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 
     return idInfo;
@@ -494,7 +494,7 @@ export async function createAsset(data, options = {}) {
         const validate = new Date(validUntil);
 
         if (isNaN(validate.getTime())) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('options.validUntil');
         }
     }
 
@@ -507,7 +507,7 @@ export async function createAsset(data, options = {}) {
     }
 
     if (isEmpty(data)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('data');
     }
 
     const id = await fetchIdInfo(controller);
@@ -568,7 +568,7 @@ export async function decryptMessage(did) {
     const asset = await resolveAsset(did);
 
     if (!asset || (!asset.encrypted && !asset.cipher_hash)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('did not encrypted');
     }
 
     const crypt = asset.encrypted ? asset.encrypted : asset;
@@ -591,7 +591,7 @@ export async function decryptMessage(did) {
         }
     }
 
-    throw new Error('Cannot decrypt');
+    throw new KeymasterError('cannot decrypt');
 }
 
 export async function encryptJSON(json, did, options = {}) {
@@ -606,7 +606,7 @@ export async function decryptJSON(did) {
         return JSON.parse(plaintext);
     }
     catch (error) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('did not encrypted JSON');
     }
 }
 
@@ -630,7 +630,7 @@ export async function addSignature(obj, controller = null) {
         };
     }
     catch (error) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('obj');
     }
 }
 
@@ -690,6 +690,7 @@ export async function revokeDID(did) {
 
     const controller = current.didDocument.controller || current.didDocument.id;
     const signed = await addSignature(operation, controller);
+
     const ok = gatekeeper.deleteDID(signed);
 
     if (ok && current.didDocument.controller) {
@@ -750,7 +751,7 @@ export async function lookupDID(name) {
         }
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const wallet = await loadWallet();
@@ -763,7 +764,7 @@ export async function lookupDID(name) {
         return wallet.ids[name].did;
     }
 
-    throw new Error(exceptions.UNKNOWN_ID);
+    throw new UnknownIDError();
 }
 
 export async function resolveDID(did, options = {}) {
@@ -798,7 +799,8 @@ export async function createId(name, options = {}) {
 
     const wallet = await loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        // eslint-disable-next-line
+        throw new InvalidParameterError('name already used');
     }
 
     const account = wallet.counter;
@@ -861,7 +863,7 @@ export async function removeId(name) {
         return true;
     }
     else {
-        throw new Error(exceptions.UNKNOWN_ID);
+        throw new UnknownIDError();
     }
 }
 
@@ -908,7 +910,7 @@ export async function recoverId(did) {
         return wallet.current;
     }
     catch {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidDIDError();
     }
 }
 
@@ -923,7 +925,7 @@ export async function rotateKeys() {
     const doc = await resolveDID(id.did);
 
     if (!doc.didDocumentMetadata.confirmed) {
-        throw new Error('Cannot rotate keys');
+        throw new KeymasterError('Cannot rotate keys');
     }
 
     const vmethod = doc.didDocument.verificationMethod[0];
@@ -940,7 +942,7 @@ export async function rotateKeys() {
         return doc;
     }
     else {
-        throw new Error('Cannot rotate keys');
+        throw new KeymasterError('Cannot rotate keys');
     }
 }
 
@@ -958,11 +960,11 @@ export async function addName(name, did) {
     }
 
     if (Object.keys(wallet.names).includes(name)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('name already used');
     }
 
     if (Object.keys(wallet.ids).includes(name)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('name already used');
     }
 
     wallet.names[name] = did;
@@ -1025,7 +1027,7 @@ export async function issueCredential(credential, options = {}) {
     }
 
     if (credential.issuer !== id.did) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('credential.issuer');
     }
 
     const signed = await addSignature(credential);
@@ -1039,11 +1041,11 @@ export async function updateCredential(did, credential) {
     const originalVC = await decryptJSON(did);
 
     if (!originalVC.credential) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('did is not a credential');
     }
 
     if (!credential?.credential || !credential?.credentialSubject?.id) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('credential');
     }
 
     delete credential.signature;
@@ -1105,7 +1107,7 @@ export async function acceptCredential(did) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('only subject can accept a credential');
         }
 
         return addToHeld(credential);
@@ -1137,7 +1139,7 @@ export async function publishCredential(did, options = {}) {
     const vc = await decryptJSON(credential);
 
     if (vc.credentialSubject.id !== id.did) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('only subject can publish a credential');
     }
 
     const doc = await resolveDID(id.did);
@@ -1159,7 +1161,7 @@ export async function publishCredential(did, options = {}) {
         return vc;
     }
     else {
-        throw new Error(exceptions.UPDATE_FAILED);
+        throw new KeymasterError('update DID failed');
     }
 }
 
@@ -1176,21 +1178,21 @@ export async function unpublishCredential(did) {
         return `OK credential ${did} removed from manifest`;
     }
 
-    throw new Error(exceptions.INVALID_PARAMETER);
+    throw new InvalidParameterError('did');
 }
 
 export async function createChallenge(challenge = {}, options = {}) {
 
     if (typeof challenge !== 'object' || Array.isArray(challenge)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('challenge');
     }
 
-    if (typeof options !== 'object' || Array.isArray(challenge)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+    if (typeof options !== 'object' || Array.isArray(options)) {
+        throw new InvalidParameterError('options');
     }
 
     if (challenge.credentials && !Array.isArray(challenge.credentials)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('challenge.credentials');
 
         // TBD validate each credential spec
     }
@@ -1288,7 +1290,7 @@ export async function createResponse(challengeDID, options = {}) {
     const { challenge } = await resolveAsset(challengeDID);
 
     if (!challenge) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('challengeDID');
     }
 
     // TBD check challenge isValid for expired?
@@ -1428,7 +1430,7 @@ export async function addGroupMember(groupId, memberId) {
 
     // Can't add a group to itself
     if (memberDID === groupDID) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError("can't add a group to itself");
     }
 
     try {
@@ -1436,13 +1438,13 @@ export async function addGroupMember(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError('memberId');
     }
 
     const group = await getGroup(groupId);
 
     if (!group?.members) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('groupId');
     }
 
     // If already a member, return immediately
@@ -1454,7 +1456,7 @@ export async function addGroupMember(groupId, memberId) {
     const isMember = await testGroup(memberId, groupId);
 
     if (isMember) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError("can't create mutual membership");
     }
 
     const members = new Set(group.members);
@@ -1470,7 +1472,7 @@ export async function removeGroupMember(groupId, memberId) {
     const group = await getGroup(groupDID);
 
     if (!group?.members) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('groupId');
     }
 
     try {
@@ -1478,7 +1480,7 @@ export async function removeGroupMember(groupId, memberId) {
         await resolveDID(memberDID);
     }
     catch {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError('memberId');
     }
 
     // If not already a member, return immediately
@@ -1574,11 +1576,11 @@ function generateSchema(schema) {
     const properties = Object.keys(schema);
 
     if (!properties.includes('$schema')) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('schema');
     }
 
     if (!properties.includes('properties')) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('schema');
     }
 
     let template = {};
@@ -1596,7 +1598,7 @@ export async function createSchema(schema, options = {}) {
     }
 
     if (!validateSchema(schema)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('schema');
     }
 
     return createAsset({ schema }, options);
@@ -1615,7 +1617,7 @@ export async function getSchema(id) {
 
 export async function setSchema(id, schema) {
     if (!validateSchema(schema)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('schema');
     }
 
     return updateAsset(id, { schema });
@@ -1655,14 +1657,14 @@ export async function listSchemas(owner) {
     return schemas;
 }
 
-export async function createTemplate(id) {
-    const isSchema = await testSchema(id);
+export async function createTemplate(schemaId) {
+    const isSchema = await testSchema(schemaId);
 
     if (!isSchema) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('schemaId');
     }
 
-    const schemaDID = await lookupDID(id);
+    const schemaDID = await lookupDID(schemaId);
     const schema = await getSchema(schemaDID);
     const template = generateSchema(schema);
 
@@ -1688,48 +1690,50 @@ export async function pollTemplate() {
 
 export async function createPoll(poll, options = {}) {
     if (poll.type !== 'poll') {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll');
     }
 
     if (poll.version !== 1) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.version');
     }
 
     if (!poll.description) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.description');
     }
 
     if (!poll.options || !Array.isArray(poll.options) || poll.options.length < 2 || poll.options.length > 10) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.options');
     }
 
     if (!poll.roster) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        // eslint-disable-next-line
+        throw new InvalidParameterError('poll.roster');
     }
 
     try {
         const isValidGroup = await testGroup(poll.roster);
 
         if (!isValidGroup) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('poll.roster');
         }
     }
     catch {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.roster');
     }
 
     if (!poll.deadline) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        // eslint-disable-next-line
+        throw new InvalidParameterError('poll.deadline');
     }
 
     const deadline = new Date(poll.deadline);
 
     if (isNaN(deadline.getTime())) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.deadline');
     }
 
     if (deadline < new Date()) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll.deadline');
     }
 
     return createAsset({ poll }, options);
@@ -1751,7 +1755,7 @@ export async function viewPoll(pollId) {
     const poll = await getPoll(pollId);
 
     if (!poll || !poll.options || !poll.deadline) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('pollId');
     }
 
     let hasVoted = false;
@@ -1837,11 +1841,11 @@ export async function votePoll(pollId, vote, options = {}) {
     const owner = doc.didDocument.controller;
 
     if (!eligible) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('voter not in roster');
     }
 
     if (expired) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll has expired');
     }
 
     let ballot;
@@ -1857,7 +1861,7 @@ export async function votePoll(pollId, vote, options = {}) {
         vote = parseInt(vote);
 
         if (!Number.isInteger(vote) || vote < 1 || vote > max) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('vote');
         }
 
         ballot = {
@@ -1883,11 +1887,11 @@ export async function updatePoll(ballot) {
         dataBallot = await decryptJSON(didBallot);
 
         if (!dataBallot.poll || !dataBallot.vote) {
-            throw new Error(exceptions.INVALID_PARAMETER);
+            throw new InvalidParameterError('ballot');
         }
     }
     catch {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('ballot');
     }
 
     const didPoll = dataBallot.poll;
@@ -1896,26 +1900,26 @@ export async function updatePoll(ballot) {
     const poll = await getPoll(didPoll);
 
     if (id.did !== didOwner) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('only owner can update a poll');
     }
 
     const eligible = await testGroup(poll.roster, didVoter);
 
     if (!eligible) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('voter not in roster');
     }
 
     const expired = (Date(poll.deadline) > new Date());
 
     if (expired) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll has expired');
     }
 
     const max = poll.options.length;
     const vote = parseInt(dataBallot.vote);
 
     if (!vote || vote < 0 || vote > max) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('ballot.vote');
     }
 
     if (!poll.ballots) {
@@ -1937,13 +1941,13 @@ export async function publishPoll(pollId, options = {}) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('only owner can publish a poll');
     }
 
     const view = await viewPoll(pollId);
 
     if (!view.results.final) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('poll not final');
     }
 
     if (!reveal) {
@@ -1962,7 +1966,7 @@ export async function unpublishPoll(pollId) {
     const owner = doc.didDocument.controller;
 
     if (id.did !== owner) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError(pollId);
     }
 
     const poll = await getPoll(pollId);

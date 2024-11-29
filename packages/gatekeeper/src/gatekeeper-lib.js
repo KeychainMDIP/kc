@@ -1,6 +1,10 @@
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
-import * as exceptions from '@mdip/exceptions';
+import {
+    InvalidDIDError,
+    InvalidParameterError,
+    InvalidOperationError
+} from '@mdip/common/errors';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
@@ -32,7 +36,7 @@ export async function start(options = {}) {
         }
     }
     else {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('missing options.db');
     }
 
     // Only used for unit testing
@@ -164,7 +168,7 @@ export async function initRegistries(csvRegistries) {
                 supportedRegistries.push(registry);
             }
             else {
-                throw new Error(exceptions.INVALID_REGISTRY);
+                throw new InvalidParameterError(`registry=${registry}`);
             }
         }
     }
@@ -243,42 +247,46 @@ function verifySignatureFormat(signature) {
 }
 
 async function verifyCreateOperation(operation) {
-    if (operation?.type !== "create") {
-        throw new Error(exceptions.INVALID_OPERATION);
+    if (!operation) {
+        throw new InvalidOperationError('missing');
     }
 
-    if (!operation.created) {
+    if (operation.type !== "create") {
+        throw new InvalidOperationError(`type=${operation.type}`);
+    }
+
+    if (!verifyDateFormat(operation.created)) {
         // TBD ensure valid timestamp format
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError(`created=${operation.created}`);
     }
 
     if (!operation.mdip) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError('mdip');
     }
 
     if (!validVersions.includes(operation.mdip.version)) {
-        throw new Error(exceptions.INVALID_VERSION);
+        throw new InvalidOperationError(`mdip.version=${operation.mdip.version}`);
     }
 
     if (!validTypes.includes(operation.mdip.type)) {
-        throw new Error(exceptions.INVALID_TYPE);
+        throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
     }
 
     if (!validRegistries.includes(operation.mdip.registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidOperationError(`mdip.registry=${operation.mdip.registry}`);
     }
 
     if (!verifySignatureFormat(operation.signature)) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError('signature');
     }
 
     if (operation.mdip.validUntil && !verifyDateFormat(operation.mdip.validUntil)) {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError(`mdip.validUntil=${operation.mdip.validUntil}`);
     }
 
     if (operation.mdip.type === 'agent') {
         if (!operation.publicJwk) {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidOperationError('publicJwk');
         }
 
         const operationCopy = copyJSON(operation);
@@ -290,13 +298,13 @@ async function verifyCreateOperation(operation) {
 
     if (operation.mdip.type === 'asset') {
         if (operation.controller !== operation.signature?.signer) {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidOperationError('signer is not controller');
         }
 
         const doc = await resolveDID(operation.signature.signer, { confirm: true, atTime: operation.signature.signed });
 
         if (doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
-            throw new Error(exceptions.INVALID_REGISTRY);
+            throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
         }
 
         const operationCopy = copyJSON(operation);
@@ -307,16 +315,20 @@ async function verifyCreateOperation(operation) {
         return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
     }
 
-    throw new Error(exceptions.INVALID_OPERATION);
+    throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
 }
 
 async function verifyUpdateOperation(operation, doc) {
     if (!verifySignatureFormat(operation.signature)) {
-        return false;
+        throw new InvalidOperationError('signature');
     }
 
     if (!doc?.didDocument) {
-        return false;
+        throw new InvalidOperationError('doc.didDocument');
+    }
+
+    if (doc.didDocumentMetadata?.deactivated) {
+        throw new InvalidOperationError('DID deactivated');
     }
 
     if (doc.didDocument.controller) {
@@ -326,12 +338,11 @@ async function verifyUpdateOperation(operation, doc) {
     }
 
     if (!doc.didDocument.verificationMethod) {
-        return false;
+        throw new InvalidOperationError('doc.didDocument.verificationMethod');
     }
 
+    const signature = operation.signature;
     const jsonCopy = copyJSON(operation);
-
-    const signature = jsonCopy.signature;
     delete jsonCopy.signature;
     const msgHash = cipher.hashJSON(jsonCopy);
 
@@ -372,7 +383,7 @@ export async function createDID(operation) {
         return did;
     }
     else {
-        throw new Error(exceptions.INVALID_OPERATION);
+        throw new InvalidOperationError('signature');
     }
 }
 
@@ -468,16 +479,12 @@ export async function resolveDID(did, options = {}) {
     //console.timeEnd('getEvents');
 
     if (events.length === 0) {
-        throw new Error(exceptions.INVALID_DID);
+        throw new InvalidDIDError();
     }
 
     const anchor = events[0];
     let doc = await generateDoc(anchor.operation);
     let mdip = doc?.mdip;
-
-    if (!mdip) {
-        throw new Error(exceptions.INVALID_DID);
-    }
 
     if (atTime && new Date(mdip.created) > new Date(atTime)) {
         // TBD What to return if DID was created after specified time?
@@ -495,7 +502,7 @@ export async function resolveDID(did, options = {}) {
                 const valid = await verifyCreateOperation(operation);
 
                 if (!valid) {
-                    throw new Error(exceptions.INVALID_OPERATION);
+                    throw new InvalidOperationError('signature');
                 }
             }
             continue;
@@ -519,7 +526,7 @@ export async function resolveDID(did, options = {}) {
             const valid = await verifyUpdateOperation(operation, doc);
 
             if (!valid) {
-                throw new Error(exceptions.INVALID_OPERATION);
+                throw new InvalidOperationError('signature');
             }
         }
 
@@ -554,7 +561,7 @@ export async function resolveDID(did, options = {}) {
         }
         else {
             if (verify) {
-                throw new Error(exceptions.INVALID_OPERATION);
+                throw new InvalidOperationError('signature');
             }
 
             // console.error(`unknown type ${operation.type}`);
@@ -565,42 +572,36 @@ export async function resolveDID(did, options = {}) {
 }
 
 export async function updateDID(operation) {
-    try {
-        const doc = await resolveDID(operation.did);
-        const updateValid = await verifyUpdateOperation(operation, doc);
+    const doc = await resolveDID(operation.did);
+    const updateValid = await verifyUpdateOperation(operation, doc);
 
-        if (!updateValid) {
-            return false;
-        }
-
-        const registry = doc.mdip.registry;
-
-        await db.addEvent(operation.did, {
-            registry: 'local',
-            time: operation.signature.signed,
-            ordinal: 0,
-            operation,
-            did: operation.did
-        });
-
-        delete eventsCache[operation.did];
-
-        if (registry === 'local') {
-            return true;
-        }
-
-        await db.queueOperation(registry, operation);
-
-        if (registry !== 'hyperswarm') {
-            await db.queueOperation('hyperswarm', operation);
-        }
-
-        return true;
-    }
-    catch (error) {
-        // console.error(error);
+    if (!updateValid) {
         return false;
     }
+
+    const registry = doc.mdip.registry;
+
+    await db.addEvent(operation.did, {
+        registry: 'local',
+        time: operation.signature.signed,
+        ordinal: 0,
+        operation,
+        did: operation.did
+    });
+
+    delete eventsCache[operation.did];
+
+    if (registry === 'local') {
+        return true;
+    }
+
+    await db.queueOperation(registry, operation);
+
+    if (registry !== 'hyperswarm') {
+        await db.queueOperation('hyperswarm', operation);
+    }
+
+    return true;
 }
 
 export async function deleteDID(operation) {
@@ -664,7 +665,7 @@ export async function importDIDs(dids) {
 
 export async function removeDIDs(dids) {
     if (!Array.isArray(dids)) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('dids');
     }
 
     for (const did of dids) {
@@ -713,9 +714,7 @@ async function importEvent(event) {
         return false;
     }
     else {
-        //console.time('verifyOperation');
         const ok = await verifyOperation(event.operation);
-        //console.timeEnd('verifyOperation');
 
         if (ok) {
             await db.addEvent(did, event);
@@ -723,7 +722,7 @@ async function importEvent(event) {
             return true;
         }
         else {
-            throw new Error(exceptions.INVALID_OPERATION);
+            throw new InvalidOperationError('signature');
         }
     }
 }
@@ -880,7 +879,7 @@ export async function verifyEvent(event) {
 
 export async function importBatch(batch) {
     if (!batch || !Array.isArray(batch) || batch.length < 1) {
-        throw new Error(exceptions.INVALID_PARAMETER);
+        throw new InvalidParameterError('batch');
     }
 
     let queued = 0;
@@ -932,7 +931,7 @@ export async function exportBatch(dids) {
 
 export async function getQueue(registry) {
     if (!validRegistries.includes(registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidParameterError(`registry=${registry}`);
     }
 
     return db.getQueue(registry);
@@ -940,7 +939,7 @@ export async function getQueue(registry) {
 
 export async function clearQueue(registry, events) {
     if (!validRegistries.includes(registry)) {
-        throw new Error(exceptions.INVALID_REGISTRY);
+        throw new InvalidParameterError(`registry=${registry}`);
     }
 
     return db.clearQueue(registry, events);
