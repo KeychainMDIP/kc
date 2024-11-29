@@ -4,6 +4,7 @@
   "description": "MDIP common",
   "type": "module",
   "exports": {
+    "./utils": "./src/utils.js",
     "./errors": "./src/errors.js"
   },
   "scripts": {

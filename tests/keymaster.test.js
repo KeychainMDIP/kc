@@ -6,6 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
+import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
 beforeEach(async () => {
@@ -1670,7 +1671,7 @@ describe('updateCredential', () => {
         }
 
         try {
-            const vc2 = gatekeeper.copyJSON(vc);
+            const vc2 = copyJSON(vc);
             delete vc2.credential;
             await keymaster.updateCredential(did, vc2);
             throw new ExpectedExceptionError();
@@ -1680,7 +1681,7 @@ describe('updateCredential', () => {
         }
 
         try {
-            const vc2 = gatekeeper.copyJSON(vc);
+            const vc2 = copyJSON(vc);
             delete vc2.credentialSubject;
             await keymaster.updateCredential(did, vc2);
             throw new ExpectedExceptionError();

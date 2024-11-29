@@ -1,5 +1,6 @@
 import canonicalize from 'canonicalize';
 import * as cipher from '@mdip/cipher/node';
+import { copyJSON } from '@mdip/common/utils';
 import {
     InvalidDIDError,
     InvalidParameterError,
@@ -22,10 +23,6 @@ let eventsSeen = {};
 let verifiedDIDs = {};
 let isProcessingEvents = false;
 const ipfs = new IPFS({ minimal: true });
-
-export function copyJSON(json) {
-    return JSON.parse(JSON.stringify(json));
-}
 
 export async function start(options = {}) {
     if (options.db) {
