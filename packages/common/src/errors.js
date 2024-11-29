@@ -1,5 +1,3 @@
-export const UPDATE_FAILED = 'Update failed';
-
 export class MDIPError extends Error {
     constructor(type, detail) {
         const message = detail ? `${type}: ${detail}` : type;

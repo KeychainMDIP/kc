@@ -1,4 +1,3 @@
-import * as exceptions from '@mdip/common/errors';
 import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 let gatekeeper = null;
@@ -1162,7 +1161,7 @@ export async function publishCredential(did, options = {}) {
         return vc;
     }
     else {
-        throw new KeymasterError(exceptions.UPDATE_FAILED);
+        throw new KeymasterError('update DID failed');
     }
 }
 

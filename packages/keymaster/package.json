@@ -16,7 +16,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/exceptions": "*",
+    "@mdip/common": "*",
     "axios": "^1.7.7"
   },
   "repository": {
