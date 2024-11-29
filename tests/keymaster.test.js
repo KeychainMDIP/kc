@@ -1139,7 +1139,7 @@ describe('encryptMessage', () => {
         const did = await keymaster.createId(name);
 
         const msg = 'Hi Bob!';
-        const encryptDid = await keymaster.encryptMessage(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did, { includeHash: true });
         const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
@@ -1155,7 +1155,7 @@ describe('encryptMessage', () => {
         const did = await keymaster.createId(name);
 
         const msg = generateRandomString(1024);
-        const encryptDid = await keymaster.encryptMessage(msg, did);
+        const encryptDid = await keymaster.encryptMessage(msg, did, { includeHash: true });
         const doc = await keymaster.resolveDID(encryptDid);
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);

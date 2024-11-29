@@ -537,7 +537,7 @@ export async function createAsset(data, options = {}) {
 }
 
 export async function encryptMessage(msg, receiver, options = {}) {
-    let { encryptForSender } = options;
+    let { encryptForSender, includeHash } = options;
 
     if (typeof encryptForSender === 'undefined') {
         encryptForSender = true;
@@ -549,15 +549,15 @@ export async function encryptMessage(msg, receiver, options = {}) {
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
-    const msgHash = cipher.hashMessage(msg);
+    const cipher_hash = includeHash ? cipher.hashMessage(msg) : null;
 
     return await createAsset({
         encrypted: {
             sender: id.did,
             created: new Date().toISOString(),
-            cipher_hash: msgHash,
-            cipher_sender: cipher_sender,
-            cipher_receiver: cipher_receiver,
+            cipher_hash,
+            cipher_sender,
+            cipher_receiver,
         }
     }, options);
 }
@@ -1031,7 +1031,7 @@ export async function issueCredential(credential, options = {}) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
     await addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1311,7 +1311,7 @@ export async function createResponse(challengeDID, options = {}) {
 
     for (let vcDid of matches) {
         const plaintext = await decryptMessage(vcDid);
-        const vpDid = await encryptMessage(plaintext, requestor, options);
+        const vpDid = await encryptMessage(plaintext, requestor, { ...options, includeHash: true });
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -1364,11 +1364,15 @@ export async function verifyResponse(responseDID, options = {}) {
         const vpData = await resolveAsset(credential.vp);
 
         if (!vcData) {
-            // revoked
+            // VC revoked
             continue;
         }
 
-        if (vcData.cipher_hash !== vpData.cipher_hash) {
+        const vcHash = vcData.encrypted.cipher_hash;
+        const vpHash = vpData.encrypted.cipher_hash;
+
+        if (vcHash == null || vpHash == null || vcHash !== vpHash) {
+            // can't verify that the contents of VP match the VC
             continue;
         }
 
