@@ -2,7 +2,7 @@ import mockFs from 'mock-fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/exceptions';
+import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
     log: () => { },

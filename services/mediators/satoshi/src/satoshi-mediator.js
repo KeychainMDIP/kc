@@ -4,7 +4,7 @@ import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
-import * as exceptions from '@mdip/common/exceptions';
+import * as exceptions from '@mdip/common/errors';
 import config from './config.js';
 
 const REGISTRY = config.chain;

@@ -1,6 +1,6 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { InvalidDIDError } from '@mdip/common/exceptions';
+import { InvalidDIDError } from '@mdip/common/errors';
 
 const dataFolder = 'data';
 

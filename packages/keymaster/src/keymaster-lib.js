@@ -1,5 +1,5 @@
-import * as exceptions from '@mdip/common/exceptions';
-import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/exceptions';
+import * as exceptions from '@mdip/common/errors';
+import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 let gatekeeper = null;
 let db = null;

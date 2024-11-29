@@ -4,7 +4,7 @@
   "description": "MDIP common",
   "type": "module",
   "exports": {
-    "./exceptions": "./src/exceptions.js"
+    "./errors": "./src/errors.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

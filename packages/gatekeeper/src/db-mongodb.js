@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { InvalidDIDError } from '@mdip/common/exceptions';
+import { InvalidDIDError } from '@mdip/common/errors';
 
 let client;
 let db;
