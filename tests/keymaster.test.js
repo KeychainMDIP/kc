@@ -595,7 +595,7 @@ describe('recoverId', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -633,7 +633,7 @@ describe('testAgent', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 
@@ -1619,7 +1619,7 @@ describe('updateCredential', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -1990,7 +1990,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2006,7 +2006,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2014,7 +2014,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2257,7 +2257,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2281,7 +2281,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2289,7 +2289,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -2635,7 +2635,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2643,7 +2643,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2651,7 +2651,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2659,7 +2659,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2683,7 +2683,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2691,7 +2691,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2699,7 +2699,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2707,7 +2707,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2871,7 +2871,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2879,7 +2879,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2887,7 +2887,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2895,7 +2895,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2919,7 +2919,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2927,7 +2927,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2935,7 +2935,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2943,7 +2943,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2951,7 +2951,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -3111,7 +3111,7 @@ describe('getGroup', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3369,7 +3369,7 @@ describe('getPoll', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3823,7 +3823,7 @@ describe('testSchema', () => {
             await keymaster.testSchema();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3857,7 +3857,7 @@ describe('createTemplate', () => {
             await keymaster.createTemplate();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -4205,7 +4205,7 @@ describe('removeCredential', () => {
             await keymaster.removeCredential();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 

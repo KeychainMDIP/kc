@@ -1,40 +1,45 @@
 export const UNKNOWN_ID = 'Unknown ID';
 export const NO_CURRENT_ID = 'No current ID';
-export const INVALID_PARAMETER = 'Invalid parameter';
 export const UPDATE_FAILED = 'Update failed';
 
-export class InvalidDIDError extends Error {
-    static message = 'Invalid DID';
-
-    constructor(detail) {
-        const message = detail ? `${InvalidDIDError.message}: ${detail}` : InvalidDIDError.message;
+export class MDIPError extends Error {
+    constructor(type, detail) {
+        const message = detail ? `${type}: ${detail}` : type;
         super(message);
+        this.type = type;
+        this.detail = detail;
     }
 }
 
-export class InvalidParameterError extends Error {
-    static message = 'Invalid parameter';
+export class InvalidDIDError extends MDIPError {
+    static type = 'Invalid DID';
 
     constructor(detail) {
-        const message = detail ? `${InvalidParameterError.message}: ${detail}` : InvalidParameterError.message;
-        super(message);
+        super(InvalidDIDError.type, detail);
     }
 }
 
-export class InvalidOperationError extends Error {
-    static message = 'Invalid operation';
+export class InvalidParameterError extends MDIPError {
+    static type = 'Invalid parameter';
 
     constructor(detail) {
-        const message = detail ? `${InvalidOperationError.message}: ${detail}` : InvalidOperationError.message;
-        super(message);
+        super(InvalidParameterError.type, detail);
+    }
+}
+
+export class InvalidOperationError extends MDIPError {
+    static type = 'Invalid operation';
+
+    constructor(detail) {
+        super(InvalidOperationError.type, detail);
     }
 }
 
 // For unit tests
-export class ExpectedExceptionError extends Error {
-    static message = 'Expected to throw an exception';
+export class ExpectedExceptionError extends MDIPError {
+    static type = 'Expected to throw an exception';
 
     constructor() {
-        super(ExpectedExceptionError.message);
+        super(ExpectedExceptionError.type);
     }
 }

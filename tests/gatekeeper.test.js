@@ -906,63 +906,72 @@ describe('resolveDID', () => {
             await gatekeeper.resolveDID();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('mock');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID([]);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID([1, 2, 3]);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID({});
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID({ mock: 1 });
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:xxx');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
             await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -1211,7 +1220,8 @@ describe('removeDIDs', () => {
             await gatekeeper.resolveDID(did);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.message);
+            expect(error.type).toBe(InvalidDIDError.type);
+            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 
