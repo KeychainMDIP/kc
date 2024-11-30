@@ -278,12 +278,20 @@ program
         }
     });
 
+function inputToBool(value) {
+    if (typeof value === 'string') {
+        const lowerValue = value.toLowerCase();
+        return lowerValue === 'true' || lowerValue === '1';
+    }
+    return Boolean(value);
+}
+
 program
-    .command('encrypt-message <message> <did>')
+    .command('encrypt-message <message> <did> [hash]')
     .description('Encrypt a message for a DID')
-    .action(async (msg, did) => {
+    .action(async (msg, did, hash) => {
         try {
-            const cipherDid = await keymaster.encryptMessage(msg, did);
+            const cipherDid = await keymaster.encryptMessage(msg, did, { includeHash: inputToBool(hash) });
             console.log(cipherDid);
         }
         catch (error) {
@@ -292,12 +300,12 @@ program
     });
 
 program
-    .command('encrypt-file <file> <did>')
+    .command('encrypt-file <file> <did> [hash]')
     .description('Encrypt a file for a DID')
-    .action(async (file, did) => {
+    .action(async (file, did, hash) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const cipherDid = await keymaster.encryptMessage(contents, did);
+            const cipherDid = await keymaster.encryptMessage(contents, did, { includeHash: inputToBool(hash) });
             console.log(cipherDid);
         }
         catch (error) {

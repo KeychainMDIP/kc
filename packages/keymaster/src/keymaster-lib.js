@@ -537,11 +537,7 @@ export async function createAsset(data, options = {}) {
 }
 
 export async function encryptMessage(msg, receiver, options = {}) {
-    let { encryptForSender, includeHash } = options;
-
-    if (typeof encryptForSender === 'undefined') {
-        encryptForSender = true;
-    }
+    let { encryptForSender = true, includeHash } = options;
 
     const id = await fetchIdInfo();
     const senderKeypair = await fetchKeyPair();
