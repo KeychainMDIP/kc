@@ -313,7 +313,7 @@ program
 program
     .command('encrypt-file')
     .description('Encrypt a file for a DID')
-    .argument('<message>', 'The message to encrypt')
+    .argument('<file>', 'The file to encrypt')
     .argument('<did>', 'Recipient Decentralized Identifier or ID')
     .argument('[hash]', 'Whether to include the cipher hash', parseBool)
     .action(async (file, did, hash) => {
