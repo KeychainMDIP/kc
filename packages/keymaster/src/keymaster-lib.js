@@ -484,11 +484,7 @@ async function fetchKeyPair(name = null) {
 }
 
 export async function createAsset(data, options = {}) {
-    let { registry, controller, validUntil } = options;
-
-    if (!registry) {
-        registry = defaultRegistry;
-    }
+    let { registry = defaultRegistry, controller, validUntil } = options;
 
     if (validUntil) {
         const validate = new Date(validUntil);
@@ -537,7 +533,7 @@ export async function createAsset(data, options = {}) {
 }
 
 export async function encryptMessage(msg, receiver, options = {}) {
-    let { encryptForSender = true, includeHash } = options;
+    const { encryptForSender = true, includeHash = false } = options;
 
     const id = await fetchIdInfo();
     const senderKeypair = await fetchKeyPair();
@@ -787,11 +783,7 @@ export async function updateAsset(did, data) {
 }
 
 export async function createId(name, options = {}) {
-    let { registry } = options;
-
-    if (!registry) {
-        registry = defaultRegistry;
-    }
+    const { registry = defaultRegistry } = options;
 
     const wallet = await loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
@@ -1129,7 +1121,8 @@ export async function listCredentials(id) {
 }
 
 export async function publishCredential(did, options = {}) {
-    const { reveal } = options;
+    const { reveal = false } = options;
+
     const id = await fetchIdInfo();
     const credential = await lookupDID(did);
     const vc = await decryptJSON(credential);
@@ -1249,15 +1242,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(challengeDID, options = {}) {
-    let { retries, delay } = options;
-
-    if (!retries) {
-        retries = 0;
-    }
-
-    if (!delay) {
-        delay = 1000;
-    }
+    let { retries = 0, delay = 1000} = options;
 
     if (!options.registry) {
         options.registry = ephemeralRegistry;
@@ -1327,15 +1312,7 @@ export async function createResponse(challengeDID, options = {}) {
 }
 
 export async function verifyResponse(responseDID, options = {}) {
-    let { retries, delay } = options;
-
-    if (!retries) {
-        retries = 0;
-    }
-
-    if (!delay) {
-        delay = 1000;
-    }
+    let { retries = 0, delay = 1000 } = options;
 
     let responseDoc;
 
@@ -1831,7 +1808,8 @@ export async function viewPoll(pollId) {
 }
 
 export async function votePoll(pollId, vote, options = {}) {
-    const { spoil } = options;
+    const { spoil = false } = options;
+
     const id = await fetchIdInfo();
     const didPoll = await lookupDID(pollId);
     const doc = await resolveDID(didPoll);
@@ -1935,7 +1913,8 @@ export async function updatePoll(ballot) {
 }
 
 export async function publishPoll(pollId, options = {}) {
-    const { reveal } = options;
+    const { reveal = false } = options;
+
     const id = await fetchIdInfo();
     const doc = await resolveDID(pollId);
     const owner = doc.didDocument.controller;
