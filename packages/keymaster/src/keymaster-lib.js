@@ -484,11 +484,7 @@ async function fetchKeyPair(name = null) {
 }
 
 export async function createAsset(data, options = {}) {
-    let { registry, controller, validUntil } = options;
-
-    if (!registry) {
-        registry = defaultRegistry;
-    }
+    let { registry = defaultRegistry, controller, validUntil } = options;
 
     if (validUntil) {
         const validate = new Date(validUntil);
@@ -537,11 +533,7 @@ export async function createAsset(data, options = {}) {
 }
 
 export async function encryptMessage(msg, receiver, options = {}) {
-    let { encryptForSender } = options;
-
-    if (typeof encryptForSender === 'undefined') {
-        encryptForSender = true;
-    }
+    const { encryptForSender = true, includeHash = false } = options;
 
     const id = await fetchIdInfo();
     const senderKeypair = await fetchKeyPair();
@@ -549,15 +541,15 @@ export async function encryptMessage(msg, receiver, options = {}) {
     const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
     const cipher_sender = encryptForSender ? cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
     const cipher_receiver = cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
-    const msgHash = cipher.hashMessage(msg);
+    const cipher_hash = includeHash ? cipher.hashMessage(msg) : null;
 
     return await createAsset({
         encrypted: {
             sender: id.did,
             created: new Date().toISOString(),
-            cipher_hash: msgHash,
-            cipher_sender: cipher_sender,
-            cipher_receiver: cipher_receiver,
+            cipher_hash,
+            cipher_sender,
+            cipher_receiver,
         }
     }, options);
 }
@@ -791,11 +783,7 @@ export async function updateAsset(did, data) {
 }
 
 export async function createId(name, options = {}) {
-    let { registry } = options;
-
-    if (!registry) {
-        registry = defaultRegistry;
-    }
+    const { registry = defaultRegistry } = options;
 
     const wallet = await loadWallet();
     if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
@@ -1031,7 +1019,7 @@ export async function issueCredential(credential, options = {}) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, options);
+    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
     await addToOwned(cipherDid);
     return cipherDid;
 }
@@ -1062,14 +1050,14 @@ export async function updateCredential(did, credential) {
     const msgHash = cipher.hashMessage(msg);
 
     const doc = await resolveDID(did);
-    doc.didDocumentData = {
+    const encrypted = {
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
         cipher_receiver: cipher_receiver,
     };
-
+    doc.didDocumentData = { encrypted };
     return updateDID(doc);
 }
 
@@ -1107,7 +1095,7 @@ export async function acceptCredential(did) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw new InvalidParameterError('only subject can accept a credential');
+            return false;
         }
 
         return addToHeld(credential);
@@ -1133,7 +1121,8 @@ export async function listCredentials(id) {
 }
 
 export async function publishCredential(did, options = {}) {
-    const { reveal } = options;
+    const { reveal = false } = options;
+
     const id = await fetchIdInfo();
     const credential = await lookupDID(did);
     const vc = await decryptJSON(credential);
@@ -1185,10 +1174,6 @@ export async function createChallenge(challenge = {}, options = {}) {
 
     if (typeof challenge !== 'object' || Array.isArray(challenge)) {
         throw new InvalidParameterError('challenge');
-    }
-
-    if (typeof options !== 'object' || Array.isArray(options)) {
-        throw new InvalidParameterError('options');
     }
 
     if (challenge.credentials && !Array.isArray(challenge.credentials)) {
@@ -1253,15 +1238,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(challengeDID, options = {}) {
-    let { retries, delay } = options;
-
-    if (!retries) {
-        retries = 0;
-    }
-
-    if (!delay) {
-        delay = 1000;
-    }
+    let { retries = 0, delay = 1000} = options;
 
     if (!options.registry) {
         options.registry = ephemeralRegistry;
@@ -1311,7 +1288,7 @@ export async function createResponse(challengeDID, options = {}) {
 
     for (let vcDid of matches) {
         const plaintext = await decryptMessage(vcDid);
-        const vpDid = await encryptMessage(plaintext, requestor, options);
+        const vpDid = await encryptMessage(plaintext, requestor, { ...options, includeHash: true });
         pairs.push({ vc: vcDid, vp: vpDid });
     }
 
@@ -1331,15 +1308,7 @@ export async function createResponse(challengeDID, options = {}) {
 }
 
 export async function verifyResponse(responseDID, options = {}) {
-    let { retries, delay } = options;
-
-    if (!retries) {
-        retries = 0;
-    }
-
-    if (!delay) {
-        delay = 1000;
-    }
+    let { retries = 0, delay = 1000 } = options;
 
     let responseDoc;
 
@@ -1364,11 +1333,15 @@ export async function verifyResponse(responseDID, options = {}) {
         const vpData = await resolveAsset(credential.vp);
 
         if (!vcData) {
-            // revoked
+            // VC revoked
             continue;
         }
 
-        if (vcData.cipher_hash !== vpData.cipher_hash) {
+        const vcHash = vcData.encrypted?.cipher_hash;
+        const vpHash = vpData.encrypted?.cipher_hash;
+
+        if (vcHash == null || vpHash == null || vcHash !== vpHash) {
+            // can't verify that the contents of VP match the VC
             continue;
         }
 
@@ -1831,7 +1804,8 @@ export async function viewPoll(pollId) {
 }
 
 export async function votePoll(pollId, vote, options = {}) {
-    const { spoil } = options;
+    const { spoil = false } = options;
+
     const id = await fetchIdInfo();
     const didPoll = await lookupDID(pollId);
     const doc = await resolveDID(didPoll);
@@ -1935,7 +1909,8 @@ export async function updatePoll(ballot) {
 }
 
 export async function publishPoll(pollId, options = {}) {
-    const { reveal } = options;
+    const { reveal = false } = options;
+
     const id = await fetchIdInfo();
     const doc = await resolveDID(pollId);
     const owner = doc.didDocument.controller;

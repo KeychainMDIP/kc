@@ -23,21 +23,9 @@ export async function start(options = {}) {
 }
 
 async function waitUntilReady(options = {}) {
-    let { intervalSeconds, chatty, becomeChattyAfter } = options;
+    let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
     let ready = false;
     let retries = 0;
-
-    if (!intervalSeconds) {
-        intervalSeconds = 5;
-    }
-
-    if (!chatty) {
-        chatty = false;
-    }
-
-    if (!becomeChattyAfter) {
-        becomeChattyAfter = 0;
-    }
 
     if (chatty) {
         console.log(`Connecting to gatekeeper at ${URL}`);

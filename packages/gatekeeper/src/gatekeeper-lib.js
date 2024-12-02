@@ -60,8 +60,9 @@ async function primeCache() {
     }
 }
 
-export async function verifyDb(options = { chatty: true }) {
-    const { chatty } = options;
+export async function verifyDb(options = {}) {
+    const { chatty = true } = options;
+
     const dids = await getDIDs();
     const total = dids.length;
     let n = 0;
@@ -470,10 +471,9 @@ async function getEvents(did) {
 }
 
 export async function resolveDID(did, options = {}) {
-    const { atTime, atVersion, confirm, verify } = options;
-    //console.time('getEvents');
+    const { atTime, atVersion, confirm = false, verify = false } = options;
+
     const events = await getEvents(did);
-    //console.timeEnd('getEvents');
 
     if (events.length === 0) {
         throw new InvalidDIDError();
