@@ -17,20 +17,6 @@ const keymasterURL = process.env.KC_KEYMASTER_URL;
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
 
-function parseBool(value) {
-    if (typeof value === 'string') {
-        const lowerValue = value.toLowerCase();
-        if (lowerValue === 'true' || lowerValue === '1') {
-            return true;
-        } else if (lowerValue === 'false' || lowerValue === '0') {
-            return false;
-        }
-        throw new program.InvalidArgumentError('Boolean value must be true, false, 1, or 0.');
-    }
-    // undefined when there is no input
-    return false;
-}
-
 program
     .version('1.0.0')
     .description('Keychain CLI tool')
@@ -267,13 +253,11 @@ program
     });
 
 program
-    .command('resolve-did')
+    .command('resolve-did <did> [confirm]')
     .description('Return document associated with DID')
-    .argument('<did>', 'Decentralized Identifier')
-    .argument('[confirm]', 'Whether to confirm the DID', parseBool)
     .action(async (did, confirm) => {
         try {
-            const doc = await keymaster.resolveDID(did, { confirm });
+            const doc = await keymaster.resolveDID(did, { confirm: !!confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
@@ -295,14 +279,11 @@ program
     });
 
 program
-    .command('encrypt-message')
+    .command('encrypt-message <message> <did>')
     .description('Encrypt a message for a DID')
-    .argument('<message>', 'The message to encrypt')
-    .argument('<did>', 'Recipient Decentralized Identifier or ID')
-    .argument('[hash]', 'Whether to include the cipher hash', parseBool)
-    .action(async (msg, did, hash) => {
+    .action(async (msg, did) => {
         try {
-            const cipherDid = await keymaster.encryptMessage(msg, did, { includeHash: hash });
+            const cipherDid = await keymaster.encryptMessage(msg, did);
             console.log(cipherDid);
         }
         catch (error) {
@@ -311,15 +292,12 @@ program
     });
 
 program
-    .command('encrypt-file')
+    .command('encrypt-file <file> <did>')
     .description('Encrypt a file for a DID')
-    .argument('<file>', 'The file to encrypt')
-    .argument('<did>', 'Recipient Decentralized Identifier or ID')
-    .argument('[hash]', 'Whether to include the cipher hash', parseBool)
-    .action(async (file, did, hash) => {
+    .action(async (file, did) => {
         try {
             const contents = fs.readFileSync(file).toString();
-            const cipherDid = await keymaster.encryptMessage(contents, did, { includeHash: hash });
+            const cipherDid = await keymaster.encryptMessage(contents, did);
             console.log(cipherDid);
         }
         catch (error) {
