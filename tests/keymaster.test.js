@@ -2103,7 +2103,7 @@ describe('verifyResponse', () => {
         expect(verify1.vps.length).toBe(1);
     });
 
-    it('should verify a valid response to a single credential challenge', async () => {
+    it('should not verify a invalid response to a single credential challenge', async () => {
         mockFs({});
 
         await keymaster.createId('Alice');
@@ -2137,6 +2137,53 @@ describe('verifyResponse', () => {
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(0);
         expect(verify1.vps.length).toBe(0);
+    });
+
+    it('should verify a response if credential is updated', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+
+        const credential1 = await keymaster.createSchema(mockSchema);
+        const bc1 = await keymaster.bindCredential(credential1, carol);
+        const vc1 = await keymaster.issueCredential(bc1);
+
+        await keymaster.setCurrentId('Carol');
+        await keymaster.acceptCredential(vc1);
+
+        await keymaster.setCurrentId('Alice');
+        const credential2 = await keymaster.getCredential(vc1);
+        credential2.credential = { email: 'updated@email.com' };
+        await keymaster.updateCredential(vc1, credential2);
+
+        await keymaster.setCurrentId('Victor');
+
+        const challenge = {
+            credentials: [
+                {
+                    schema: credential1,
+                },
+            ]
+        };
+
+        const challengeDID = await keymaster.createChallenge(challenge);
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+
+        const verify1 = await keymaster.verifyResponse(responseDID);
+
+        expect(verify1.match).toBe(true);
+        expect(verify1.challenge).toBe(challengeDID);
+        expect(verify1.requested).toBe(1);
+        expect(verify1.fulfilled).toBe(1);
+        expect(verify1.vps.length).toBe(1);
     });
 
     it('should demonstrate full workflow with credential revocations', async () => {

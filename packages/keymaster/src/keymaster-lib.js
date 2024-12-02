@@ -1050,14 +1050,14 @@ export async function updateCredential(did, credential) {
     const msgHash = cipher.hashMessage(msg);
 
     const doc = await resolveDID(did);
-    doc.didDocumentData = {
+    const encrypted = {
         sender: id.did,
         created: new Date().toISOString(),
         cipher_hash: msgHash,
         cipher_sender: cipher_sender,
         cipher_receiver: cipher_receiver,
     };
-
+    doc.didDocumentData = { encrypted };
     return updateDID(doc);
 }
 
@@ -1174,10 +1174,6 @@ export async function createChallenge(challenge = {}, options = {}) {
 
     if (typeof challenge !== 'object' || Array.isArray(challenge)) {
         throw new InvalidParameterError('challenge');
-    }
-
-    if (typeof options !== 'object' || Array.isArray(options)) {
-        throw new InvalidParameterError('options');
     }
 
     if (challenge.credentials && !Array.isArray(challenge.credentials)) {
@@ -1341,8 +1337,8 @@ export async function verifyResponse(responseDID, options = {}) {
             continue;
         }
 
-        const vcHash = vcData.encrypted.cipher_hash;
-        const vpHash = vpData.encrypted.cipher_hash;
+        const vcHash = vcData.encrypted?.cipher_hash;
+        const vpHash = vpData.encrypted?.cipher_hash;
 
         if (vcHash == null || vpHash == null || vcHash !== vpHash) {
             // can't verify that the contents of VP match the VC
