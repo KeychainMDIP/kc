@@ -63,8 +63,8 @@ async function primeCache() {
     }
 }
 
-export async function verifyDb(options = { chatty: true }) {
-    const { chatty = false } = options;
+export async function verifyDb(options = {}) {
+    const { chatty = true } = options;
 
     const dids = await getDIDs();
     const total = dids.length;
