@@ -1791,7 +1791,7 @@ describe('acceptCredential', () => {
         expect(wallet.ids['Bob'].held.includes(did));
     });
 
-    it('should return false if user is not the credential subject', async () => {
+    it('should return false if user cannot decrypt credential', async () => {
         mockFs({});
 
         await keymaster.createId('Alice');
@@ -1807,6 +1807,27 @@ describe('acceptCredential', () => {
         await keymaster.setCurrentId('Carol');
 
         const ok = await keymaster.acceptCredential(did);
+        expect(ok).toBe(false);
+    });
+
+    it('should return false if user is not the credential subject', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Carol');
+
+        await keymaster.setCurrentId('Alice');
+
+        const credentialDid = await keymaster.createSchema(mockSchema);
+        const boundCredential = await keymaster.bindCredential(credentialDid, bob);
+        const vc1 = await keymaster.issueCredential(boundCredential);
+        const credential = await keymaster.getCredential(vc1);
+        const vc2 = await keymaster.encryptJSON(credential, 'Carol');
+
+        await keymaster.setCurrentId('Carol');
+
+        const ok = await keymaster.acceptCredential(vc2);
         expect(ok).toBe(false);
     });
 

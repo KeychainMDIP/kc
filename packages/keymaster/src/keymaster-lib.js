@@ -1095,7 +1095,7 @@ export async function acceptCredential(did) {
         const vc = await decryptJSON(credential);
 
         if (vc.credentialSubject.id !== id.did) {
-            throw new InvalidParameterError('only subject can accept a credential');
+            return false;
         }
 
         return addToHeld(credential);
