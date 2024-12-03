@@ -5,13 +5,13 @@ const dataFolder = 'data';
 let dbName;
 
 function loadDb() {
-    if (fs.existsSync(dbName)) {
+    try {
         return JSON.parse(fs.readFileSync(dbName));
     }
-    else {
-        return {
-            dids: {}
-        }
+    catch (err) {
+        const db = { dids: {} };
+        writeDb(db);
+        return db;
     }
 }
 

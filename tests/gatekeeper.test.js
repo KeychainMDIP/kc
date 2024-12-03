@@ -1,4 +1,5 @@
 import mockFs from 'mock-fs';
+import fs from 'fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as db_json from '@mdip/gatekeeper/db/json';
@@ -1975,6 +1976,16 @@ describe('getQueue', () => {
         mockFs.restore();
     });
 
+    it('should return empty list when no events in queue', async () => {
+        mockFs({});
+
+        const registry = 'TFTC';
+
+        const queue = await gatekeeper.getQueue(registry);
+
+        expect(queue).toStrictEqual([]);
+    });
+
     it('should return single event in queue', async () => {
         mockFs({});
 
@@ -2501,5 +2512,21 @@ describe('checkDb', () => {
         const { total } = await gatekeeper.checkDb();
 
         expect(total).toBe(2);
+    });
+
+    it('should reset a corrupted db', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        fs.writeFileSync('data/test.json', "{ dids: {");
+
+        const { total } = await gatekeeper.checkDb();
+
+        expect(total).toBe(0);
     });
 });
