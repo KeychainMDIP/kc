@@ -60,6 +60,12 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
     const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
+    const [messagesTab, setMessagesTab] = useState('');
+    const [messageDID, setMessageDID] = useState('');
+    const [messageString, setMessageString] = useState('');
+    const [sendMessageString, setSendMessageString] = useState('');
+    const [messageRecipient, setMessageRecipient] = useState('');
+    const [encryptedDID, setEncryptedDID] = useState('');
 
     useEffect(() => {
         checkForChallenge();
@@ -106,6 +112,7 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
 
                 setTab('identity');
                 setCredentialTab('held');
+                setMessagesTab('receive');
             }
             else {
                 setCurrentId('');
@@ -120,7 +127,12 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
             setWalletString('');
             setSelectedName('');
             setSelectedHeld('');
-            setSelectedIssued('')
+            setSelectedIssued('');
+            setMessageString('');
+            setSendMessageString('');
+            setMessageRecipient('');
+            setMessageDID('');
+            setEncryptedDID('');
         } catch (error) {
             showError(error);
         }
@@ -703,6 +715,33 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
         }
     }
 
+    async function resolveMessage(did) {
+        try {
+            const doc = await keymaster.resolveDID(did);
+            setMessageString(JSON.stringify(doc, null, 4));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function decryptMessage(did) {
+        try {
+            const message = await keymaster.decryptMessage(did);
+            setMessageString(message);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function encryptMessage() {
+        try {
+            const did = await keymaster.encryptMessage(sendMessageString, messageRecipient, { registry });
+            setEncryptedDID(did);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
@@ -895,6 +934,9 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                         }
                         {currentId && !widget &&
                             <Tab key="credentials" value="credentials" label={'Credentials'} />
+                        }
+                        {currentId && !widget &&
+                            <Tab key="messages" value="messages" label={'Messages'} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} />
@@ -1483,6 +1525,127 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                             style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                         />
                                     )}
+                                </Box>
+                            }
+                        </Box>
+                    }
+                    {tab === 'messages' &&
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={messagesTab}
+                                    onChange={(event, newTab) => setMessagesTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="receive" value="receive" label={'Receive'} />
+                                    <Tab key="send" value="send" label={'Send'} />
+                                </Tabs>
+                            </Box>
+                            {messagesTab === 'receive' &&
+                                <Box>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                <TableRow>
+                                                    <TableCell style={{ width: '100%' }}>
+                                                        <TextField
+                                                            label="Message DID"
+                                                            style={{ width: '500px' }}
+                                                            value={messageDID}
+                                                            onChange={(e) => setMessageDID(e.target.value.trim())}
+                                                            fullWidth
+                                                            margin="normal"
+                                                            inputProps={{ maxLength: 80 }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveMessage(messageDID)} disabled={!messageDID}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptMessage(messageDID)} disabled={!messageDID}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <textarea
+                                        value={messageString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                            {messagesTab === 'send' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={messageRecipient}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setMessageRecipient(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select recipient
+                                                </MenuItem>
+                                                {agentList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    {messageRecipient &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={sendMessageString}
+                                                        onChange={(e) => setSendMessageString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessageString}>
+                                                            Encrypt Message
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Select
+                                                            style={{ width: '300px' }}
+                                                            value={registry}
+                                                            fullWidth
+                                                            onChange={(event) => setRegistry(event.target.value)}
+                                                        >
+                                                            {registries.map((registry, index) => (
+                                                                <MenuItem value={registry} key={index}>
+                                                                    {registry}
+                                                                </MenuItem>
+                                                            ))}
+                                                        </Select>
+                                                    </Grid>
+                                                </Grid>
+                                                {encryptedDID &&
+                                                    <Grid item>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {encryptedDID}
+                                                        </Typography>
+                                                    </Grid>
+                                                }
+                                            </Grid>
+                                        </Box>
+                                    }
                                 </Box>
                             }
                         </Box>
