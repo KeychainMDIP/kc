@@ -12,8 +12,8 @@ interface IPFSConfig {
 }
 
 interface IPFSInstance {
-    add(data: any): Promise;
-    get(cid: CID): Promise;
+    add(data: any): Promise<CID>;
+    get(cid: CID): Promise<CID>;
 }
 
 class IPFS {
@@ -27,7 +27,7 @@ class IPFS {
         this.ipfs = null;
     }
 
-    async start(): Promise {
+    async start(): Promise<void> {
         if (this.helia || this.config.minimal) {
             return;
         }
@@ -42,7 +42,7 @@ class IPFS {
         this.ipfs = json(this.helia);
     }
 
-    async stop(): Promise {
+    async stop(): Promise<void> {
         if (this.helia) {
             await this.helia.stop();
             this.helia = null;
@@ -50,7 +50,7 @@ class IPFS {
         }
     }
 
-    async add(data: any): Promise {
+    async add(data: any): Promise<string> {
         let cid: CID;
 
         if (this.ipfs) {
@@ -64,7 +64,7 @@ class IPFS {
         return cid.toString(base58btc);
     }
 
-    async get(b58cid: string): Promise {
+    async get(b58cid: string): Promise<CID | null> {
         if (this.ipfs) {
             const cid = CID.parse(b58cid);
             return this.ipfs.get(cid);
@@ -74,7 +74,7 @@ class IPFS {
     }
 
     // Factory method
-    static async create(config: IPFSConfig): Promise {
+    static async create(config: IPFSConfig): Promise<IPFS> {
         const instance = new IPFS(config);
         await instance.start();
         return instance;

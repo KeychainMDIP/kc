@@ -1,38 +1,48 @@
 {
-  "name": "@mdip/ipfs",
-  "version": "0.4.0",
-  "description": "MDIP IPFS lib",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
-  "exports": {
-    ".": "./src/ipfs.ts"
-  },
-  "scripts": {
-    "build": "tsup",
-    "format": "prettier --parser typescript --write \"src/**/*.{js,jsx,ts,tsx}\"",
-    "test": "echo 'no tests yet'"
-  },
-  "keywords": [],
-  "author": "David McFadzean <davidmc@gmail.com>",
-  "license": "MIT",
-  "dependencies": {
-    "@helia/json": "^2.0.0",
-    "axios": "^1.7.7",
-    "blockstore-fs": "^2.0.2",
-    "helia": "^3.0.0",
-    "multiformats": "^13.0.0"
-  },
-  "devDependencies": {
-    "prettier": "2.6.2",
-    "tsup": "^8.3.0",
-    "typescript": "4.9.4"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
-  }
+    "name": "@mdip/ipfs",
+    "version": "0.4.0",
+    "description": "MDIP IPFS lib",
+    "type": "module",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "exports": {
+        ".": "./src/ipfs.ts"
+    },
+    "scripts": {
+        "build": "tsup",
+        "format": "prettier --parser typescript --write \"src/**/*.{js,jsx,ts,tsx}\"",
+        "test": "jest"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node"
+    },
+    "keywords": [],
+    "author": "David McFadzean <davidmc@gmail.com>",
+    "license": "MIT",
+    "dependencies": {
+        "@helia/json": "^2.0.0",
+        "@types/mock-fs": "^4.13.4",
+        "axios": "^1.7.7",
+        "blockstore-fs": "^2.0.2",
+        "helia": "^3.0.0",
+        "multiformats": "^13.3.1"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.5.13",
+        "jest": "^29.7.0",
+        "mock-fs": "^5.2.0",
+        "prettier": "2.6.2",
+        "ts-jest": "^29.2.5",
+        "tsup": "^8.3.0",
+        "typescript": "4.9.4"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/KeychainMDIP/kc.git"
+    }
 }
