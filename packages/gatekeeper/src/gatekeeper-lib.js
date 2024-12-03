@@ -17,7 +17,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
 let verifiedDIDs = {};
@@ -50,14 +49,6 @@ export async function stop() {
 }
 
 async function primeCache() {
-    try {
-        const allEvents = await db.getAllEvents();
-        for (const key of Object.keys(allEvents)) {
-            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-        }
-    }
-    catch (error) {
-    }
 }
 
 export async function verifyDb(options = {}) {
@@ -93,7 +84,6 @@ export async function verifyDb(options = {}) {
             }
             invalid += 1;
             await db.deleteEvents(did);
-            delete eventsCache[did];
             continue;
         }
 
@@ -106,7 +96,6 @@ export async function verifyDb(options = {}) {
                     console.log(`removing ${n}/${total} ${did} expired`);
                 }
                 await db.deleteEvents(did);
-                delete eventsCache[did];
                 expired += 1;
             }
             else {
@@ -181,7 +170,6 @@ export async function listRegistries() {
 // For testing purposes
 export async function resetDb() {
     await db.resetDb();
-    eventsCache = {};
     verifiedDIDs = {};
 }
 
@@ -457,16 +445,7 @@ export async function generateDoc(anchor) {
 }
 
 async function getEvents(did) {
-    let events = eventsCache[did];
-
-    if (!events) {
-        events = await db.getEvents(did);
-
-        if (events.length > 0) {
-            eventsCache[did] = events;
-        }
-    }
-
+    const events = await db.getEvents(did);
     return copyJSON(events);
 }
 
@@ -586,8 +565,6 @@ export async function updateDID(operation) {
         did: operation.did
     });
 
-    delete eventsCache[operation.did];
-
     if (registry === 'local') {
         return true;
     }
@@ -667,7 +644,6 @@ export async function removeDIDs(dids) {
 
     for (const did of dids) {
         await db.deleteEvents(did);
-        delete eventsCache[did];
     }
 
     return true;
@@ -704,7 +680,6 @@ async function importEvent(event) {
             const index = currentEvents.indexOf(match);
             currentEvents[index] = event;
             await db.setEvents(did, currentEvents);
-            delete eventsCache[did];
             return true;
         }
 
@@ -715,7 +690,6 @@ async function importEvent(event) {
 
         if (ok) {
             await db.addEvent(did, event);
-            delete eventsCache[did];
             return true;
         }
         else {
