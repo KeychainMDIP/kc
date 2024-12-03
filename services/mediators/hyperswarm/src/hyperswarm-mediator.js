@@ -298,11 +298,9 @@ function newBatch(batch) {
 
     if (!batchesSeen[hash]) {
         batchesSeen[hash] = true;
-        console.log(`>>> newBatch: ${hash}`);
         return true;
     }
 
-    console.log(`>>> oldBatch: ${hash}`);
     return false;
 }
 
@@ -323,8 +321,8 @@ async function receiveMsg(conn, name, json) {
     connectionNodeName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
-        logBatch(msg.data, msg.node || 'anon');
         if (newBatch(msg.data)) {
+            logBatch(msg.data, msg.node || 'anon');
             importQueue.push({ name, msg });
         }
         return;
