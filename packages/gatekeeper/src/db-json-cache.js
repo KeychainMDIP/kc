@@ -12,9 +12,8 @@ function loadDb() {
             dbCache = JSON.parse(fs.readFileSync(dbName));
         }
         catch (err) {
-            dbCache = {
-                dids: {}
-            };
+            dbCache = { dids: {} };
+            saveDb();
         }
     }
 
