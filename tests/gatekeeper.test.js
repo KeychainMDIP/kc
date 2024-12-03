@@ -1976,6 +1976,16 @@ describe('getQueue', () => {
         mockFs.restore();
     });
 
+    it('should return empty list when no events in queue', async () => {
+        mockFs({});
+
+        const registry = 'TFTC';
+
+        const queue = await gatekeeper.getQueue(registry);
+
+        expect(queue).toStrictEqual([]);
+    });
+
     it('should return single event in queue', async () => {
         mockFs({});
 
