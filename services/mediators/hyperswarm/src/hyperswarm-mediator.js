@@ -290,6 +290,20 @@ let exportQueue = asyncLib.queue(async function (task, callback) {
     callback();
 }, 1); // concurrency is 1
 
+
+const batchesSeen = {};
+
+function newBatch(batch) {
+    const hash = cipher.hashJSON(batch);
+
+    if (!batchesSeen[hash]) {
+        batchesSeen[hash] = true;
+        return true;
+    }
+
+    return false;
+}
+
 async function receiveMsg(conn, name, json) {
     let msg;
 
@@ -304,19 +318,22 @@ async function receiveMsg(conn, name, json) {
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
     connectionLastSeen[name] = new Date().getTime();
-    connectionNodeName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
-        logBatch(msg.data, msg.node || 'anon');
-        importQueue.push({ name, msg });
+        if (newBatch(msg.data)) {
+            logBatch(msg.data, msg.node || 'anon');
+            importQueue.push({ name, msg });
+        }
         return;
     }
 
     if (msg.type === 'queue') {
-        importQueue.push({ name, msg });
-        msg.relays.push(name);
-        logConnection(msg.relays[0]);
-        relayMsg(msg);
+        if (newBatch(msg.data)) {
+            importQueue.push({ name, msg });
+            msg.relays.push(name);
+            logConnection(msg.relays[0]);
+            relayMsg(msg);
+        }
         return;
     }
 
@@ -326,6 +343,7 @@ async function receiveMsg(conn, name, json) {
     }
 
     if (msg.type === 'ping') {
+        connectionNodeName[name] = msg.node || 'anon';
         return;
     }
 
