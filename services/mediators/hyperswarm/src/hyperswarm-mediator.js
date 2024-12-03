@@ -318,7 +318,6 @@ async function receiveMsg(conn, name, json) {
 
     console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
     connectionLastSeen[name] = new Date().getTime();
-    connectionNodeName[name] = msg.node || 'anon';
 
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
@@ -344,6 +343,7 @@ async function receiveMsg(conn, name, json) {
     }
 
     if (msg.type === 'ping') {
+        connectionNodeName[name] = msg.node || 'anon';
         return;
     }
 
