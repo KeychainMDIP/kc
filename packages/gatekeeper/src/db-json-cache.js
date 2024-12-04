@@ -88,11 +88,6 @@ export async function addEvent(did, event) {
     writeDb(db);
 }
 
-export async function getAllEvents() {
-    const db = loadDb();
-    return JSON.parse(JSON.stringify(db.dids));
-}
-
 export async function getEvents(did) {
     try {
         const db = loadDb();

@@ -124,12 +124,3 @@ export async function getAllKeys() {
     const rows = await db.all('SELECT id FROM dids');
     return rows.map(row => row.id);
 }
-
-export async function getAllEvents() {
-    let allEvents = {};
-    const keys = await getAllKeys();
-    for (const key of keys) {
-        allEvents[key] = await getEvents(key);
-    }
-    return allEvents;
-}

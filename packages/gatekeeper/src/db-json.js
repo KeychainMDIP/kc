@@ -55,11 +55,6 @@ export async function addEvent(did, event) {
     writeDb(db);
 }
 
-export async function getAllEvents() {
-    const db = loadDb();
-    return db.dids;
-}
-
 export async function getEvents(did) {
     try {
         const db = loadDb();

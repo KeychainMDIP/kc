@@ -75,15 +75,6 @@ export async function getAllKeys() {
     return keys.map(key => key.split('/').pop()); // Extract the id part from the key
 }
 
-export async function getAllEvents() {
-    let allEvents = {};
-    const keys = await getAllKeys();
-    for (const key of keys) {
-        allEvents[key] = await getEvents(key);
-    }
-    return allEvents;
-}
-
 export async function queueOperation(registry, op) {
     await redis.rpush(`${DB}/queue/${registry}`, JSON.stringify(op));
 }
