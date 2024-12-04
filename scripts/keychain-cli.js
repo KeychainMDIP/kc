@@ -6,6 +6,7 @@ import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet from '@mdip/keymaster/db/json';
+import * as db_encrypted_wallet from '@mdip/keymaster/db/encrypted/json';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -13,6 +14,9 @@ dotenv.config();
 let keymaster;
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const keymasterURL = process.env.KC_KEYMASTER_URL;
+
+const keymasterEncypted = process.env.KC_ENCRYPTED_WALLET === 'true';
+const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -994,7 +998,10 @@ async function run() {
         await keymaster.start({
             gatekeeper: gatekeeper_sdk,
             wallet: db_wallet,
-            cipher
+            encrypted_wallet: db_encrypted_wallet,
+            cipher,
+            encrypted: keymasterEncypted,
+            passphrase: keymasterPassphrase,
         });
         program.parse(process.argv);
         await keymaster.stop();

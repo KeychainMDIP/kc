@@ -7,6 +7,7 @@
     "./lib": "./src/keymaster-lib.js",
     "./sdk": "./src/keymaster-sdk.js",
     "./db/json": "./src/db-wallet-json.js",
+    "./db/encrypted/json": "./src/db-wallet-encrypted-json.js",
     "./db/web": "./src/db-wallet-web.js"
   },
   "scripts": {
@@ -16,6 +17,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@inquirer/prompts": "^7.1.0",
     "@mdip/common": "*",
     "axios": "^1.7.7"
   },

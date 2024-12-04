@@ -1,4 +1,11 @@
-import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
+import { password } from '@inquirer/prompts';
+import {
+    InvalidDIDError,
+    InvalidParameterError,
+    KeymasterError,
+    UnknownIDError,
+    PassphraseError,
+} from '@mdip/common/errors';
 
 let gatekeeper = null;
 let db = null;
@@ -19,15 +26,29 @@ export async function start(options = {}) {
         throw new InvalidParameterError('options.gatekeeper');
     }
 
-    if (options.wallet) {
-        db = options.wallet;
+    if (options.encrypted) {
+        if (options.encrypted_wallet) {
+            db = options.encrypted_wallet;
 
-        if (!db.loadWallet) {
+            if (!db.loadWallet || !db.saveWallet || !db.setPassphrase || !db.getPassphrase) {
+                throw new InvalidParameterError('options.encrypted_wallet');
+            }
+
+            db.setPassphrase(options.passphrase);
+        }  else {
+            throw new InvalidParameterError('options.encrypted_wallet');
+        }
+    } else {
+        if (options.wallet) {
+            db = options.wallet;
+
+            if (!db.loadWallet || !db.saveWallet) {
+                throw new InvalidParameterError('options.wallet');
+            }
+        }
+        else {
             throw new InvalidParameterError('options.wallet');
         }
-    }
-    else {
-        throw new InvalidParameterError('options.wallet');
     }
 
     if (options.cipher) {
@@ -49,7 +70,18 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
+async function checkAndSetPassphrase() {
+    if (!db.getPassphrase()) {
+        const passphrase = await promptPassphrase();
+        db.setPassphrase(passphrase);
+    }
+}
+
 export async function loadWallet() {
+    if (db.setPassphrase) {
+        await checkAndSetPassphrase();
+    }
+
     let wallet = await db.loadWallet();
 
     if (!wallet) {
@@ -60,6 +92,10 @@ export async function loadWallet() {
 }
 
 export async function saveWallet(wallet, overwrite = true) {
+    if (db.setPassphrase) {
+        await checkAndSetPassphrase();
+    }
+
     // TBD validate wallet before saving
     return db.saveWallet(wallet, overwrite);
 }
@@ -1948,4 +1984,21 @@ export async function unpublishPoll(pollId) {
     delete poll.results;
 
     return updateAsset(pollId, { poll });
+}
+
+async function promptPassphrase() {
+    try {
+        return await password({
+            message: 'Please provide a wallet passphrase:',
+            mask: '*',
+            validate(value) {
+                if (value === '') {
+                    return 'Passphrase cannot be empty';
+                }
+                return true;
+            },
+        });
+    } catch (error) {
+        throw new PassphraseError('Exiting as no passphrase set');
+    }
 }
