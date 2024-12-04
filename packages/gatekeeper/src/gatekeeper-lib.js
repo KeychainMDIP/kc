@@ -444,15 +444,10 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function getEvents(did) {
-    const events = await db.getEvents(did);
-    return copyJSON(events);
-}
-
 export async function resolveDID(did, options = {}) {
     const { atTime, atVersion, confirm = false, verify = false } = options;
 
-    const events = await getEvents(did);
+    const events = await db.getEvents(did);
 
     if (events.length === 0) {
         throw new InvalidDIDError();
@@ -616,7 +611,7 @@ export async function getDIDs(options = {}) {
 }
 
 export async function exportDID(did) {
-    return getEvents(did);
+    return db.getEvents(did);
 }
 
 export async function exportDIDs(dids) {
@@ -660,9 +655,7 @@ async function importEvent(event) {
     }
 
     const did = event.did;
-    //console.time('getEvents');
     const currentEvents = await db.getEvents(did);
-    //console.timeEnd('getEvents');
 
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
