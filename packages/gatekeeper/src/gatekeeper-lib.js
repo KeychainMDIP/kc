@@ -471,6 +471,7 @@ export async function resolveDID(did, options = {}) {
                     throw new InvalidOperationError('signature');
                 }
             }
+            doc.mdip.opcid = await generateCID(operation);
             continue;
         }
 
@@ -510,6 +511,7 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
             doc.mdip = mdip;
+            doc.mdip.opcid = await generateCID(operation);
 
             if (blockchain) {
                 doc.mdip.registration = blockchain;
@@ -524,6 +526,7 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.deactivated = true;
             doc.didDocumentMetadata.deleted = time;
             doc.didDocumentMetadata.confirmed = confirmed;
+            doc.mdip.opcid = await generateCID(operation);
         }
         else {
             if (verify) {
@@ -532,7 +535,6 @@ export async function resolveDID(did, options = {}) {
 
             // console.error(`unknown type ${operation.type}`);
         }
-        doc.mdip.opcid = await generateCID(operation);
     }
 
     return copyJSON(doc);

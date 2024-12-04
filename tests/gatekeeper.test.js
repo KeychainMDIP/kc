@@ -539,7 +539,10 @@ describe('resolveDID', () => {
                 version: 1,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(doc).toStrictEqual(expected);
@@ -906,7 +909,10 @@ describe('resolveDID', () => {
                 version: 1,
                 confirmed: true,
             },
-            mdip: assetOp.mdip,
+            mdip: {
+                ...assetOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(doc).toStrictEqual(expected);
