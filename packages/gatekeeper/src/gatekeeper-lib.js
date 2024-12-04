@@ -170,8 +170,8 @@ export async function generateCID(operation) {
     return ipfs.add(JSON.parse(canonicalize(operation)));
 }
 
-export async function anchorSeed(seed) {
-    const cid = await generateCID(seed);
+export async function generateDID(operation) {
+    const cid = await generateCID(operation);
     return `${config.didPrefix}:${cid}`;
 }
 
@@ -340,7 +340,7 @@ export async function createDID(operation) {
     const valid = await verifyCreateOperation(operation);
 
     if (valid) {
-        const did = await anchorSeed(operation);
+        const did = await generateDID(operation);
         const ops = await exportDID(did);
 
         // Check to see if we already have this DID in the db
@@ -387,7 +387,7 @@ export async function generateDoc(anchor) {
             return {};
         }
 
-        const did = await anchorSeed(anchor);
+        const did = await generateDID(anchor);
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
@@ -646,7 +646,7 @@ async function importEvent(event) {
             event.did = event.operation.did;
         }
         else {
-            event.did = await anchorSeed(event.operation);
+            event.did = await generateDID(event.operation);
         }
     }
 

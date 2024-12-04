@@ -148,7 +148,7 @@ describe('start', () => {
     });
 });
 
-describe('anchorSeed', () => {
+describe('generateDID', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -164,7 +164,7 @@ describe('anchorSeed', () => {
                 registry: "mockRegistry"
             }
         };
-        const did = await gatekeeper.anchorSeed(mockTxn);
+        const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.startsWith('did:test:')).toBe(true);
     });
@@ -179,8 +179,8 @@ describe('anchorSeed', () => {
                 registry: "mockRegistry"
             }
         };
-        const did1 = await gatekeeper.anchorSeed(mockTxn);
-        const did2 = await gatekeeper.anchorSeed(mockTxn);
+        const did1 = await gatekeeper.generateDID(mockTxn);
+        const did2 = await gatekeeper.generateDID(mockTxn);
 
         expect(did1 === did2).toBe(true);
     });
