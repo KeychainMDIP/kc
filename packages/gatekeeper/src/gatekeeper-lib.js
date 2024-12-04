@@ -26,10 +26,6 @@ const ipfs = new IPFS({ minimal: true });
 export async function start(options = {}) {
     if (options.db) {
         db = options.db;
-
-        if (options.primeCache) {
-            await primeCache();
-        }
     }
     else {
         throw new InvalidParameterError('missing options.db');
@@ -46,9 +42,6 @@ export async function start(options = {}) {
 
 export async function stop() {
     return ipfs.stop();
-}
-
-async function primeCache() {
 }
 
 export async function verifyDb(options = {}) {

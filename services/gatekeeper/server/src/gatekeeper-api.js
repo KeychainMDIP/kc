@@ -21,7 +21,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
                     : null;
 
 await db.start('mdip');
-await gatekeeper.start({ db, primeCache: true });
+await gatekeeper.start({ db });
 
 const app = express();
 const v1router = express.Router();
