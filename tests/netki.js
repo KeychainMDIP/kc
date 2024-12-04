@@ -27,7 +27,7 @@ let keymaster;
 async function setup1() {
     //await db_json.start('mdip');
     await db_redis.start('mdip');
-    await gatekeeper_lib.start({ db: db_redis, primeCache: true });
+    await gatekeeper_lib.start({ db: db_redis });
     //await gatekeeper_lib.verifyDb();
     await keymaster_lib.start({ gatekeeper: gatekeeper_lib, wallet, cipher });
 

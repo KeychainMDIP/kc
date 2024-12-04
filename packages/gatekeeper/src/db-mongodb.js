@@ -70,15 +70,6 @@ export async function getAllKeys() {
     return rows.map(row => row.id);
 }
 
-export async function getAllEvents() {
-    let allEvents = {};
-    const keys = await getAllKeys();
-    for (const key of keys) {
-        allEvents[key] = await getEvents(key);
-    }
-    return allEvents;
-}
-
 export async function queueOperation(registry, op) {
     await db.collection('queue').updateOne(
         { id: registry },

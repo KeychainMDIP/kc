@@ -10,6 +10,10 @@ function loadDb() {
     if (!dbCache) {
         try {
             dbCache = JSON.parse(fs.readFileSync(dbName));
+
+            if (!dbCache.dids) {
+                throw new Error();
+            }
         }
         catch (err) {
             dbCache = { dids: {} };
@@ -62,6 +66,7 @@ export async function resetDb() {
         fs.rmSync(dbName);
     }
     dbCache = null;
+    return loadDb();
 }
 
 export async function addEvent(did, event) {
@@ -81,11 +86,6 @@ export async function addEvent(did, event) {
     }
 
     writeDb(db);
-}
-
-export async function getAllEvents() {
-    const db = loadDb();
-    return JSON.parse(JSON.stringify(db.dids));
 }
 
 export async function getEvents(did) {

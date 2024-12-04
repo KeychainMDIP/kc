@@ -14,7 +14,7 @@ const mockConsole = {
 
 beforeAll(async () => {
     await db_json.start('test');
-    await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: false });
+    await gatekeeper.start({ db: db_json, console: mockConsole });
 });
 
 beforeEach(async () => {
@@ -132,17 +132,6 @@ describe('start', () => {
 
     afterEach(() => {
         mockFs.restore();
-    });
-
-    it('should prime the cache on demand', async () => {
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        await gatekeeper.createDID(agentOp);
-
-        await gatekeeper.stop();
-        await gatekeeper.start({ db: db_json, console: mockConsole, primeCache: true });
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -399,6 +388,15 @@ describe('createDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.message).toBe('Invalid operation: type=mock');
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.created = 'mock';
+            await gatekeeper.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: created=mock');
         }
 
         try {

@@ -17,7 +17,6 @@ const validRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 let supportedRegistries = null;
 
 let db = null;
-let eventsCache = {};
 let eventsQueue = [];
 let eventsSeen = {};
 let verifiedDIDs = {};
@@ -27,10 +26,6 @@ const ipfs = new IPFS({ minimal: true });
 export async function start(options = {}) {
     if (options.db) {
         db = options.db;
-
-        if (options.primeCache) {
-            await primeCache();
-        }
     }
     else {
         throw new InvalidParameterError('missing options.db');
@@ -47,17 +42,6 @@ export async function start(options = {}) {
 
 export async function stop() {
     return ipfs.stop();
-}
-
-async function primeCache() {
-    try {
-        const allEvents = await db.getAllEvents();
-        for (const key of Object.keys(allEvents)) {
-            eventsCache[`${config.didPrefix}:${key}`] = allEvents[key];
-        }
-    }
-    catch (error) {
-    }
 }
 
 export async function verifyDb(options = {}) {
@@ -93,7 +77,6 @@ export async function verifyDb(options = {}) {
             }
             invalid += 1;
             await db.deleteEvents(did);
-            delete eventsCache[did];
             continue;
         }
 
@@ -106,7 +89,6 @@ export async function verifyDb(options = {}) {
                     console.log(`removing ${n}/${total} ${did} expired`);
                 }
                 await db.deleteEvents(did);
-                delete eventsCache[did];
                 expired += 1;
             }
             else {
@@ -181,7 +163,6 @@ export async function listRegistries() {
 // For testing purposes
 export async function resetDb() {
     await db.resetDb();
-    eventsCache = {};
     verifiedDIDs = {};
 }
 
@@ -456,24 +437,10 @@ export async function generateDoc(anchor) {
     return doc;
 }
 
-async function getEvents(did) {
-    let events = eventsCache[did];
-
-    if (!events) {
-        events = await db.getEvents(did);
-
-        if (events.length > 0) {
-            eventsCache[did] = events;
-        }
-    }
-
-    return copyJSON(events);
-}
-
 export async function resolveDID(did, options = {}) {
     const { atTime, atVersion, confirm = false, verify = false } = options;
 
-    const events = await getEvents(did);
+    const events = await db.getEvents(did);
 
     if (events.length === 0) {
         throw new InvalidDIDError();
@@ -586,8 +553,6 @@ export async function updateDID(operation) {
         did: operation.did
     });
 
-    delete eventsCache[operation.did];
-
     if (registry === 'local') {
         return true;
     }
@@ -639,7 +604,7 @@ export async function getDIDs(options = {}) {
 }
 
 export async function exportDID(did) {
-    return getEvents(did);
+    return db.getEvents(did);
 }
 
 export async function exportDIDs(dids) {
@@ -667,7 +632,6 @@ export async function removeDIDs(dids) {
 
     for (const did of dids) {
         await db.deleteEvents(did);
-        delete eventsCache[did];
     }
 
     return true;
@@ -684,9 +648,7 @@ async function importEvent(event) {
     }
 
     const did = event.did;
-    //console.time('getEvents');
     const currentEvents = await db.getEvents(did);
-    //console.timeEnd('getEvents');
 
     const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
 
@@ -704,7 +666,6 @@ async function importEvent(event) {
             const index = currentEvents.indexOf(match);
             currentEvents[index] = event;
             await db.setEvents(did, currentEvents);
-            delete eventsCache[did];
             return true;
         }
 
@@ -715,7 +676,6 @@ async function importEvent(event) {
 
         if (ok) {
             await db.addEvent(did, event);
-            delete eventsCache[did];
             return true;
         }
         else {
