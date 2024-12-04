@@ -392,6 +392,15 @@ describe('createDID', () => {
 
         try {
             const agentOp = await createAgentOp(keypair);
+            agentOp.created = 'mock';
+            await gatekeeper.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: created=mock');
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
             agentOp.mdip = null;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
