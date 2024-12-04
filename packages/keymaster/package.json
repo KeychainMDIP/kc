@@ -17,7 +17,6 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@inquirer/prompts": "^7.1.0",
     "@mdip/common": "*",
     "axios": "^1.7.7"
   },

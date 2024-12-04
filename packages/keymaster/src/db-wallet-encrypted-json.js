@@ -17,10 +17,6 @@ export function setPassphrase(pw) {
     passphrase = pw;
 }
 
-export function getPassphrase(pw) {
-    return passphrase;
-}
-
 export function saveWallet(wallet, overwrite = false) {
     if (fs.existsSync(walletName) && !overwrite) {
         return false;

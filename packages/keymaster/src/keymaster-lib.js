@@ -1,4 +1,3 @@
-import { password } from '@inquirer/prompts';
 import {
     InvalidDIDError,
     InvalidParameterError,
@@ -30,8 +29,12 @@ export async function start(options = {}) {
         if (options.encrypted_wallet) {
             db = options.encrypted_wallet;
 
-            if (!db.loadWallet || !db.saveWallet || !db.setPassphrase || !db.getPassphrase) {
+            if (!db.loadWallet || !db.saveWallet || !db.setPassphrase) {
                 throw new InvalidParameterError('options.encrypted_wallet');
+            }
+
+            if (!options.passphrase) {
+                throw new PassphraseError('KC_ENCRYPTED_PASSPHRASE not set');
             }
 
             db.setPassphrase(options.passphrase);
@@ -70,18 +73,7 @@ export async function listRegistries() {
     return gatekeeper.listRegistries();
 }
 
-async function checkAndSetPassphrase() {
-    if (!db.getPassphrase()) {
-        const passphrase = await promptPassphrase();
-        db.setPassphrase(passphrase);
-    }
-}
-
 export async function loadWallet() {
-    if (db.setPassphrase) {
-        await checkAndSetPassphrase();
-    }
-
     let wallet = await db.loadWallet();
 
     if (!wallet) {
@@ -92,10 +84,6 @@ export async function loadWallet() {
 }
 
 export async function saveWallet(wallet, overwrite = true) {
-    if (db.setPassphrase) {
-        await checkAndSetPassphrase();
-    }
-
     // TBD validate wallet before saving
     return db.saveWallet(wallet, overwrite);
 }
@@ -1984,21 +1972,4 @@ export async function unpublishPoll(pollId) {
     delete poll.results;
 
     return updateAsset(pollId, { poll });
-}
-
-async function promptPassphrase() {
-    try {
-        return await password({
-            message: 'Please provide a wallet passphrase:',
-            mask: '*',
-            validate(value) {
-                if (value === '') {
-                    return 'Passphrase cannot be empty';
-                }
-                return true;
-            },
-        });
-    } catch (error) {
-        throw new PassphraseError('Exiting as no passphrase set');
-    }
 }
