@@ -166,10 +166,12 @@ export async function resetDb() {
     verifiedDIDs = {};
 }
 
+export async function generateCID(operation) {
+    return ipfs.add(JSON.parse(canonicalize(operation)));
+}
+
 export async function anchorSeed(seed) {
-    //console.time('>>ipfs.add');
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    //console.timeEnd('>>ipfs.add');
+    const cid = await generateCID(seed);
     return `${config.didPrefix}:${cid}`;
 }
 
@@ -530,6 +532,7 @@ export async function resolveDID(did, options = {}) {
 
             // console.error(`unknown type ${operation.type}`);
         }
+        doc.mdip.opcid = await generateCID(operation);
     }
 
     return copyJSON(doc);

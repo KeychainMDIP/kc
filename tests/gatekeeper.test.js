@@ -54,6 +54,7 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
 async function createUpdateOp(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
     const prev = cipher.hashJSON(current);
+    //const prevop = current.mdip.opcid;
 
     const operation = {
         type: "update",
@@ -554,6 +555,7 @@ describe('resolveDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOpCID = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         const expected = {
@@ -582,7 +584,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(ok).toBe(true);
@@ -693,7 +698,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(ok).toBe(true);
@@ -740,7 +748,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(ok).toBe(true);
@@ -785,7 +796,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: false,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opcid: expect.any(String),
+            }
         };
 
         expect(ok).toBe(true);
@@ -994,6 +1008,7 @@ describe('updateDID', () => {
         const updatedDoc = await gatekeeper.resolveDID(did);
         doc.didDocumentMetadata.updated = expect.any(String);
         doc.didDocumentMetadata.version = 2;
+        doc.mdip.opcid = expect.any(String);
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
