@@ -60,6 +60,9 @@ jobs:
           - dockerfile: Dockerfile.ipfs
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:release
+          - dockerfile: Dockerfile.tbtc
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/tbtc-node:release
     permissions:
       contents: read
       packages: write

@@ -104,7 +104,10 @@ services:
       - gatekeeper
 
   tbtc-node:
-    image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
+    build:
+      context: .
+      dockerfile: Dockerfile.tbtc
+    image: keychainmdip/tbtc-node
     volumes:
       - ./data/tbtc:/root/.bitcoin
 
