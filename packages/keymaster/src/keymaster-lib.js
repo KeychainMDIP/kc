@@ -25,33 +25,20 @@ export async function start(options = {}) {
         throw new InvalidParameterError('options.gatekeeper');
     }
 
-    if (options.encrypted) {
-        if (options.encrypted_wallet) {
-            db = options.encrypted_wallet;
+    if (options.wallet) {
+        db = options.wallet;
 
-            if (!db.loadWallet || !db.saveWallet || !db.setPassphrase) {
-                throw new InvalidParameterError('options.encrypted_wallet');
-            }
-
-            if (!options.passphrase) {
-                throw new PassphraseError('KC_ENCRYPTED_PASSPHRASE not set');
-            }
-
-            db.setPassphrase(options.passphrase);
-        }  else {
-            throw new InvalidParameterError('options.encrypted_wallet');
-        }
-    } else {
-        if (options.wallet) {
-            db = options.wallet;
-
-            if (!db.loadWallet || !db.saveWallet) {
-                throw new InvalidParameterError('options.wallet');
-            }
-        }
-        else {
+        if (!db.loadWallet || !db.saveWallet || !db.setEncryption) {
             throw new InvalidParameterError('options.wallet');
         }
+    } else {
+        throw new InvalidParameterError('options.wallet');
+    }
+
+    if (options.passphrase) {
+        db.setEncryption(options.passphrase, options.encrypted, options.newPassphrase);
+    } else if (options.encrypted) {
+        throw new PassphraseError('KC_ENCRYPTED_PASSPHRASE not set');
     }
 
     if (options.cipher) {
