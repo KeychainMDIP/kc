@@ -7,7 +7,6 @@
     "./lib": "./src/keymaster-lib.js",
     "./sdk": "./src/keymaster-sdk.js",
     "./db/json": "./src/db-wallet-json.js",
-    "./db/encrypted/json": "./src/db-wallet-encrypted-json.js",
     "./db/web": "./src/db-wallet-web.js"
   },
   "scripts": {
