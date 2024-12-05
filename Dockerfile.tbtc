@@ -7,7 +7,7 @@ RUN \
         apt-get install -y build-essential libtool autotools-dev automake pkg-config bsdmainutils && \
 	apt-get install -y libboost-dev libboost-system-dev libboost-filesystem-dev libboost-test-dev libboost-thread-dev && \
 	apt-get install -y libssl-dev libevent-dev libsqlite3-dev libminiupnpc-dev libzmq3-dev
-RUN git clone https://github.com/bitcoin/bitcoin.git
+RUN git clone -b 27.x https://github.com/bitcoin/bitcoin.git
 WORKDIR /bitcoin
 RUN ./autogen.sh
 RUN ./configure --enable-wallet --disable-tests --disable-bench
