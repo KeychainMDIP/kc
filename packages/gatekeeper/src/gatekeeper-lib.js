@@ -450,9 +450,8 @@ export async function resolveDID(did, options = {}) {
 
     const anchor = events[0];
     let doc = await generateDoc(anchor.operation);
-    let mdip = doc?.mdip;
 
-    if (atTime && new Date(mdip.created) > new Date(atTime)) {
+    if (atTime && new Date(doc.mdip.created) > new Date(atTime)) {
         // TBD What to return if DID was created after specified time?
     }
 
@@ -483,7 +482,7 @@ export async function resolveDID(did, options = {}) {
             break;
         }
 
-        confirmed = confirmed && mdip.registry === registry;
+        confirmed = confirmed && doc.mdip.registry === registry;
 
         if (confirm && !confirmed) {
             break;
@@ -495,14 +494,15 @@ export async function resolveDID(did, options = {}) {
             if (!valid) {
                 throw new InvalidOperationError('signature');
             }
+
+            if (operation.cid && operation.cid !== doc.mdip.opcid) {
+                throw new InvalidOperationError('opcid');
+            }
         }
 
         if (operation.type === 'update') {
             // Increment version
             version += 1;
-
-            // Maintain mdip metadata across versions
-            mdip = doc.mdip;
 
             // TBD if registry change in operation.doc.didDocumentMetadata.mdip,
             // fetch updates from new registry and search for same operation
@@ -510,7 +510,6 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.updated = time;
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
-            doc.mdip = mdip;
             doc.mdip.opcid = await generateCID(operation);
 
             if (blockchain) {

@@ -53,14 +53,13 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
 
 async function createUpdateOp(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
-    const prev = cipher.hashJSON(current);
-    //const prevop = current.mdip.opcid;
+    const cid = current.mdip.opcid;
 
     const operation = {
         type: "update",
         did,
+        cid,
         doc,
-        prev,
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -79,12 +78,12 @@ async function createUpdateOp(keypair, did, doc) {
 
 async function createDeleteOp(keypair, did) {
     const current = await gatekeeper.resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const cid = current.mdip.opcid;
 
     const operation = {
         type: "delete",
         did,
-        prev
+        cid,
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -1068,6 +1067,24 @@ describe('updateDID', () => {
         } catch (error) {
             expect(error.message).toBe('Invalid operation: signature');
         }
+    });
+
+    it('should verify DID that has been updated multiple times', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        for (let i = 0; i < 10; i++) {
+            doc.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc2 = await gatekeeper.resolveDID(did, { verify: true });
+        expect(doc2.didDocumentMetadata.version).toBe(11);
     });
 });
 
