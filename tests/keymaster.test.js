@@ -9,6 +9,8 @@ import * as wallet from '@mdip/keymaster/db/json';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
+const passphraseNotSet = 'KC_ENCRYPTED_PASSPHRASE not set';
+
 beforeEach(async () => {
     await db_json.start('mdip');
     await gatekeeper.start({ db: db_json });
@@ -86,6 +88,14 @@ describe('start', () => {
         catch (error) {
             expect(error.message).toBe('Invalid parameter: options.cipher');
         }
+
+        try {
+            await keymaster.start({ gatekeeper, wallet, cipher, encrypted: true });
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Passphrase: ' + passphraseNotSet);
+        }
     });
 });
 
@@ -121,6 +131,7 @@ describe('saveWallet', () => {
 
     afterEach(() => {
         mockFs.restore();
+        wallet.setEncryption(undefined, undefined, undefined);
     });
 
     it('should save a wallet', async () => {
@@ -195,6 +206,141 @@ describe('saveWallet', () => {
 
             expect(ok).toBe(true);
             expect(wallet).toStrictEqual(mockWallet);
+        }
+    });
+
+    it('load encrypted wallet', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const passphrase = 'passphrase';
+        const encryptionEnabled = true;
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        const walletData = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(walletData).toStrictEqual(mockWallet);
+    });
+
+    it('encrypt unencrypted wallet', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const passphrase = 'passphrase';
+        const encryptionEnabled = true;
+
+        const ok = await keymaster.saveWallet(mockWallet);
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const walletData = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(walletData).toStrictEqual(mockWallet);
+    });
+
+    it('update passphrase', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const passphrase = 'passphrase';
+        const newPassphrase = 'newPassphrase';
+        const encryptionEnabled = true;
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const ok = await keymaster.saveWallet(mockWallet);
+
+        wallet.setEncryption(passphrase, encryptionEnabled, newPassphrase);
+
+        const walletData = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(walletData).toStrictEqual(mockWallet);
+    });
+
+    it('check save encrypted with no passphrase throws', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const encryptionEnabled = true;
+        wallet.setEncryption(undefined, encryptionEnabled, undefined);
+
+        try {
+            await keymaster.saveWallet(mockWallet);
+            throw new ExpectedExceptionError();
+        } catch (e) {
+            expect(e.message).toBe(passphraseNotSet);
+        }
+    });
+
+    it('check load encrypted with no passphrase throws', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const passphrase = 'passphrase';
+        const encryptionEnabled = true;
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+
+        wallet.setEncryption(undefined, encryptionEnabled, undefined);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (e) {
+            expect(e.message).toBe(passphraseNotSet);
+        }
+    });
+
+    it('check load unencrypted with encrypted wallet throws', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const passphrase = 'passphrase';
+        const encryptionEnabled = true;
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+
+        wallet.setEncryption(undefined, undefined, undefined);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (e) {
+            expect(e.message).toBe('Wallet encrypted but encryption is not enabled');
+        }
+    });
+
+    it('check load with incorrect passphrase throws', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        let passphrase = 'passphrase';
+        const encryptionEnabled = true;
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+
+        passphrase = 'incorrect';
+
+        wallet.setEncryption(passphrase, encryptionEnabled, undefined);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (e) {
+            expect(e.message).toBe('Incorrect passphrase.');
         }
     });
 });
