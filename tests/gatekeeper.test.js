@@ -1060,7 +1060,7 @@ describe('resolveDID', () => {
             await gatekeeper.resolveDID(did, { verify: true });
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('Invalid operation: operation.cid');
+            expect(error.message).toBe('Invalid operation: cid');
         }
     });
 });
@@ -1969,11 +1969,19 @@ describe('processEvents', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const ops = await gatekeeper.exportDID(did);
+        const events = await gatekeeper.exportDID(did);
 
+        for (let i = 0; i < events.length-1; i++) {
+            const opcid1 = await gatekeeper.generateCID(events[i].operation);
+            const opcid2 = events[i+1].operation.cid;
+            const equal = opcid1 === opcid2;
+            console.log(opcid1, opcid2, equal);
+        }
+
+        await gatekeeper.resolveDID(did, { verify: true });
         await gatekeeper.resetDb();
 
-        const { queued, rejected } = await gatekeeper.importBatch(ops);
+        const { queued, rejected } = await gatekeeper.importBatch(events);
         expect(queued).toBe(N + 1);
         expect(rejected).toBe(0);
 
