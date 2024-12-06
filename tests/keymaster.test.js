@@ -119,6 +119,13 @@ describe('loadWallet', () => {
         expect(wallet2).toStrictEqual(wallet1);
     });
 
+    it('loading non-existing encrypted wallet returns null', async () => {
+        mockFs({});
+
+        const wallet = wallet_enc.loadWallet();
+        expect(wallet).toBe(null);
+    });
+
     it('regular wallet should throw when loading encrypted wallet', async () => {
         mockFs({});
         const mockWallet = { salt: 1, iv: 1, data: 1 };
