@@ -496,7 +496,7 @@ export async function resolveDID(did, options = {}) {
             }
 
             if (operation.cid && operation.cid !== doc.mdip.opcid) {
-                throw new InvalidOperationError('opcid');
+                throw new InvalidOperationError('operation.cid');
             }
         }
 

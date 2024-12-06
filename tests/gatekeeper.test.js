@@ -557,7 +557,6 @@ describe('resolveDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, doc);
-        const updateOpCID = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         const expected = {
@@ -990,6 +989,78 @@ describe('resolveDID', () => {
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.message).toBe(InvalidDIDError.type);
+        }
+    });
+
+    it('should throw an exception on invalid signature in create op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        const events = await db_json.getEvents(did);
+        // changing anything in the op will invalidate the signature
+        events[0].operation.did = 'mock';
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+
+    it('should throw an exception on invalid signature in update op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const events = await db_json.getEvents(did);
+        // changing anything in the op will invalidate the signature
+        events[1].operation.did = 'mock';
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+
+    it('should throw an exception on invalid operation cid in update op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc1 = await gatekeeper.resolveDID(did);
+        doc1.didDocumentData = { mock: 1 };
+        const updateOp1 = await createUpdateOp(keypair, did, doc1);
+        await gatekeeper.updateDID(updateOp1);
+        const doc2 = await gatekeeper.resolveDID(did);
+        doc2.didDocumentData = { mock: 2 };
+        const updateOp2 = await createUpdateOp(keypair, did, doc2);
+        await gatekeeper.updateDID(updateOp2);
+
+        const events = await db_json.getEvents(did);
+        // if we swap update events the sigs will be valid but the cid will be invalid
+        [events[1], events[2]] = [events[2], events[1]];
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: operation.cid');
         }
     });
 });
