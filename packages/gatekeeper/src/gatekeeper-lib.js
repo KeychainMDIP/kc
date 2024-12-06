@@ -497,6 +497,7 @@ export async function resolveDID(did, options = {}) {
                 throw new InvalidOperationError('signature');
             }
 
+            // TEMP during did:test, operation.cid is optional
             if (operation.cid && operation.cid !== doc.mdip.opcid) {
                 throw new InvalidOperationError('cid');
             }
@@ -688,6 +689,7 @@ async function importEvent(event) {
         const ok = await verifyOperation(event.operation);
 
         if (ok) {
+            // TEMP during did:test, operation.cid is optional
             if (currentEvents.length > 0 && event.operation.cid) {
                 const lastEvent = currentEvents[currentEvents.length-1];
                 const opcid = await generateCID(lastEvent.operation);
