@@ -89,21 +89,21 @@ export async function addEvent(did, event) {
 }
 
 export async function getEvents(did) {
+    let events = [];
+
     try {
         const db = loadDb();
         const suffix = did.split(':').pop();
         const updates = db.dids[suffix];
 
         if (updates && updates.length > 0) {
-            return updates;
-        }
-        else {
-            return [];
+            events = updates;
         }
     }
     catch {
-        return [];
     }
+
+    return JSON.parse(JSON.stringify(events));
 }
 
 export async function setEvents(did, events) {
