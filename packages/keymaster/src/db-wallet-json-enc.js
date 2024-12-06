@@ -12,8 +12,6 @@ const iterations = 200000;            // PBKDF2 iterations
 const digest = 'sha512';               // PBKDF2 hash function
 
 let passphrase;
-let newPassphrase;
-let encryptionEnabled;
 
 export function setPassphrase(pp) {
     passphrase = pp;

@@ -298,7 +298,7 @@ describe('saveWallet', () => {
         wallet_enc.setPassphrase('passphrase');
 
         try {
-            const result = await keymaster.loadWallet();
+            await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(ok).toBe(true);
