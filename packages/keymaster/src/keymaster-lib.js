@@ -1,10 +1,4 @@
-import {
-    InvalidDIDError,
-    InvalidParameterError,
-    KeymasterError,
-    UnknownIDError,
-    PassphraseError,
-} from '@mdip/common/errors';
+import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 let gatekeeper = null;
 let db = null;
@@ -28,17 +22,11 @@ export async function start(options = {}) {
     if (options.wallet) {
         db = options.wallet;
 
-        if (!db.loadWallet || !db.saveWallet || !db.setEncryption) {
+        if (!db.loadWallet || !db.saveWallet) {
             throw new InvalidParameterError('options.wallet');
         }
     } else {
         throw new InvalidParameterError('options.wallet');
-    }
-
-    if (options.passphrase) {
-        db.setEncryption(options.passphrase, options.encrypted, options.newPassphrase);
-    } else if (options.encrypted) {
-        throw new PassphraseError('KC_ENCRYPTED_PASSPHRASE not set');
     }
 
     if (options.cipher) {

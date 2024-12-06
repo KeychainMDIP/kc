@@ -47,14 +47,6 @@ export class UnknownIDError extends MDIPError {
     }
 }
 
-export class PassphraseError extends MDIPError {
-    static type = 'Passphrase';
-
-    constructor(detail) {
-        super(PassphraseError.type, detail);
-    }
-}
-
 // For unit tests
 export class ExpectedExceptionError extends MDIPError {
     static type = 'Expected to throw an exception';

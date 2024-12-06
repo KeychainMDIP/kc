@@ -6,6 +6,7 @@ import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet from '@mdip/keymaster/db/json';
+import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -14,9 +15,7 @@ let keymaster;
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 
-const keymasterEncypted = process.env.KC_ENCRYPTED_WALLET === 'true';
 const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
-const keymasterNewPassphrase = process.env.KC_ENCRYPTED_NEW_PASSPHRASE;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -745,7 +744,7 @@ program
 program
     .command('list-schemas')
     .description('List schemas owned by current ID')
-    .action(async (file, name) => {
+    .action(async () => {
         try {
             const schemas = await keymaster.listSchemas();
             console.log(JSON.stringify(schemas, null, 4));
@@ -940,6 +939,25 @@ program
     });
 
 program
+    .command('encrypt-wallet <pass-phrase> [new-phrase]')
+    .description('Encrypt wallet or update passphrase')
+    .action(async (passphrase, newPassphrase) => {
+        try {
+            let wallet;
+            db_wallet_enc.setPassphrase(passphrase);
+            if (!newPassphrase) {
+                wallet = db_wallet.loadWallet();
+            } else {
+                wallet = db_wallet_enc.loadWallet();
+                db_wallet_enc.setPassphrase(newPassphrase);
+            }
+            db_wallet_enc.saveWallet(wallet, true);
+        } catch (error) {
+            console.error(error.message);
+        }
+    });
+
+program
     .command('perf-test [N]')
     .description('Performance test to create N credentials')
     .action(async (N = 100) => {
@@ -977,6 +995,14 @@ program
         }
     });
 
+function getDBWallet() {
+    if (keymasterPassphrase) {
+        db_wallet_enc.setPassphrase(keymasterPassphrase);
+        return db_wallet_enc;
+    }
+    return db_wallet;
+}
+
 async function run() {
     if (keymasterURL) {
         keymaster = keymaster_sdk;
@@ -997,11 +1023,8 @@ async function run() {
         });
         await keymaster.start({
             gatekeeper: gatekeeper_sdk,
-            wallet: db_wallet,
+            wallet: getDBWallet(),
             cipher,
-            encrypted: keymasterEncypted,
-            passphrase: keymasterPassphrase,
-            newPassphrase: keymasterNewPassphrase,
         });
         program.parse(process.argv);
         await keymaster.stop();
