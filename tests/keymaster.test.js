@@ -1,4 +1,5 @@
 import mockFs from 'mock-fs';
+import fs from 'fs';
 import canonicalize from 'canonicalize';
 
 import * as keymaster from '@mdip/keymaster/lib';
@@ -296,10 +297,13 @@ describe('saveWallet', () => {
     });
 
     it('encrypted wallet should throw when loading unencrypted wallet', async () => {
-        mockFs({});
+        mockFs({
+            'data': {}
+        });
 
+        const walletFile = 'data/wallet-enc.json';
         const mockWallet = { mock: 1 };
-        const ok = await keymaster.saveWallet(mockWallet);
+        fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
 
         await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
         wallet_enc.setPassphrase('passphrase');
@@ -308,7 +312,6 @@ describe('saveWallet', () => {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(ok).toBe(true);
             expect(error.message).toBe('Wallet not encrypted');
         }
     });
