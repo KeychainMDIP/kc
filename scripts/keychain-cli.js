@@ -943,15 +943,27 @@ program
     .description('Encrypt wallet or update passphrase')
     .action(async (passphrase, newPassphrase) => {
         try {
-            let wallet;
             db_wallet_enc.setPassphrase(passphrase);
+            const unencryptedWallet = db_wallet.loadWallet();
+            const encryptedWallet = db_wallet_enc.loadWallet();
             if (!newPassphrase) {
-                wallet = db_wallet.loadWallet();
+                if (unencryptedWallet === null) {
+                    console.error('No unencrypted wallet exists to encrypt');
+                    return;
+                } else if (encryptedWallet !== null) {
+                    console.error('Encrypted wallet-enc.json already exists');
+                    return;
+                }
+                db_wallet_enc.saveWallet(unencryptedWallet, true);
             } else {
-                wallet = db_wallet_enc.loadWallet();
+                if (encryptedWallet === null) {
+                    console.error('No encrypted wallet exists to change passphrase');
+                    return;
+                }
                 db_wallet_enc.setPassphrase(newPassphrase);
+                db_wallet_enc.saveWallet(encryptedWallet, true);
             }
-            db_wallet_enc.saveWallet(wallet, true);
+            process.env.KC_ENCRYPTED_PASSPHRASE = newPassphrase ? newPassphrase : passphrase;
         } catch (error) {
             console.error(error.message);
         }
