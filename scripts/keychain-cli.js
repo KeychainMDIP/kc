@@ -946,15 +946,20 @@ program
             db_wallet_enc.setPassphrase(passphrase);
             const unencryptedWallet = db_wallet.loadWallet();
             const encryptedWallet = db_wallet_enc.loadWallet();
+
             if (!newPassphrase) {
-                if (unencryptedWallet === null) {
-                    console.error('No unencrypted wallet exists to encrypt');
-                    return;
-                } else if (encryptedWallet !== null) {
+                if (encryptedWallet !== null) {
                     console.error('Encrypted wallet-enc.json already exists');
-                    return;
+                } else if (unencryptedWallet === null) {
+                    if (!keymasterPassphrase) {
+                        await keymaster.start({
+                            gatekeeper: gatekeeper_sdk,
+                            wallet: db_wallet_enc,
+                            cipher,
+                        });
+                    }
+                    await keymaster.newWallet();
                 }
-                db_wallet_enc.saveWallet(unencryptedWallet, true);
             } else {
                 if (encryptedWallet === null) {
                     console.error('No encrypted wallet exists to change passphrase');
@@ -963,7 +968,6 @@ program
                 db_wallet_enc.setPassphrase(newPassphrase);
                 db_wallet_enc.saveWallet(encryptedWallet, true);
             }
-            process.env.KC_ENCRYPTED_PASSPHRASE = newPassphrase ? newPassphrase : passphrase;
         } catch (error) {
             console.error(error.message);
         }
