@@ -318,12 +318,12 @@ async function updateSeedBank(doc) {
     const keypair = await hdKeyPair();
     const did = doc.didDocument.id;
     const current = await gatekeeper.resolveDID(did);
-    const cid = current.mdip.opcid;
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "update",
         did,
-        cid,
+        previd,
         doc,
     };
 
@@ -656,12 +656,12 @@ export async function verifySignature(obj) {
 export async function updateDID(doc) {
     const did = doc.didDocument.id;
     const current = await resolveDID(did);
-    const cid = current.mdip.opcid;
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "update",
         did,
-        cid,
+        previd,
         doc,
     };
 
@@ -672,12 +672,12 @@ export async function updateDID(doc) {
 
 export async function revokeDID(did) {
     const current = await resolveDID(did);
-    const cid = current.mdip.opcid;
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "delete",
         did,
-        cid,
+        previd,
     };
 
     const controller = current.didDocument.controller || current.didDocument.id;

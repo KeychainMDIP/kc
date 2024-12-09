@@ -462,7 +462,7 @@ export async function resolveDID(did, options = {}) {
     doc.didDocumentMetadata.confirmed = confirmed;
 
     for (const { time, operation, registry, blockchain } of events) {
-        const opcid = await generateCID(operation);
+        const opid = await generateCID(operation);
 
         if (operation.type === 'create') {
             if (verify) {
@@ -472,7 +472,7 @@ export async function resolveDID(did, options = {}) {
                     throw new InvalidOperationError('signature');
                 }
             }
-            doc.mdip.opcid = opcid;
+            doc.mdip.opid = opid;
             continue;
         }
 
@@ -497,9 +497,9 @@ export async function resolveDID(did, options = {}) {
                 throw new InvalidOperationError('signature');
             }
 
-            // TEMP during did:test, operation.cid is optional
-            if (operation.cid && operation.cid !== doc.mdip.opcid) {
-                throw new InvalidOperationError('cid');
+            // TEMP during did:test, operation.previd is optional
+            if (operation.previd && operation.previd !== doc.mdip.opid) {
+                throw new InvalidOperationError('previd');
             }
         }
 
@@ -513,7 +513,7 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.updated = time;
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
-            doc.mdip.opcid = opcid;
+            doc.mdip.opid = opid;
 
             if (blockchain) {
                 doc.mdip.registration = blockchain;
@@ -528,7 +528,7 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.deactivated = true;
             doc.didDocumentMetadata.deleted = time;
             doc.didDocumentMetadata.confirmed = confirmed;
-            doc.mdip.opcid = opcid;
+            doc.mdip.opid = opid;
 
             if (blockchain) {
                 doc.mdip.registration = blockchain;
@@ -689,13 +689,13 @@ async function importEvent(event) {
         const ok = await verifyOperation(event.operation);
 
         if (ok) {
-            // TEMP during did:test, operation.cid is optional
-            if (currentEvents.length > 0 && event.operation.cid) {
-                const lastEvent = currentEvents[currentEvents.length-1];
-                const opcid = await generateCID(lastEvent.operation);
+            // TEMP during did:test, operation.previd is optional
+            if (currentEvents.length > 0 && event.operation.previd) {
+                const lastEvent = currentEvents[currentEvents.length - 1];
+                const opid = await generateCID(lastEvent.operation);
 
-                if (opcid !== event.operation.cid) {
-                    throw new InvalidOperationError('cid');
+                if (opid !== event.operation.previd) {
+                    throw new InvalidOperationError('previd');
                 }
             }
 
