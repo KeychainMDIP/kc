@@ -104,7 +104,7 @@ services:
       - gatekeeper
 
   tbtc-node:
-    image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
+    image: keychainmdip/bitcoin-core:v28.0
     volumes:
       - ./data/tbtc:/root/.bitcoin
 
