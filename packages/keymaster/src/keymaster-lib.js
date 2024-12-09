@@ -22,11 +22,10 @@ export async function start(options = {}) {
     if (options.wallet) {
         db = options.wallet;
 
-        if (!db.loadWallet) {
+        if (!db.loadWallet || !db.saveWallet) {
             throw new InvalidParameterError('options.wallet');
         }
-    }
-    else {
+    } else {
         throw new InvalidParameterError('options.wallet');
     }
 
