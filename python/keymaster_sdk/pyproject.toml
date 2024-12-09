@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keymaster-sdk"
+version = "0.1.0"
+description = "Keymaster is a client library for the MDIP"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+  { name="David McFadzean", email="david@selfid.com" },
+  { name="Peter Bushnell", email="peter@selfid.com" }
+]
+dependencies = [
+  "requests==2.32.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/KeychainMDIP/kc/"
