@@ -939,34 +939,25 @@ program
     });
 
 program
-    .command('encrypt-wallet <pass-phrase> [new-phrase]')
-    .description('Encrypt wallet or update passphrase')
-    .action(async (passphrase, newPassphrase) => {
+    .command('encrypt-wallet')
+    .description('Encrypt wallet')
+    .action(async () => {
         try {
-            db_wallet_enc.setPassphrase(passphrase);
-            const unencryptedWallet = db_wallet.loadWallet();
-            const encryptedWallet = db_wallet_enc.loadWallet();
+            if (!keymasterPassphrase) {
+                console.error('KC_ENCRYPTED_PASSPHRASE not set');
+                return;
+            }
 
-            if (!newPassphrase) {
-                if (encryptedWallet !== null) {
-                    console.error('Encrypted wallet-enc.json already exists');
-                } else if (unencryptedWallet === null) {
-                    if (!keymasterPassphrase) {
-                        await keymaster.start({
-                            gatekeeper: gatekeeper_sdk,
-                            wallet: db_wallet_enc,
-                            cipher,
-                        });
-                    }
-                    await keymaster.newWallet();
-                }
+            db_wallet_enc.setPassphrase(keymasterPassphrase);
+            const wallet = db_wallet.loadWallet();
+
+            if (wallet === null) {
+                await keymaster.newWallet();
             } else {
-                if (encryptedWallet === null) {
-                    console.error('No encrypted wallet exists to change passphrase');
-                    return;
+                const result = db_wallet_enc.saveWallet(wallet);
+                if (!result) {
+                    console.error('Encrypted wallet file already exists');
                 }
-                db_wallet_enc.setPassphrase(newPassphrase);
-                db_wallet_enc.saveWallet(encryptedWallet, true);
             }
         } catch (error) {
             console.error(error.message);
