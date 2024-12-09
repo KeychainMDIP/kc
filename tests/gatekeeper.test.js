@@ -53,13 +53,13 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
 
 async function createUpdateOp(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "update",
         did,
+        previd,
         doc,
-        prev,
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -78,12 +78,12 @@ async function createUpdateOp(keypair, did, doc) {
 
 async function createDeleteOp(keypair, did) {
     const current = await gatekeeper.resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "delete",
         did,
-        prev
+        previd,
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -147,7 +147,7 @@ describe('start', () => {
     });
 });
 
-describe('anchorSeed', () => {
+describe('generateDID', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -163,7 +163,7 @@ describe('anchorSeed', () => {
                 registry: "mockRegistry"
             }
         };
-        const did = await gatekeeper.anchorSeed(mockTxn);
+        const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.startsWith('did:test:')).toBe(true);
     });
@@ -178,8 +178,8 @@ describe('anchorSeed', () => {
                 registry: "mockRegistry"
             }
         };
-        const did1 = await gatekeeper.anchorSeed(mockTxn);
-        const did2 = await gatekeeper.anchorSeed(mockTxn);
+        const did1 = await gatekeeper.generateDID(mockTxn);
+        const did2 = await gatekeeper.generateDID(mockTxn);
 
         expect(did1 === did2).toBe(true);
     });
@@ -509,6 +509,7 @@ describe('resolveDID', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
+        const opid = await gatekeeper.generateCID(agentOp);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
@@ -538,7 +539,10 @@ describe('resolveDID', () => {
                 version: 1,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opid,
+            }
         };
 
         expect(doc).toStrictEqual(expected);
@@ -554,6 +558,7 @@ describe('resolveDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, doc);
+        const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         const expected = {
@@ -582,7 +587,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opid,
+            }
         };
 
         expect(ok).toBe(true);
@@ -664,6 +672,7 @@ describe('resolveDID', () => {
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, update);
+        const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
@@ -693,7 +702,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opid,
+            }
         };
 
         expect(ok).toBe(true);
@@ -711,6 +723,7 @@ describe('resolveDID', () => {
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, update);
+        const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
 
@@ -740,7 +753,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: true,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opid,
+            }
         };
 
         expect(ok).toBe(true);
@@ -757,6 +773,7 @@ describe('resolveDID', () => {
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, update);
+        const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did, { confirm: false });
         const expected = {
@@ -785,7 +802,10 @@ describe('resolveDID', () => {
                 version: 2,
                 confirmed: false,
             },
-            mdip: agentOp.mdip,
+            mdip: {
+                ...agentOp.mdip,
+                opid,
+            }
         };
 
         expect(ok).toBe(true);
@@ -875,6 +895,7 @@ describe('resolveDID', () => {
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
         const assetOp = await createAssetOp(agent, keypair);
+        const opid = await gatekeeper.generateCID(assetOp);
         const did = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
@@ -892,7 +913,10 @@ describe('resolveDID', () => {
                 version: 1,
                 confirmed: true,
             },
-            mdip: assetOp.mdip,
+            mdip: {
+                ...assetOp.mdip,
+                opid,
+            }
         };
 
         expect(doc).toStrictEqual(expected);
@@ -973,6 +997,78 @@ describe('resolveDID', () => {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
+
+    it('should throw an exception on invalid signature in create op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+
+        const events = await db_json.getEvents(did);
+        // changing anything in the op will invalidate the signature
+        events[0].operation.did = 'mock';
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+
+    it('should throw an exception on invalid signature in update op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const events = await db_json.getEvents(did);
+        // changing anything in the op will invalidate the signature
+        events[1].operation.did = 'mock';
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+
+    it('should throw an exception on invalid operation previd in update op', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc1 = await gatekeeper.resolveDID(did);
+        doc1.didDocumentData = { mock: 1 };
+        const updateOp1 = await createUpdateOp(keypair, did, doc1);
+        await gatekeeper.updateDID(updateOp1);
+        const doc2 = await gatekeeper.resolveDID(did);
+        doc2.didDocumentData = { mock: 2 };
+        const updateOp2 = await createUpdateOp(keypair, did, doc2);
+        await gatekeeper.updateDID(updateOp2);
+
+        const events = await db_json.getEvents(did);
+        // if we swap update events the sigs will be valid but the previd will be invalid
+        [events[1], events[2]] = [events[2], events[1]];
+        await db_json.setEvents(did, events);
+
+        try {
+            await gatekeeper.resolveDID(did, { verify: true });
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: previd');
+        }
+    });
 });
 
 describe('updateDID', () => {
@@ -990,10 +1086,12 @@ describe('updateDID', () => {
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
         const updateOp = await createUpdateOp(keypair, did, doc);
+        const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         doc.didDocumentMetadata.updated = expect.any(String);
         doc.didDocumentMetadata.version = 2;
+        doc.mdip.opid = opid;
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
@@ -1047,6 +1145,24 @@ describe('updateDID', () => {
         } catch (error) {
             expect(error.message).toBe('Invalid operation: signature');
         }
+    });
+
+    it('should verify DID that has been updated multiple times', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        for (let i = 0; i < 10; i++) {
+            doc.didDocumentData = { mock: i };
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gatekeeper.updateDID(updateOp);
+        }
+
+        const doc2 = await gatekeeper.resolveDID(did, { verify: true });
+        expect(doc2.didDocumentMetadata.version).toBe(11);
     });
 });
 
@@ -1860,11 +1976,10 @@ describe('processEvents', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const ops = await gatekeeper.exportDID(did);
-
+        const events = await gatekeeper.exportDID(did);
         await gatekeeper.resetDb();
+        const { queued, rejected } = await gatekeeper.importBatch(events);
 
-        const { queued, rejected } = await gatekeeper.importBatch(ops);
         expect(queued).toBe(N + 1);
         expect(rejected).toBe(0);
 

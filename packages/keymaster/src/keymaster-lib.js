@@ -317,13 +317,13 @@ async function updateSeedBank(doc) {
     const keypair = await hdKeyPair();
     const did = doc.didDocument.id;
     const current = await gatekeeper.resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "update",
-        did: did,
-        doc: doc,
-        prev: prev,
+        did,
+        previd,
+        doc,
     };
 
     const msgHash = cipher.hashJSON(operation);
@@ -655,13 +655,13 @@ export async function verifySignature(obj) {
 export async function updateDID(doc) {
     const did = doc.didDocument.id;
     const current = await resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "update",
-        did: did,
-        doc: doc,
-        prev: prev,
+        did,
+        previd,
+        doc,
     };
 
     const controller = current.didDocument.controller || current.didDocument.id;
@@ -671,12 +671,12 @@ export async function updateDID(doc) {
 
 export async function revokeDID(did) {
     const current = await resolveDID(did);
-    const prev = cipher.hashJSON(current);
+    const previd = current.mdip.opid;
 
     const operation = {
         type: "delete",
-        did: did,
-        prev: prev,
+        did,
+        previd,
     };
 
     const controller = current.didDocument.controller || current.didDocument.id;
@@ -1237,7 +1237,7 @@ async function findMatchingCredential(credential) {
 }
 
 export async function createResponse(challengeDID, options = {}) {
-    let { retries = 0, delay = 1000} = options;
+    let { retries = 0, delay = 1000 } = options;
 
     if (!options.registry) {
         options.registry = ephemeralRegistry;
