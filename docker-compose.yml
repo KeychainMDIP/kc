@@ -44,6 +44,7 @@ services:
     environment:
       - KC_KEYMASTER_PORT=4226
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
@@ -82,6 +83,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_ID=${KC_NODE_ID}
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_START_BLOCK=0
@@ -116,6 +118,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_ID=${KC_NODE_ID}
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=tbtc-node
