@@ -138,7 +138,7 @@ describe('loadWallet', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(ok).toBe(true);
-            expect(error.message).toBe('Wallet encrypted but KC_ENCRYPTED_PASSPHRASE not set');
+            expect(error.message).toBe('Wallet is encrypted');
         }
     });
 
@@ -301,7 +301,7 @@ describe('saveWallet', () => {
             'data': {}
         });
 
-        const walletFile = 'data/wallet-enc.json';
+        const walletFile = 'data/wallet.json';
         const mockWallet = { mock: 1 };
         fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
 

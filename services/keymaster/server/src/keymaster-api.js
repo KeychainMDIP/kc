@@ -8,7 +8,6 @@ import * as wallet_json from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
-import { exit } from 'process';
 const app = express();
 const v1router = express.Router();
 

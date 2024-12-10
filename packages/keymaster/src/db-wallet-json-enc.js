@@ -2,7 +2,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 
 const dataFolder = 'data';
-const walletName = `${dataFolder}/wallet-enc.json`;
+const walletName = `${dataFolder}/wallet.json`;
 
 const algorithm = 'aes-256-cbc';       // Algorithm
 const keyLength = 32;                 // 256 bit AES-256
