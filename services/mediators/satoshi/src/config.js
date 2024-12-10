@@ -5,6 +5,7 @@ dotenv.config();
 const config = {
     nodeID: process.env.KC_NODE_ID,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
+    keymasterPassphrase: process.env.KC_ENCRYPTED_PASSPHRASE,
     chain: process.env.KC_SAT_CHAIN || 'BTC',
     network: process.env.KC_SAT_NETWORK || 'mainnet',
     host: process.env.KC_SAT_HOST || 'localhost',

@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
+import * as wallet_json from '@mdip/keymaster/db/json';
+import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
@@ -688,15 +689,25 @@ app.listen(port, async () => {
         intervalSeconds: 5,
         chatty: true,
     });
+
+    let wallet = wallet_json;
+
+    if (config.keymasterPassphrase) {
+        wallet_enc.setPassphrase(config.keymasterPassphrase);
+        wallet = wallet_enc;
+    }
+
     await keymaster.start({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     try {
         const currentId = await keymaster.getCurrentId();
-        const doc = await keymaster.resolveId();
 
-        console.log(`current ID: ${currentId}`);
-        console.log(JSON.stringify(doc, null, 4));
+        if (currentId) {
+            console.log(`current ID: ${currentId}`);
+            const doc = await keymaster.resolveId();
+            console.log(JSON.stringify(doc, null, 4));
+        }
         serverReady = true;
     }
     catch (error) {

@@ -25,7 +25,7 @@ export function loadWallet() {
     const walletData = JSON.parse(walletJson);
 
     if (walletData && walletData.salt && walletData.iv && walletData.data) {
-        throw new Error('Wallet encrypted but KC_ENCRYPTED_PASSPHRASE not set');
+        throw new Error('Wallet is encrypted');
     }
 
     return walletData;

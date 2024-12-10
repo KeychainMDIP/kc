@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
-import * as db_wallet from '@mdip/keymaster/db/json';
+import * as db_wallet_json from '@mdip/keymaster/db/json';
 import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
 
@@ -949,14 +949,17 @@ program
             }
 
             db_wallet_enc.setPassphrase(keymasterPassphrase);
-            const wallet = db_wallet.loadWallet();
+            const wallet = db_wallet_json.loadWallet();
 
             if (wallet === null) {
                 await keymaster.newWallet();
             } else {
-                const result = db_wallet_enc.saveWallet(wallet);
-                if (!result) {
-                    console.error('Encrypted wallet file already exists');
+                const ok = db_wallet_enc.saveWallet(wallet, true);
+                if (ok) {
+                    console.log(UPDATE_OK);
+                }
+                else {
+                    console.log(UPDATE_FAILED);
                 }
             }
         } catch (error) {
@@ -1007,7 +1010,7 @@ function getDBWallet() {
         db_wallet_enc.setPassphrase(keymasterPassphrase);
         return db_wallet_enc;
     }
-    return db_wallet;
+    return db_wallet_json;
 }
 
 async function run() {
