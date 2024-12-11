@@ -2,7 +2,8 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
+import * as wallet_json from '@mdip/keymaster/db/json';
+import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
@@ -500,6 +501,13 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
+
+    let wallet = wallet_json;
+
+    if (config.keymasterPassphrase) {
+        wallet_enc.setPassphrase(config.keymasterPassphrase);
+        wallet = wallet_enc;
+    }
 
     await keymaster.start({ gatekeeper, wallet, cipher });
     await waitForNodeID();
