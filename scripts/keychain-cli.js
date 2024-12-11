@@ -7,6 +7,7 @@ import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet_json from '@mdip/keymaster/db/json';
 import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
+import * as db_wallet_cache from '@mdip/keymaster/db/cache';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -1008,7 +1009,8 @@ program
 function getDBWallet() {
     if (keymasterPassphrase) {
         db_wallet_enc.setPassphrase(keymasterPassphrase);
-        return db_wallet_enc;
+        db_wallet_cache.setWallet(db_wallet_enc);
+        return db_wallet_cache;
     }
     return db_wallet_json;
 }
