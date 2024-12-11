@@ -17,6 +17,7 @@ const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 
 const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
+const walletCache = process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -1007,12 +1008,19 @@ program
     });
 
 function getDBWallet() {
+    let wallet = db_wallet_json;
+
     if (keymasterPassphrase) {
         db_wallet_enc.setPassphrase(keymasterPassphrase);
-        db_wallet_cache.setWallet(db_wallet_enc);
-        return db_wallet_cache;
+        wallet = db_wallet_enc;
     }
-    return db_wallet_json;
+
+    if (walletCache) {
+        db_wallet_cache.setWallet(wallet);
+        wallet = db_wallet_cache;
+    }
+
+    return wallet;
 }
 
 async function run() {

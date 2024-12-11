@@ -6,6 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet_json from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
+import * as wallet_cache from '@mdip/keymaster/db/cache';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
@@ -695,6 +696,11 @@ app.listen(port, async () => {
     if (config.keymasterPassphrase) {
         wallet_enc.setPassphrase(config.keymasterPassphrase);
         wallet = wallet_enc;
+    }
+
+    if (config.walletCache) {
+        wallet_cache.setWallet(wallet);
+        wallet = wallet_cache;
     }
 
     await keymaster.start({ gatekeeper, wallet, cipher });
