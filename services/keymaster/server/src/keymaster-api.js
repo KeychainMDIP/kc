@@ -695,6 +695,7 @@ app.listen(port, async () => {
 
     if (config.keymasterPassphrase) {
         wallet_enc.setPassphrase(config.keymasterPassphrase);
+        wallet_enc.setWallet(wallet);
         wallet = wallet_enc;
     }
 

@@ -1,7 +1,8 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
-import * as keymaster from '@mdip/keymaster/lib';
+import * as keymaster_lib from '@mdip/keymaster/lib';
+import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as wallet_json from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
@@ -9,6 +10,7 @@ import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
+let keymaster;
 
 const client = new BtcClient({
     network: config.network,
@@ -495,21 +497,35 @@ async function main() {
         return;
     }
 
-    await gatekeeper.start({
-        url: config.gatekeeperURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
+    if (config.keymasterURL) {
+        keymaster = keymaster_sdk;
+        await keymaster.start({
+            url: config.keymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+    }
+    else {
+        keymaster = keymaster_lib;
+        await gatekeeper.start({
+            url: config.gatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
 
-    let wallet = wallet_json;
+        let wallet = wallet_json;
 
-    if (config.keymasterPassphrase) {
-        wallet_enc.setPassphrase(config.keymasterPassphrase);
-        wallet = wallet_enc;
+        if (config.keymasterPassphrase) {
+            wallet_enc.setPassphrase(config.keymasterPassphrase);
+            wallet_enc.setWallet(wallet);
+            wallet = wallet_enc;
+        }
+
+        await keymaster.start({ gatekeeper, wallet, cipher });
     }
 
-    await keymaster.start({ gatekeeper, wallet, cipher });
     await waitForNodeID();
 
     if (config.importInterval > 0) {

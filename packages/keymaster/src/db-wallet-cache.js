@@ -1,18 +1,18 @@
-let actualWallet;
+let baseWallet;
 let cachedWallet;
 
 export function setWallet(wallet) {
-    actualWallet = wallet;
+    baseWallet = wallet;
 }
 
 export function saveWallet(wallet, overwrite = false) {
     cachedWallet = wallet;
-    return actualWallet.saveWallet(wallet, overwrite);
+    return baseWallet.saveWallet(wallet, overwrite);
 }
 
 export function loadWallet() {
     if (!cachedWallet) {
-        cachedWallet = actualWallet.loadWallet();
+        cachedWallet = baseWallet.loadWallet();
     }
 
     return cachedWallet;

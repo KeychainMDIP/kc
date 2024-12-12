@@ -83,6 +83,7 @@ services:
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TFTC
@@ -105,12 +106,12 @@ services:
     depends_on:
       - tftc-node
       - gatekeeper
+      - keymaster
 
   tbtc-node:
     image: keychainmdip/bitcoin-core:v28.0
     volumes:
       - ./data/tbtc:/root/.bitcoin
-
   tbtc-mediator:
     build:
       context: .
@@ -118,6 +119,7 @@ services:
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TBTC
@@ -140,6 +142,7 @@ services:
     depends_on:
       - tbtc-node
       - gatekeeper
+      - keymaster
 
   ipfs-mediator:
     build:
