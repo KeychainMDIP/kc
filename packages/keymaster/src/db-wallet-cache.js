@@ -6,7 +6,7 @@ export function setWallet(wallet) {
 }
 
 export function saveWallet(wallet, overwrite = false) {
-    cachedWallet = null;
+    cachedWallet = wallet;
     return actualWallet.saveWallet(wallet, overwrite);
 }
 
