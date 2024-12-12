@@ -948,19 +948,36 @@ program
                 return;
             }
 
-            db_wallet_enc.setPassphrase(keymasterPassphrase);
-            const wallet = db_wallet_json.loadWallet();
+            let wallet = db_wallet_json.loadWallet();
+            if (wallet && (wallet.salt && wallet.iv && wallet.data)) {
+                console.error('Wallet already encrypted');
+                return;
+            }
 
             if (wallet === null) {
+                await keymaster.start({
+                    gatekeeper: gatekeeper_sdk,
+                    wallet: db_wallet_json,
+                    cipher,
+                });
                 await keymaster.newWallet();
-            } else {
-                const ok = db_wallet_enc.saveWallet(wallet, true);
-                if (ok) {
-                    console.log(UPDATE_OK);
+                wallet = db_wallet_json.loadWallet();
+
+                if (wallet === null) {
+                    console.error('Failed to create new wallet');
+                    return;
                 }
-                else {
-                    console.log(UPDATE_FAILED);
-                }
+            }
+
+            db_wallet_enc.setPassphrase(keymasterPassphrase);
+            db_wallet_enc.setWallet(db_wallet_json);
+
+            const ok = db_wallet_enc.saveWallet(wallet, true);
+            if (ok) {
+                console.log(UPDATE_OK);
+            }
+            else {
+                console.log(UPDATE_FAILED);
             }
         } catch (error) {
             console.error(error.message);
@@ -1006,11 +1023,15 @@ program
     });
 
 function getDBWallet() {
+    let wallet = db_wallet_json;
+
     if (keymasterPassphrase) {
         db_wallet_enc.setPassphrase(keymasterPassphrase);
-        return db_wallet_enc;
+        db_wallet_enc.setWallet(wallet);
+        wallet = db_wallet_enc;
     }
-    return db_wallet_json;
+
+    return wallet;
 }
 
 async function run() {
