@@ -2,7 +2,7 @@
 exclude = 
     __init__.py,
     .git,
-    .venv/,
-    build/,
-    dist/
+    */.venv/,
+    */build/,
+    */dist/
 max-line-length = 88
