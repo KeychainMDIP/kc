@@ -1,4 +1,5 @@
 import mockFs from 'mock-fs';
+import fs from 'fs';
 import canonicalize from 'canonicalize';
 
 import * as keymaster from '@mdip/keymaster/lib';
@@ -6,6 +7,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
 import * as db_json from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
+import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
@@ -91,8 +93,10 @@ describe('start', () => {
 
 describe('loadWallet', () => {
 
-    afterEach(() => {
+    afterEach(async () => {
         mockFs.restore();
+        wallet_enc.setPassphrase(undefined);
+        await keymaster.start({ gatekeeper, wallet, cipher });
     });
 
     it('should create a wallet on first load', async () => {
@@ -115,12 +119,76 @@ describe('loadWallet', () => {
 
         expect(wallet2).toStrictEqual(wallet1);
     });
+
+    it('loading non-existing encrypted wallet returns null', async () => {
+        mockFs({});
+
+        const wallet = wallet_enc.loadWallet();
+        expect(wallet).toBe(null);
+    });
+
+    it('regular wallet should throw when loading encrypted wallet', async () => {
+        mockFs({});
+        const mockWallet = { salt: 1, iv: 1, data: 1 };
+
+        const ok = await keymaster.saveWallet(mockWallet);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(ok).toBe(true);
+            expect(error.message).toBe('Wallet is encrypted');
+        }
+    });
+
+    it('wallet should throw when passphrase not set', async () => {
+        mockFs({});
+        const mockWallet = { mock: 1 };
+
+        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+
+        wallet_enc.setPassphrase('passphrase');
+        const ok = await keymaster.saveWallet(mockWallet);
+        wallet_enc.setPassphrase(undefined);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(ok).toBe(true);
+            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
+        }
+    });
+
+    it('load with incorrect passphrase throws', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+
+        wallet_enc.setPassphrase('passphrase');
+
+        const ok = await keymaster.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+
+        wallet_enc.setPassphrase('incorrect');
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (e) {
+            expect(e.message).toBe('Incorrect passphrase.');
+        }
+    });
 });
 
 describe('saveWallet', () => {
 
-    afterEach(() => {
+    afterEach(async () => {
         mockFs.restore();
+        wallet_enc.setPassphrase(undefined);
+        await keymaster.start({ gatekeeper, wallet, cipher });
     });
 
     it('should save a wallet', async () => {
@@ -195,6 +263,56 @@ describe('saveWallet', () => {
 
             expect(ok).toBe(true);
             expect(wallet).toStrictEqual(mockWallet);
+        }
+    });
+
+    it('should not overwrite an existing wallet if specified', async () => {
+        mockFs({});
+
+        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        wallet_enc.setPassphrase('passphrase');
+
+        const mockWallet1 = { mock: 1 };
+        const mockWallet2 = { mock: 2 };
+
+        await keymaster.saveWallet(mockWallet1);
+        const ok = await keymaster.saveWallet(mockWallet2, false);
+        const walletData = await keymaster.loadWallet();
+
+        expect(ok).toBe(false);
+        expect(walletData).toStrictEqual(mockWallet1);
+    });
+
+    it('wallet should throw when passphrase not set', async () => {
+        mockFs({});
+        const mockWallet = { mock: 1 };
+        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+
+        try {
+            await keymaster.saveWallet(mockWallet);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
+        }
+    });
+
+    it('encrypted wallet should throw when loading unencrypted wallet', async () => {
+        mockFs({
+            'data': {}
+        });
+
+        const walletFile = 'data/wallet.json';
+        const mockWallet = { mock: 1 };
+        fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
+
+        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        wallet_enc.setPassphrase('passphrase');
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Wallet not encrypted');
         }
     });
 });

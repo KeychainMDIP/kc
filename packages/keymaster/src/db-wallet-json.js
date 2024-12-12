@@ -17,10 +17,16 @@ export function saveWallet(wallet, overwrite = false) {
 }
 
 export function loadWallet() {
-    if (fs.existsSync(walletName)) {
-        const walletJson = fs.readFileSync(walletName);
-        return JSON.parse(walletJson);
+    if (!fs.existsSync(walletName)) {
+        return null;
     }
 
-    return null;
+    const walletJson = fs.readFileSync(walletName);
+    const walletData = JSON.parse(walletJson);
+
+    if (walletData && walletData.salt && walletData.iv && walletData.data) {
+        throw new Error('Wallet is encrypted');
+    }
+
+    return walletData;
 }

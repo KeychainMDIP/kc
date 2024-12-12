@@ -146,7 +146,7 @@ A DID Update is a change to any of the documents associated with the DID. To ini
         1. `didDocumentMetadata` the document's metadata
         1. `didDocumentData` the document's data
         1. `mdip` the MDIP protocol spec
-    1. `prev` the sha256 hash of the canonicalized JSON of the previous version's doc
+    1. `previd` the CID of the previous operation
 1. Sign the JSON with the private key of the controller of the DID
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
 
@@ -191,7 +191,7 @@ Example update to rotate keys for an agent DID:
             "version": 1
         }
     },
-    "prev": "fb794984f44fe869a75fade8a7bf31ce0f3f46a3eaded4e286769c62f5d9a9ff",
+    "previd": "z3v8Auaa5U9xP6TRzobvzZE7j6N8nkatxW1UuWiay5xrbAR5D9e",
     "signature": {
         "signer": "did:mdip:test:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
         "signed": "2024-03-25T14:57:26.343Z",
@@ -203,7 +203,7 @@ Example update to rotate keys for an agent DID:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
-1. Verify the previous hash.
+1. Verify the previd is identical to the latest version's operation CID.
 1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
 
 For registries such as BTC with non-trivial transaction costs, it is expected that update operations will be placed in a queue, then registered periodically in a batch in order to balance costs and latency of updates. If the registry has trivial transaction costs, the update operation may be distributed individually and immediately. MDIP defers this tradeoff between cost, speed, and security to the node operators.
@@ -217,7 +217,7 @@ To revoke a DID, the MDIP client must sign and submit a `delete` operation to th
 1. Create a operation object with these fields in any order:
     1. `type`  must be "delete"
     1. `did` specifies the DID to be deleted
-    1. `prev` the sha256 hash of the canonicalized JSON of the previous version's doc
+    1. `previd` the CID of the previous operation
 1. Sign the JSON with the private key of the controller of the DID
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation using the `DELETE` method to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
 
@@ -227,7 +227,7 @@ Example deletion operation:
 {
     "type": "delete",
     "did": "did:mdip:z3v8AuagQPwk6WhAjauVgkFCBJfHJBVBmNAYEhDNMBEXEmWQrHr",
-    "prev": "9f7f0a67b729248c966bb8945cb80320713aa1de42021c88ca849a4ca029f8d7",
+    "previd": "z3v8AuaWLbUPpU31mCazznLYy6JtTWmgx9QFsDVveDPDU8Na1sJ",
     "signature": {
         "signer": "did:mdip:z3v8Auad6fdVkSZE4khWmMwgTjpoMtv82fiT7c56ivNBdjzeMS2",
         "created": "2024-02-05T20:00:54.171Z",
@@ -239,7 +239,7 @@ Example deletion operation:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
-1. Verify the previous hash.
+1. Verify the previd is identical to the latest version's operation CID.
 1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
 
 After revocation is confirmed on the DID's registry, resolving the DID will result in response like this:

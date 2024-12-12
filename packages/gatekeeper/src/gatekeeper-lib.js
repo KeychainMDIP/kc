@@ -166,10 +166,12 @@ export async function resetDb() {
     verifiedDIDs = {};
 }
 
-export async function anchorSeed(seed) {
-    //console.time('>>ipfs.add');
-    const cid = await ipfs.add(JSON.parse(canonicalize(seed)));
-    //console.timeEnd('>>ipfs.add');
+export async function generateCID(operation) {
+    return ipfs.add(JSON.parse(canonicalize(operation)));
+}
+
+export async function generateDID(operation) {
+    const cid = await generateCID(operation);
     return `${config.didPrefix}:${cid}`;
 }
 
@@ -338,7 +340,7 @@ export async function createDID(operation) {
     const valid = await verifyCreateOperation(operation);
 
     if (valid) {
-        const did = await anchorSeed(operation);
+        const did = await generateDID(operation);
         const ops = await exportDID(did);
 
         // Check to see if we already have this DID in the db
@@ -385,7 +387,7 @@ export async function generateDoc(anchor) {
             return {};
         }
 
-        const did = await anchorSeed(anchor);
+        const did = await generateDID(anchor);
 
         if (anchor.mdip.type === 'agent') {
             // TBD support different key types?
@@ -448,9 +450,8 @@ export async function resolveDID(did, options = {}) {
 
     const anchor = events[0];
     let doc = await generateDoc(anchor.operation);
-    let mdip = doc?.mdip;
 
-    if (atTime && new Date(mdip.created) > new Date(atTime)) {
+    if (atTime && new Date(doc.mdip.created) > new Date(atTime)) {
         // TBD What to return if DID was created after specified time?
     }
 
@@ -461,6 +462,8 @@ export async function resolveDID(did, options = {}) {
     doc.didDocumentMetadata.confirmed = confirmed;
 
     for (const { time, operation, registry, blockchain } of events) {
+        const opid = await generateCID(operation);
+
         if (operation.type === 'create') {
             if (verify) {
                 const valid = await verifyCreateOperation(operation);
@@ -469,6 +472,7 @@ export async function resolveDID(did, options = {}) {
                     throw new InvalidOperationError('signature');
                 }
             }
+            doc.mdip.opid = opid;
             continue;
         }
 
@@ -480,7 +484,7 @@ export async function resolveDID(did, options = {}) {
             break;
         }
 
-        confirmed = confirmed && mdip.registry === registry;
+        confirmed = confirmed && doc.mdip.registry === registry;
 
         if (confirm && !confirmed) {
             break;
@@ -492,14 +496,16 @@ export async function resolveDID(did, options = {}) {
             if (!valid) {
                 throw new InvalidOperationError('signature');
             }
+
+            // TEMP during did:test, operation.previd is optional
+            if (operation.previd && operation.previd !== doc.mdip.opid) {
+                throw new InvalidOperationError('previd');
+            }
         }
 
         if (operation.type === 'update') {
             // Increment version
             version += 1;
-
-            // Maintain mdip metadata across versions
-            mdip = doc.mdip;
 
             // TBD if registry change in operation.doc.didDocumentMetadata.mdip,
             // fetch updates from new registry and search for same operation
@@ -507,7 +513,7 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.updated = time;
             doc.didDocumentMetadata.version = version;
             doc.didDocumentMetadata.confirmed = confirmed;
-            doc.mdip = mdip;
+            doc.mdip.opid = opid;
 
             if (blockchain) {
                 doc.mdip.registration = blockchain;
@@ -522,6 +528,14 @@ export async function resolveDID(did, options = {}) {
             doc.didDocumentMetadata.deactivated = true;
             doc.didDocumentMetadata.deleted = time;
             doc.didDocumentMetadata.confirmed = confirmed;
+            doc.mdip.opid = opid;
+
+            if (blockchain) {
+                doc.mdip.registration = blockchain;
+            }
+            else {
+                delete doc.mdip.registration;
+            }
         }
         else {
             if (verify) {
@@ -643,7 +657,7 @@ async function importEvent(event) {
             event.did = event.operation.did;
         }
         else {
-            event.did = await anchorSeed(event.operation);
+            event.did = await generateDID(event.operation);
         }
     }
 
@@ -675,6 +689,16 @@ async function importEvent(event) {
         const ok = await verifyOperation(event.operation);
 
         if (ok) {
+            // TEMP during did:test, operation.previd is optional
+            if (currentEvents.length > 0 && event.operation.previd) {
+                const lastEvent = currentEvents[currentEvents.length - 1];
+                const opid = await generateCID(lastEvent.operation);
+
+                if (opid !== event.operation.previd) {
+                    throw new InvalidOperationError('previd');
+                }
+            }
+
             await db.addEvent(did, event);
             return true;
         }
