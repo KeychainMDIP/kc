@@ -182,6 +182,25 @@ describe('saveWallet', () => {
         await keymaster.start({ gatekeeper, wallet, cipher });
     });
 
+    it('test saving directly on the unencrypted wallet', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        const ok = wallet.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+    });
+
+    it('test saving directly on the encrypted wallet', async () => {
+        mockFs({});
+        const mockWallet = { mock: 0 };
+
+        wallet_enc.setWallet(wallet);
+        wallet_enc.setPassphrase('passphrase');
+
+        const ok = wallet_enc.saveWallet(mockWallet);
+        expect(ok).toBe(true);
+    });
+
     it('should save a wallet', async () => {
         mockFs({});
         const mockWallet = { mock: 0 };
