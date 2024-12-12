@@ -134,8 +134,6 @@ async function importBatch(item) {
         return;
     }
 
-    console.log(JSON.stringify(item, null, 4));
-
     const batch = [];
 
     for (let i = 0; i < queue.length; i++) {
@@ -152,8 +150,6 @@ async function importBatch(item) {
             }
         });
     }
-
-    // console.log(JSON.stringify(batch, null, 4));
 
     try {
         item.imported = await gatekeeper.importBatch(batch);
@@ -340,9 +336,10 @@ async function anchorBatch() {
     }
 
     const batch = await gatekeeper.getQueue(REGISTRY);
-    console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
+        console.log(JSON.stringify(batch, null, 4));
+
         const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
 
@@ -369,7 +366,7 @@ async function anchorBatch() {
         }
     }
     else {
-        console.log('empty batch');
+        console.log(`empty ${REGISTRY} queue`);
     }
 }
 
@@ -497,6 +494,13 @@ async function main() {
         return;
     }
 
+    await gatekeeper.start({
+        url: config.gatekeeperURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+
     if (config.keymasterURL) {
         keymaster = keymaster_sdk;
         await keymaster.start({
@@ -508,12 +512,6 @@ async function main() {
     }
     else {
         keymaster = keymaster_lib;
-        await gatekeeper.start({
-            url: config.gatekeeperURL,
-            waitUntilReady: true,
-            intervalSeconds: 5,
-            chatty: true,
-        });
 
         let wallet = wallet_json;
 

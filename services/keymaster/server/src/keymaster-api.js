@@ -575,8 +575,8 @@ v1router.post('/schemas/:id/template/', async (req, res) => {
 
 v1router.post('/assets/', async (req, res) => {
     try {
-        const { asset, options } = req.body;
-        const did = await keymaster.createAsset(asset, options);
+        const { data, options } = req.body;
+        const did = await keymaster.createAsset(data, options);
         res.json({ did });
     } catch (error) {
         res.status(500).send({ error: error.toString() });

@@ -112,6 +112,7 @@ services:
     image: keychainmdip/bitcoin-core:v28.0
     volumes:
       - ./data/tbtc:/root/.bitcoin
+
   tbtc-mediator:
     build:
       context: .
