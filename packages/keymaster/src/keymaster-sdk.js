@@ -316,6 +316,16 @@ export async function resolveDID(name) {
     }
 }
 
+export async function createAsset(data, options = {}) {
+    try {
+        const response = await axios.post(`${URL}/api/v1/assets`, { data, options });
+        return response.data.did;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function resolveAsset(name) {
     try {
         const response = await axios.get(`${URL}/api/v1/assets/${name}`);

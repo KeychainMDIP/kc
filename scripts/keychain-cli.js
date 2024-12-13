@@ -7,6 +7,7 @@ import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet_json from '@mdip/keymaster/db/json';
 import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
+import * as db_wallet_cache from '@mdip/keymaster/db/cache';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -16,6 +17,7 @@ const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 
 const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
+const walletCache = process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -1029,6 +1031,11 @@ function getDBWallet() {
         db_wallet_enc.setPassphrase(keymasterPassphrase);
         db_wallet_enc.setWallet(wallet);
         wallet = db_wallet_enc;
+    }
+
+    if (walletCache) {
+        db_wallet_cache.setWallet(wallet);
+        wallet = db_wallet_cache;
     }
 
     return wallet;
