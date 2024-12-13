@@ -8,7 +8,7 @@ import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
-const gatekeeperURL = process.env.KC_CLI_GATEKEEPER_URL || 'http://localhost:4224';
+const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 
 program
     .version('1.0.0')

@@ -1,7 +1,8 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
-import * as keymaster from '@mdip/keymaster/lib';
+import * as keymaster_lib from '@mdip/keymaster/lib';
+import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as wallet_json from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import * as cipher from '@mdip/cipher/node';
@@ -9,6 +10,7 @@ import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
+let keymaster;
 
 const client = new BtcClient({
     network: config.network,
@@ -132,8 +134,6 @@ async function importBatch(item) {
         return;
     }
 
-    console.log(JSON.stringify(item, null, 4));
-
     const batch = [];
 
     for (let i = 0; i < queue.length; i++) {
@@ -150,8 +150,6 @@ async function importBatch(item) {
             }
         });
     }
-
-    // console.log(JSON.stringify(batch, null, 4));
 
     try {
         item.imported = await gatekeeper.importBatch(batch);
@@ -338,9 +336,10 @@ async function anchorBatch() {
     }
 
     const batch = await gatekeeper.getQueue(REGISTRY);
-    console.log(JSON.stringify(batch, null, 4));
 
     if (batch.length > 0) {
+        console.log(JSON.stringify(batch, null, 4));
+
         const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
 
@@ -367,7 +366,7 @@ async function anchorBatch() {
         }
     }
     else {
-        console.log('empty batch');
+        console.log(`empty ${REGISTRY} queue`);
     }
 }
 
@@ -502,15 +501,29 @@ async function main() {
         chatty: true,
     });
 
-    let wallet = wallet_json;
+    if (config.keymasterURL) {
+        keymaster = keymaster_sdk;
+        await keymaster.start({
+            url: config.keymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+    }
+    else {
+        keymaster = keymaster_lib;
 
-    if (config.keymasterPassphrase) {
-        wallet_enc.setPassphrase(config.keymasterPassphrase);
-        wallet_enc.setWallet(wallet);
-        wallet = wallet_enc;
+        let wallet = wallet_json;
+
+        if (config.keymasterPassphrase) {
+            wallet_enc.setPassphrase(config.keymasterPassphrase);
+            wallet_enc.setWallet(wallet);
+            wallet = wallet_enc;
+        }
+
+        await keymaster.start({ gatekeeper, wallet, cipher });
     }
 
-    await keymaster.start({ gatekeeper, wallet, cipher });
     await waitForNodeID();
 
     if (config.importInterval > 0) {
