@@ -147,7 +147,7 @@ describe('loadWallet', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(ok).toBe(true);
-            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
+            expect(error.message).toBe('Passphrase not set');
         }
     });
 
@@ -303,7 +303,7 @@ describe('saveWallet', () => {
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
+            expect(error.message).toBe('Passphrase not set');
         }
     });
 
