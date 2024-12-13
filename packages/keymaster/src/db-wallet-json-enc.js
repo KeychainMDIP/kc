@@ -20,7 +20,7 @@ export function setWallet(wallet) {
 
 export function saveWallet(wallet, overwrite = false) {
     if (!passphrase) {
-        throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
+        throw new Error('Passphrase not set');
     }
 
     const walletJson = JSON.stringify(wallet, null, 4);
@@ -43,7 +43,7 @@ export function saveWallet(wallet, overwrite = false) {
 
 export function loadWallet() {
     if (!passphrase) {
-        throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
+        throw new Error('Passphrase not set');
     }
 
     const encryptedData = baseWallet.loadWallet();
