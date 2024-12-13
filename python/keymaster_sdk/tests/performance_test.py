@@ -10,10 +10,10 @@ def main():
     args = parser.parse_args()
 
     try:
-        ready = keymaster.isReady()
+        ready = keymaster.is_ready()
         print(f"Keymaster is ready: {ready}")
 
-        currentId = keymaster.getCurrendId()
+        currentId = keymaster.get_current_id()
         print(f"Current ID: {currentId}")
 
         expires = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -23,19 +23,19 @@ def main():
             'validUntil': expires.isoformat()
         }
 
-        schema = keymaster.createSchema(None, test_options)
+        schema = keymaster.create_schema(None, test_options)
 
-        credential = keymaster.createTemplate(schema)
+        credential = keymaster.create_template(schema)
         print(json.dumps(credential, indent=4))
 
         test_options['subject'] = currentId
         test_options['schema'] = schema
 
         for i in range(args.credentials):
-            vcDID = keymaster.issueCredential(credential, test_options)
+            vcDID = keymaster.issue_credential(credential, test_options)
             print(f"VC {i}: {vcDID}")
 
-            vc = keymaster.decryptJSON(vcDID)
+            vc = keymaster.decrypt_json(vcDID)
             print(json.dumps(vc, indent=4))
 
     except Exception as e:
@@ -43,3 +43,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
