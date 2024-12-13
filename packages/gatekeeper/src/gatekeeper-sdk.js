@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-let URL = '';
-let API = '/api/v1';
+const VERSION = '/api/v1';
+let API = VERSION;
 
 function throwError(error) {
     if (error.response) {
@@ -13,8 +13,7 @@ function throwError(error) {
 
 export async function start(options = {}) {
     if (options.url) {
-        URL = options.url;
-        API = `${URL}${API}`;
+        API = `${options.url}${VERSION}`;
     }
 
     if (options.waitUntilReady) {
