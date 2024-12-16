@@ -14,7 +14,6 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const PROTOCOL = '/MDIP/v24.11.19';
 
 const nodes = {};
 
@@ -46,7 +45,7 @@ async function createSwarm() {
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
-    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${PROTOCOL}`);
+    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
 async function addConnection(conn) {
@@ -442,7 +441,7 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(PROTOCOL);
+const hash = sha256(config.protocol);
 const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
