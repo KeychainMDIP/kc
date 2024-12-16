@@ -9,7 +9,9 @@
     "./db/json": "./src/db-wallet-json.js",
     "./db/json/enc": "./src/db-wallet-json-enc.js",
     "./db/cache": "./src/db-wallet-cache.js",
-    "./db/web": "./src/db-wallet-web.js"
+    "./db/cache/async": "./src/db-wallet-cache-async.js",
+    "./db/web": "./src/db-wallet-web.js",
+    "./db/web/enc": "./src/db-wallet-web-enc.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

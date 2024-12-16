@@ -909,7 +909,7 @@ function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, g
             await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
             await keymaster.newWallet()
         } else {
-            wallet_enc.saveWallet(wallet, true);
+            await wallet_enc.saveWallet(wallet, true);
             await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
         }
 
