@@ -1171,7 +1171,7 @@ export async function unpublishCredential(did) {
 
 export async function createChallenge(challenge = {}, options = {}) {
 
-    if (typeof challenge !== 'object' || Array.isArray(challenge)) {
+    if (!challenge || typeof challenge !== 'object' || Array.isArray(challenge)) {
         throw new InvalidParameterError('challenge');
     }
 
