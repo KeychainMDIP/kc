@@ -2619,12 +2619,13 @@ describe('checkDIDs', () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await createAssetOp(agentDID, keypair, 'local', new Date().toISOString());
         await gatekeeper.createDID(assetOp);
 
-        const { total } = await gatekeeper.checkDIDs();
+        const check = await gatekeeper.checkDIDs({ chatty: true });
 
-        expect(total).toBe(2);
+        expect(check.total).toBe(2);
+        expect(check.ephemeral).toBe(1);
     });
 
     it('should reset a corrupted db', async () => {
