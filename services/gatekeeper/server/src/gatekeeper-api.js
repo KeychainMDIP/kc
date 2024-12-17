@@ -268,11 +268,13 @@ async function gcLoop() {
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
 
+let didCheck;
+
 async function main() {
     console.time('checkDb');
-    const check = await gatekeeper.checkDb();
+    didCheck = await gatekeeper.checkDb({ chatty: true });
     console.timeEnd('checkDb');
-    console.log(`check: ${JSON.stringify(check)}`);
+    console.log(`check: ${JSON.stringify(didCheck)}`);
 
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
@@ -299,22 +301,33 @@ process.on('unhandledRejection', (reason, promise) => {
 function getStatus() {
     return {
         uptimeSeconds: Math.floor((new Date() - startTime) / 1000),
+        dids: didCheck,
         memoryUsage: process.memoryUsage()
     };
 }
 
 function reportStatus() {
     const status = getStatus();
-    const memoryUsage = status.memoryUsage;
 
+    console.log('Status -----------------------------');
     console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
+
+    const dids = status.dids;
+    console.log('DIDs:');
+    console.log(`  Total: ${dids.total}`);
+    console.log(`  Ephemeral: ${dids.ephemeral}`);
+    console.log(`  By registry:`);
+    for (let registry in dids.byRegistry) {
+        console.log(`    ${registry}: ${dids.byRegistry[registry]}`);
+    }
+
+    const memoryUsage = status.memoryUsage;
     console.log('Memory Usage Report:');
     console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
     console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
     console.log(`  Heap Used: ${formatBytes(memoryUsage.heapUsed)} (Heap actually used)`);
     console.log(`  External: ${formatBytes(memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
     console.log(`  Array Buffers: ${formatBytes(memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
-
     console.log('------------------------------------');
 }
 
@@ -358,7 +371,7 @@ function formatDuration(seconds) {
         }
     }
 
-    if (seconds == 1) {
+    if (seconds === 1) {
         duration += `1 second`;
     } else {
         duration += `${seconds} seconds`;

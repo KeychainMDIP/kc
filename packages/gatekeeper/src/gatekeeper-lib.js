@@ -116,23 +116,41 @@ export async function verifyDb(options = {}) {
     return { total, verified, expired, invalid };
 }
 
-export async function checkDb() {
+export async function checkDb(options = {}) {
+    const { chatty = false } = options;
     const dids = await getDIDs();
     const total = dids.length;
     let n = 0;
+    let ephemeral = 0;
+    const byRegistry = {};
 
     for (const did of dids) {
         n += 1;
         try {
-            await resolveDID(did);
-            console.log(`resolved ${n}/${total} ${did} OK`);
+            const doc = await resolveDID(did);
+            if (chatty) {
+                console.log(`resolved ${n}/${total} ${did} OK`);
+            }
+
+            if (doc.mdip.validUntil) {
+                ephemeral += 1;
+            }
+
+            if (byRegistry[doc.mdip.registry]) {
+                byRegistry[doc.mdip.registry] += 1;
+            }
+            else {
+                byRegistry[doc.mdip.registry] = 1;
+            }
         }
         catch (error) {
-            console.log(`can't resolve ${n}/${total} ${did} ${error}`);
+            if (chatty) {
+                console.log(`can't resolve ${n}/${total} ${did} ${error}`);
+            }
         }
     }
 
-    return { total };
+    return { total, ephemeral, byRegistry };
 }
 
 export async function initRegistries(csvRegistries) {
