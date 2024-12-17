@@ -1,8 +1,4 @@
-import fs from 'fs';
 import crypto from 'crypto';
-
-const dataFolder = 'data';
-const walletName = `${dataFolder}/wallet-enc.json`;
 
 const algorithm = 'aes-256-cbc';       // Algorithm
 const keyLength = 32;                 // 256 bit AES-256
@@ -11,21 +7,18 @@ const saltLength = 16;                // 128-bit salt
 const iterations = 200000;            // PBKDF2 iterations
 const digest = 'sha512';               // PBKDF2 hash function
 
+let baseWallet;
 let passphrase;
 
 export function setPassphrase(pp) {
     passphrase = pp;
 }
 
+export function setWallet(wallet) {
+    baseWallet = wallet;
+}
+
 export function saveWallet(wallet, overwrite = false) {
-    if (fs.existsSync(walletName) && !overwrite) {
-        return false;
-    }
-
-    if (!fs.existsSync(dataFolder)) {
-        fs.mkdirSync(dataFolder, { recursive: true });
-    }
-
     if (!passphrase) {
         throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
     }
@@ -45,24 +38,20 @@ export function saveWallet(wallet, overwrite = false) {
         data: encrypted
     };
 
-    fs.writeFileSync(walletName, JSON.stringify(encryptedData, null, 4));
-
-    return true;
+    return baseWallet.saveWallet(encryptedData, overwrite);
 }
 
 export function loadWallet() {
-    if (!fs.existsSync(walletName)) {
-        return null;
-    }
-
     if (!passphrase) {
         throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
     }
 
-    const encryptedJson = fs.readFileSync(walletName, 'utf8');
-    const encryptedData = JSON.parse(encryptedJson);
+    const encryptedData = baseWallet.loadWallet();
+    if (!encryptedData) {
+        return null;
+    }
 
-    if (!encryptedData || !encryptedData.salt || !encryptedData.iv || !encryptedData.data) {
+    if (!encryptedData.salt || !encryptedData.iv || !encryptedData.data) {
         throw new Error('Wallet not encrypted');
     }
 

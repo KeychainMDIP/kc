@@ -44,6 +44,8 @@ services:
     environment:
       - KC_KEYMASTER_PORT=4226
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
+      - KC_WALLET_CACHE=${KC_WALLET_CACHE}
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
@@ -60,6 +62,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_NAME=${KC_NODE_NAME}
+      - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
     volumes:
       - ./data:/app/hyperswarm/data
     user: "${KC_UID}:${KC_GID}"
@@ -81,7 +84,9 @@ services:
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_NODE_ID=${KC_NODE_ID}
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_START_BLOCK=0
@@ -102,6 +107,7 @@ services:
     depends_on:
       - tftc-node
       - gatekeeper
+      - keymaster
 
   tbtc-node:
     image: keychainmdip/bitcoin-core:v28.0
@@ -115,7 +121,9 @@ services:
     image: keychainmdip/satoshi-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_NODE_ID=${KC_NODE_ID}
+      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=tbtc-node
@@ -136,6 +144,7 @@ services:
     depends_on:
       - tbtc-node
       - gatekeeper
+      - keymaster
 
   ipfs-mediator:
     build:

@@ -22,11 +22,6 @@ export function loadWallet() {
     }
 
     const walletJson = fs.readFileSync(walletName);
-    const walletData = JSON.parse(walletJson);
-
-    if (walletData && walletData.salt && walletData.iv && walletData.data) {
-        throw new Error('Wallet encrypted but KC_ENCRYPTED_PASSPHRASE not set');
-    }
-
-    return walletData;
+    
+    return JSON.parse(walletJson);
 }

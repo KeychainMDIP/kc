@@ -4,7 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
+import * as wallet_json from '@mdip/keymaster/db/json';
+import * as wallet_enc from '@mdip/keymaster/db/json/enc';
+import * as wallet_cache from '@mdip/keymaster/db/cache';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
@@ -573,8 +575,8 @@ v1router.post('/schemas/:id/template/', async (req, res) => {
 
 v1router.post('/assets/', async (req, res) => {
     try {
-        const { asset, options } = req.body;
-        const did = await keymaster.createAsset(asset, options);
+        const { data, options } = req.body;
+        const did = await keymaster.createAsset(data, options);
         res.json({ did });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
@@ -688,15 +690,31 @@ app.listen(port, async () => {
         intervalSeconds: 5,
         chatty: true,
     });
+
+    let wallet = wallet_json;
+
+    if (config.keymasterPassphrase) {
+        wallet_enc.setPassphrase(config.keymasterPassphrase);
+        wallet_enc.setWallet(wallet);
+        wallet = wallet_enc;
+    }
+
+    if (config.walletCache) {
+        wallet_cache.setWallet(wallet);
+        wallet = wallet_cache;
+    }
+
     await keymaster.start({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     try {
         const currentId = await keymaster.getCurrentId();
-        const doc = await keymaster.resolveId();
 
-        console.log(`current ID: ${currentId}`);
-        console.log(JSON.stringify(doc, null, 4));
+        if (currentId) {
+            console.log(`current ID: ${currentId}`);
+            const doc = await keymaster.resolveId();
+            console.log(JSON.stringify(doc, null, 4));
+        }
         serverReady = true;
     }
     catch (error) {
