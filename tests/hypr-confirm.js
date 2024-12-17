@@ -15,11 +15,11 @@ async function runTest() {
     const doc1 = await keymaster.resolveDID(asset);
     console.log(JSON.stringify(doc1, null, 4));
 
-    const ok = await keymaster.updateAsset(asset, { version: 2 });
+    await keymaster.updateAsset(asset, { version: 2 });
     let doc2 = await keymaster.resolveDID(asset);
     console.log(JSON.stringify(doc2, null, 4));
 
-    while (doc2.didDocumentMetadata.confirmed == false) {
+    while (doc2.didDocumentMetadata.confirmed === false) {
         // wait for 1 second before checking again
         await new Promise(resolve => setTimeout(resolve, 1000));
 
