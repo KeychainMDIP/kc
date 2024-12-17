@@ -363,7 +363,7 @@ async function flushQueue() {
 
         await gatekeeper.clearQueue(REGISTRY, batch);
         await relayMsg(msg);
-        await importBatch(batch);
+        await mergeBatch(batch);
     }
 }
 
