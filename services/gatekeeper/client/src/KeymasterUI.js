@@ -4,7 +4,7 @@ import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@m
 import axios from 'axios';
 import './App.css';
 
-function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, gatekeeper, cipher }) {
+function KeymasterUI({ keymaster, title, challengeDID, encryptWallet, decryptWallet, isWalletEncrypted }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -66,7 +66,6 @@ function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, g
     const [sendMessageString, setSendMessageString] = useState('');
     const [messageRecipient, setMessageRecipient] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
-    const [encryptionStatus, setEncryptionStatus] = useState(false);
 
     useEffect(() => {
         checkForChallenge();
@@ -134,7 +133,6 @@ function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, g
             setMessageRecipient('');
             setMessageDID('');
             setEncryptedDID('');
-            setEncryptionStatus(isWalletEncrypted());
         } catch (error) {
             showError(error);
         }
@@ -889,39 +887,8 @@ function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, g
         }
     }
 
-    function isWalletEncrypted() {
-        const walletData = wallet_web.loadWallet();
-        return walletData && walletData.salt && walletData.iv && walletData.data;
-    }
-
-    async function encryptWallet() {
-        const passphrase = prompt("Enter a passphrase to encrypt your wallet:");
-        if (!passphrase) {
-            alert("No passphrase provided, wallet not encrypted.");
-            return;
-        }
-
-        wallet_enc.setWallet(wallet_web);
-        wallet_enc.setPassphrase(passphrase);
-
-        const wallet = wallet_web.loadWallet();
-        if (!wallet) {
-            await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
-            await keymaster.newWallet()
-        } else {
-            await wallet_enc.saveWallet(wallet, true);
-            await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
-        }
-
-        refreshAll();
-    }
-
-    async function decryptWallet() {
-        const wallet = await keymaster.loadWallet();
-        wallet_web.saveWallet(wallet, true);
-        await keymaster.start({ gatekeeper, wallet: wallet_web, cipher });
-
-        refreshAll();
+    async function handleDecryptWallet() {
+        await decryptWallet();
     }
 
     return (
@@ -1884,8 +1851,8 @@ function KeymasterUI({ keymaster, title, challengeDID, wallet_web, wallet_enc, g
                             <p />
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
-                                    { encryptionStatus ? (
-                                        <Button variant="contained" color="primary" onClick={decryptWallet}>
+                                    { isWalletEncrypted ? (
+                                        <Button variant="contained" color="primary" onClick={handleDecryptWallet}>
                                             Decrypt Wallet
                                         </Button>
                                     ) : (
