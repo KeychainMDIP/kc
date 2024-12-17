@@ -116,7 +116,7 @@ export async function verifyDb(options = {}) {
     return { total, verified, expired, invalid };
 }
 
-export async function checkDb(options = {}) {
+export async function checkDIDs(options = {}) {
     const { chatty = false } = options;
     const dids = await getDIDs();
     const total = dids.length;

@@ -271,9 +271,9 @@ async function gcLoop() {
 let didCheck;
 
 async function main() {
-    console.time('checkDb');
-    didCheck = await gatekeeper.checkDb({ chatty: true });
-    console.timeEnd('checkDb');
+    console.time('checkDIDs');
+    didCheck = await gatekeeper.checkDIDs({ chatty: true });
+    console.timeEnd('checkDIDs');
     console.log(`check: ${JSON.stringify(didCheck)}`);
 
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);

@@ -2608,7 +2608,7 @@ describe('verifyDb', () => {
     });
 });
 
-describe('checkDb', () => {
+describe('checkDIDs', () => {
     afterEach(() => {
         mockFs.restore();
     });
@@ -2622,7 +2622,7 @@ describe('checkDb', () => {
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const { total } = await gatekeeper.checkDb();
+        const { total } = await gatekeeper.checkDIDs();
 
         expect(total).toBe(2);
     });
@@ -2638,7 +2638,7 @@ describe('checkDb', () => {
 
         fs.writeFileSync('data/test.json', "{ dids: {");
 
-        const { total } = await gatekeeper.checkDb();
+        const { total } = await gatekeeper.checkDIDs();
 
         expect(total).toBe(0);
     });
