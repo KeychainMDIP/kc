@@ -23,6 +23,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
 await db.start('mdip');
 await gatekeeper.start({ db });
 
+const startTime = new Date();
 const app = express();
 const v1router = express.Router();
 
@@ -48,6 +49,14 @@ v1router.get('/ready', async (req, res) => {
 v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/status', async (req, res) => {
+    try {
+        res.json(getStatus());
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -287,9 +296,18 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection caught', reason, promise);
 });
 
-function reportMemoryUsage() {
-    const memoryUsage = process.memoryUsage();
+function getStatus() {
+    return {
+        uptime: Math.floor((new Date() - startTime) / 1000),
+        memoryUsage: process.memoryUsage()
+    };
+}
 
+function reportStatus() {
+    const status = getStatus();
+    const memoryUsage = status.memoryUsage;
+
+    console.log(`Uptime: ${status.uptime}s (${formatDuration(status.uptime)})`);
     console.log('Memory Usage Report:');
     console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
     console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
@@ -300,6 +318,55 @@ function reportMemoryUsage() {
     console.log('------------------------------------');
 }
 
+function formatDuration(seconds) {
+    const secPerMin = 60;
+    const secPerHour = secPerMin * 60;
+    const secPerDay = secPerHour * 24;
+
+    const days = Math.floor(seconds / secPerDay);
+    seconds %= secPerDay;
+
+    const hours = Math.floor(seconds / secPerHour);
+    seconds %= secPerHour;
+
+    const minutes = Math.floor(seconds / secPerMin);
+    seconds %= secPerMin;
+
+    let duration = "";
+
+    if (days > 0) {
+        if (days > 1) {
+            duration += `${days} days, `;
+        } else {
+            duration += `1 day, `;
+        }
+    }
+
+    if (hours > 0) {
+        if (hours > 1) {
+            duration += `${hours} hours, `;
+        } else {
+            duration += `1 hour, `;
+        }
+    }
+
+    if (minutes > 0) {
+        if (minutes > 1) {
+            duration += `${minutes} minutes, `;
+        } else {
+            duration += `1 minute, `;
+        }
+    }
+
+    if (seconds == 1) {
+        duration += `1 second`;
+    } else {
+        duration += `${seconds} seconds`;
+    }
+
+    return duration;
+}
+
 function formatBytes(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 Byte';
@@ -308,4 +375,4 @@ function formatBytes(bytes) {
 }
 
 // Example: Report memory usage every 60 seconds
-setInterval(reportMemoryUsage, 60 * 1000);
+setInterval(reportStatus, 60 * 1000);
