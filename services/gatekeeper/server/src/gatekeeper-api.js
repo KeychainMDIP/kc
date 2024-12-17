@@ -298,7 +298,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 function getStatus() {
     return {
-        uptime: Math.floor((new Date() - startTime) / 1000),
+        uptimeSeconds: Math.floor((new Date() - startTime) / 1000),
         memoryUsage: process.memoryUsage()
     };
 }
@@ -307,7 +307,7 @@ function reportStatus() {
     const status = getStatus();
     const memoryUsage = status.memoryUsage;
 
-    console.log(`Uptime: ${status.uptime}s (${formatDuration(status.uptime)})`);
+    console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
     console.log('Memory Usage Report:');
     console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
     console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);

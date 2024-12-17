@@ -107,6 +107,16 @@ export async function getVersion() {
     }
 }
 
+export async function getStatus() {
+    try {
+        const response = await axios.get(`${API}/status`);
+        return response.data;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function createDID(operation) {
     try {
         const response = await axios.post(`${API}/did/`, operation);
