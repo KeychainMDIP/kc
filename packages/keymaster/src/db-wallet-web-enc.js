@@ -2,7 +2,7 @@ const algorithm = 'AES-GCM';
 const kdf = 'PBKDF2';
 const hash = 'SHA-512';
 const keyLength = 256;                // 256 bit AES-256
-const ivLength = 12;                  // 128-bit AES block size
+const ivLength = 12;                  // 96-bit IV, standard for AES-GCM
 const saltLength = 16;                // 128-bit salt
 const iterations = 100000;            // PBKDF2 iterations
 

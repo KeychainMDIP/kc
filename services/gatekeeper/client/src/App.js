@@ -23,14 +23,13 @@ function App() {
 
     useEffect(() => {
         async function initializeWallet() {
-            let wallet = wallet_web;
-            const walletData = await wallet.loadWallet();
+            const walletData = await wallet_web.loadWallet();
 
             if (walletData && walletData.salt && walletData.iv && walletData.data) {
                 setIsEncrypted(true);
                 setModalAction('decrypt');
             } else {
-                keymaster.start({ gatekeeper, wallet, cipher });
+                keymaster.start({ gatekeeper, wallet_web, cipher });
                 setIsReady(true);
             }
         }
