@@ -56,7 +56,8 @@ v1router.get('/version', async (req, res) => {
 
 v1router.get('/status', async (req, res) => {
     try {
-        res.json(getStatus());
+        const status = await getStatus();
+        res.json(status);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -270,64 +271,43 @@ async function gcLoop() {
 
 let didCheck;
 
-async function main() {
+async function checkDids() {
     console.time('checkDIDs');
-    didCheck = await gatekeeper.checkDIDs({ chatty: true });
+    didCheck = await gatekeeper.checkDIDs();
     console.timeEnd('checkDIDs');
-    console.log(`check: ${JSON.stringify(didCheck)}`);
-
-    console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
-    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
-
-    const registries = await gatekeeper.initRegistries(config.registries);
-
-    app.listen(config.port, () => {
-        console.log(`Server is running on port ${config.port}, persisting with ${config.db}`);
-        console.log(`Supported registries: ${registries}`);
-        serverReady = true;
-    });
 }
 
-main();
-
-process.on('uncaughtException', (error) => {
-    console.error('Unhandled exception caught', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection caught', reason, promise);
-});
-
-function getStatus() {
+async function getStatus() {
     return {
-        uptimeSeconds: Math.floor((new Date() - startTime) / 1000),
+        uptimeSeconds: Math.round((new Date() - startTime) / 1000),
         dids: didCheck,
         memoryUsage: process.memoryUsage()
     };
 }
 
-function reportStatus() {
-    const status = getStatus();
+async function reportStatus() {
+    await checkDids();
+    const status = await getStatus();
 
     console.log('Status -----------------------------');
+
+    console.log('DID Database:');
+    console.log(`  Total: ${status.dids.total}`);
+    console.log(`  By registry:`);
+    for (let registry in status.dids.byRegistry) {
+        console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
+    }
+    console.log(`  Ephemeral: ${status.dids.ephemeral}`);
+
+    console.log('Memory Usage Report:');
+    console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
+    console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
+    console.log(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    console.log(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+
     console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
 
-    const dids = status.dids;
-    console.log('DIDs:');
-    console.log(`  Total: ${dids.total}`);
-    console.log(`  Ephemeral: ${dids.ephemeral}`);
-    console.log(`  By registry:`);
-    for (let registry in dids.byRegistry) {
-        console.log(`    ${registry}: ${dids.byRegistry[registry]}`);
-    }
-
-    const memoryUsage = status.memoryUsage;
-    console.log('Memory Usage Report:');
-    console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
-    console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
-    console.log(`  Heap Used: ${formatBytes(memoryUsage.heapUsed)} (Heap actually used)`);
-    console.log(`  External: ${formatBytes(memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
-    console.log(`  Array Buffers: ${formatBytes(memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
     console.log('------------------------------------');
 }
 
@@ -387,5 +367,29 @@ function formatBytes(bytes) {
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-// Example: Report memory usage every 60 seconds
-setInterval(reportStatus, 60 * 1000);
+async function main() {
+    console.log(`Starting Gatekeeper with a db (${config.db}) check...`);
+    await reportStatus();
+    setInterval(reportStatus, 5 * 60 * 1000);
+
+    console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
+    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+
+    const registries = await gatekeeper.initRegistries(config.registries);
+    console.log(`Supported registries: ${registries}`);
+
+    app.listen(config.port, () => {
+        console.log(`Server is running on port ${config.port}`);
+        serverReady = true;
+    });
+}
+
+main();
+
+process.on('uncaughtException', (error) => {
+    console.error('Unhandled exception caught', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection caught', reason, promise);
+});
