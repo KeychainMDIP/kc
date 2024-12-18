@@ -2608,7 +2608,7 @@ describe('verifyDb', () => {
     });
 });
 
-describe('checkDb', () => {
+describe('checkDIDs', () => {
     afterEach(() => {
         mockFs.restore();
     });
@@ -2619,12 +2619,33 @@ describe('checkDb', () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'local', new Date().toISOString());
+        await gatekeeper.createDID(assetOp);
+
+        const check = await gatekeeper.checkDIDs({ chatty: true });
+
+        expect(check.total).toBe(2);
+        expect(check.ephemeral).toBe(1);
+        expect(check.invalid).toBe(0);
+    });
+
+    it('should report invalid DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
         const assetOp = await createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
-        const { total } = await gatekeeper.checkDb();
+        const dids = await gatekeeper.getDIDs();
+        dids.push('mock');
 
-        expect(total).toBe(2);
+        const check = await gatekeeper.checkDIDs({ chatty: true, dids });
+
+        expect(check.total).toBe(3);
+        expect(check.ephemeral).toBe(0);
+        expect(check.invalid).toBe(1);
     });
 
     it('should reset a corrupted db', async () => {
@@ -2638,7 +2659,7 @@ describe('checkDb', () => {
 
         fs.writeFileSync('data/test.json', "{ dids: {");
 
-        const { total } = await gatekeeper.checkDb();
+        const { total } = await gatekeeper.checkDIDs();
 
         expect(total).toBe(0);
     });

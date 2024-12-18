@@ -441,6 +441,19 @@ program
         }
     });
 
+program
+    .command('get-status')
+    .description('Report gatekeeper status')
+    .action(async () => {
+        try {
+            const response = await gatekeeper.getStatus();
+            console.log(JSON.stringify(response, null, 4));
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.start({ url: gatekeeperURL });
     await keymaster.start({ gatekeeper, wallet, cipher });

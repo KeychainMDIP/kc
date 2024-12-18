@@ -23,6 +23,7 @@ const db = (config.db === 'sqlite') ? db_sqlite
 await db.start('mdip');
 await gatekeeper.start({ db });
 
+const startTime = new Date();
 const app = express();
 const v1router = express.Router();
 
@@ -48,6 +49,15 @@ v1router.get('/ready', async (req, res) => {
 v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/status', async (req, res) => {
+    try {
+        const status = await getStatus();
+        res.json(status);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -259,20 +269,118 @@ async function gcLoop() {
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
 
+let didCheck;
+
+async function checkDids() {
+    console.time('checkDIDs');
+    didCheck = await gatekeeper.checkDIDs();
+    console.timeEnd('checkDIDs');
+}
+
+async function getStatus() {
+    return {
+        uptimeSeconds: Math.round((new Date() - startTime) / 1000),
+        dids: didCheck,
+        memoryUsage: process.memoryUsage()
+    };
+}
+
+async function reportStatus() {
+    await checkDids();
+    const status = await getStatus();
+
+    console.log('Status -----------------------------');
+
+    console.log('DID Database:');
+    console.log(`  Total: ${status.dids.total}`);
+    console.log(`  By registry:`);
+    for (let registry in status.dids.byRegistry) {
+        console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
+    }
+    console.log(`  Ephemeral: ${status.dids.ephemeral}`);
+    console.log(`  Invalid: ${status.dids.invalid}`);
+
+    console.log('Memory Usage Report:');
+    console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
+    console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
+    console.log(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    console.log(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+
+    console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
+
+    console.log('------------------------------------');
+}
+
+function formatDuration(seconds) {
+    const secPerMin = 60;
+    const secPerHour = secPerMin * 60;
+    const secPerDay = secPerHour * 24;
+
+    const days = Math.floor(seconds / secPerDay);
+    seconds %= secPerDay;
+
+    const hours = Math.floor(seconds / secPerHour);
+    seconds %= secPerHour;
+
+    const minutes = Math.floor(seconds / secPerMin);
+    seconds %= secPerMin;
+
+    let duration = "";
+
+    if (days > 0) {
+        if (days > 1) {
+            duration += `${days} days, `;
+        } else {
+            duration += `1 day, `;
+        }
+    }
+
+    if (hours > 0) {
+        if (hours > 1) {
+            duration += `${hours} hours, `;
+        } else {
+            duration += `1 hour, `;
+        }
+    }
+
+    if (minutes > 0) {
+        if (minutes > 1) {
+            duration += `${minutes} minutes, `;
+        } else {
+            duration += `1 minute, `;
+        }
+    }
+
+    if (seconds === 1) {
+        duration += `1 second`;
+    } else {
+        duration += `${seconds} seconds`;
+    }
+
+    return duration;
+}
+
+function formatBytes(bytes) {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Byte';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
 async function main() {
-    console.time('checkDb');
-    const check = await gatekeeper.checkDb();
-    console.timeEnd('checkDb');
-    console.log(`check: ${JSON.stringify(check)}`);
+    console.log(`Starting Gatekeeper with a db (${config.db}) check...`);
+    await reportStatus();
+    setInterval(reportStatus, 60 * 1000);
 
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 
     const registries = await gatekeeper.initRegistries(config.registries);
+    console.log(`Supported registries: ${registries}`);
 
     app.listen(config.port, () => {
-        console.log(`Server is running on port ${config.port}, persisting with ${config.db}`);
-        console.log(`Supported registries: ${registries}`);
+        console.log(`Server is running on port ${config.port}`);
         serverReady = true;
     });
 }
@@ -286,26 +394,3 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled rejection caught', reason, promise);
 });
-
-function reportMemoryUsage() {
-    const memoryUsage = process.memoryUsage();
-
-    console.log('Memory Usage Report:');
-    console.log(`  RSS: ${formatBytes(memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
-    console.log(`  Heap Total: ${formatBytes(memoryUsage.heapTotal)} (Total heap allocated)`);
-    console.log(`  Heap Used: ${formatBytes(memoryUsage.heapUsed)} (Heap actually used)`);
-    console.log(`  External: ${formatBytes(memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
-    console.log(`  Array Buffers: ${formatBytes(memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
-
-    console.log('------------------------------------');
-}
-
-function formatBytes(bytes) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
-}
-
-// Example: Report memory usage every 60 seconds
-setInterval(reportMemoryUsage, 60 * 1000);
