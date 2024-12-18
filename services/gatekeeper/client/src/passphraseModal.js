@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import './passphraseModal.css';
+import {
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+    Button,
+    Typography,
+    Box
+} from '@mui/material';
 
 const PassphraseModal = ({ isOpen, title, errorText, onSubmit, onClose }) => {
     const [passphrase, setPassphrase] = useState('');
@@ -18,28 +27,36 @@ const PassphraseModal = ({ isOpen, title, errorText, onSubmit, onClose }) => {
     }
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-content">
-                <h2>{title}</h2>
-                {errorText &&
-                    <h3>{errorText}</h3>
-                }
-                <form onSubmit={handleSubmit}>
-                    <input
+        <Dialog open={isOpen} onClose={handleClose}>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogContent>
+                {errorText && (
+                    <Box mb={2}>
+                        <Typography color="error">{errorText}</Typography>
+                    </Box>
+                )}
+                <form onSubmit={handleSubmit} id="passphrase-form">
+                    <TextField
                         type="password"
                         value={passphrase}
                         onChange={(e) => setPassphrase(e.target.value)}
-                        placeholder="Enter your passphrase"
                         required
                         autoFocus
+                        fullWidth
+                        variant="outlined"
+                        margin="dense"
                     />
-                    <div className="modal-actions">
-                        <button type="submit">Submit</button>
-                        <button type="button" onClick={handleClose}>Cancel</button>
-                    </div>
                 </form>
-            </div>
-        </div>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleClose} color="secondary">
+                    Cancel
+                </Button>
+                <Button type="submit" form="passphrase-form" variant="contained" color="primary">
+                    Submit
+                </Button>
+            </DialogActions>
+        </Dialog>
     );
 };
 

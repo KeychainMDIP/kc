@@ -29,7 +29,7 @@ function App() {
                 setIsEncrypted(true);
                 setModalAction('decrypt');
             } else {
-                keymaster.start({ gatekeeper, wallet_web, cipher });
+                keymaster.start({ gatekeeper, wallet: wallet_web, cipher });
                 setIsReady(true);
             }
         }
@@ -59,6 +59,7 @@ function App() {
         setIsReady(true);
         setModalAction(null);
         setIsEncrypted(true);
+        setErrorText(null);
     }
 
     function handleModalClose() {
