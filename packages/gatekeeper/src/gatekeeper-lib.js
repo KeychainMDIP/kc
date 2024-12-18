@@ -117,11 +117,16 @@ export async function verifyDb(options = {}) {
 }
 
 export async function checkDIDs(options = {}) {
-    const { chatty = false } = options;
-    const dids = await getDIDs();
+    let { chatty = false, dids } = options;
+
+    if (!dids) {
+        dids = await getDIDs();
+    }
+
     const total = dids.length;
     let n = 0;
     let ephemeral = 0;
+    let invalid = 0;
     const byRegistry = {};
 
     for (const did of dids) {
@@ -144,13 +149,14 @@ export async function checkDIDs(options = {}) {
             }
         }
         catch (error) {
+            invalid += 1;
             if (chatty) {
                 console.log(`can't resolve ${n}/${total} ${did} ${error}`);
             }
         }
     }
 
-    return { total, ephemeral, byRegistry };
+    return { total, ephemeral, invalid, byRegistry };
 }
 
 export async function initRegistries(csvRegistries) {

@@ -370,7 +370,7 @@ function formatBytes(bytes) {
 async function main() {
     console.log(`Starting Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
-    setInterval(reportStatus, 5 * 60 * 1000);
+    setInterval(reportStatus, 60 * 1000);
 
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);

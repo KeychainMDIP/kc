@@ -2626,6 +2626,26 @@ describe('checkDIDs', () => {
 
         expect(check.total).toBe(2);
         expect(check.ephemeral).toBe(1);
+        expect(check.invalid).toBe(0);
+    });
+
+    it('should report invalid DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair);
+        await gatekeeper.createDID(assetOp);
+
+        const dids = await gatekeeper.getDIDs();
+        dids.push('mock');
+
+        const check = await gatekeeper.checkDIDs({ chatty: true, dids });
+
+        expect(check.total).toBe(3);
+        expect(check.ephemeral).toBe(0);
+        expect(check.invalid).toBe(1);
     });
 
     it('should reset a corrupted db', async () => {
