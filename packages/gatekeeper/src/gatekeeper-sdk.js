@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-let URL = '';
-let API = '/api/v1';
+const VERSION = '/api/v1';
+let API = VERSION;
 
 function throwError(error) {
     if (error.response) {
@@ -13,8 +13,7 @@ function throwError(error) {
 
 export async function start(options = {}) {
     if (options.url) {
-        URL = options.url;
-        API = `${URL}${API}`;
+        API = `${options.url}${VERSION}`;
     }
 
     if (options.waitUntilReady) {
@@ -28,7 +27,7 @@ async function waitUntilReady(options = {}) {
     let retries = 0;
 
     if (chatty) {
-        console.log(`Connecting to gatekeeper at ${URL}`);
+        console.log(`Connecting to gatekeeper at ${API}`);
     }
 
     while (!ready) {
@@ -45,7 +44,7 @@ async function waitUntilReady(options = {}) {
         retries += 1;
 
         if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-            console.log(`Connecting to gatekeeper at ${URL}`);
+            console.log(`Connecting to gatekeeper at ${API}`);
             chatty = true;
         }
     }

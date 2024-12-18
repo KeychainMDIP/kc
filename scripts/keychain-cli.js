@@ -36,7 +36,7 @@ program
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -55,7 +55,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -69,7 +69,7 @@ program
             console.log(`${idsRemoved} IDs and ${ownedRemoved} owned DIDs and ${heldRemoved} held DIDs and ${namesRemoved} names were removed`);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -82,7 +82,7 @@ program
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -95,7 +95,7 @@ program
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -108,7 +108,7 @@ program
             console.log(mnenomic);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -121,7 +121,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -134,7 +134,7 @@ program
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -147,7 +147,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -161,7 +161,7 @@ program
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -179,7 +179,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -192,7 +192,7 @@ program
             console.log(response);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -205,7 +205,7 @@ program
             console.log(`ID ${name} removed`);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -227,7 +227,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -240,7 +240,7 @@ program
             console.log(UPDATE_OK);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -253,7 +253,7 @@ program
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -292,7 +292,7 @@ program
             console.log(cipherDid);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -306,7 +306,7 @@ program
             console.log(cipherDid);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -346,7 +346,7 @@ program
             console.log(JSON.stringify(json, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -360,7 +360,7 @@ program
             console.log(`signature in ${file}`, isValid ? 'is valid' : 'is NOT valid');
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -379,7 +379,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -388,7 +388,7 @@ program
     .description('Create challenge (optionally from a file)')
     .action(async (file, name) => {
         try {
-            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : null;
+            const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : undefined;
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
@@ -398,7 +398,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -407,8 +407,7 @@ program
     .description('Create challenge from a credential DID')
     .action(async (credentialDID, name) => {
         try {
-            const credential = await keymaster.lookupDID(credentialDID);
-            const challenge = { credentials: [{ schema: credential }] };
+            const challenge = { credentials: [{ schema: credentialDID }] };
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
@@ -418,7 +417,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -431,7 +430,7 @@ program
             console.log(JSON.stringify(vc, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -450,7 +449,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -464,7 +463,7 @@ program
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -482,7 +481,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -505,7 +504,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -518,7 +517,7 @@ program
             console.log(JSON.stringify(held, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -531,7 +530,7 @@ program
             console.log(JSON.stringify(credential, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -544,7 +543,7 @@ program
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -557,7 +556,7 @@ program
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -570,7 +569,7 @@ program
             console.log(response);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -583,7 +582,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -596,7 +595,7 @@ program
             console.log(JSON.stringify(vp, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -609,7 +608,7 @@ program
             console.log(UPDATE_OK);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -622,7 +621,7 @@ program
             console.log(UPDATE_OK);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -641,7 +640,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -655,7 +654,7 @@ program
             keymaster.addName(name, did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -668,7 +667,7 @@ program
             console.log(JSON.stringify(groups, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -681,7 +680,7 @@ program
             console.log(JSON.stringify(group, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -694,7 +693,7 @@ program
             console.log(response);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -707,7 +706,7 @@ program
             console.log(response);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -720,7 +719,7 @@ program
             console.log(response);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -739,7 +738,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -752,7 +751,7 @@ program
             console.log(JSON.stringify(schemas, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -766,7 +765,7 @@ program
             console.log(JSON.stringify(schema, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -779,7 +778,7 @@ program
             console.log(JSON.stringify(template, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -793,7 +792,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -806,7 +805,7 @@ program
             console.log(JSON.stringify(asset, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -819,7 +818,7 @@ program
             console.log(JSON.stringify(template, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -838,7 +837,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -851,7 +850,7 @@ program
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -864,7 +863,7 @@ program
             console.log(did);
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -882,7 +881,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -900,7 +899,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -918,7 +917,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -936,7 +935,7 @@ program
             }
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -982,7 +981,7 @@ program
                 console.log(UPDATE_FAILED);
             }
         } catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 
@@ -1020,7 +1019,7 @@ program
             console.timeEnd('total');
         }
         catch (error) {
-            console.error(error.message);
+            console.error(error.message || error);
         }
     });
 

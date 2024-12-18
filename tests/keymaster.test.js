@@ -2049,6 +2049,14 @@ describe('createChallenge', () => {
         await keymaster.createId('Alice');
 
         try {
+            await keymaster.createChallenge(null);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: challenge');
+        }
+
+        try {
             await keymaster.createChallenge([]);
             throw new ExpectedExceptionError();
         }
