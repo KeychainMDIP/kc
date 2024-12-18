@@ -298,6 +298,7 @@ async function reportStatus() {
         console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
     }
     console.log(`  Ephemeral: ${status.dids.ephemeral}`);
+    console.log(`  Invalid: ${status.dids.invalid}`);
 
     console.log('Memory Usage Report:');
     console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
