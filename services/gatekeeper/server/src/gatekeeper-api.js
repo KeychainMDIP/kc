@@ -291,16 +291,17 @@ async function reportStatus() {
 
     console.log('Status -----------------------------');
 
-    console.log('DID Database:');
+    console.log(`DID Database (${config.db}):`);
     console.log(`  Total: ${status.dids.total}`);
     console.log(`  By registry:`);
-    for (let registry in status.dids.byRegistry) {
+    const registries = Object.keys(status.dids.byRegistry).sort();
+    for (let registry of registries) {
         console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
     }
     console.log(`  Ephemeral: ${status.dids.ephemeral}`);
     console.log(`  Invalid: ${status.dids.invalid}`);
 
-    console.log('Memory Usage Report:');
+    console.log(`Memory Usage Report:`);
     console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
     console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
     console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
