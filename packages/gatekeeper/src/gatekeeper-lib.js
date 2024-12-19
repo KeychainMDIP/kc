@@ -125,9 +125,12 @@ export async function checkDIDs(options = {}) {
 
     const total = dids.length;
     let n = 0;
+    let confirmed = 0;
+    let unconfirmed = 0;
     let ephemeral = 0;
     let invalid = 0;
     const byRegistry = {};
+    const byVersion = {};
 
     for (const did of dids) {
         n += 1;
@@ -137,16 +140,22 @@ export async function checkDIDs(options = {}) {
                 console.log(`resolved ${n}/${total} ${did} OK`);
             }
 
+            if (doc.didDocumentMetadata.confirmed) {
+                confirmed += 1;
+            }
+            else {
+                unconfirmed += 1;
+            }
+
             if (doc.mdip.validUntil) {
                 ephemeral += 1;
             }
 
-            if (byRegistry[doc.mdip.registry]) {
-                byRegistry[doc.mdip.registry] += 1;
-            }
-            else {
-                byRegistry[doc.mdip.registry] = 1;
-            }
+            const registry = doc.mdip.registry;
+            byRegistry[registry] = (byRegistry[registry] || 0) + 1;
+
+            const version = doc.didDocumentMetadata.version;
+            byVersion[version] = (byVersion[version] || 0) + 1;
         }
         catch (error) {
             invalid += 1;
@@ -156,7 +165,7 @@ export async function checkDIDs(options = {}) {
         }
     }
 
-    return { total, ephemeral, invalid, byRegistry };
+    return { total, confirmed, unconfirmed, ephemeral, invalid, byRegistry, byVersion };
 }
 
 export async function initRegistries(csvRegistries) {

@@ -262,6 +262,7 @@ async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
         console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
+        await checkDids();
     }
     catch (error) {
         console.error(`Error in DID garbage collection: ${error}`);
@@ -291,16 +292,30 @@ async function reportStatus() {
 
     console.log('Status -----------------------------');
 
-    console.log('DID Database:');
+    console.log(`DID Database (${config.db}):`);
     console.log(`  Total: ${status.dids.total}`);
+
     console.log(`  By registry:`);
-    for (let registry in status.dids.byRegistry) {
+    const registries = Object.keys(status.dids.byRegistry).sort();
+    for (let registry of registries) {
         console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
     }
+
+    console.log(`  By version:`);
+    let count = 0;
+    for (let version of [1, 2, 3, 4, 5]) {
+        const num = status.dids.byVersion[version];
+        console.log(`    ${version}: ${num}`);
+        count += num;
+    }
+    console.log(`    6+: ${status.dids.total - count}`);
+
+    console.log(`  Confirmed: ${status.dids.confirmed}`);
+    console.log(`  Unconfirmed: ${status.dids.unconfirmed}`);
     console.log(`  Ephemeral: ${status.dids.ephemeral}`);
     console.log(`  Invalid: ${status.dids.invalid}`);
 
-    console.log('Memory Usage Report:');
+    console.log(`Memory Usage Report:`);
     console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
     console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
     console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
