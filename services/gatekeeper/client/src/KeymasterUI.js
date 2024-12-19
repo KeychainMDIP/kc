@@ -4,7 +4,7 @@ import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@m
 import axios from 'axios';
 import './App.css';
 
-function KeymasterUI({ keymaster, title, challengeDID }) {
+function KeymasterUI({ keymaster, title, challengeDID, encryptWallet, decryptWallet, isWalletEncrypted, isCryptoAvailable }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -885,6 +885,10 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
         } catch (error) {
             showError(error);
         }
+    }
+
+    async function handleDecryptWallet() {
+        await decryptWallet();
     }
 
     return (
@@ -1845,6 +1849,24 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                 </Grid>
                             </Grid>
                             <p />
+                            {isCryptoAvailable && (
+                                <>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            { isWalletEncrypted ? (
+                                                <Button variant="contained" color="primary" onClick={handleDecryptWallet}>
+                                                    Decrypt Wallet
+                                                </Button>
+                                            ) : (
+                                                <Button variant="contained" color="primary" onClick={encryptWallet}>
+                                                    Encrypt Wallet
+                                                </Button>
+                                            )}
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                </>
+                            )}
                             <Box>
                                 <pre>{mnemonicString}</pre>
                             </Box>
