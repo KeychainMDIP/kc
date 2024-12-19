@@ -2613,7 +2613,7 @@ describe('checkDIDs', () => {
         mockFs.restore();
     });
 
-    it('should check all DIDs in db', async () => {
+    it('should check all DIDs', async () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
@@ -2630,6 +2630,32 @@ describe('checkDIDs', () => {
         expect(check.invalid).toBe(0);
         expect(check.byRegistry['local']).toBe(2);
         expect(check.byVersion[1]).toBe(2);
+    });
+
+    it('should report unconfirmed DIDs', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const doc = await gatekeeper.resolveDID(assetDID);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await createUpdateOp(keypair, assetDID, doc);
+        const ok = await gatekeeper.updateDID(updateOp);
+
+        const check = await gatekeeper.checkDIDs({ chatty: true });
+
+        expect(ok).toBe(true);
+        expect(check.total).toBe(2);
+        expect(check.confirmed).toBe(1);
+        expect(check.unconfirmed).toBe(1);
+        expect(check.ephemeral).toBe(0);
+        expect(check.invalid).toBe(0);
+        expect(check.byRegistry['hyperswarm']).toBe(2);
+        expect(check.byVersion[1]).toBe(1);
+        expect(check.byVersion[2]).toBe(1);
     });
 
     it('should report invalid DIDs', async () => {
