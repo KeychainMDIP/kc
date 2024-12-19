@@ -1,1 +1,95 @@
-
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "MDIP Gatekeeper API",
+    "version": "1.0.0",
+    "description": "MDIP Gatekeeper OpenAPI definition."
+  },
+  "tags": [
+    {
+      "name": "General",
+      "description": "General API routes"
+    },
+    {
+      "name": "DID",
+      "description": "Wallet management routes"
+    },
+    {
+      "name": "Batch",
+      "description": "Identity management routes"
+    },
+    {
+      "name": "Queue",
+      "description": "Name management routes"
+    }
+  ],
+  "paths": {
+    "/ready": {
+      "get": {
+        "summary": "Check if the API is ready",
+        "tags": [
+          "General"
+        ],
+        "responses": {
+          "200": {
+            "description": "API is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                },
+                "examples": {
+                  "example1": {
+                    "value": {
+                      "true"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/registries": {
+      "get": {
+        "summary": "List all registries",
+        "tags": [
+          "General"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "registries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "registries": [
+                    "hyperswarm",
+                    "TBTC"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  }
+}
