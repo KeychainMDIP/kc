@@ -311,6 +311,7 @@ async function reportStatus() {
     console.log(`    6+: ${status.dids.total - count}`);
 
     console.log(`  Confirmed: ${status.dids.confirmed}`);
+    console.log(`  Unconfirmed: ${status.dids.unconfirmed}`);
     console.log(`  Ephemeral: ${status.dids.ephemeral}`);
     console.log(`  Invalid: ${status.dids.invalid}`);
 

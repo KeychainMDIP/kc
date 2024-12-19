@@ -126,6 +126,7 @@ export async function checkDIDs(options = {}) {
     const total = dids.length;
     let n = 0;
     let confirmed = 0;
+    let unconfirmed = 0;
     let ephemeral = 0;
     let invalid = 0;
     const byRegistry = {};
@@ -141,6 +142,9 @@ export async function checkDIDs(options = {}) {
 
             if (doc.didDocumentMetadata.confirmed) {
                 confirmed += 1;
+            }
+            else {
+                unconfirmed += 1;
             }
 
             if (doc.mdip.validUntil) {
@@ -161,7 +165,7 @@ export async function checkDIDs(options = {}) {
         }
     }
 
-    return { total, confirmed, ephemeral, invalid, byRegistry, byVersion };
+    return { total, confirmed, unconfirmed, ephemeral, invalid, byRegistry, byVersion };
 }
 
 export async function initRegistries(csvRegistries) {
