@@ -262,6 +262,7 @@ async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
         console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
+        await checkDids();
     }
     catch (error) {
         console.error(`Error in DID garbage collection: ${error}`);
@@ -293,11 +294,23 @@ async function reportStatus() {
 
     console.log(`DID Database (${config.db}):`);
     console.log(`  Total: ${status.dids.total}`);
+
     console.log(`  By registry:`);
     const registries = Object.keys(status.dids.byRegistry).sort();
     for (let registry of registries) {
         console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
     }
+
+    console.log(`  By version:`);
+    let count = 0;
+    for (let version of [1, 2, 3, 4, 5]) {
+        const num = status.dids.byVersion[version];
+        console.log(`    ${version}: ${num}`);
+        count += num;
+    }
+    console.log(`    6+: ${status.dids.total - count}`);
+
+    console.log(`  Confirmed: ${status.dids.confirmed}`);
     console.log(`  Ephemeral: ${status.dids.ephemeral}`);
     console.log(`  Invalid: ${status.dids.invalid}`);
 

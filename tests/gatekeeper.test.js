@@ -2625,8 +2625,11 @@ describe('checkDIDs', () => {
         const check = await gatekeeper.checkDIDs({ chatty: true });
 
         expect(check.total).toBe(2);
+        expect(check.confirmed).toBe(2);
         expect(check.ephemeral).toBe(1);
         expect(check.invalid).toBe(0);
+        expect(check.byRegistry['local']).toBe(2);
+        expect(check.byVersion[1]).toBe(2);
     });
 
     it('should report invalid DIDs', async () => {
