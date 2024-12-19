@@ -1,5 +1,6 @@
 import { Buffer } from 'buffer';
 import React, { useState, useEffect } from 'react';
+import { Alert, Box } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
 import * as gatekeeper from '@mdip/gatekeeper/sdk';
 import * as cipher from '@mdip/cipher/web';
@@ -8,7 +9,7 @@ import * as wallet_web from "@mdip/keymaster/db/web";
 import * as wallet_enc from "@mdip/keymaster/db/web/enc";
 import * as db_wallet_cache from '@mdip/keymaster/db/cache/async';
 import KeymasterUI from './KeymasterUI.js';
-import PassphraseModal from './passphraseModal';
+import PassphraseModal from './PassphraseModal.js';
 import './App.css';
 
 global.Buffer = Buffer;
@@ -19,13 +20,23 @@ function App() {
     const [isReady, setIsReady] = useState(false);
     const [modalAction, setModalAction] = useState(null);
     const [isEncrypted, setIsEncrypted] = useState(false);
-    const [errorText, setErrorText] = useState(null);
+    const [passphraseErrorText, setPassphraseErrorText] = useState(null);
+    const [isCryptoAvailable, setIsCryptoAvailable] = useState(false);
+    const [cryptoError, setCryptoError] = useState('');
 
     useEffect(() => {
         async function initializeWallet() {
+
+            const cryptoAvailable = window.crypto && window.crypto.subtle;
+            setIsCryptoAvailable(!!cryptoAvailable);
+
             const walletData = await wallet_web.loadWallet();
 
             if (walletData && walletData.salt && walletData.iv && walletData.data) {
+                if (!cryptoAvailable) {
+                    setCryptoError('Wallet is encrypted but environment is not secure. Please connect via a secure connection or localhost.');
+                    return;
+                }
                 setIsEncrypted(true);
                 setModalAction('decrypt');
             } else {
@@ -49,7 +60,7 @@ function App() {
             try {
                 await wallet_enc.loadWallet();
             } catch (e) {
-                setErrorText('Incorrect passphrase');
+                setPassphraseErrorText('Incorrect passphrase');
                 return;
             }
         }
@@ -59,7 +70,7 @@ function App() {
         setIsReady(true);
         setModalAction(null);
         setIsEncrypted(true);
-        setErrorText(null);
+        setPassphraseErrorText(null);
     }
 
     function handleModalClose() {
@@ -77,19 +88,24 @@ function App() {
         setIsEncrypted(false);
     }
 
-    if (!isReady && !modalAction) {
-        return;
-    }
-
     return (
         <>
             <PassphraseModal
                 isOpen={modalAction !== null}
                 title={modalAction === 'decrypt' ? "Enter Your Wallet Passphrase" : "Set Your Wallet Passphrase"}
-                errorText={errorText}
+                errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
                 onClose={handleModalClose}
             />
+
+            {cryptoError && (
+                <Box my={2}>
+                    <Alert severity="error">
+                        {cryptoError}
+                    </Alert>
+                </Box>
+            )}
+
             {isReady && (
                 <KeymasterUI
                     keymaster={keymaster}
@@ -98,6 +114,7 @@ function App() {
                     encryptWallet={openEncryptModal}
                     decryptWallet={decryptWallet}
                     isWalletEncrypted={isEncrypted}
+                    isCryptoAvailable={isCryptoAvailable}
                 />
             )}
         </>
