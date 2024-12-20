@@ -125,6 +125,8 @@ export async function checkDIDs(options = {}) {
 
     const total = dids.length;
     let n = 0;
+    let agents = 0;
+    let assets = 0;
     let confirmed = 0;
     let unconfirmed = 0;
     let ephemeral = 0;
@@ -138,6 +140,14 @@ export async function checkDIDs(options = {}) {
             const doc = await resolveDID(did);
             if (chatty) {
                 console.log(`resolved ${n}/${total} ${did} OK`);
+            }
+
+            if (doc.mdip.type === 'agent') {
+                agents += 1;
+            }
+
+            if (doc.mdip.type === 'asset') {
+                assets += 1;
             }
 
             if (doc.didDocumentMetadata.confirmed) {
@@ -165,7 +175,8 @@ export async function checkDIDs(options = {}) {
         }
     }
 
-    return { total, confirmed, unconfirmed, ephemeral, invalid, byRegistry, byVersion };
+    const byType = { agents, assets, confirmed, unconfirmed, ephemeral, invalid };
+    return { total, byType, byRegistry, byVersion };
 }
 
 export async function initRegistries(csvRegistries) {

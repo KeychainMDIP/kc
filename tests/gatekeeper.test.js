@@ -2625,9 +2625,10 @@ describe('checkDIDs', () => {
         const check = await gatekeeper.checkDIDs({ chatty: true });
 
         expect(check.total).toBe(2);
-        expect(check.confirmed).toBe(2);
-        expect(check.ephemeral).toBe(1);
-        expect(check.invalid).toBe(0);
+        expect(check.byType.agents).toBe(1);
+        expect(check.byType.assets).toBe(1);
+        expect(check.byType.ephemeral).toBe(1);
+        expect(check.byType.invalid).toBe(0);
         expect(check.byRegistry['local']).toBe(2);
         expect(check.byVersion[1]).toBe(2);
     });
@@ -2649,10 +2650,12 @@ describe('checkDIDs', () => {
 
         expect(ok).toBe(true);
         expect(check.total).toBe(2);
-        expect(check.confirmed).toBe(1);
-        expect(check.unconfirmed).toBe(1);
-        expect(check.ephemeral).toBe(0);
-        expect(check.invalid).toBe(0);
+        expect(check.byType.agents).toBe(1);
+        expect(check.byType.assets).toBe(1);
+        expect(check.byType.confirmed).toBe(1);
+        expect(check.byType.unconfirmed).toBe(1);
+        expect(check.byType.ephemeral).toBe(0);
+        expect(check.byType.invalid).toBe(0);
         expect(check.byRegistry['hyperswarm']).toBe(2);
         expect(check.byVersion[1]).toBe(1);
         expect(check.byVersion[2]).toBe(1);
@@ -2673,8 +2676,7 @@ describe('checkDIDs', () => {
         const check = await gatekeeper.checkDIDs({ chatty: true, dids });
 
         expect(check.total).toBe(3);
-        expect(check.ephemeral).toBe(0);
-        expect(check.invalid).toBe(1);
+        expect(check.byType.invalid).toBe(1);
     });
 
     it('should reset a corrupted db', async () => {

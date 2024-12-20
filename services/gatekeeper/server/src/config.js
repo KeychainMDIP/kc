@@ -7,6 +7,7 @@ const config = {
     db: process.env.KC_GATEKEEPER_DB || 'redis',
     registries: process.env.KC_GATEKEEPER_REGISTRIES,
     gcInterval: process.env.KC_GATEKEEPER_GC_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_GC_INTERVAL) : 15,
+    statusInterval: process.env.KC_GATEKEEPER_STATUS_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_STATUS_INTERVAL) : 5,
 };
 
 export default config;
