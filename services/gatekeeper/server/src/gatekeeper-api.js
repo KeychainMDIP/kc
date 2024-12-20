@@ -384,9 +384,9 @@ function formatBytes(bytes) {
 }
 
 async function main() {
-    console.log(`Starting Gatekeeper with a db (${config.db}) check...`);
+    console.log(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
-    setInterval(reportStatus, 60 * 1000);
+    setInterval(reportStatus, config.statusInterval * 60 * 1000);
 
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
