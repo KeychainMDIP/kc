@@ -295,6 +295,14 @@ async function reportStatus() {
     console.log(`DID Database (${config.db}):`);
     console.log(`  Total: ${status.dids.total}`);
 
+    console.log(`  By type:`);
+    console.log(`    Agents: ${status.dids.byType.agents}`);
+    console.log(`    Assets: ${status.dids.byType.assets}`);
+    console.log(`    Confirmed: ${status.dids.byType.confirmed}`);
+    console.log(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
+    console.log(`    Ephemeral: ${status.dids.byType.ephemeral}`);
+    console.log(`    Invalid: ${status.dids.byType.invalid}`);
+
     console.log(`  By registry:`);
     const registries = Object.keys(status.dids.byRegistry).sort();
     for (let registry of registries) {
@@ -310,10 +318,6 @@ async function reportStatus() {
     }
     console.log(`    6+: ${status.dids.total - count}`);
 
-    console.log(`  Confirmed: ${status.dids.confirmed}`);
-    console.log(`  Unconfirmed: ${status.dids.unconfirmed}`);
-    console.log(`  Ephemeral: ${status.dids.ephemeral}`);
-    console.log(`  Invalid: ${status.dids.invalid}`);
 
     console.log(`Memory Usage Report:`);
     console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
