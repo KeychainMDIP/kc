@@ -681,6 +681,31 @@ process.on('unhandledRejection', (reason, promise) => {
     //console.error('Unhandled rejection caught');
 });
 
+async function waitForCurrentId() {
+    let isReady = false;
+    const currentId = await keymaster.getCurrentId();
+
+    if (!currentId) {
+        return;
+    }
+
+    while (!isReady) {
+        try {
+            console.log(`Resolving current ID: ${currentId}`);
+            const doc = await keymaster.resolveDID(currentId);
+            console.log(JSON.stringify(doc, null, 4));
+            isReady = true;
+        }
+        catch {
+            console.log(`Waiting for gatekeeper to sync...`);
+        }
+
+        if (!isReady) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
+        }
+    }
+}
+
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
@@ -707,17 +732,6 @@ app.listen(port, async () => {
     await keymaster.start({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
-    try {
-        const currentId = await keymaster.getCurrentId();
-
-        if (currentId) {
-            console.log(`current ID: ${currentId}`);
-            const doc = await keymaster.resolveId();
-            console.log(JSON.stringify(doc, null, 4));
-        }
-        serverReady = true;
-    }
-    catch (error) {
-        console.log(error);
-    }
+    await waitForCurrentId();
+    serverReady = true;
 });
