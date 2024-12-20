@@ -2676,8 +2676,7 @@ describe('checkDIDs', () => {
         const check = await gatekeeper.checkDIDs({ chatty: true, dids });
 
         expect(check.total).toBe(3);
-        expect(check.ephemeral).toBe(0);
-        expect(check.invalid).toBe(1);
+        expect(check.byType.invalid).toBe(1);
     });
 
     it('should reset a corrupted db', async () => {
