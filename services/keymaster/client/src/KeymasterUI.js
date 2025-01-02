@@ -4,7 +4,7 @@ import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@m
 import axios from 'axios';
 import './App.css';
 
-function KeymasterUI({ keymaster, title, challengeDID }) {
+function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -1845,6 +1845,24 @@ function KeymasterUI({ keymaster, title, challengeDID }) {
                                 </Grid>
                             </Grid>
                             <p />
+                            {encryption && (
+                                <>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            { encryption.isWalletEncrypted ? (
+                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
+                                                    Decrypt Wallet
+                                                </Button>
+                                            ) : (
+                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
+                                                    Encrypt Wallet
+                                                </Button>
+                                            )}
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                </>
+                            )}
                             <Box>
                                 <pre>{mnemonicString}</pre>
                             </Box>

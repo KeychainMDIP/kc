@@ -887,10 +887,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    // async function handleDecryptWallet() {
-    //     await decryptWallet();
-    // }
-
     return (
         <div className="App">
             <header className="App-header">
