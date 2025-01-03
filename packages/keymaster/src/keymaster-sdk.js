@@ -326,6 +326,16 @@ export async function createAsset(data, options = {}) {
     }
 }
 
+export async function listAssets() {
+    try {
+        const response = await axios.get(`${URL}/api/v1/assets`);
+        return response.data.assets;
+    }
+    catch (error) {
+        throwError(error);
+    }
+}
+
 export async function resolveAsset(name) {
     try {
         const response = await axios.get(`${URL}/api/v1/assets/${name}`);

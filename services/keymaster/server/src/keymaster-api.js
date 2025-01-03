@@ -573,11 +573,20 @@ v1router.post('/schemas/:id/template/', async (req, res) => {
     }
 });
 
-v1router.post('/assets/', async (req, res) => {
+v1router.post('/assets', async (req, res) => {
     try {
         const { data, options } = req.body;
         const did = await keymaster.createAsset(data, options);
         res.json({ did });
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/assets', async (req, res) => {
+    try {
+        const assets = await keymaster.listAssets();
+        res.json({ assets });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }

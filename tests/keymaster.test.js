@@ -1150,6 +1150,61 @@ describe('createAsset', () => {
     });
 });
 
+describe('listAssets', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return empty list when no assets', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const assets = await keymaster.listAssets();
+
+        expect(assets).toStrictEqual([]);
+    });
+
+    it('should return assets owned by current ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const assets = await keymaster.listAssets();
+
+        expect(assets).toStrictEqual([dataDid]);
+    });
+
+    it('should return assets owned by specified ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        await keymaster.createId('Bob');
+        const assetsBob = await keymaster.listAssets();
+        const assetsAlice = await keymaster.listAssets('Alice');
+
+        expect(assetsBob).toStrictEqual([]);
+        expect(assetsAlice).toStrictEqual([dataDid]);
+    });
+
+    it('should not include ephemeral assets', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const validUntil = new Date();
+        validUntil.setMinutes(validUntil.getMinutes() + 1);
+        await keymaster.createAsset(mockAnchor, { validUntil });
+        const assets = await keymaster.listAssets();
+
+        expect(assets).toStrictEqual([]);
+    });
+});
+
 describe('updateDID', () => {
 
     afterEach(() => {
@@ -1634,9 +1689,6 @@ describe('issueCredential', () => {
 
         const isValid = await keymaster.verifySignature(vc);
         expect(isValid).toBe(true);
-
-        const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
     });
 
     it('should throw an exception if user is not issuer', async () => {

@@ -781,6 +781,11 @@ export async function updateAsset(did, data) {
     return updateDID(doc);
 }
 
+export async function listAssets(owner) {
+    const id = await fetchIdInfo(owner);
+    return id.owned || [];
+}
+
 export async function createId(name, options = {}) {
     const { registry = defaultRegistry } = options;
 
@@ -1018,9 +1023,7 @@ export async function issueCredential(credential, options = {}) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
-    await addToOwned(cipherDid);
-    return cipherDid;
+    return encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
 }
 
 export async function updateCredential(did, credential) {
