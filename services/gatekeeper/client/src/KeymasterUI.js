@@ -4,7 +4,7 @@ import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@m
 import axios from 'axios';
 import './App.css';
 
-function KeymasterUI({ keymaster, title, challengeDID, encryptWallet, decryptWallet, isWalletEncrypted, isCryptoAvailable }) {
+function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -885,10 +885,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryptWallet, decryptWal
         } catch (error) {
             showError(error);
         }
-    }
-
-    async function handleDecryptWallet() {
-        await decryptWallet();
     }
 
     return (
@@ -1849,16 +1845,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryptWallet, decryptWal
                                 </Grid>
                             </Grid>
                             <p />
-                            {isCryptoAvailable && (
+                            {encryption && (
                                 <>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            { isWalletEncrypted ? (
-                                                <Button variant="contained" color="primary" onClick={handleDecryptWallet}>
+                                            { encryption.isWalletEncrypted ? (
+                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
                                                     Decrypt Wallet
                                                 </Button>
                                             ) : (
-                                                <Button variant="contained" color="primary" onClick={encryptWallet}>
+                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
                                                     Encrypt Wallet
                                                 </Button>
                                             )}

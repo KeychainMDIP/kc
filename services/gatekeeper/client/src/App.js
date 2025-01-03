@@ -111,12 +111,18 @@ function App() {
                     keymaster={keymaster}
                     title={'Keymaster Browser Wallet Demo'}
                     challengeDID={challengeDID}
-                    encryptWallet={openEncryptModal}
-                    decryptWallet={decryptWallet}
-                    isWalletEncrypted={isEncrypted}
-                    isCryptoAvailable={isCryptoAvailable}
+                    encryption={
+                        isCryptoAvailable
+                            ? {
+                                encryptWallet: openEncryptModal,
+                                decryptWallet: decryptWallet,
+                                isWalletEncrypted: isEncrypted,
+                            }
+                            : undefined
+                    }
                 />
             )}
+
         </>
     );
 }
