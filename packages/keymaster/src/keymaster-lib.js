@@ -1023,9 +1023,7 @@ export async function issueCredential(credential, options = {}) {
     }
 
     const signed = await addSignature(credential);
-    const cipherDid = await encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
-    await addToOwned(cipherDid);
-    return cipherDid;
+    return encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
 }
 
 export async function updateCredential(did, credential) {
