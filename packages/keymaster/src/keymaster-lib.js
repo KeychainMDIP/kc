@@ -781,6 +781,11 @@ export async function updateAsset(did, data) {
     return updateDID(doc);
 }
 
+export async function listAssets(owner) {
+    const id = await fetchIdInfo(owner);
+    return id.owned || [];
+}
+
 export async function createId(name, options = {}) {
     const { registry = defaultRegistry } = options;
 

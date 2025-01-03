@@ -1150,6 +1150,46 @@ describe('createAsset', () => {
     });
 });
 
+describe('listAssets', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return empty list when no assets', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const assets = await keymaster.listAssets();
+
+        expect(assets).toStrictEqual([]);
+    });
+
+    it('should return assets owned by current ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const assets = await keymaster.listAssets();
+
+        expect(assets).toStrictEqual([dataDid]);
+    });
+
+    it('should return assets owned by specified ID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        await keymaster.createId('Bob');
+        const assets = await keymaster.listAssets('Alice');
+
+        expect(assets).toStrictEqual([dataDid]);
+    });
+});
+
 describe('updateDID', () => {
 
     afterEach(() => {
