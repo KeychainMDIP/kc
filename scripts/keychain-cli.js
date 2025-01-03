@@ -810,6 +810,19 @@ program
     });
 
 program
+    .command('list-assets')
+    .description('List assets owned by current ID')
+    .action(async () => {
+        try {
+            const assets = await keymaster.listAssets();
+            console.log(JSON.stringify(assets, null, 4));
+        }
+        catch (error) {
+            console.error(error.message || error);
+        }
+    });
+
+program
     .command('create-poll-template')
     .description('Generate a poll template')
     .action(async () => {
