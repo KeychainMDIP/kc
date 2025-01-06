@@ -3,8 +3,8 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as db_json from '@mdip/gatekeeper/db/json';
-import * as db_json_cache from '@mdip/gatekeeper/db/json-cache';
+import DbJson from '@mdip/gatekeeper/db/json-class';
+import DbJsonCache from '@mdip/gatekeeper/db/json-cache-class';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
 import * as db_redis from '@mdip/gatekeeper/db/redis';
@@ -13,11 +13,12 @@ import config from './config.js';
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
+const dbName = 'mdip';
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
         : (config.db === 'redis') ? db_redis
-            : (config.db === 'json') ? db_json
-                : (config.db === 'json-cache') ? db_json_cache
+            : (config.db === 'json') ? new DbJson(dbName)
+                : (config.db === 'json-cache') ? new DbJsonCache(dbName)
                     : null;
 
 await db.start('mdip');
