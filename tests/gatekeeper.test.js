@@ -2,7 +2,7 @@ import mockFs from 'mock-fs';
 import fs from 'fs';
 import * as cipher from '@mdip/cipher/node';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as db_json from '@mdip/gatekeeper/db/json';
+import DbJson from '@mdip/gatekeeper/db/json-class';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
@@ -12,8 +12,9 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
+const db_json = new DbJson('test');
+
 beforeAll(async () => {
-    await db_json.start('test');
     await gatekeeper.start({ db: db_json, console: mockConsole });
 });
 
@@ -23,7 +24,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
     await gatekeeper.stop();
-    await db_json.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {
