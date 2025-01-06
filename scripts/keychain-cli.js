@@ -422,11 +422,11 @@ program
     });
 
 program
-    .command('bind-credential <file> <did>')
+    .command('bind-credential <schema> <subject>')
     .description('Create bound credential for a user')
-    .action(async (file, did) => {
+    .action(async (schema, subject) => {
         try {
-            const vc = await keymaster.bindCredential(file, did);
+            const vc = await keymaster.bindCredential(schema, subject);
             console.log(JSON.stringify(vc, null, 4));
         }
         catch (error) {

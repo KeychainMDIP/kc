@@ -55,7 +55,7 @@ $ kc resolve-did did:mdip:z3v8AuadZVYKXq9oyoWmCgqGREsvMxCKDWxwLHNw3tHpfDyrNr3
 The MDIP CLI can be used to encrypt a message that can only be decrypted by the targeted DID:
 
 ```sh
-$ kc encrypt-msg 'this is another secret message' david
+$ kc encrypt-message 'this is another secret message' david
 did:mdip:z3v8AuacNPvBNSN8o1LgJxSD9jZVQBkre8BfHdrPgSugb7zuhqs
 ```
 
