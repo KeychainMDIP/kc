@@ -21,12 +21,14 @@ The library must be configured by calling the start function with one of the sup
 - redis - @mdip/gatekeeper/db/redis
 
 ```js
-import * as gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper/lib';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 
 const db_redis = new DbRedis('mdip-test');
 await db_redis.start();
-await gatekeeper.start({ db: db_redis });
+
+const gatekeeper = new Gatekeeper({ db: db_redis });
+await gatekeeper.start();
 
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);

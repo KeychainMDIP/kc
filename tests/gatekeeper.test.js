@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import * as cipher from '@mdip/cipher/node';
-import * as gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper/lib';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
@@ -13,9 +13,10 @@ const mockConsole = {
 }
 
 const db_json = new DbJson('test');
+const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
 
 beforeAll(async () => {
-    await gatekeeper.start({ db: db_json, console: mockConsole });
+    await gatekeeper.start();
 });
 
 beforeEach(async () => {
@@ -128,7 +129,7 @@ async function createAssetOp(agent, keypair, registry = 'local', validUntil = nu
     };
 }
 
-describe('start', () => {
+describe('constructor', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -138,7 +139,7 @@ describe('start', () => {
         mockFs({});
 
         try {
-            await gatekeeper.start();
+            new Gatekeeper();
             throw new ExpectedExceptionError();
         }
         catch (error) {
