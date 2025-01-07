@@ -3,13 +3,12 @@ import { InvalidDIDError } from '@mdip/common/errors';
 
 export default class DbRedis {
     constructor(dbName) {
-        let url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
-
-        this.redis = new Redis(url);
         this.dbName = dbName;
     }
 
     async start() {
+        const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
+        this.redis = new Redis(url);
     }
 
     async stop() {
@@ -39,14 +38,14 @@ export default class DbRedis {
             throw new InvalidDIDError();
         }
 
-        const key = didKey(did);
+        const key = this.didKey(did);
         const val = JSON.stringify(event);
 
         return this.redis.rpush(key, val);
     }
 
     async setEvents(did, events) {
-        await deleteEvents(did);
+        await this.deleteEvents(did);
 
         // Add new events
         for (const event of events) {
