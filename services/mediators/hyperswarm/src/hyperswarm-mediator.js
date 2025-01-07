@@ -6,9 +6,11 @@ import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
-import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import Gatekeeper from '@mdip/gatekeeper/sdk';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
+
+const gatekeeper = new Gatekeeper();
 
 EventEmitter.defaultMaxListeners = 100;
 

@@ -1,8 +1,9 @@
 import canonicalize from 'canonicalize';
-import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import Gatekeeper from '@mdip/gatekeeper/sdk';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
+const gatekeeper = new Gatekeeper();
 const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
 
 async function addOperationToIPFS(operation, n, k) {
