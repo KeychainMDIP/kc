@@ -13,6 +13,7 @@
     "./db/mongodb": "./src/db-mongodb.js",
     "./db/json-class": "./src/db/json.js",
     "./db/json-cache-class": "./src/db/json-cache.js",
+    "./db/sqlite-class": "./src/db/sqlite.js",
     "./db/redis-class": "./src/db/redis.js"
   },
   "scripts": {

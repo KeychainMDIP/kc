@@ -11,6 +11,30 @@ export default class DbJsonCache {
         this.loadDb();
     }
 
+    async start() {
+        this.saveLoop();
+    }
+
+    async stop() {
+        this.saveDb(); // Save the current state one last time
+
+        if (this.saveLoopTimeoutId !== null) {
+            clearTimeout(this.saveLoopTimeoutId); // Cancel the next scheduled saveLoop
+            this.saveLoopTimeoutId = null; // Reset the timeout ID
+        }
+    }
+
+    async saveLoop() {
+        try {
+            this.saveDb();
+            console.log(`DID db saved to ${this.dbName}`);
+        } catch (error) {
+            console.error(`Error in saveLoop: ${error}`);
+        }
+
+        this.saveLoopTimeoutId = setTimeout(() => this.saveLoop(), 20 * 1000);
+    }
+
     loadDb() {
         if (!this.dbCache) {
             try {
@@ -39,30 +63,6 @@ export default class DbJsonCache {
         }
 
         fs.writeFileSync(this.dbName, JSON.stringify(this.dbCache, null, 4));
-    }
-
-    async saveLoop() {
-        try {
-            this.saveDb();
-            console.log(`DID db saved to ${this.dbName}`);
-        } catch (error) {
-            console.error(`Error in saveLoop: ${error}`);
-        }
-        // Schedule the next iteration of saveLoop
-        this.saveLoopTimeoutId = setTimeout(() => this.saveLoop(), 20 * 1000);
-    }
-
-    async start() {
-        this.saveLoop();
-    }
-
-    async stop() {
-        this.saveDb(); // Save the current state one last time
-
-        if (this.saveLoopTimeoutId !== null) {
-            clearTimeout(this.saveLoopTimeoutId); // Cancel the next scheduled saveLoop
-            this.saveLoopTimeoutId = null; // Reset the timeout ID
-        }
     }
 
     async resetDb() {
