@@ -3,8 +3,8 @@ import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as wallet from '@mdip/keymaster/db/json';
-import * as db_redis from '@mdip/gatekeeper/db/redis';
 import * as cipher from '@mdip/cipher/node';
+import DbRedis from '@mdip/gatekeeper/db/redis';
 
 const mockSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -26,7 +26,8 @@ let keymaster;
 // eslint-disable-next-line
 async function setup1() {
     //await db_json.start('mdip');
-    await db_redis.start('mdip');
+    const db_redis = new DbRedis('mdip');
+    await db_redis.start();
     await gatekeeper_lib.start({ db: db_redis });
     //await gatekeeper_lib.verifyDb();
     await keymaster_lib.start({ gatekeeper: gatekeeper_lib, wallet, cipher });

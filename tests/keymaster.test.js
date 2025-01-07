@@ -5,7 +5,7 @@ import canonicalize from 'canonicalize';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
-import DbJson from '@mdip/gatekeeper/db/json-class';
+import DbJson from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import { copyJSON } from '@mdip/common/utils';

@@ -3,10 +3,10 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
-import DbJsonCache from '@mdip/gatekeeper/db/json-cache-class';
-import DbRedis from '@mdip/gatekeeper/db/redis-class';
-import DbSqlite from '@mdip/gatekeeper/db/sqlite-class';
-import DbMongo from '@mdip/gatekeeper/db/mongo-class';
+import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
+import DbRedis from '@mdip/gatekeeper/db/redis';
+import DbSqlite from '@mdip/gatekeeper/db/sqlite';
+import DbMongo from '@mdip/gatekeeper/db/mongo';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
