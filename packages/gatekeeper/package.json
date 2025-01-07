@@ -14,7 +14,8 @@
     "./db/json-class": "./src/db/json.js",
     "./db/json-cache-class": "./src/db/json-cache.js",
     "./db/sqlite-class": "./src/db/sqlite.js",
-    "./db/redis-class": "./src/db/redis.js"
+    "./db/redis-class": "./src/db/redis.js",
+    "./db/mongo-class": "./src/db/mongo.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

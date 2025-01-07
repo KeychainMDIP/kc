@@ -6,7 +6,7 @@ import * as gatekeeper from '@mdip/gatekeeper/lib';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache-class';
 import DbRedis from '@mdip/gatekeeper/db/redis-class';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite-class';
-import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+import DbMongo from '@mdip/gatekeeper/db/mongo-class';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -14,7 +14,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const dbName = 'mdip';
 const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
-    : (config.db === 'mongodb') ? db_mongodb
+    : (config.db === 'mongodb') ? new DbMongo(dbName)
         : (config.db === 'redis') ? new DbRedis(dbName)
             : (config.db === 'json') ? new DbJsonCache(dbName)
                 : (config.db === 'json-cache') ? new DbJsonCache(dbName)
