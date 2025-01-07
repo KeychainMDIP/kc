@@ -12,7 +12,8 @@
     "./db/redis": "./src/db-redis.js",
     "./db/mongodb": "./src/db-mongodb.js",
     "./db/json-class": "./src/db/json.js",
-    "./db/json-cache-class": "./src/db/json-cache.js"
+    "./db/json-cache-class": "./src/db/json-cache.js",
+    "./db/redis-class": "./src/db/redis.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

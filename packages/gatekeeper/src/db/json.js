@@ -1,10 +1,16 @@
 import fs from 'fs';
 import { InvalidDIDError } from '@mdip/common/errors';
 
-class DbJson {
+export default class DbJson {
     constructor(name, folder='data') {
         this.dataFolder = folder;
         this.dbName = `${this.dataFolder}/${name}.json`;
+    }
+
+    async start() {
+    }
+
+    async stop() {
     }
 
     loadDb() {
@@ -156,5 +162,3 @@ class DbJson {
         return Object.keys(db.dids);
     }
 }
-
-export default DbJson;

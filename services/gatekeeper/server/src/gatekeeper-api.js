@@ -5,9 +5,9 @@ import { fileURLToPath } from 'url';
 import * as gatekeeper from '@mdip/gatekeeper/lib';
 import DbJson from '@mdip/gatekeeper/db/json-class';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache-class';
+import DbRedis from '@mdip/gatekeeper/db/redis-class';
 import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
 import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
-import * as db_redis from '@mdip/gatekeeper/db/redis';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -16,7 +16,7 @@ EventEmitter.defaultMaxListeners = 100;
 const dbName = 'mdip';
 const db = (config.db === 'sqlite') ? db_sqlite
     : (config.db === 'mongodb') ? db_mongodb
-        : (config.db === 'redis') ? db_redis
+        : (config.db === 'redis') ? new DbRedis(dbName)
             : (config.db === 'json') ? new DbJson(dbName)
                 : (config.db === 'json-cache') ? new DbJsonCache(dbName)
                     : null;
