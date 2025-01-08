@@ -5,9 +5,9 @@ import dotenv from 'dotenv';
 import Gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
-import * as db_wallet_json from '@mdip/keymaster/db/json';
-import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
-import * as db_wallet_cache from '@mdip/keymaster/db/cache';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
+import WalletCache from '@mdip/keymaster/wallet/cache';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -1039,17 +1039,14 @@ program
     });
 
 function getDBWallet() {
-    let wallet = db_wallet_json;
+    let wallet = new WalletJson();
 
     if (keymasterPassphrase) {
-        db_wallet_enc.setPassphrase(keymasterPassphrase);
-        db_wallet_enc.setWallet(wallet);
-        wallet = db_wallet_enc;
+        wallet = new WalletEncrypted(wallet, keymasterPassphrase);
     }
 
     if (walletCache) {
-        db_wallet_cache.setWallet(wallet);
-        wallet = db_wallet_cache;
+        wallet = new WalletCache(wallet);
     }
 
     return wallet;

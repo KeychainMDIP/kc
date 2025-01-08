@@ -6,6 +6,12 @@
   "exports": {
     "./lib": "./src/keymaster-lib.js",
     "./sdk": "./src/keymaster-sdk.js",
+    "./wallet/json": "./src/db/json.js",
+    "./wallet/json-enc": "./src/db/json-enc.js",
+    "./wallet/cache": "./src/db/cache.js",
+    "./wallet/cache-async": "./src/db/cache-async.js",
+    "./wallet/web": "./src/db/web.js",
+    "./wallet/web-enc": "./src/db/web-enc.js",
     "./db/json": "./src/db-wallet-json.js",
     "./db/json/enc": "./src/db-wallet-json-enc.js",
     "./db/cache": "./src/db-wallet-cache.js",
