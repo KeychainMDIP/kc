@@ -1,7 +1,9 @@
 import * as uuid from 'uuid';
-import * as db_json from '@mdip/gatekeeper/db/json';
-import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
-import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
+
+import DbJson from '@mdip/gatekeeper/db/json';
+import DbSqlite from '@mdip/gatekeeper/db/sqlite';
+import DbMongo from '@mdip/gatekeeper/db/mongo';
+import DbRedis from '@mdip/gatekeeper/db/redis';
 
 async function importDIDs(db) {
 
@@ -67,7 +69,7 @@ async function exportDIDs(db) {
 }
 
 async function runBenchmark(db) {
-    await db.start('mdip-benchmark');
+    await db.start();
     await db.resetDb();
 
     console.time('>> importDIDs');
@@ -78,18 +80,28 @@ async function runBenchmark(db) {
     await exportDIDs(db);
     console.timeEnd('>> exportDIDs');
 
+    await db.resetDb();
     await db.stop();
 }
 
 async function main() {
+    const dbName = 'mdip-benchmark';
+
+    const db_json = new DbJson(dbName);
     console.log('>> db_json');
     await runBenchmark(db_json);
 
+    const db_sqlite = new DbSqlite(dbName);
     console.log('>> db_sqlite');
     await runBenchmark(db_sqlite);
 
+    const db_mongodb = new DbMongo(dbName);
     console.log('>> db_mongodb');
     await runBenchmark(db_mongodb);
+
+    const db_redis = new DbRedis(dbName);
+    console.log('>> db_redis');
+    await runBenchmark(db_redis);
 }
 
 main();

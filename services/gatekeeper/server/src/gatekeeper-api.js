@@ -2,26 +2,27 @@ import express from 'express';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as db_json from '@mdip/gatekeeper/db/json';
-import * as db_json_cache from '@mdip/gatekeeper/db/json-cache';
-import * as db_sqlite from '@mdip/gatekeeper/db/sqlite';
-import * as db_mongodb from '@mdip/gatekeeper/db/mongodb';
-import * as db_redis from '@mdip/gatekeeper/db/redis';
+import Gatekeeper from '@mdip/gatekeeper/lib';
+import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
+import DbRedis from '@mdip/gatekeeper/db/redis';
+import DbSqlite from '@mdip/gatekeeper/db/sqlite';
+import DbMongo from '@mdip/gatekeeper/db/mongo';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
-const db = (config.db === 'sqlite') ? db_sqlite
-    : (config.db === 'mongodb') ? db_mongodb
-        : (config.db === 'redis') ? db_redis
-            : (config.db === 'json') ? db_json
-                : (config.db === 'json-cache') ? db_json_cache
+const dbName = 'mdip';
+const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
+    : (config.db === 'mongodb') ? new DbMongo(dbName)
+        : (config.db === 'redis') ? new DbRedis(dbName)
+            : (config.db === 'json') ? new DbJsonCache(dbName)
+                : (config.db === 'json-cache') ? new DbJsonCache(dbName)
                     : null;
-
 await db.start('mdip');
-await gatekeeper.start({ db });
+
+const gatekeeper = new Gatekeeper({ db });
+await gatekeeper.start();
 
 const startTime = new Date();
 const app = express();

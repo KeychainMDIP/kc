@@ -3,24 +3,25 @@ import fs from 'fs';
 import canonicalize from 'canonicalize';
 
 import * as keymaster from '@mdip/keymaster/lib';
-import * as gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper/lib';
 import * as cipher from '@mdip/cipher/node';
-import * as db_json from '@mdip/gatekeeper/db/json';
+import DbJson from '@mdip/gatekeeper/db/json';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
+const db_json = new DbJson('test');
+const gatekeeper = new Gatekeeper({ db: db_json });
+
 beforeEach(async () => {
-    await db_json.start('mdip');
-    await gatekeeper.start({ db: db_json });
+    await gatekeeper.start();
     await keymaster.start({ gatekeeper, wallet, cipher });
 });
 
 afterEach(async () => {
     await keymaster.stop();
     await gatekeeper.stop();
-    await db_json.stop();
 });
 
 describe('start', () => {

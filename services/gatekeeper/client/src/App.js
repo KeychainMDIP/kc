@@ -2,7 +2,7 @@ import { Buffer } from 'buffer';
 import React, { useState, useEffect } from 'react';
 import { Alert, Box } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
-import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import Gatekeeper from '@mdip/gatekeeper/sdk';
 import * as cipher from '@mdip/cipher/web';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet_web from "@mdip/keymaster/db/web";
@@ -11,6 +11,8 @@ import * as db_wallet_cache from '@mdip/keymaster/db/cache/async';
 import KeymasterUI from './KeymasterUI.js';
 import PassphraseModal from './PassphraseModal.js';
 import './App.css';
+
+const gatekeeper = new Gatekeeper();
 
 global.Buffer = Buffer;
 

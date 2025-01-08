@@ -2,7 +2,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
+import Gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet_json from '@mdip/keymaster/db/json';
@@ -14,6 +14,8 @@ dotenv.config();
 
 let keymaster;
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
+const gatekeeper_sdk = new Gatekeeper();
+
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 
 const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
@@ -1069,7 +1071,7 @@ async function run() {
         keymaster = keymaster_lib;
         await gatekeeper_sdk.start({
             url: gatekeeperURL,
-            waitUntilReady: false,
+            waitUntilReady: false
         });
         await keymaster.start({
             gatekeeper: gatekeeper_sdk,

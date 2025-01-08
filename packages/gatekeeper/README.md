@@ -15,17 +15,20 @@ npm install @mdip/gatekeeper
 
 The library must be configured by calling the start function with one of the supported databases:
 - JSON - @mdip/gatekeeper/db/json
-- memory cache with JSON store - @mdip/gatekeeper/db/json-cache
+- JSON with memory cache - @mdip/gatekeeper/db/json-cache
 - sqlite - @mdip/gatekeeper/db/sqlite
 - mongodb - @mdip/gatekeeper/db/mongodb
 - redis - @mdip/gatekeeper/db/redis
 
 ```js
-import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as db_json from '@mdip/gatekeeper/db/json';
+import Gatekeeper from '@mdip/gatekeeper/lib';
+import DbRedis from '@mdip/gatekeeper/db/redis';
 
-await json_db.start('mdip-test');
-await gatekeeper.start({ db: db_json });
+const db_redis = new DbRedis('mdip-test');
+await db_redis.start();
+
+const gatekeeper = new Gatekeeper({ db: db_redis });
+await gatekeeper.start();
 
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);

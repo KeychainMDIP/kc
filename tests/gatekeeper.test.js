@@ -1,8 +1,8 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import * as cipher from '@mdip/cipher/node';
-import * as gatekeeper from '@mdip/gatekeeper/lib';
-import * as db_json from '@mdip/gatekeeper/db/json';
+import Gatekeeper from '@mdip/gatekeeper/lib';
+import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
@@ -12,9 +12,11 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
+const db_json = new DbJson('test');
+const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+
 beforeAll(async () => {
-    await db_json.start('test');
-    await gatekeeper.start({ db: db_json, console: mockConsole });
+    await gatekeeper.start();
 });
 
 beforeEach(async () => {
@@ -23,7 +25,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
     await gatekeeper.stop();
-    await db_json.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {
@@ -128,7 +129,7 @@ async function createAssetOp(agent, keypair, registry = 'local', validUntil = nu
     };
 }
 
-describe('start', () => {
+describe('constructor', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -138,7 +139,7 @@ describe('start', () => {
         mockFs({});
 
         try {
-            await gatekeeper.start();
+            new Gatekeeper();
             throw new ExpectedExceptionError();
         }
         catch (error) {

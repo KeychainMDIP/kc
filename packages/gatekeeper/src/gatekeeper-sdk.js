@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const VERSION = '/api/v1';
-let API = VERSION;
 
 function throwError(error) {
     if (error.response) {
@@ -11,256 +10,261 @@ function throwError(error) {
     throw error.message;
 }
 
-export async function start(options = {}) {
-    if (options.url) {
-        API = `${options.url}${VERSION}`;
+export default class Gatekeeper {
+    async start(options = {}) {
+        if (options.url) {
+            this.API = `${options.url}${VERSION}`;
+        }
+        else {
+            this.API = VERSION;
+        }
+
+        if (options.waitUntilReady) {
+            await this.waitUntilReady(options);
+        }
     }
 
-    if (options.waitUntilReady) {
-        await waitUntilReady(options);
-    }
-}
+    async waitUntilReady(options = {}) {
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let ready = false;
+        let retries = 0;
 
-async function waitUntilReady(options = {}) {
-    let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
-    let ready = false;
-    let retries = 0;
+        if (chatty) {
+            console.log(`Connecting to gatekeeper at ${this.API}`);
+        }
 
-    if (chatty) {
-        console.log(`Connecting to gatekeeper at ${API}`);
-    }
+        while (!ready) {
+            ready = await this.isReady();
 
-    while (!ready) {
-        ready = await isReady();
-
-        if (!ready) {
-            if (chatty) {
-                console.log('Waiting for Gatekeeper to be ready...');
+            if (!ready) {
+                if (chatty) {
+                    console.log('Waiting for Gatekeeper to be ready...');
+                }
+                // wait for 1 second before checking again
+                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
             }
-            // wait for 1 second before checking again
-            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+
+            retries += 1;
+
+            if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
+                console.log(`Connecting to gatekeeper at ${this.API}`);
+                chatty = true;
+            }
         }
 
-        retries += 1;
-
-        if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-            console.log(`Connecting to gatekeeper at ${API}`);
-            chatty = true;
+        if (chatty) {
+            console.log('Gatekeeper service is ready!');
         }
     }
 
-    if (chatty) {
-        console.log('Gatekeeper service is ready!');
+    async stop() {
     }
-}
 
-export async function stop() {
-}
-
-export async function listRegistries() {
-    try {
-        const response = await axios.get(`${API}/registries`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function resetDb() {
-    try {
-        const response = await axios.get(`${API}/db/reset`);
-        return response.data;
-    }
-    catch (error) {
-        return false;
-    }
-}
-
-export async function verifyDb() {
-    try {
-        const response = await axios.get(`${API}/db/verify`);
-        return response.data;
-    }
-    catch (error) {
-        return false;
-    }
-}
-
-export async function isReady() {
-    try {
-        const response = await axios.get(`${API}/ready`);
-        return response.data;
-    }
-    catch (error) {
-        return false;
-    }
-}
-
-export async function getVersion() {
-    try {
-        const response = await axios.get(`${API}/version`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function getStatus() {
-    try {
-        const response = await axios.get(`${API}/status`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createDID(operation) {
-    try {
-        const response = await axios.post(`${API}/did/`, operation);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
-    try {
-        let params = '';
-
-        if (atTime) {
-            params += `atTime=${atTime}&`;
+    async listRegistries() {
+        try {
+            const response = await axios.get(`${this.API}/registries`);
+            return response.data;
         }
-
-        if (atVersion) {
-            params += `atVersion=${atVersion}&`;
+        catch (error) {
+            throwError(error);
         }
+    }
 
-        if (confirm) {
-            params += `confirm=${confirm}&`;
+    async resetDb() {
+        try {
+            const response = await axios.get(`${this.API}/db/reset`);
+            return response.data;
         }
-
-        if (verify) {
-            params += `verify=${verify}&`;
+        catch (error) {
+            return false;
         }
+    }
 
-        const response = await axios.get(`${API}/did/${did}?${params}`);
-        return response.data;
+    async verifyDb() {
+        try {
+            const response = await axios.get(`${this.API}/db/verify`);
+            return response.data;
+        }
+        catch (error) {
+            return false;
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function updateDID(operation) {
-    try {
-        const response = await axios.post(`${API}/did/${operation.did}`, operation);
-        return response.data;
+    async isReady() {
+        try {
+            const response = await axios.get(`${this.API}/ready`);
+            return response.data;
+        }
+        catch (error) {
+            return false;
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function deleteDID(operation) {
-    try {
-        const response = await axios.delete(`${API}/did/${operation.did}`, { data: operation });
-        return response.data;
+    async getVersion() {
+        try {
+            const response = await axios.get(`${this.API}/version`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function getDIDs(options = {}) {
-    try {
-        const response = await axios.post(`${API}/dids/`, options);
-        return response.data;
+    async getStatus() {
+        try {
+            const response = await axios.get(`${this.API}/status`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function exportDIDs(dids) {
-    try {
-        const response = await axios.post(`${API}/dids/export`, { dids });
-        return response.data;
+    async createDID(operation) {
+        try {
+            const response = await axios.post(`${this.API}/did/`, operation);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function importDIDs(dids) {
-    try {
-        const response = await axios.post(`${API}/dids/import`, dids);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
+    async resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+        try {
+            let params = '';
 
-export async function exportBatch(dids) {
-    try {
-        const response = await axios.post(`${API}/batch/export`, { dids });
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
+            if (atTime) {
+                params += `atTime=${atTime}&`;
+            }
 
-export async function importBatch(batch) {
-    try {
-        const response = await axios.post(`${API}/batch/import`, batch);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
+            if (atVersion) {
+                params += `atVersion=${atVersion}&`;
+            }
 
-export async function removeDIDs(dids) {
-    try {
-        const response = await axios.post(`${API}/dids/remove`, dids);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
+            if (confirm) {
+                params += `confirm=${confirm}&`;
+            }
 
-export async function getQueue(registry) {
-    try {
-        const response = await axios.get(`${API}/queue/${registry}`);
-        return response.data;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
+            if (verify) {
+                params += `verify=${verify}&`;
+            }
 
-export async function clearQueue(registry, events) {
-    try {
-        const response = await axios.post(`${API}/queue/${registry}/clear`, events);
-        return response.data;
+            const response = await axios.get(`${this.API}/did/${did}?${params}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function processEvents() {
-    try {
-        const response = await axios.post(`${API}/events/process`);
-        return response.data;
+    async updateDID(operation) {
+        try {
+            const response = await axios.post(`${this.API}/did/${operation.did}`, operation);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
+
+    async deleteDID(operation) {
+        try {
+            const response = await axios.delete(`${this.API}/did/${operation.did}`, { data: operation });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getDIDs(options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/dids/`, options);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportDIDs(dids) {
+        try {
+            const response = await axios.post(`${this.API}/dids/export`, { dids });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async importDIDs(dids) {
+        try {
+            const response = await axios.post(`${this.API}/dids/import`, dids);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportBatch(dids) {
+        try {
+            const response = await axios.post(`${this.API}/batch/export`, { dids });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async importBatch(batch) {
+        try {
+            const response = await axios.post(`${this.API}/batch/import`, batch);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeDIDs(dids) {
+        try {
+            const response = await axios.post(`${this.API}/dids/remove`, dids);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getQueue(registry) {
+        try {
+            const response = await axios.get(`${this.API}/queue/${registry}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async clearQueue(registry, events) {
+        try {
+            const response = await axios.post(`${this.API}/queue/${registry}/clear`, events);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async processEvents() {
+        try {
+            const response = await axios.post(`${this.API}/events/process`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
 }
