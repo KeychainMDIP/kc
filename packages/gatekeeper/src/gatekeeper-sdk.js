@@ -11,12 +11,13 @@ function throwError(error) {
 }
 
 export default class Gatekeeper {
+    constructor() {
+        this.API = VERSION;
+    }
+
     async start(options = {}) {
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
-        }
-        else {
-            this.API = VERSION;
         }
 
         if (options.waitUntilReady) {
