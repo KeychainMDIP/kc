@@ -40,7 +40,7 @@ console.log(JSON.stringify(docs, null, 4));
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 
 ```js
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 
 // Try connecting to the gatekeeper service every second,
 // and start reporting (chatty) if not connected after 5 attempts
