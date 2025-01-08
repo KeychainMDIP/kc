@@ -1,5 +1,5 @@
 import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
+import WalletJson from '@mdip/keymaster/wallet/json';
 import * as cipher from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper/lib';
 import DbJson from '@mdip/gatekeeper/db/json';
@@ -147,6 +147,8 @@ async function main() {
     const db_json = new DbJson('mdip-workflow');
     const gatekeeper = new Gatekeeper({ db: db_json });
     await gatekeeper.start();
+    
+    const wallet = new WalletJson();
     await keymaster.start({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();

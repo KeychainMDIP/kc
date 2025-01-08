@@ -3,8 +3,8 @@ import BtcClient from 'bitcoin-core';
 import Gatekeeper from '@mdip/gatekeeper/sdk';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
-import * as wallet_json from '@mdip/keymaster/db/json';
-import * as wallet_enc from '@mdip/keymaster/db/json/enc';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
@@ -515,12 +515,10 @@ async function main() {
     else {
         keymaster = keymaster_lib;
 
-        let wallet = wallet_json;
+        let wallet = new WalletJson();
 
         if (config.keymasterPassphrase) {
-            wallet_enc.setPassphrase(config.keymasterPassphrase);
-            wallet_enc.setWallet(wallet);
-            wallet = wallet_enc;
+            wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
         }
 
         await keymaster.start({ gatekeeper, wallet, cipher });
