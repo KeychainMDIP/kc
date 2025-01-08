@@ -1,5 +1,5 @@
 import canonicalize from 'canonicalize';
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 

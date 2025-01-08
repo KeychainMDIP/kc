@@ -2,7 +2,7 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import * as db_wallet_json from '@mdip/keymaster/db/json';

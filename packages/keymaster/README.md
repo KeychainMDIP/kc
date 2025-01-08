@@ -21,7 +21,7 @@ The library must be configured by calling the start function with 3 dependencies
 #### Node application
 
 ```js
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as json_wallet from '@mdip/keymaster/db/json';
 import * as cipher_node from '@mdip/cipher/node';
 import * as keymaster_lib from '@mdip/keymaster/lib';
@@ -45,7 +45,7 @@ const newId = await keymaster_lib.createId('Bob');
 #### Browser wallet
 
 ```js
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as browser_wallet from '@mdip/keymaster/db/web';
 import * as cipher_web from '@mdip/cipher/web';
 import * as keymaster_lib from '@mdip/keymaster/lib';

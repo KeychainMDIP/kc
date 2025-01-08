@@ -6,7 +6,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
-import GatekeeperClient from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 
