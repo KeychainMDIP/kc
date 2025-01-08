@@ -10,7 +10,7 @@ function throwError(error) {
     throw error.message;
 }
 
-export default class Gatekeeper {
+export default class GatekeeperClient {
     constructor() {
         this.API = VERSION;
     }
