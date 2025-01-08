@@ -3,8 +3,6 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 
 import Gatekeeper from '@mdip/gatekeeper/sdk';
-import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
@@ -303,81 +301,6 @@ program
     });
 
 program
-    .command('create-batch <registry>')
-    .description('Create a batch for a registry')
-    .action(async (registry) => {
-        try {
-            const batch = await gatekeeper.getQueue(registry);
-            console.log(JSON.stringify(batch, null, 4));
-
-            if (batch.length > 0) {
-                const did = await keymaster.createAsset(batch);
-                console.log(did);
-            }
-            else {
-                console.log('empty batch');
-            }
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('import-batch-did <did> [registry]')
-    .description('Import a batch')
-    .action(async (did, registry) => {
-        try {
-            if (!registry) {
-                registry = 'local';
-            }
-
-            const queue = await keymaster.resolveAsset(did);
-            const batch = [];
-            const now = new Date();
-
-            for (let i = 0; i < queue.length; i++) {
-                batch.push({
-                    registry: registry,
-                    time: now.toISOString(),
-                    ordinal: [now.getTime(), i],
-                    operation: queue[i],
-                });
-            }
-
-            console.log(JSON.stringify(batch, null, 4));
-            console.time('importBatch');
-            const { verified, updated, failed } = await gatekeeper.importBatch(batch);
-            console.timeEnd('importBatch');
-            console.log(`* ${verified} verified, ${updated} updated, ${failed} failed`);
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('clear-queue <registry> <batch>')
-    .description('Clear a registry queue')
-    .action(async (registry, batch) => {
-        try {
-            const events = await keymaster.resolveAsset(batch);
-            console.log(JSON.stringify(events, null, 4));
-            const ok = await gatekeeper.clearQueue(registry, events);
-
-            if (ok) {
-                console.log("Batch cleared");
-            }
-            else {
-                console.log("Error: batch not cleared");
-            }
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
     .command('reset-db')
     .description('Reset the database to empty')
     .action(async () => {
@@ -397,19 +320,6 @@ program
         try {
             const response = await gatekeeper.verifyDb();
             console.log(`${JSON.stringify(response)}`);
-        }
-        catch (error) {
-            console.error(error);
-        }
-    });
-
-program
-    .command('resolve-seed-bank')
-    .description('Resolves the seed bank ID')
-    .action(async () => {
-        try {
-            const doc = await keymaster.resolveSeedBank();
-            console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {
             console.error(error);
@@ -457,9 +367,7 @@ program
 
 async function run() {
     gatekeeper.start({ url: gatekeeperURL });
-    await keymaster.start({ gatekeeper, wallet, cipher });
     program.parse(process.argv);
-    await keymaster.stop();
 }
 
 run();
