@@ -964,7 +964,9 @@ program
                 return;
             }
 
-            let wallet = db_wallet_json.loadWallet();
+            const wallet_json = new WalletJson();
+            let wallet = wallet_json.loadWallet();
+            
             if (wallet && (wallet.salt && wallet.iv && wallet.data)) {
                 console.error('Wallet already encrypted');
                 return;
@@ -973,11 +975,11 @@ program
             if (wallet === null) {
                 await keymaster.start({
                     gatekeeper: gatekeeper_sdk,
-                    wallet: db_wallet_json,
+                    wallet: wallet_json,
                     cipher,
                 });
                 await keymaster.newWallet();
-                wallet = db_wallet_json.loadWallet();
+                wallet = wallet_json.loadWallet();
 
                 if (wallet === null) {
                     console.error('Failed to create new wallet');
@@ -985,10 +987,9 @@ program
                 }
             }
 
-            db_wallet_enc.setPassphrase(keymasterPassphrase);
-            db_wallet_enc.setWallet(db_wallet_json);
+            const wallet_enc = new WalletEncrypted(wallet_json, keymasterPassphrase);
+            const ok = wallet_enc.saveWallet(wallet, true);
 
-            const ok = db_wallet_enc.saveWallet(wallet, true);
             if (ok) {
                 console.log(UPDATE_OK);
             }
