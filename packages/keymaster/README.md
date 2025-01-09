@@ -23,7 +23,7 @@ The library must be configured by calling the start function with 3 dependencies
 ```js
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
-import * as cipher_node from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import Keymaster from '@mdip/keymaster';
 
 const gatekeeper = new GatekeeperClient();
@@ -34,13 +34,14 @@ await gatekeeper.connect({
     chatty: true,
 });
 const wallet = new WalletJson();
-await keymaster_lib.start({
+const cipher = new CipherNode();
+const keymaster = new Keymaster({
     gatekeeper,
     wallet,
-    cipher: cipher_node
+    cipher
 });
 
-const newId = await keymaster_lib.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```
 
 #### Browser wallet
@@ -48,7 +49,7 @@ const newId = await keymaster_lib.createId('Bob');
 ```js
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import WalletWeb from '@mdip/keymaster/wallet/web';
-import * as cipher_web from '@mdip/cipher/web';
+import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 
 const gatekeeper = new GatekeeperClient();
@@ -59,13 +60,14 @@ await gatekeeper.connect({
     chatty: true
 });
 const wallet = new WalletWeb();
-await keymaster_lib.start({
+const cipher = new CipherWeb();
+const keymaster = new Keymaster({
     gatekeeper,
     wallet,
-    cipher: cipher_web
+    cipher
 });
 
-const newId = await keymaster_lib.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```
 
 ### Client

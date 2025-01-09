@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Alert, Box } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as cipher from '@mdip/cipher/web';
+import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
@@ -13,6 +13,8 @@ import PassphraseModal from './PassphraseModal.js';
 import './App.css';
 
 const gatekeeper = new GatekeeperClient();
+const cipher = new CipherWeb();
+
 let keymaster;
 
 global.Buffer = Buffer;
