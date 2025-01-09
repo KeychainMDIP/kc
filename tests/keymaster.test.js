@@ -1550,6 +1550,7 @@ describe('verifySignature', () => {
 });
 
 const mockSchema = {
+    // eslint-disable-next-line
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
         "email": {
