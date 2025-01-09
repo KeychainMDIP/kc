@@ -21,19 +21,20 @@ The library must be configured by calling the start function with 3 dependencies
 #### Node application
 
 ```js
-import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as json_wallet from '@mdip/keymaster/db/json';
 import * as cipher_node from '@mdip/cipher/node';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
-await gatekeeper_sdk.start({
+const gatekeeper = new GatekeeperClient();
+await gatekeeper.start({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true,
 });
 await keymaster_lib.start({
-    gatekeeper: gatekeeper_sdk,
+    gatekeeper: gatekeeper,
     wallet: json_wallet,
     cipher: cipher_node
 });
@@ -44,19 +45,20 @@ const newId = await keymaster_lib.createId('Bob');
 #### Browser wallet
 
 ```js
-import * as gatekeeper_sdk from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as browser_wallet from '@mdip/keymaster/db/web';
 import * as cipher_web from '@mdip/cipher/web';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
-await gatekeeper_sdk.start({
+const gatekeeper = new GatekeeperClient();
+await gatekeeper.start({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true
 });
 await keymaster_lib.start({
-    gatekeeper: gatekeeper_sdk,
+    gatekeeper: gatekeeper,
     wallet: browser_wallet,
     cipher: cipher_web
 });

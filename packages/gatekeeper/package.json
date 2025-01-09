@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     "./lib": "./src/gatekeeper-lib.js",
-    "./sdk": "./src/gatekeeper-sdk.js",
+    "./client": "./src/gatekeeper-client.js",
     "./db/json": "./src/db/json.js",
     "./db/json-cache": "./src/db/json-cache.js",
     "./db/sqlite": "./src/db/sqlite.js",

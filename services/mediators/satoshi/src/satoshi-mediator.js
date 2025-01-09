@@ -1,6 +1,6 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
-import Gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 import * as keymaster_sdk from '@mdip/keymaster/sdk';
 import WalletJson from '@mdip/keymaster/wallet/json';
@@ -12,7 +12,7 @@ import { InvalidParameterError } from '@mdip/common/errors';
 const REGISTRY = config.chain;
 let keymaster;
 
-const gatekeeper = new Gatekeeper();
+const gatekeeper = new GatekeeperClient();
 
 const client = new BtcClient({
     network: config.network,

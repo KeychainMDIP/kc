@@ -1,9 +1,9 @@
-import Gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster from '@mdip/keymaster/lib';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import * as cipher from '@mdip/cipher/node';
 
-const gatekeeper = new Gatekeeper();
+const gatekeeper = new GatekeeperClient();
 const wallet = new WalletJson();
 
 async function runTest() {

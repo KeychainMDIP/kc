@@ -2,12 +2,12 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import Gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as cipher from '@mdip/cipher/node';
 
 dotenv.config();
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
-const gatekeeper = new Gatekeeper();
+const gatekeeper = new GatekeeperClient();
 
 program
     .version('1.0.0')
