@@ -32,7 +32,7 @@ async function runTest() {
 }
 
 async function main() {
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: 'http://localhost:4224',
         waitUntilReady: true,
     });

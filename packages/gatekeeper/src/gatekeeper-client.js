@@ -15,7 +15,7 @@ export default class GatekeeperClient {
         this.API = VERSION;
     }
 
-    async start(options = {}) {
+    async connect(options = {}) {
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
         }

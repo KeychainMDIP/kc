@@ -491,7 +491,7 @@ async function main() {
         return;
     }
 
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
         intervalSeconds: 5,

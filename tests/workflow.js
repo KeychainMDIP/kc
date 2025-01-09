@@ -1,7 +1,7 @@
 import * as keymaster from '@mdip/keymaster/lib';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import * as cipher from '@mdip/cipher/node';
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 
 const mockSchema = {
@@ -146,8 +146,7 @@ async function runWorkflow() {
 async function main() {
     const db_json = new DbJson('mdip-workflow');
     const gatekeeper = new Gatekeeper({ db: db_json });
-    await gatekeeper.start();
-    
+
     const wallet = new WalletJson();
     await keymaster.start({ gatekeeper, wallet, cipher });
 

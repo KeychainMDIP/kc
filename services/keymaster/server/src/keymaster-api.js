@@ -720,7 +720,7 @@ const port = config.keymasterPort;
 app.listen(port, async () => {
     const gatekeeper = new GatekeeperClient();
 
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
         intervalSeconds: 5,

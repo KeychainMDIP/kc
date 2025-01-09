@@ -2,7 +2,7 @@ import mockFs from 'mock-fs';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
 
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import * as cipher from '@mdip/cipher/node';
 import DbJson from '@mdip/gatekeeper/db/json';

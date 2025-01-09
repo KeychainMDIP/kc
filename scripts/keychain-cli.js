@@ -1067,7 +1067,7 @@ async function run() {
     else {
         keymaster = keymaster_lib;
         const gatekeeper = new GatekeeperClient();
-        await gatekeeper.start({
+        await gatekeeper.connect({
             url: gatekeeperURL,
             waitUntilReady: false
         });

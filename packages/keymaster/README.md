@@ -27,7 +27,7 @@ import * as cipher_node from '@mdip/cipher/node';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
 const gatekeeper = new GatekeeperClient();
-await gatekeeper.start({
+await gatekeeper.connect({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,
@@ -51,7 +51,7 @@ import * as cipher_web from '@mdip/cipher/web';
 import * as keymaster_lib from '@mdip/keymaster/lib';
 
 const gatekeeper = new GatekeeperClient();
-await gatekeeper.start({
+await gatekeeper.connect({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,

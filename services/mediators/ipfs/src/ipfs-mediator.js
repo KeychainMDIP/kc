@@ -78,7 +78,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function main() {
 
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
         intervalSeconds: 5,

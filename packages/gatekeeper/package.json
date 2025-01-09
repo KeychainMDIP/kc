@@ -4,7 +4,7 @@
   "description": "MDIP Gatekeeper",
   "type": "module",
   "exports": {
-    "./lib": "./src/gatekeeper-lib.js",
+    ".": "./src/gatekeeper.js",
     "./client": "./src/gatekeeper-client.js",
     "./db/json": "./src/db/json.js",
     "./db/json-cache": "./src/db/json-cache.js",

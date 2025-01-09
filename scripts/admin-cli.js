@@ -366,7 +366,7 @@ program
     });
 
 async function run() {
-    gatekeeper.start({ url: gatekeeperURL });
+    gatekeeper.connect({ url: gatekeeperURL });
     program.parse(process.argv);
 }
 

@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import * as cipher from '@mdip/cipher/node';
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
