@@ -7,7 +7,7 @@ import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();
@@ -738,6 +738,7 @@ app.listen(port, async () => {
         wallet = new WalletCache(wallet);
     }
 
+    const cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 

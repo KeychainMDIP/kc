@@ -8,7 +8,7 @@ import KeymasterClient from '@mdip/keymaster/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 
 dotenv.config();
 
@@ -972,7 +972,8 @@ program
 
             if (wallet === null) {
                 const gatekeeper = new GatekeeperClient();
-                await keymaster.start({
+                const cipher = new CipherNode();
+                const keymaster = new Keymaster({
                     gatekeeper,
                     wallet: wallet_json,
                     cipher,
@@ -1069,6 +1070,7 @@ async function run() {
             url: gatekeeperURL,
             waitUntilReady: false
         });
+        const cipher = new CipherNode();
         keymaster = new Keymaster({
             gatekeeper,
             wallet: getDBWallet(),

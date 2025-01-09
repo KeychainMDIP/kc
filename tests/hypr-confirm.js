@@ -1,7 +1,7 @@
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 
 let keymaster
 
@@ -38,6 +38,7 @@ async function main() {
     });
 
     const wallet = new WalletJson();
+    const cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();

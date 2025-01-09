@@ -11,16 +11,18 @@ npm install @mdip/cipher
 ## Usage
 
 The cipher library comes in two versions for servers and web browsers.
-The functions are identical but have different package dependencies.
+The classes are identical but have different package dependencies.
 
-### Server applications
+### Node server applications
 
 ```js
-import * from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
+const cipher = new CipherNode();
 ```
 
 ### Web browsers
 
 ```js
-import * from '@mdip/cipher/web';
+import CipherWeb from '@mdip/cipher/web';
+const cipher = new CipherWeb();
 ```

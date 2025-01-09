@@ -7,10 +7,11 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
 
 const gatekeeper = new GatekeeperClient();
+const cipher = new CipherNode();
 
 EventEmitter.defaultMaxListeners = 100;
 

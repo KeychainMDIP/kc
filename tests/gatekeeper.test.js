@@ -1,6 +1,6 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
@@ -12,6 +12,7 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
+const cipher = new CipherNode();
 const db_json = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
 

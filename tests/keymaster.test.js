@@ -4,7 +4,7 @@ import canonicalize from 'canonicalize';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import DbJson from '@mdip/gatekeeper/db/json';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
@@ -14,6 +14,7 @@ import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/c
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db });
 const wallet = new WalletJson();
+const cipher = new CipherNode();
 const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 
 describe('constructor', () => {

@@ -4,7 +4,7 @@
   "description": "MDIP cipher lib",
   "type": "module",
   "exports": {
-    "./node": "./src/cipher-lib.js",
+    "./node": "./src/cipher-node.js",
     "./web": "./src/cipher-web.js"
   },
   "scripts": {

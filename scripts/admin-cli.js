@@ -3,11 +3,13 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 
 dotenv.config();
+
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const gatekeeper = new GatekeeperClient();
+const cipher = new CipherNode();
 
 program
     .version('1.0.0')
