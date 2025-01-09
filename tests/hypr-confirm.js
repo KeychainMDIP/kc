@@ -1,10 +1,9 @@
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster from '@mdip/keymaster/lib';
+import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import * as cipher from '@mdip/cipher/node';
 
-const gatekeeper = new GatekeeperClient();
-const wallet = new WalletJson();
+let keymaster
 
 async function runTest() {
     const expires = new Date();
@@ -32,16 +31,14 @@ async function runTest() {
 }
 
 async function main() {
+    const gatekeeper = new GatekeeperClient();
     await gatekeeper.connect({
         url: 'http://localhost:4224',
         waitUntilReady: true,
     });
 
-    await keymaster.start({
-        gatekeeper,
-        wallet,
-        cipher,
-    });
+    const wallet = new WalletJson();
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();
     await keymaster.newWallet(null, true);

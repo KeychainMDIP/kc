@@ -4,7 +4,7 @@ import { Alert, Box } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as cipher from '@mdip/cipher/web';
-import * as keymaster from '@mdip/keymaster/lib';
+import Keymaster from '@mdip/keymaster';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
 import WalletCacheAsync from '@mdip/keymaster/wallet/cache-async';
@@ -13,6 +13,7 @@ import PassphraseModal from './PassphraseModal.js';
 import './App.css';
 
 const gatekeeper = new GatekeeperClient();
+let keymaster;
 
 global.Buffer = Buffer;
 
@@ -43,7 +44,7 @@ function App() {
                 setIsEncrypted(true);
                 setModalAction('decrypt');
             } else {
-                keymaster.start({ gatekeeper, wallet: wallet_web, cipher });
+                keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher });
                 setIsReady(true);
             }
         }
@@ -68,7 +69,7 @@ function App() {
             }
         }
 
-        await keymaster.start({ gatekeeper, wallet: wallet_cache, cipher });
+        keymaster = new Keymaster({ gatekeeper, wallet: wallet_cache, cipher });
 
         setIsReady(true);
         setModalAction(null);
@@ -89,7 +90,7 @@ function App() {
         const wallet_web = new WalletWeb();
 
         wallet_web.saveWallet(wallet, true);
-        await keymaster.start({ gatekeeper, wallet: wallet_web, cipher });
+        keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher });
         setIsEncrypted(false);
     }
 

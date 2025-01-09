@@ -3,7 +3,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster from '@mdip/keymaster/lib';
+import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
@@ -21,6 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, '../../client/build')));
 
+let keymaster;
 let serverReady = false;
 
 v1router.get('/ready', async (req, res) => {
@@ -737,7 +738,7 @@ app.listen(port, async () => {
         wallet = new WalletCache(wallet);
     }
 
-    await keymaster.start({ gatekeeper, wallet, cipher });
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     await waitForCurrentId();

@@ -3,7 +3,7 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster_lib from '@mdip/keymaster/lib';
+import Keymaster from '@mdip/keymaster';
 import KeymasterClient from '@mdip/keymaster/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
@@ -1062,23 +1062,20 @@ async function run() {
             chatty: false,
             becomeChattyAfter: 5
         });
-        program.parse(process.argv);
     }
     else {
-        keymaster = keymaster_lib;
         const gatekeeper = new GatekeeperClient();
         await gatekeeper.connect({
             url: gatekeeperURL,
             waitUntilReady: false
         });
-        await keymaster.start({
+        keymaster = new Keymaster({
             gatekeeper,
             wallet: getDBWallet(),
             cipher,
         });
-        program.parse(process.argv);
-        await keymaster.stop();
     }
+    program.parse(process.argv);
 }
 
 run();
