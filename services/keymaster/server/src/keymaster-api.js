@@ -2,7 +2,7 @@ import express from 'express';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet_json from '@mdip/keymaster/db/json';
 import * as wallet_enc from '@mdip/keymaster/db/json/enc';
@@ -718,7 +718,7 @@ async function waitForCurrentId() {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    const gatekeeper = new Gatekeeper();
+    const gatekeeper = new GatekeeperClient();
 
     await gatekeeper.start({
         url: config.gatekeeperURL,

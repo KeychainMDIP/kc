@@ -35,15 +35,16 @@ const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
 ```
 
-### REST SDK
+### Client
 
-The SDK is used to communicate with a Gatekeeper REST API service.
+The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 
 ```js
-import * as gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 
 // Try connecting to the gatekeeper service every second,
 // and start reporting (chatty) if not connected after 5 attempts
+const gatekeeper = new GatekeeperClient();
 await gatekeeper.start({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,

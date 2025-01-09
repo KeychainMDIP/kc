@@ -1,9 +1,9 @@
-import Gatekeeper from '@mdip/gatekeeper/sdk';
+import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster from '@mdip/keymaster/lib';
 import * as wallet from '@mdip/keymaster/db/json';
 import * as cipher from '@mdip/cipher/node';
 
-const gatekeeper = new Gatekeeper();
+const gatekeeper = new GatekeeperClient();
 
 async function runTest() {
     const expires = new Date();
