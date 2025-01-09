@@ -4,9 +4,10 @@
   "description": "MDIP Keymaster",
   "type": "module",
   "exports": {
+    ".": "./src/keymaster.js",
+    "./client": "./src/keymaster-client.js",
     "./lib": "./src/keymaster-lib.js",
     "./sdk": "./src/keymaster-sdk.js",
-    "./client": "./src/keymaster-client.js",
     "./wallet/json": "./src/db/json.js",
     "./wallet/json-enc": "./src/db/json-enc.js",
     "./wallet/cache": "./src/db/cache.js",

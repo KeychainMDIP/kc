@@ -35,15 +35,7 @@ export default class Gatekeeper {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-    }
-
-    async start() {
         this.ipfs = new IPFS({ minimal: true });
-        return this.ipfs.start();
-    }
-
-    async stop() {
-        return this.ipfs.stop();
     }
 
     async verifyDb(options = {}) {

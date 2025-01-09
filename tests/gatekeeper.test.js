@@ -15,16 +15,8 @@ const mockConsole = {
 const db_json = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
 
-beforeAll(async () => {
-    await gatekeeper.start();
-});
-
 beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
-});
-
-afterAll(async () => {
-    await gatekeeper.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {

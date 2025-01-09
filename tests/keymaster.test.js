@@ -2,8 +2,8 @@ import mockFs from 'mock-fs';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
 
-import * as keymaster from '@mdip/keymaster/lib';
 import Gatekeeper from '@mdip/gatekeeper/lib';
+import Keymaster from '@mdip/keymaster';
 import * as cipher from '@mdip/cipher/node';
 import DbJson from '@mdip/gatekeeper/db/json';
 import WalletJson from '@mdip/keymaster/wallet/json';
@@ -11,21 +11,12 @@ import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
-const db_json = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db: db_json });
+const db = new DbJson('test');
+const gatekeeper = new Gatekeeper({ db });
 const wallet = new WalletJson();
+const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 
-beforeEach(async () => {
-    await gatekeeper.start();
-    await keymaster.start({ gatekeeper, wallet, cipher });
-});
-
-afterEach(async () => {
-    await keymaster.stop();
-    await gatekeeper.stop();
-});
-
-describe('start', () => {
+describe('constructor', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -35,7 +26,7 @@ describe('start', () => {
         mockFs({});
 
         try {
-            await keymaster.start();
+            new Keymaster();
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -44,7 +35,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ wallet, cipher });
+            new Keymaster({ wallet, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -52,7 +43,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ gatekeeper, cipher });
+            new Keymaster({ gatekeeper, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -60,7 +51,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ gatekeeper, wallet });
+            new Keymaster({ gatekeeper, wallet });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -68,7 +59,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ gatekeeper: {}, wallet, cipher });
+            new Keymaster({ gatekeeper: {}, wallet, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -76,7 +67,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ gatekeeper, wallet: {}, cipher });
+            new Keymaster({ gatekeeper, wallet: {}, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -84,7 +75,7 @@ describe('start', () => {
         }
 
         try {
-            await keymaster.start({ gatekeeper, wallet, cipher: {} });
+            new Keymaster({ gatekeeper, wallet, cipher: {} });
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -97,7 +88,6 @@ describe('loadWallet', () => {
 
     afterEach(async () => {
         mockFs.restore();
-        await keymaster.start({ gatekeeper, wallet, cipher });
     });
 
     it('should create a wallet on first load', async () => {
@@ -133,7 +123,7 @@ describe('loadWallet', () => {
         mockFs({});
 
         const wallet_enc = new WalletEncrypted(wallet);
-        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         try {
             await keymaster.loadWallet();
@@ -146,16 +136,15 @@ describe('loadWallet', () => {
     it('load with incorrect passphrase throws', async () => {
         mockFs({});
         const mockWallet = { mock: 0 };
-        const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
-        const ok = await keymaster.saveWallet(mockWallet);
+        const wallet_enc1 = new WalletEncrypted(wallet, 'passphrase');
+        const keymaster1 = new Keymaster({ gatekeeper, wallet: wallet_enc1, cipher });
+        const ok = await keymaster1.saveWallet(mockWallet);
         expect(ok).toBe(true);
 
-        const wallet_enc2 = new WalletEncrypted(wallet, 'incorrect');
-        await keymaster.start({ gatekeeper, wallet: wallet_enc2, cipher });
-
         try {
-            await keymaster.loadWallet();
+            const wallet_enc2 = new WalletEncrypted(wallet, 'incorrect');
+            const keymaster2 = new Keymaster({ gatekeeper, wallet: wallet_enc2, cipher });
+            await keymaster2.loadWallet();
             throw new ExpectedExceptionError();
         } catch (e) {
             expect(e.message).toBe('Incorrect passphrase.');
@@ -167,7 +156,6 @@ describe('saveWallet', () => {
 
     afterEach(async () => {
         mockFs.restore();
-        await keymaster.start({ gatekeeper, wallet, cipher });
     });
 
     it('test saving directly on the unencrypted wallet', async () => {
@@ -266,7 +254,7 @@ describe('saveWallet', () => {
         mockFs({});
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         const mockWallet1 = { mock: 1 };
         const mockWallet2 = { mock: 2 };
@@ -283,7 +271,7 @@ describe('saveWallet', () => {
         mockFs({});
         const mockWallet = { mock: 1 };
         const wallet_enc = new WalletEncrypted(wallet);
-        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         try {
             await keymaster.saveWallet(mockWallet);
@@ -303,7 +291,7 @@ describe('saveWallet', () => {
         fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        await keymaster.start({ gatekeeper, wallet: wallet_enc, cipher });
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         try {
             await keymaster.loadWallet();
@@ -3894,7 +3882,20 @@ describe('createSchema', () => {
         const did = await keymaster.createSchema();
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocumentData.schema).toStrictEqual(keymaster.defaultSchema);
+        const expectedSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "propertyName": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "propertyName"
+            ]
+        };
+
+        expect(doc.didDocumentData.schema).toStrictEqual(expectedSchema);
     });
 
     it('should create a simple schema', async () => {
