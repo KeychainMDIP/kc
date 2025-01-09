@@ -2,7 +2,7 @@ import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster_lib from '@mdip/keymaster/lib';
-import * as keymaster_sdk from '@mdip/keymaster/sdk';
+import KeymasterClient from '@mdip/keymaster/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import * as cipher from '@mdip/cipher/node';
@@ -504,7 +504,7 @@ async function main() {
     });
 
     if (config.keymasterURL) {
-        keymaster = keymaster_sdk;
+        keymaster = new KeymasterClient();
         await keymaster.start({
             url: config.keymasterURL,
             waitUntilReady: true,

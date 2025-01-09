@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import * as keymaster_lib from '@mdip/keymaster/lib';
-import * as keymaster_sdk from '@mdip/keymaster/sdk';
+import KeymasterClient from '@mdip/keymaster/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
@@ -13,8 +13,6 @@ import * as cipher from '@mdip/cipher/node';
 dotenv.config();
 
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
-const gatekeeper = new GatekeeperClient();
-
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 let keymaster;
 
@@ -973,8 +971,9 @@ program
             }
 
             if (wallet === null) {
+                const gatekeeper = new GatekeeperClient();
                 await keymaster.start({
-                    gatekeeper: gatekeeper,
+                    gatekeeper,
                     wallet: wallet_json,
                     cipher,
                 });
@@ -1055,7 +1054,7 @@ function getDBWallet() {
 
 async function run() {
     if (keymasterURL) {
-        keymaster = keymaster_sdk;
+        keymaster = new KeymasterClient();
         await keymaster.start({
             url: keymasterURL,
             waitUntilReady: true,
@@ -1067,6 +1066,7 @@ async function run() {
     }
     else {
         keymaster = keymaster_lib;
+        const gatekeeper = new GatekeeperClient();
         await gatekeeper.start({
             url: gatekeeperURL,
             waitUntilReady: false

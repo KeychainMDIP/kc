@@ -66,19 +66,20 @@ await keymaster_lib.start({
 const newId = await keymaster_lib.createId('Bob');
 ```
 
-### REST SDK
+### Client
 
-The SDK is used to communicate with a keymaster REST API service.
+The KeymasterClient is used to communicate with a keymaster REST API service.
 
 ```js
-import * as keymaster_sdk from '@mdip/keymaster/sdk';
+import KeymasterClient from '@mdip/keymaster/client';
 
-await keymaster_sdk.start({
+const keymaster = new KeymasterClient();
+await keymaster.start({
     url: 'http://keymaster-host:4226',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true
 });
 
-const newId = await keymaster_sdk.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```
