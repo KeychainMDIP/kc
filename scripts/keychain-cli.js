@@ -1055,7 +1055,7 @@ function getDBWallet() {
 async function run() {
     if (keymasterURL) {
         keymaster = new KeymasterClient();
-        await keymaster.start({
+        await keymaster.connect({
             url: keymasterURL,
             waitUntilReady: true,
             intervalSeconds: 1,

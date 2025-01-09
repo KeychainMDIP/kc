@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+const VERSION = '/api/v1';
+
 function throwError(error) {
     if (error.response?.data?.error) {
         throw error.response.data.error;
@@ -11,18 +13,18 @@ function throwError(error) {
 export default class KeymasterClient {
     // Factory method
     static async create(options) {
-        const instance = new KeymasterClient();
-        await instance.start(options);
-        return instance;
+        const keymaster = new KeymasterClient();
+        await keymaster.connect(options);
+        return keymaster;
     }
 
     constructor() {
-        this.URL = '';
+        this.API = VERSION;
     }
 
-    async start(options = {}) {
+    async connect(options = {}) {
         if (options.url) {
-            this.URL = options.url;
+            this.API = `${options.url}${VERSION}`;
         }
 
         if (options.waitUntilReady) {
@@ -36,7 +38,7 @@ export default class KeymasterClient {
         let retries = 0;
 
         if (chatty) {
-            console.log(`Connecting to Keymaster at ${this.URL}`);
+            console.log(`Connecting to Keymaster at ${this.API}`);
         }
 
         while (!ready) {
@@ -53,7 +55,7 @@ export default class KeymasterClient {
             retries += 1;
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-                console.log(`Connecting to Keymaster at ${this.URL}`);
+                console.log(`Connecting to Keymaster at ${this.API}`);
                 chatty = true;
             }
         }
@@ -68,7 +70,7 @@ export default class KeymasterClient {
 
     async isReady() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/ready`);
+            const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
         catch (error) {
@@ -78,7 +80,7 @@ export default class KeymasterClient {
 
     async loadWallet() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/wallet`);
+            const response = await axios.get(`${this.API}/wallet`);
             return response.data.wallet;
         }
         catch (error) {
@@ -88,7 +90,7 @@ export default class KeymasterClient {
 
     async saveWallet(wallet) {
         try {
-            const response = await axios.put(`${this.URL}/api/v1/wallet`, { wallet });
+            const response = await axios.put(`${this.API}/wallet`, { wallet });
             return response.data.ok;
         }
         catch (error) {
@@ -98,7 +100,7 @@ export default class KeymasterClient {
 
     async newWallet(mnemonic, overwrite = false) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/wallet/new`, { mnemonic, overwrite });
+            const response = await axios.post(`${this.API}/wallet/new`, { mnemonic, overwrite });
             return response.data.wallet;
         }
         catch (error) {
@@ -108,7 +110,7 @@ export default class KeymasterClient {
 
     async backupWallet() {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/wallet/backup`);
+            const response = await axios.post(`${this.API}/wallet/backup`);
             return response.data.ok;
         }
         catch (error) {
@@ -118,7 +120,7 @@ export default class KeymasterClient {
 
     async recoverWallet() {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/wallet/recover`);
+            const response = await axios.post(`${this.API}/wallet/recover`);
             return response.data.wallet;
         }
         catch (error) {
@@ -128,7 +130,7 @@ export default class KeymasterClient {
 
     async checkWallet() {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/wallet/check`);
+            const response = await axios.post(`${this.API}/wallet/check`);
             return response.data.check;
         }
         catch (error) {
@@ -138,7 +140,7 @@ export default class KeymasterClient {
 
     async fixWallet() {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/wallet/fix`);
+            const response = await axios.post(`${this.API}/wallet/fix`);
             return response.data.fix;
         }
         catch (error) {
@@ -148,7 +150,7 @@ export default class KeymasterClient {
 
     async decryptMnemonic() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/wallet/mnemonic`);
+            const response = await axios.get(`${this.API}/wallet/mnemonic`);
             return response.data.mnemonic;
         }
         catch (error) {
@@ -158,7 +160,7 @@ export default class KeymasterClient {
 
     async listRegistries() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/registries`);
+            const response = await axios.get(`${this.API}/registries`);
             return response.data.registries;
         }
         catch (error) {
@@ -168,7 +170,7 @@ export default class KeymasterClient {
 
     async getCurrentId() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/ids/current`);
+            const response = await axios.get(`${this.API}/ids/current`);
             return response.data.current;
         }
         catch (error) {
@@ -178,7 +180,7 @@ export default class KeymasterClient {
 
     async setCurrentId(name) {
         try {
-            const response = await axios.put(`${this.URL}/api/v1/ids/current`, { name });
+            const response = await axios.put(`${this.API}/ids/current`, { name });
             return response.data.ok;
         }
         catch (error) {
@@ -188,7 +190,7 @@ export default class KeymasterClient {
 
     async listIds() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/ids`);
+            const response = await axios.get(`${this.API}/ids`);
             return response.data.ids;
         }
         catch (error) {
@@ -198,7 +200,7 @@ export default class KeymasterClient {
 
     async encryptMessage(msg, receiver, options = {}) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/keys/encrypt/message`, { msg, receiver, options });
+            const response = await axios.post(`${this.API}/keys/encrypt/message`, { msg, receiver, options });
             return response.data.did;
         }
         catch (error) {
@@ -208,7 +210,7 @@ export default class KeymasterClient {
 
     async decryptMessage(did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/keys/decrypt/message`, { did });
+            const response = await axios.post(`${this.API}/keys/decrypt/message`, { did });
             return response.data.message;
         }
         catch (error) {
@@ -218,7 +220,7 @@ export default class KeymasterClient {
 
     async encryptJSON(json, receiver, options = {}) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/keys/encrypt/json`, { json, receiver, options });
+            const response = await axios.post(`${this.API}/keys/encrypt/json`, { json, receiver, options });
             return response.data.did;
         }
         catch (error) {
@@ -228,7 +230,7 @@ export default class KeymasterClient {
 
     async decryptJSON(did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/keys/decrypt/json`, { did });
+            const response = await axios.post(`${this.API}/keys/decrypt/json`, { did });
             return response.data.json;
         }
         catch (error) {
@@ -238,7 +240,7 @@ export default class KeymasterClient {
 
     async resolveId(id) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/ids/${id}`);
+            const response = await axios.get(`${this.API}/ids/${id}`);
             return response.data.docs;
         }
         catch (error) {
@@ -248,7 +250,7 @@ export default class KeymasterClient {
 
     async createId(name, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/ids`, { name, options });
+            const response = await axios.post(`${this.API}/ids`, { name, options });
             return response.data.did;
         }
         catch (error) {
@@ -258,7 +260,7 @@ export default class KeymasterClient {
 
     async removeId(id) {
         try {
-            const response = await axios.delete(`${this.URL}/api/v1/ids/${id}`);
+            const response = await axios.delete(`${this.API}/ids/${id}`);
             return response.data.ok;
         }
         catch (error) {
@@ -268,7 +270,7 @@ export default class KeymasterClient {
 
     async backupId(id) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/ids/${id}/backup`);
+            const response = await axios.post(`${this.API}/ids/${id}/backup`);
             return response.data.ok;
         }
         catch (error) {
@@ -278,7 +280,7 @@ export default class KeymasterClient {
 
     async recoverId(did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/ids/${did}/recover`);
+            const response = await axios.post(`${this.API}/ids/${did}/recover`);
             return response.data.recovered;
         }
         catch (error) {
@@ -288,7 +290,7 @@ export default class KeymasterClient {
 
     async listNames() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/names`);
+            const response = await axios.get(`${this.API}/names`);
             return response.data.names;
         }
         catch (error) {
@@ -298,7 +300,7 @@ export default class KeymasterClient {
 
     async addName(name, did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/names`, { name, did });
+            const response = await axios.post(`${this.API}/names`, { name, did });
             return response.data.ok;
         }
         catch (error) {
@@ -308,7 +310,7 @@ export default class KeymasterClient {
 
     async removeName(name) {
         try {
-            const response = await axios.delete(`${this.URL}/api/v1/names/${name}`);
+            const response = await axios.delete(`${this.API}/names/${name}`);
             return response.data.ok;
         }
         catch (error) {
@@ -318,7 +320,7 @@ export default class KeymasterClient {
 
     async resolveDID(name) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/names/${name}`);
+            const response = await axios.get(`${this.API}/names/${name}`);
             return response.data.docs;
         }
         catch (error) {
@@ -328,7 +330,7 @@ export default class KeymasterClient {
 
     async createAsset(data, options = {}) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/assets`, { data, options });
+            const response = await axios.post(`${this.API}/assets`, { data, options });
             return response.data.did;
         }
         catch (error) {
@@ -338,7 +340,7 @@ export default class KeymasterClient {
 
     async listAssets() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/assets`);
+            const response = await axios.get(`${this.API}/assets`);
             return response.data.assets;
         }
         catch (error) {
@@ -348,7 +350,7 @@ export default class KeymasterClient {
 
     async resolveAsset(name) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/assets/${name}`);
+            const response = await axios.get(`${this.API}/assets/${name}`);
             return response.data.asset;
         }
         catch (error) {
@@ -358,7 +360,7 @@ export default class KeymasterClient {
 
     async createChallenge(challengeSpec, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/challenge`, { challenge: challengeSpec, options });
+            const response = await axios.post(`${this.API}/challenge`, { challenge: challengeSpec, options });
             return response.data.did;
         }
         catch (error) {
@@ -368,7 +370,7 @@ export default class KeymasterClient {
 
     async createResponse(challengeDID, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/response`, { challenge: challengeDID, options });
+            const response = await axios.post(`${this.API}/response`, { challenge: challengeDID, options });
             return response.data.did;
         }
         catch (error) {
@@ -378,7 +380,7 @@ export default class KeymasterClient {
 
     async verifyResponse(responseDID, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/response/verify`, { response: responseDID, options });
+            const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
             return response.data.verify;
         }
         catch (error) {
@@ -388,7 +390,7 @@ export default class KeymasterClient {
 
     async createGroup(name, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/groups`, { name, options });
+            const response = await axios.post(`${this.API}/groups`, { name, options });
             return response.data.did;
         }
         catch (error) {
@@ -398,7 +400,7 @@ export default class KeymasterClient {
 
     async getGroup(group) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/groups/${group}`);
+            const response = await axios.get(`${this.API}/groups/${group}`);
             return response.data.group;
         }
         catch (error) {
@@ -408,7 +410,7 @@ export default class KeymasterClient {
 
     async addGroupMember(group, member) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/groups/${group}/add`, { member });
+            const response = await axios.post(`${this.API}/groups/${group}/add`, { member });
             return response.data.ok;
         }
         catch (error) {
@@ -418,7 +420,7 @@ export default class KeymasterClient {
 
     async removeGroupMember(group, member) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/groups/${group}/remove`, { member });
+            const response = await axios.post(`${this.API}/groups/${group}/remove`, { member });
             return response.data.ok;
         }
         catch (error) {
@@ -428,7 +430,7 @@ export default class KeymasterClient {
 
     async testGroup(group, member) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/groups/${group}/test`, { member });
+            const response = await axios.post(`${this.API}/groups/${group}/test`, { member });
             return response.data.test;
         }
         catch (error) {
@@ -441,7 +443,7 @@ export default class KeymasterClient {
             if (!owner) {
                 owner = '';
             }
-            const response = await axios.get(`${this.URL}/api/v1/groups?owner=${owner}`);
+            const response = await axios.get(`${this.API}/groups?owner=${owner}`);
             return response.data.groups;
         }
         catch (error) {
@@ -451,7 +453,7 @@ export default class KeymasterClient {
 
     async createSchema(schema, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/schemas`, { schema, options });
+            const response = await axios.post(`${this.API}/schemas`, { schema, options });
             return response.data.did;
         }
         catch (error) {
@@ -461,7 +463,7 @@ export default class KeymasterClient {
 
     async getSchema(id) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/schemas/${id}`);
+            const response = await axios.get(`${this.API}/schemas/${id}`);
             return response.data.schema;
         }
         catch (error) {
@@ -471,7 +473,7 @@ export default class KeymasterClient {
 
     async setSchema(id, schema) {
         try {
-            const response = await axios.put(`${this.URL}/api/v1/schemas/${id}`, { schema });
+            const response = await axios.put(`${this.API}/schemas/${id}`, { schema });
             return response.data.ok;
         }
         catch (error) {
@@ -481,7 +483,7 @@ export default class KeymasterClient {
 
     async testSchema(id) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/schemas/${id}/test`);
+            const response = await axios.post(`${this.API}/schemas/${id}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -495,7 +497,7 @@ export default class KeymasterClient {
                 owner = '';
             }
 
-            const response = await axios.get(`${this.URL}/api/v1/schemas?owner=${owner}`);
+            const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
             return response.data.schemas;
         }
         catch (error) {
@@ -505,7 +507,7 @@ export default class KeymasterClient {
 
     async testAgent(id) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/agents/${id}/test`);
+            const response = await axios.post(`${this.API}/agents/${id}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -515,7 +517,7 @@ export default class KeymasterClient {
 
     async bindCredential(schema, subject, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/bind`, { schema, subject, options });
+            const response = await axios.post(`${this.API}/credentials/bind`, { schema, subject, options });
             return response.data.credential;
         }
         catch (error) {
@@ -525,7 +527,7 @@ export default class KeymasterClient {
 
     async issueCredential(credential, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/issued`, { credential, options });
+            const response = await axios.post(`${this.API}/credentials/issued`, { credential, options });
             return response.data.did;
         }
         catch (error) {
@@ -535,7 +537,7 @@ export default class KeymasterClient {
 
     async updateCredential(did, credential) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/issued/${did}`, { credential });
+            const response = await axios.post(`${this.API}/credentials/issued/${did}`, { credential });
             return response.data.ok;
         }
         catch (error) {
@@ -545,7 +547,7 @@ export default class KeymasterClient {
 
     async listCredentials() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/credentials/held`);
+            const response = await axios.get(`${this.API}/credentials/held`);
             return response.data.held;
         }
         catch (error) {
@@ -555,7 +557,7 @@ export default class KeymasterClient {
 
     async acceptCredential(did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/held/`, { did });
+            const response = await axios.post(`${this.API}/credentials/held/`, { did });
             return response.data.ok;
         }
         catch (error) {
@@ -565,7 +567,7 @@ export default class KeymasterClient {
 
     async getCredential(did) {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/credentials/held/${did}`);
+            const response = await axios.get(`${this.API}/credentials/held/${did}`);
             return response.data.credential;
         }
         catch (error) {
@@ -575,7 +577,7 @@ export default class KeymasterClient {
 
     async removeCredential(did) {
         try {
-            const response = await axios.delete(`${this.URL}/api/v1/credentials/held/${did}`);
+            const response = await axios.delete(`${this.API}/credentials/held/${did}`);
             return response.data.ok;
         }
         catch (error) {
@@ -585,7 +587,7 @@ export default class KeymasterClient {
 
     async publishCredential(did, options) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/held/${did}/publish`, { options });
+            const response = await axios.post(`${this.API}/credentials/held/${did}/publish`, { options });
             return response.data.ok;
         }
         catch (error) {
@@ -595,7 +597,7 @@ export default class KeymasterClient {
 
     async unpublishCredential(did) {
         try {
-            const response = await axios.post(`${this.URL}/api/v1/credentials/held/${did}/unpublish`);
+            const response = await axios.post(`${this.API}/credentials/held/${did}/unpublish`);
             return response.data.ok;
         }
         catch (error) {
@@ -605,7 +607,7 @@ export default class KeymasterClient {
 
     async listIssued() {
         try {
-            const response = await axios.get(`${this.URL}/api/v1/credentials/issued`);
+            const response = await axios.get(`${this.API}/credentials/issued`);
             return response.data.issued;
         }
         catch (error) {
@@ -615,7 +617,7 @@ export default class KeymasterClient {
 
     async revokeCredential(did) {
         try {
-            const response = await axios.delete(`${this.URL}/api/v1/credentials/issued/${did}`);
+            const response = await axios.delete(`${this.API}/credentials/issued/${did}`);
             return response.data.ok;
         }
         catch (error) {

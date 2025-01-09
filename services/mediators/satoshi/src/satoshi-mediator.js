@@ -1,20 +1,15 @@
 import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster_lib from '@mdip/keymaster/lib';
 import KeymasterClient from '@mdip/keymaster/client';
-import WalletJson from '@mdip/keymaster/wallet/json';
-import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
-import * as cipher from '@mdip/cipher/node';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
-let keymaster;
 
 const gatekeeper = new GatekeeperClient();
-
-const client = new BtcClient({
+const keymaster = new KeymasterClient();
+const btcClient = new BtcClient({
     network: config.network,
     username: config.user,
     password: config.pass,
@@ -49,7 +44,7 @@ function writeDb(db) {
 
 async function fetchTransaction(height, index, timestamp, txid) {
     try {
-        const txn = await client.getTransactionByHash(txid);
+        const txn = await btcClient.getTransactionByHash(txid);
         const asm = txn.vout[0].scriptPubKey.asm;
 
         if (asm.startsWith('OP_RETURN')) {
@@ -76,8 +71,8 @@ async function fetchTransaction(height, index, timestamp, txid) {
 
 async function fetchBlock(height, blockCount) {
     try {
-        const blockHash = await client.getBlockHash(height);
-        const block = await client.getBlock(blockHash);
+        const blockHash = await btcClient.getBlockHash(height);
+        const block = await btcClient.getBlock(blockHash);
         const timestamp = new Date(block.time * 1000).toISOString();
 
         for (let i = 0; i < block.nTx; i++) {
@@ -102,7 +97,7 @@ async function fetchBlock(height, blockCount) {
 
 async function scanBlocks() {
     let start = config.startBlock;
-    let blockCount = await client.getBlockCount();
+    let blockCount = await btcClient.getBlockCount();
 
     console.log(`current block height: ${blockCount}`);
 
@@ -115,7 +110,7 @@ async function scanBlocks() {
     for (let height = start; height <= blockCount; height++) {
         console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
-        blockCount = await client.getBlockCount();
+        blockCount = await btcClient.getBlockCount();
     }
 }
 
@@ -184,7 +179,7 @@ async function importBatches() {
 
 export async function createOpReturnTxn(opReturnData) {
     const txnfee = config.feeMin;
-    const utxos = await client.listUnspent();
+    const utxos = await btcClient.listUnspent();
     const utxo = utxos.find(utxo => utxo.amount > txnfee);
 
     if (!utxo) {
@@ -198,9 +193,9 @@ export async function createOpReturnTxn(opReturnData) {
     const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
 
     // Fetch a new address for the transaction output
-    const address = await client.getNewAddress();
+    const address = await btcClient.getNewAddress();
 
-    const rawTxn = await client.createRawTransaction([{
+    const rawTxn = await btcClient.createRawTransaction([{
         txid: utxo.txid,
         vout: utxo.vout,
         sequence: 0xffffffff - 2  // Make this transaction RBF
@@ -212,18 +207,18 @@ export async function createOpReturnTxn(opReturnData) {
     // Sign the raw transaction
     let signedTxn;
     try {
-        signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+        signedTxn = await btcClient.signRawTransactionWithWallet(rawTxn);
     }
     catch {
         // fall back to older version of the method
-        signedTxn = await client.signRawTransaction(rawTxn);
+        signedTxn = await btcClient.signRawTransaction(rawTxn);
     }
 
     console.log(JSON.stringify(signedTxn, null, 4));
     console.log(amountBack);
 
     // Broadcast the transaction
-    const txid = await client.sendRawTransaction(signedTxn.hex);
+    const txid = await btcClient.sendRawTransaction(signedTxn.hex);
 
     console.log(`Transaction broadcast with txid: ${txid}`);
     return txid;
@@ -238,7 +233,7 @@ async function replaceByFee() {
 
     console.log('pendingTxid', db.pendingTxid);
 
-    const tx = await client.getRawTransaction(db.pendingTxid, 1);
+    const tx = await btcClient.getRawTransaction(db.pendingTxid, 1);
 
     if (tx.blockhash) {
         db.pendingTxid = null;
@@ -253,7 +248,7 @@ async function replaceByFee() {
 
     console.log(JSON.stringify(tx, null, 4));
 
-    const mempoolEntry = await client.getMempoolEntry(db.pendingTxid);
+    const mempoolEntry = await btcClient.getMempoolEntry(db.pendingTxid);
 
     // If we're already at the maximum fee, wait it out
     if (mempoolEntry && mempoolEntry.fee >= config.feeMax) {
@@ -270,24 +265,24 @@ async function replaceByFee() {
         return true;
     }
 
-    const rawTxn = await client.createRawTransaction(inputs, {
+    const rawTxn = await btcClient.createRawTransaction(inputs, {
         data: opReturnHex.substring(4),
         [address]: amountBack.toFixed(8)
     });
 
     let signedTxn;
     try {
-        signedTxn = await client.signRawTransactionWithWallet(rawTxn);
+        signedTxn = await btcClient.signRawTransactionWithWallet(rawTxn);
     }
     catch {
         // fall back to older version of the method
-        signedTxn = await client.signRawTransaction(rawTxn);
+        signedTxn = await btcClient.signRawTransaction(rawTxn);
     }
 
     console.log(JSON.stringify(signedTxn, null, 4));
     console.log(amountBack);
 
-    const txid = await client.sendRawTransaction(signedTxn.hex);
+    const txid = await btcClient.sendRawTransaction(signedTxn.hex);
 
     console.log(`Transaction broadcasted with txid: ${txid}`);
 
@@ -324,10 +319,10 @@ async function anchorBatch() {
     }
 
     try {
-        const walletInfo = await client.getWalletInfo();
+        const walletInfo = await btcClient.getWalletInfo();
 
         if (walletInfo.balance < config.feeMax) {
-            const address = await client.getNewAddress('funds', 'bech32');
+            const address = await btcClient.getNewAddress('funds', 'bech32');
             console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
             return;
         }
@@ -400,7 +395,7 @@ async function waitForChain() {
 
     while (!isReady) {
         try {
-            const blockchainInfo = await client.getBlockchainInfo();
+            const blockchainInfo = await btcClient.getBlockchainInfo();
             console.log("Blockchain Info:", JSON.stringify(blockchainInfo, null, 4));
             isReady = true;
         } catch (error) {
@@ -413,7 +408,7 @@ async function waitForChain() {
     }
 
     try {
-        await client.createWallet(config.wallet);
+        await btcClient.createWallet(config.wallet);
         console.log(`Wallet '${config.wallet}' created successfully.`);
     } catch (error) {
         // If wallet already exists, log a message
@@ -426,7 +421,7 @@ async function waitForChain() {
     }
 
     try {
-        const walletInfo = await client.getWalletInfo();
+        const walletInfo = await btcClient.getWalletInfo();
         console.log("Wallet Info:", JSON.stringify(walletInfo, null, 4));
     } catch (error) {
         console.error("Error fetching wallet info:", error);
@@ -434,7 +429,7 @@ async function waitForChain() {
     }
 
     try {
-        const address = await client.getNewAddress('funds', 'bech32');
+        const address = await btcClient.getNewAddress('funds', 'bech32');
         console.log(`Send ${config.chain} to address: ${address}`);
     } catch (error) {
         console.error("Error generating new address:", error);
@@ -503,26 +498,12 @@ async function main() {
         chatty: true,
     });
 
-    if (config.keymasterURL) {
-        keymaster = new KeymasterClient();
-        await keymaster.start({
-            url: config.keymasterURL,
-            waitUntilReady: true,
-            intervalSeconds: 5,
-            chatty: true,
-        });
-    }
-    else {
-        keymaster = keymaster_lib;
-
-        let wallet = new WalletJson();
-
-        if (config.keymasterPassphrase) {
-            wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
-        }
-
-        await keymaster.start({ gatekeeper, wallet, cipher });
-    }
+    await keymaster.connect({
+        url: config.keymasterURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
 
     await waitForNodeID();
 
@@ -536,8 +517,6 @@ async function main() {
         console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
-
-    await keymaster.stop();
 }
 
 main();
