@@ -78,7 +78,7 @@ The KeymasterClient is used to communicate with a keymaster REST API service.
 import KeymasterClient from '@mdip/keymaster/client';
 
 const keymaster = new KeymasterClient();
-await keymaster.start({
+await keymaster.connect({
     url: 'http://keymaster-host:4226',
     waitUntilReady: true,
     intervalSeconds: 5,
