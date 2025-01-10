@@ -11,11 +11,18 @@ function throwError(error) {
 }
 
 export default class GatekeeperClient {
+    // Factory method
+    static async create(options) {
+        const gatekeeper = new GatekeeperClient();
+        await gatekeeper.connect(options);
+        return gatekeeper;
+    }
+
     constructor() {
         this.API = VERSION;
     }
 
-    async start(options = {}) {
+    async connect(options = {}) {
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
         }

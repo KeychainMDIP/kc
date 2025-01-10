@@ -7,10 +7,11 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
 
 const gatekeeper = new GatekeeperClient();
+const cipher = new CipherNode();
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -448,7 +449,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = b4a.from(networkID, 'hex');
 
 async function main() {
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
         intervalSeconds: 5,

@@ -2,7 +2,7 @@ import express from 'express';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
@@ -19,11 +19,9 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
             : (config.db === 'json') ? new DbJsonCache(dbName)
                 : (config.db === 'json-cache') ? new DbJsonCache(dbName)
                     : null;
-await db.start('mdip');
+await db.start();
 
 const gatekeeper = new Gatekeeper({ db });
-await gatekeeper.start();
-
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();

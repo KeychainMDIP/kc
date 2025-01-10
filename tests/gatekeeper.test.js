@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
-import * as cipher from '@mdip/cipher/node';
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import CipherNode from '@mdip/cipher/node';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
@@ -12,19 +12,12 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
+const cipher = new CipherNode();
 const db_json = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
 
-beforeAll(async () => {
-    await gatekeeper.start();
-});
-
 beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
-});
-
-afterAll(async () => {
-    await gatekeeper.stop();
 });
 
 async function createAgentOp(keypair, version = 1, registry = 'local') {
@@ -612,102 +605,6 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
-
-        expect(ok).toBe(true);
-        expect(confirmedDoc).toStrictEqual(expected);
-    });
-
-    it('should resolved cached confirmed version', async () => {
-
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const initialDoc = await gatekeeper.resolveDID(did, { confirm: true });
-        const cachedDoc = await gatekeeper.resolveDID(did, { confirm: true });
-
-        expect(initialDoc).toStrictEqual(cachedDoc);
-    });
-
-    it('should return copies of cached version (confirmed)', async () => {
-
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const initialDoc = await gatekeeper.resolveDID(did, { confirm: true });
-        const cachedDoc1 = await gatekeeper.resolveDID(did, { confirm: true });
-        const cachedDoc2 = await gatekeeper.resolveDID(did, { confirm: true });
-
-        cachedDoc1.didDocumentData = { mock: true };
-
-        expect(cachedDoc2.didDocumentData).toStrictEqual(initialDoc.didDocumentData);
-    });
-
-    it('should return copies of cached version (unconfirmed)', async () => {
-
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        const initialDoc = await gatekeeper.resolveDID(did, { confirm: false });
-        const cachedDoc1 = await gatekeeper.resolveDID(did, { confirm: false });
-        const cachedDoc2 = await gatekeeper.resolveDID(did, { confirm: false });
-
-        cachedDoc1.didDocumentData = { mock: true };
-
-        expect(cachedDoc2.didDocumentData).toStrictEqual(initialDoc.didDocumentData);
-    });
-
-    it('should resolve confirmed version after an update (confirmed cache refresh)', async () => {
-
-        mockFs({});
-
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const did = await gatekeeper.createDID(agentOp);
-        await gatekeeper.resolveDID(did, { confirm: true });
-        const update = await gatekeeper.resolveDID(did);
-        update.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, update);
-        const opid = await gatekeeper.generateCID(updateOp);
-        const ok = await gatekeeper.updateDID(updateOp);
-        const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
-
-        const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
-            didDocument: {
-                "@context": [
-                    "https://www.w3.org/ns/did/v1",
-                ],
-                authentication: [
-                    "#key-1",
-                ],
-                id: did,
-                verificationMethod: [
-                    {
-                        controller: did,
-                        id: "#key-1",
-                        publicKeyJwk: agentOp.publicJwk,
-                        type: "EcdsaSecp256k1VerificationKey2019",
-                    },
-                ],
-            },
-            didDocumentData: update.didDocumentData,
-            didDocumentMetadata: {
-                created: expect.any(String),
-                updated: expect.any(String),
-                version: 2,
-                confirmed: true,
-            },
-            mdip: {
-                ...agentOp.mdip,
-                opid,
-            }
-        };
 
         expect(ok).toBe(true);
         expect(confirmedDoc).toStrictEqual(expected);
@@ -1884,15 +1781,35 @@ describe('processEvents', () => {
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
+        const deleteOp = await createDeleteOp(keypair, did);
+        await gatekeeper.deleteDID(deleteOp);
         const ops = await gatekeeper.exportDID(did);
 
         ops[0].registry = 'TFTC';
         ops[1].registry = 'TFTC';
+        ops[1].blockchain = {
+            "height": 100,
+            "index": 1,
+            "txid": "mock1",
+            "batch": "mock1"
+        };
+        ops[2].registry = 'TFTC';
+        ops[2].blockchain = {
+            "height": 200,
+            "index": 2,
+            "txid": "mock2",
+            "batch": "mock2"
+        };
+
         await gatekeeper.importBatch(ops);
         const response = await gatekeeper.processEvents();
 
-        expect(response.added).toBe(2);
+        expect(response.added).toBe(3);
         expect(response.merged).toBe(0);
+
+        // Also check that blockchain info is added to document metadata for resolveDID coverage...
+        const doc2 = await gatekeeper.resolveDID(did);
+        expect(doc2.mdip.registration).toStrictEqual(ops[2].blockchain);
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {

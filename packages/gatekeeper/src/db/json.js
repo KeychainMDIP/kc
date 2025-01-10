@@ -7,12 +7,6 @@ export default class DbJson {
         this.dbName = `${this.dataFolder}/${name}.json`;
     }
 
-    async start() {
-    }
-
-    async stop() {
-    }
-
     loadDb() {
         try {
             return JSON.parse(fs.readFileSync(this.dbName));

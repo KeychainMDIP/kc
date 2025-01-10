@@ -4,14 +4,14 @@
   "description": "MDIP Keymaster",
   "type": "module",
   "exports": {
-    "./lib": "./src/keymaster-lib.js",
-    "./sdk": "./src/keymaster-sdk.js",
-    "./db/json": "./src/db-wallet-json.js",
-    "./db/json/enc": "./src/db-wallet-json-enc.js",
-    "./db/cache": "./src/db-wallet-cache.js",
-    "./db/cache/async": "./src/db-wallet-cache-async.js",
-    "./db/web": "./src/db-wallet-web.js",
-    "./db/web/enc": "./src/db-wallet-web-enc.js"
+    ".": "./src/keymaster.js",
+    "./client": "./src/keymaster-client.js",
+    "./wallet/json": "./src/db/json.js",
+    "./wallet/json-enc": "./src/db/json-enc.js",
+    "./wallet/cache": "./src/db/cache.js",
+    "./wallet/cache-async": "./src/db/cache-async.js",
+    "./wallet/web": "./src/db/web.js",
+    "./wallet/web-enc": "./src/db/web-enc.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

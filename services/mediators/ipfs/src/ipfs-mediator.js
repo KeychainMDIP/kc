@@ -3,7 +3,13 @@ import GatekeeperClient from '@mdip/gatekeeper/client';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
-const gatekeeper = new GatekeeperClient();
+const gatekeeper = await GatekeeperClient.create({
+    url: config.gatekeeperURL,
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
+
 const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
 
 async function addOperationToIPFS(operation, n, k) {
@@ -77,14 +83,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 async function main() {
-
-    await gatekeeper.start({
-        url: config.gatekeeperURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
-
     console.log(`Storing operations every ${config.interval} minute(s) with batch size ${config.batchSize} and concurrency ${config.concurrency}`);
     setTimeout(importLoop, config.interval * 60 * 1000);
 }

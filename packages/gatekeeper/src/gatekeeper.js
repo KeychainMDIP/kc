@@ -1,5 +1,5 @@
 import canonicalize from 'canonicalize';
-import * as cipher from '@mdip/cipher/node';
+import CipherNode from '@mdip/cipher/node';
 import { copyJSON } from '@mdip/common/utils';
 import {
     InvalidDIDError,
@@ -35,15 +35,8 @@ export default class Gatekeeper {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-    }
-
-    async start() {
         this.ipfs = new IPFS({ minimal: true });
-        return this.ipfs.start();
-    }
-
-    async stop() {
-        return this.ipfs.stop();
+        this.cipher = new CipherNode();
     }
 
     async verifyDb(options = {}) {
@@ -319,8 +312,8 @@ export default class Gatekeeper {
             const operationCopy = copyJSON(operation);
             delete operationCopy.signature;
 
-            const msgHash = cipher.hashJSON(operationCopy);
-            return cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
+            const msgHash = this.cipher.hashJSON(operationCopy);
+            return this.cipher.verifySig(msgHash, operation.signature.value, operation.publicJwk);
         }
 
         if (operation.mdip.type === 'asset') {
@@ -336,10 +329,10 @@ export default class Gatekeeper {
 
             const operationCopy = copyJSON(operation);
             delete operationCopy.signature;
-            const msgHash = cipher.hashJSON(operationCopy);
+            const msgHash = this.cipher.hashJSON(operationCopy);
             // TBD select the right key here, not just the first one
             const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-            return cipher.verifySig(msgHash, operation.signature.value, publicJwk);
+            return this.cipher.verifySig(msgHash, operation.signature.value, publicJwk);
         }
 
         throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
@@ -371,7 +364,7 @@ export default class Gatekeeper {
         const signature = operation.signature;
         const jsonCopy = copyJSON(operation);
         delete jsonCopy.signature;
-        const msgHash = cipher.hashJSON(jsonCopy);
+        const msgHash = this.cipher.hashJSON(jsonCopy);
 
         if (signature.hash && signature.hash !== msgHash) {
             return false;
@@ -379,7 +372,7 @@ export default class Gatekeeper {
 
         // TBD get the right signature, not just the first one
         const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        return cipher.verifySig(msgHash, signature.value, publicJwk);
+        return this.cipher.verifySig(msgHash, signature.value, publicJwk);
     }
 
     async createDID(operation) {

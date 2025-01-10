@@ -7,16 +7,18 @@ import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import canonicalize from 'canonicalize';
+import HDKey from 'hdkey';
+import { webcrypto } from 'node:crypto';
 
-// vv Browser specific modifications
-import HDKey from '@mdip/browser-hdkey';
-// ^^ Browser specific modifications
+// node.js 18 and older, requires polyfilling globalThis.crypto
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
 secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
 
-export default class CipherWeb {
+export default class CipherNode {
+
     generateMnemonic() {
         return bip39.generateMnemonic();
     }

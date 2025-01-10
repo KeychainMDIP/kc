@@ -21,15 +21,13 @@ The library must be configured by calling the start function with one of the sup
 - redis - @mdip/gatekeeper/db/redis
 
 ```js
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 
 const db_redis = new DbRedis('mdip-test');
 await db_redis.start();
 
 const gatekeeper = new Gatekeeper({ db: db_redis });
-await gatekeeper.start();
-
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
@@ -45,7 +43,7 @@ import GatekeeperClient from '@mdip/gatekeeper/client';
 // Try connecting to the gatekeeper service every second,
 // and start reporting (chatty) if not connected after 5 attempts
 const gatekeeper = new GatekeeperClient();
-await gatekeeper.start({
+await gatekeeper.connect({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 1,

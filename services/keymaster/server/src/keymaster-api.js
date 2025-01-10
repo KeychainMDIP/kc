@@ -3,11 +3,11 @@ import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet_json from '@mdip/keymaster/db/json';
-import * as wallet_enc from '@mdip/keymaster/db/json/enc';
-import * as wallet_cache from '@mdip/keymaster/db/cache';
-import * as cipher from '@mdip/cipher/node';
+import Keymaster from '@mdip/keymaster';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
+import WalletCache from '@mdip/keymaster/wallet/cache';
+import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();
@@ -21,6 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, '../../client/build')));
 
+let keymaster;
 let serverReady = false;
 
 v1router.get('/ready', async (req, res) => {
@@ -720,27 +721,25 @@ const port = config.keymasterPort;
 app.listen(port, async () => {
     const gatekeeper = new GatekeeperClient();
 
-    await gatekeeper.start({
+    await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
     });
 
-    let wallet = wallet_json;
+    let wallet = new WalletJson();
 
     if (config.keymasterPassphrase) {
-        wallet_enc.setPassphrase(config.keymasterPassphrase);
-        wallet_enc.setWallet(wallet);
-        wallet = wallet_enc;
+        wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
     }
 
     if (config.walletCache) {
-        wallet_cache.setWallet(wallet);
-        wallet = wallet_cache;
+        wallet = new WalletCache(wallet);
     }
 
-    await keymaster.start({ gatekeeper, wallet, cipher });
+    const cipher = new CipherNode();
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
     console.log(`keymaster server running on port ${port}`);
 
     await waitForCurrentId();

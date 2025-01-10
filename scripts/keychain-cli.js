@@ -3,18 +3,16 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as keymaster_lib from '@mdip/keymaster/lib';
-import * as keymaster_sdk from '@mdip/keymaster/sdk';
-import * as db_wallet_json from '@mdip/keymaster/db/json';
-import * as db_wallet_enc from '@mdip/keymaster/db/json/enc';
-import * as db_wallet_cache from '@mdip/keymaster/db/cache';
-import * as cipher from '@mdip/cipher/node';
+import Keymaster from '@mdip/keymaster';
+import KeymasterClient from '@mdip/keymaster/client';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
+import WalletCache from '@mdip/keymaster/wallet/cache';
+import CipherNode from '@mdip/cipher/node';
 
 dotenv.config();
 
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
-const gatekeeper = new GatekeeperClient();
-
 const keymasterURL = process.env.KC_KEYMASTER_URL;
 let keymaster;
 
@@ -964,20 +962,24 @@ program
                 return;
             }
 
-            let wallet = db_wallet_json.loadWallet();
+            const wallet_json = new WalletJson();
+            let wallet = wallet_json.loadWallet();
+
             if (wallet && (wallet.salt && wallet.iv && wallet.data)) {
                 console.error('Wallet already encrypted');
                 return;
             }
 
             if (wallet === null) {
-                await keymaster.start({
-                    gatekeeper: gatekeeper,
-                    wallet: db_wallet_json,
+                const gatekeeper = new GatekeeperClient();
+                const cipher = new CipherNode();
+                const keymaster = new Keymaster({
+                    gatekeeper,
+                    wallet: wallet_json,
                     cipher,
                 });
                 await keymaster.newWallet();
-                wallet = db_wallet_json.loadWallet();
+                wallet = wallet_json.loadWallet();
 
                 if (wallet === null) {
                     console.error('Failed to create new wallet');
@@ -985,10 +987,9 @@ program
                 }
             }
 
-            db_wallet_enc.setPassphrase(keymasterPassphrase);
-            db_wallet_enc.setWallet(db_wallet_json);
+            const wallet_enc = new WalletEncrypted(wallet_json, keymasterPassphrase);
+            const ok = wallet_enc.saveWallet(wallet, true);
 
-            const ok = db_wallet_enc.saveWallet(wallet, true);
             if (ok) {
                 console.log(UPDATE_OK);
             }
@@ -1039,17 +1040,14 @@ program
     });
 
 function getDBWallet() {
-    let wallet = db_wallet_json;
+    let wallet = new WalletJson();
 
     if (keymasterPassphrase) {
-        db_wallet_enc.setPassphrase(keymasterPassphrase);
-        db_wallet_enc.setWallet(wallet);
-        wallet = db_wallet_enc;
+        wallet = new WalletEncrypted(wallet, keymasterPassphrase);
     }
 
     if (walletCache) {
-        db_wallet_cache.setWallet(wallet);
-        wallet = db_wallet_cache;
+        wallet = new WalletCache(wallet);
     }
 
     return wallet;
@@ -1057,30 +1055,29 @@ function getDBWallet() {
 
 async function run() {
     if (keymasterURL) {
-        keymaster = keymaster_sdk;
-        await keymaster.start({
+        keymaster = new KeymasterClient();
+        await keymaster.connect({
             url: keymasterURL,
             waitUntilReady: true,
             intervalSeconds: 1,
             chatty: false,
             becomeChattyAfter: 5
         });
-        program.parse(process.argv);
     }
     else {
-        keymaster = keymaster_lib;
-        await gatekeeper.start({
+        const gatekeeper = new GatekeeperClient();
+        await gatekeeper.connect({
             url: gatekeeperURL,
             waitUntilReady: false
         });
-        await keymaster.start({
+        const cipher = new CipherNode();
+        keymaster = new Keymaster({
             gatekeeper,
             wallet: getDBWallet(),
             cipher,
         });
-        program.parse(process.argv);
-        await keymaster.stop();
     }
+    program.parse(process.argv);
 }
 
 run();

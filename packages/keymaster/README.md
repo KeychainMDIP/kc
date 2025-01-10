@@ -22,63 +22,68 @@ The library must be configured by calling the start function with 3 dependencies
 
 ```js
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as json_wallet from '@mdip/keymaster/db/json';
-import * as cipher_node from '@mdip/cipher/node';
-import * as keymaster_lib from '@mdip/keymaster/lib';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import CipherNode from '@mdip/cipher/node';
+import Keymaster from '@mdip/keymaster';
 
 const gatekeeper = new GatekeeperClient();
-await gatekeeper.start({
+await gatekeeper.connect({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true,
 });
-await keymaster_lib.start({
-    gatekeeper: gatekeeper,
-    wallet: json_wallet,
-    cipher: cipher_node
+const wallet = new WalletJson();
+const cipher = new CipherNode();
+const keymaster = new Keymaster({
+    gatekeeper,
+    wallet,
+    cipher
 });
 
-const newId = await keymaster_lib.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```
 
 #### Browser wallet
 
 ```js
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import * as browser_wallet from '@mdip/keymaster/db/web';
-import * as cipher_web from '@mdip/cipher/web';
-import * as keymaster_lib from '@mdip/keymaster/lib';
+import WalletWeb from '@mdip/keymaster/wallet/web';
+import CipherWeb from '@mdip/cipher/web';
+import Keymaster from '@mdip/keymaster';
 
 const gatekeeper = new GatekeeperClient();
-await gatekeeper.start({
+await gatekeeper.connect({
     url: 'http://gatekeeper-host:4224',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true
 });
-await keymaster_lib.start({
-    gatekeeper: gatekeeper,
-    wallet: browser_wallet,
-    cipher: cipher_web
+const wallet = new WalletWeb();
+const cipher = new CipherWeb();
+const keymaster = new Keymaster({
+    gatekeeper,
+    wallet,
+    cipher
 });
 
-const newId = await keymaster_lib.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```
 
-### REST SDK
+### Client
 
-The SDK is used to communicate with a keymaster REST API service.
+The KeymasterClient is used to communicate with a keymaster REST API service.
 
 ```js
-import * as keymaster_sdk from '@mdip/keymaster/sdk';
+import KeymasterClient from '@mdip/keymaster/client';
 
-await keymaster_sdk.start({
+const keymaster = new KeymasterClient();
+await keymaster.connect({
     url: 'http://keymaster-host:4226',
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true
 });
 
-const newId = await keymaster_sdk.createId('Bob');
+const newId = await keymaster.createId('Bob');
 ```

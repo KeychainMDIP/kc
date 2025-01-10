@@ -1,7 +1,7 @@
-import * as keymaster from '@mdip/keymaster/lib';
-import * as wallet from '@mdip/keymaster/db/json';
-import * as cipher from '@mdip/cipher/node';
-import Gatekeeper from '@mdip/gatekeeper/lib';
+import Keymaster from '@mdip/keymaster';
+import WalletJson from '@mdip/keymaster/wallet/json';
+import CipherNode from '@mdip/cipher/node';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 
 const mockSchema = {
@@ -18,7 +18,7 @@ const mockSchema = {
     "type": "object"
 };
 
-async function runWorkflow() {
+async function runWorkflow(keymaster) {
 
     const alice = await keymaster.createId('Alice', { registry: 'local' });
     const bob = await keymaster.createId('Bob', { registry: 'local' });
@@ -139,21 +139,21 @@ async function runWorkflow() {
     await keymaster.setCurrentId('Victor');
     const verify4 = await keymaster.verifyResponse(vpDid);
     console.log(`Victor verified response ${verify4.vps.length} valid credentials`);
-
-    await keymaster.stop();
 }
 
 async function main() {
-    const db_json = new DbJson('mdip-workflow');
-    const gatekeeper = new Gatekeeper({ db: db_json });
-    await gatekeeper.start();
-    await keymaster.start({ gatekeeper, wallet, cipher });
+    const db = new DbJson('mdip-workflow');
+    const gatekeeper = new Gatekeeper({ db });
+
+    const wallet = new WalletJson();
+    const cipher = new CipherNode();
+    const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 
     const backup = await keymaster.loadWallet();
     await keymaster.newWallet(null, true);
 
     try {
-        await runWorkflow();
+        await runWorkflow(keymaster);
     }
     catch (error) {
         console.log(error);
