@@ -1,7 +1,5 @@
 import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
-const DefaultRegistry = 'TFTC';
-const EphemeralRegistry = 'hyperswarm';
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
@@ -49,6 +47,9 @@ export default class Keymaster {
         else {
             throw new InvalidParameterError('options.cipher');
         }
+
+        this.defaultRegistry = process.env.KC_DEFAULT_REGISTRY || 'hyperswarm';
+        this.ephemeralRegistry = 'hyperswarm';
     }
 
     async listRegistries() {
@@ -301,7 +302,7 @@ export default class Keymaster {
             mdip: {
                 version: 1,
                 type: "agent",
-                registry: DefaultRegistry,
+                registry: this.defaultRegistry,
             },
             publicJwk: keypair.publicJwk,
         };
@@ -348,7 +349,7 @@ export default class Keymaster {
         return await this.gatekeeper.updateDID(signed);
     }
 
-    async backupWallet(registry = DefaultRegistry) {
+    async backupWallet(registry = this.defaultRegistry) {
         const wallet = await this.loadWallet();
         const keypair = await this.hdKeyPair();
         const seedBank = await this.resolveSeedBank();
@@ -490,7 +491,7 @@ export default class Keymaster {
     }
 
     async createAsset(data, options = {}) {
-        let { registry = DefaultRegistry, controller, validUntil } = options;
+        let { registry = this.defaultRegistry, controller, validUntil } = options;
 
         if (validUntil) {
             const validate = new Date(validUntil);
@@ -794,7 +795,7 @@ export default class Keymaster {
     }
 
     async createId(name, options = {}) {
-        const { registry = DefaultRegistry } = options;
+        const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
         if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
@@ -1192,7 +1193,7 @@ export default class Keymaster {
         }
 
         if (!options.registry) {
-            options.registry = EphemeralRegistry;
+            options.registry = this.ephemeralRegistry;
         }
 
         if (!options.validUntil) {
@@ -1250,7 +1251,7 @@ export default class Keymaster {
         let { retries = 0, delay = 1000 } = options;
 
         if (!options.registry) {
-            options.registry = EphemeralRegistry;
+            options.registry = this.ephemeralRegistry;
         }
 
         if (!options.validUntil) {
