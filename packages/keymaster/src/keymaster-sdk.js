@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-let URL = '';
+const VERSION = '/api/v1';
 
 function throwError(error) {
     if (error.response?.data?.error) {
@@ -10,605 +10,618 @@ function throwError(error) {
     throw error.message;
 }
 
-export async function start(options = {}) {
-    if (options.url) {
-        URL = options.url;
+export default class KeymasterClient {
+    // Factory method
+    static async create(options) {
+        const keymaster = new KeymasterClient();
+        await keymaster.connect(options);
+        return keymaster;
     }
 
-    if (options.waitUntilReady) {
-        await waitUntilReady(options);
-    }
-}
-
-async function waitUntilReady(options = {}) {
-    let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
-    let ready = false;
-    let retries = 0;
-
-    if (chatty) {
-        console.log(`Connecting to Keymaster at ${URL}`);
+    constructor() {
+        this.API = VERSION;
     }
 
-    while (!ready) {
-        ready = await isReady();
+    async connect(options = {}) {
+        if (options.url) {
+            this.API = `${options.url}${VERSION}`;
+        }
 
-        if (!ready) {
-            if (chatty) {
-                console.log('Waiting for Keymaster to be ready...');
+        if (options.waitUntilReady) {
+            await this.waitUntilReady(options);
+        }
+    }
+
+    async waitUntilReady(options = {}) {
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let ready = false;
+        let retries = 0;
+
+        if (chatty) {
+            console.log(`Connecting to Keymaster at ${this.API}`);
+        }
+
+        while (!ready) {
+            ready = await this.isReady();
+
+            if (!ready) {
+                if (chatty) {
+                    console.log('Waiting for Keymaster to be ready...');
+                }
+                // wait for 1 second before checking again
+                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
             }
-            // wait for 1 second before checking again
-            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+
+            retries += 1;
+
+            if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
+                console.log(`Connecting to Keymaster at ${this.API}`);
+                chatty = true;
+            }
         }
 
-        retries += 1;
-
-        if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-            console.log(`Connecting to Keymaster at ${URL}`);
-            chatty = true;
+        if (chatty) {
+            console.log('Keymaster service is ready!');
         }
     }
 
-    if (chatty) {
-        console.log('Keymaster service is ready!');
+    async stop() {
     }
-}
 
-export async function stop() {
-}
-
-export async function isReady() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ready`);
-        return response.data.ready;
-    }
-    catch (error) {
-        return false;
-    }
-}
-
-export async function loadWallet() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/wallet`);
-        return response.data.wallet;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function saveWallet(wallet) {
-    try {
-        const response = await axios.put(`${URL}/api/v1/wallet`, { wallet });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function newWallet(mnemonic, overwrite = false) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/wallet/new`, { mnemonic, overwrite });
-        return response.data.wallet;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function backupWallet() {
-    try {
-        const response = await axios.post(`${URL}/api/v1/wallet/backup`);
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function recoverWallet() {
-    try {
-        const response = await axios.post(`${URL}/api/v1/wallet/recover`);
-        return response.data.wallet;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function checkWallet() {
-    try {
-        const response = await axios.post(`${URL}/api/v1/wallet/check`);
-        return response.data.check;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function fixWallet() {
-    try {
-        const response = await axios.post(`${URL}/api/v1/wallet/fix`);
-        return response.data.fix;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function decryptMnemonic() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/wallet/mnemonic`);
-        return response.data.mnemonic;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listRegistries() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/registries`);
-        return response.data.registries;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function getCurrentId() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ids/current`);
-        return response.data.current;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function setCurrentId(name) {
-    try {
-        const response = await axios.put(`${URL}/api/v1/ids/current`, { name });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listIds() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ids`);
-        return response.data.ids;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function encryptMessage(msg, receiver, options = {}) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/keys/encrypt/message`, { msg, receiver, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function decryptMessage(did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/keys/decrypt/message`, { did });
-        return response.data.message;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function encryptJSON(json, receiver, options = {}) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/keys/encrypt/json`, { json, receiver, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function decryptJSON(did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/keys/decrypt/json`, { did });
-        return response.data.json;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function resolveId(id) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/ids/${id}`);
-        return response.data.docs;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createId(name, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/ids`, { name, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function removeId(id) {
-    try {
-        const response = await axios.delete(`${URL}/api/v1/ids/${id}`);
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function backupId(id) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/ids/${id}/backup`);
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function recoverId(did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/ids/${did}/recover`);
-        return response.data.recovered;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listNames() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/names`);
-        return response.data.names;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function addName(name, did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/names`, { name, did });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function removeName(name) {
-    try {
-        const response = await axios.delete(`${URL}/api/v1/names/${name}`);
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function resolveDID(name) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/names/${name}`);
-        return response.data.docs;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createAsset(data, options = {}) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/assets`, { data, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listAssets() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/assets`);
-        return response.data.assets;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function resolveAsset(name) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/assets/${name}`);
-        return response.data.asset;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createChallenge(challengeSpec, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/challenge`, { challenge: challengeSpec, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createResponse(challengeDID, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/response`, { challenge: challengeDID, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function verifyResponse(responseDID, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/response/verify`, { response: responseDID, options });
-        return response.data.verify;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createGroup(name, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/groups`, { name, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function getGroup(group) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/groups/${group}`);
-        return response.data.group;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function addGroupMember(group, member) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/groups/${group}/add`, { member });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function removeGroupMember(group, member) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/groups/${group}/remove`, { member });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function testGroup(group, member) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/groups/${group}/test`, { member });
-        return response.data.test;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listGroups(owner) {
-    try {
-        if (!owner) {
-            owner = '';
+    async isReady() {
+        try {
+            const response = await axios.get(`${this.API}/ready`);
+            return response.data.ready;
         }
-        const response = await axios.get(`${URL}/api/v1/groups?owner=${owner}`);
-        return response.data.groups;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function createSchema(schema, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/schemas`, { schema, options });
-        return response.data.did;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function getSchema(id) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/schemas/${id}`);
-        return response.data.schema;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function setSchema(id, schema) {
-    try {
-        const response = await axios.put(`${URL}/api/v1/schemas/${id}`, { schema });
-        return response.data.ok;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function testSchema(id) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/schemas/${id}/test`);
-        return response.data.test;
-    }
-    catch (error) {
-        throwError(error);
-    }
-}
-
-export async function listSchemas(owner) {
-    try {
-        if (!owner) {
-            owner = '';
+        catch (error) {
+            return false;
         }
+    }
 
-        const response = await axios.get(`${URL}/api/v1/schemas?owner=${owner}`);
-        return response.data.schemas;
+    async loadWallet() {
+        try {
+            const response = await axios.get(`${this.API}/wallet`);
+            return response.data.wallet;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function testAgent(id) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/agents/${id}/test`);
-        return response.data.test;
+    async saveWallet(wallet) {
+        try {
+            const response = await axios.put(`${this.API}/wallet`, { wallet });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function bindCredential(schema, subject, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/bind`, { schema, subject, options });
-        return response.data.credential;
+    async newWallet(mnemonic, overwrite = false) {
+        try {
+            const response = await axios.post(`${this.API}/wallet/new`, { mnemonic, overwrite });
+            return response.data.wallet;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function issueCredential(credential, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/issued`, { credential, options });
-        return response.data.did;
+    async backupWallet() {
+        try {
+            const response = await axios.post(`${this.API}/wallet/backup`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function updateCredential(did, credential) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/issued/${did}`, { credential });
-        return response.data.ok;
+    async recoverWallet() {
+        try {
+            const response = await axios.post(`${this.API}/wallet/recover`);
+            return response.data.wallet;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function listCredentials() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/credentials/held`);
-        return response.data.held;
+    async checkWallet() {
+        try {
+            const response = await axios.post(`${this.API}/wallet/check`);
+            return response.data.check;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function acceptCredential(did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/`, { did });
-        return response.data.ok;
+    async fixWallet() {
+        try {
+            const response = await axios.post(`${this.API}/wallet/fix`);
+            return response.data.fix;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function getCredential(did) {
-    try {
-        const response = await axios.get(`${URL}/api/v1/credentials/held/${did}`);
-        return response.data.credential;
+    async decryptMnemonic() {
+        try {
+            const response = await axios.get(`${this.API}/wallet/mnemonic`);
+            return response.data.mnemonic;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function removeCredential(did) {
-    try {
-        const response = await axios.delete(`${URL}/api/v1/credentials/held/${did}`);
-        return response.data.ok;
+    async listRegistries() {
+        try {
+            const response = await axios.get(`${this.API}/registries`);
+            return response.data.registries;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function publishCredential(did, options) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/publish`, { options });
-        return response.data.ok;
+    async getCurrentId() {
+        try {
+            const response = await axios.get(`${this.API}/ids/current`);
+            return response.data.current;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function unpublishCredential(did) {
-    try {
-        const response = await axios.post(`${URL}/api/v1/credentials/held/${did}/unpublish`);
-        return response.data.ok;
+    async setCurrentId(name) {
+        try {
+            const response = await axios.put(`${this.API}/ids/current`, { name });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function listIssued() {
-    try {
-        const response = await axios.get(`${URL}/api/v1/credentials/issued`);
-        return response.data.issued;
+    async listIds() {
+        try {
+            const response = await axios.get(`${this.API}/ids`);
+            return response.data.ids;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
-    }
-}
 
-export async function revokeCredential(did) {
-    try {
-        const response = await axios.delete(`${URL}/api/v1/credentials/issued/${did}`);
-        return response.data.ok;
+    async encryptMessage(msg, receiver, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/keys/encrypt/message`, { msg, receiver, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
-    catch (error) {
-        throwError(error);
+
+    async decryptMessage(did) {
+        try {
+            const response = await axios.post(`${this.API}/keys/decrypt/message`, { did });
+            return response.data.message;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async encryptJSON(json, receiver, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/keys/encrypt/json`, { json, receiver, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async decryptJSON(did) {
+        try {
+            const response = await axios.post(`${this.API}/keys/decrypt/json`, { did });
+            return response.data.json;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async resolveId(id) {
+        try {
+            const response = await axios.get(`${this.API}/ids/${id}`);
+            return response.data.docs;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createId(name, options) {
+        try {
+            const response = await axios.post(`${this.API}/ids`, { name, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeId(id) {
+        try {
+            const response = await axios.delete(`${this.API}/ids/${id}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async backupId(id) {
+        try {
+            const response = await axios.post(`${this.API}/ids/${id}/backup`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async recoverId(did) {
+        try {
+            const response = await axios.post(`${this.API}/ids/${did}/recover`);
+            return response.data.recovered;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listNames() {
+        try {
+            const response = await axios.get(`${this.API}/names`);
+            return response.data.names;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addName(name, did) {
+        try {
+            const response = await axios.post(`${this.API}/names`, { name, did });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeName(name) {
+        try {
+            const response = await axios.delete(`${this.API}/names/${name}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async resolveDID(name) {
+        try {
+            const response = await axios.get(`${this.API}/names/${name}`);
+            return response.data.docs;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createAsset(data, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/assets`, { data, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listAssets() {
+        try {
+            const response = await axios.get(`${this.API}/assets`);
+            return response.data.assets;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async resolveAsset(name) {
+        try {
+            const response = await axios.get(`${this.API}/assets/${name}`);
+            return response.data.asset;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createChallenge(challengeSpec, options) {
+        try {
+            const response = await axios.post(`${this.API}/challenge`, { challenge: challengeSpec, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createResponse(challengeDID, options) {
+        try {
+            const response = await axios.post(`${this.API}/response`, { challenge: challengeDID, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async verifyResponse(responseDID, options) {
+        try {
+            const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
+            return response.data.verify;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createGroup(name, options) {
+        try {
+            const response = await axios.post(`${this.API}/groups`, { name, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getGroup(group) {
+        try {
+            const response = await axios.get(`${this.API}/groups/${group}`);
+            return response.data.group;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addGroupMember(group, member) {
+        try {
+            const response = await axios.post(`${this.API}/groups/${group}/add`, { member });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeGroupMember(group, member) {
+        try {
+            const response = await axios.post(`${this.API}/groups/${group}/remove`, { member });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testGroup(group, member) {
+        try {
+            const response = await axios.post(`${this.API}/groups/${group}/test`, { member });
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listGroups(owner) {
+        try {
+            if (!owner) {
+                owner = '';
+            }
+            const response = await axios.get(`${this.API}/groups?owner=${owner}`);
+            return response.data.groups;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createSchema(schema, options) {
+        try {
+            const response = await axios.post(`${this.API}/schemas`, { schema, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getSchema(id) {
+        try {
+            const response = await axios.get(`${this.API}/schemas/${id}`);
+            return response.data.schema;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async setSchema(id, schema) {
+        try {
+            const response = await axios.put(`${this.API}/schemas/${id}`, { schema });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testSchema(id) {
+        try {
+            const response = await axios.post(`${this.API}/schemas/${id}/test`);
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listSchemas(owner) {
+        try {
+            if (!owner) {
+                owner = '';
+            }
+
+            const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
+            return response.data.schemas;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testAgent(id) {
+        try {
+            const response = await axios.post(`${this.API}/agents/${id}/test`);
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async bindCredential(schema, subject, options) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/bind`, { schema, subject, options });
+            return response.data.credential;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async issueCredential(credential, options) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/issued`, { credential, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateCredential(did, credential) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/issued/${did}`, { credential });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listCredentials() {
+        try {
+            const response = await axios.get(`${this.API}/credentials/held`);
+            return response.data.held;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async acceptCredential(did) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/held/`, { did });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getCredential(did) {
+        try {
+            const response = await axios.get(`${this.API}/credentials/held/${did}`);
+            return response.data.credential;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeCredential(did) {
+        try {
+            const response = await axios.delete(`${this.API}/credentials/held/${did}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async publishCredential(did, options) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/held/${did}/publish`, { options });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async unpublishCredential(did) {
+        try {
+            const response = await axios.post(`${this.API}/credentials/held/${did}/unpublish`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listIssued() {
+        try {
+            const response = await axios.get(`${this.API}/credentials/issued`);
+            return response.data.issued;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async revokeCredential(did) {
+        try {
+            const response = await axios.delete(`${this.API}/credentials/issued/${did}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
     }
 }
