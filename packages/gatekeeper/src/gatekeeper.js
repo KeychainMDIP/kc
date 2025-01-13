@@ -515,7 +515,7 @@ export default class Gatekeeper {
                         throw new InvalidOperationError('signature');
                     }
                 }
-                doc.mdip.opid = opid;
+                doc.didDocumentMetadata.versionId = opid;
                 continue;
             }
 
@@ -541,7 +541,7 @@ export default class Gatekeeper {
                 }
 
                 // TEMP during did:test, operation.previd is optional
-                if (operation.previd && operation.previd !== doc.mdip.opid) {
+                if (operation.previd && operation.previd !== doc.didDocumentMetadata.versionId) {
                     throw new InvalidOperationError('previd');
                 }
             }
@@ -556,7 +556,7 @@ export default class Gatekeeper {
                 doc.didDocumentMetadata.updated = time;
                 doc.didDocumentMetadata.version = version;
                 doc.didDocumentMetadata.confirmed = confirmed;
-                doc.mdip.opid = opid;
+                doc.didDocumentMetadata.versionId = opid;
 
                 if (blockchain) {
                     doc.mdip.registration = blockchain;
@@ -571,7 +571,7 @@ export default class Gatekeeper {
                 doc.didDocumentMetadata.deactivated = true;
                 doc.didDocumentMetadata.deleted = time;
                 doc.didDocumentMetadata.confirmed = confirmed;
-                doc.mdip.opid = opid;
+                doc.didDocumentMetadata.versionId = opid;
 
                 if (blockchain) {
                     doc.mdip.registration = blockchain;
