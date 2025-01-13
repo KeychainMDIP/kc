@@ -226,6 +226,7 @@ describe('generateDoc', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.generateDID(agentOp);
         const doc = await gatekeeper.generateDoc(agentOp);
         const expected = {
             // eslint-disable-next-line
@@ -238,7 +239,7 @@ describe('generateDoc', () => {
                 authentication: [
                     "#key-1",
                 ],
-                id: expect.any(String),
+                id: did,
                 verificationMethod: [
                     {
                         controller: expect.any(String),
@@ -251,6 +252,7 @@ describe('generateDoc', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
+                canonicalId: did
             },
             mdip: agentOp.mdip,
         };
@@ -265,6 +267,7 @@ describe('generateDoc', () => {
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
         const assetOp = await createAssetOp(agent, keypair);
+        const did = await gatekeeper.generateDID(assetOp);
         const doc = await gatekeeper.generateDoc(assetOp);
         const expected = {
             // eslint-disable-next-line
@@ -274,12 +277,13 @@ describe('generateDoc', () => {
                     // eslint-disable-next-line
                     "https://www.w3.org/ns/did/v1",
                 ],
-                id: expect.any(String),
+                id: did,
                 controller: agent,
             },
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
+                canonicalId: did
             },
             mdip: assetOp.mdip,
         };
@@ -569,6 +573,7 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
+                canonicalId: did
             },
             mdip: {
                 ...agentOp.mdip,
@@ -617,6 +622,7 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
+                canonicalId: did
             },
             mdip: {
                 ...agentOp.mdip,
@@ -687,6 +693,7 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
+                canonicalId: did
             },
             mdip: {
                 ...agentOp.mdip,
@@ -736,6 +743,7 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: false,
+                canonicalId: did
             },
             mdip: {
                 ...agentOp.mdip,
@@ -847,6 +855,7 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
+                canonicalId: did
             },
             mdip: {
                 ...assetOp.mdip,
