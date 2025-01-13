@@ -4,7 +4,6 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
-import { version } from 'os';
 
 const mockConsole = {
     log: () => { },
