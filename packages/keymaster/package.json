@@ -11,8 +11,10 @@
     "./wallet/cache": "./src/db/cache.js",
     "./wallet/cache-async": "./src/db/cache-async.js",
     "./wallet/web": "./src/db/web.js",
-    "./wallet/web-enc": "./src/db/web-enc.js"
+    "./wallet/web-enc": "./src/db/web-enc.js",
+    "./wallet/chrome": "./src/db/chrome.js"
   },
+  "types": "./types/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

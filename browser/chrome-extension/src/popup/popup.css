@@ -1,0 +1,114 @@
+body {
+    width: 420px;
+    height: 500px;
+}
+
+.text-field {
+    flex: 1;
+    height: 40px;
+}
+
+.text-field.top .MuiOutlinedInput-notchedOutline {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.text-field .MuiOutlinedInput-input {
+    font-family: "Courier", monospace;
+}
+
+.flex-box {
+    display: flex;
+    width: 100%;
+    gap: 0;
+}
+
+.flex-box.mt-2 {
+    margin-top: 16px;
+}
+
+.overflow-box {
+    overflow: auto;
+    margin-top: 16px;
+    max-height: 300px;
+}
+
+.button {
+    flex: 1;
+    height: 40px;
+}
+
+.button.large.top,
+.button.large.bottom {
+    border-radius: 0;
+}
+
+.button.large.top:first-child {
+    border-top-left-radius: 4px;
+}
+
+.button.large.top:last-child {
+    border-top-right-radius: 4px;
+}
+
+.button.large.bottom:first-child {
+    border-bottom-left-radius: 4px;
+}
+
+.button.large.bottom:last-child {
+    border-bottom-right-radius: 4px;
+}
+
+.button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.MuiTypography-root.did-mono {
+    font-size: 0.9em;
+    font-family: "Courier", monospace;
+}
+
+.margin-bottom {
+    margin-bottom: 16px;
+}
+
+.MuiButton-root.mini-margin {
+    margin: 8px;
+}
+
+.flex-container {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.select-large {
+    width: 340px;
+}
+
+.select-small {
+    width: 150px;
+    height: 40px;
+}
+
+.select-small .MuiOutlinedInput-notchedOutline {
+    border-radius: 0;
+}
+
+.text-field.name {
+    width: 190px;
+    height: 40px;
+}
+
+.text-field.name .MuiOutlinedInput-notchedOutline {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.button-create {
+    width: 80px;
+    height: 40px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}

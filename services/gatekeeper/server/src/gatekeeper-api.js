@@ -1,5 +1,6 @@
 import express from 'express';
 import morgan from 'morgan';
+import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Gatekeeper from '@mdip/gatekeeper';
@@ -28,6 +29,7 @@ const v1router = express.Router();
 
 app.use(morgan('dev'));
 app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
+app.use(cors());
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
