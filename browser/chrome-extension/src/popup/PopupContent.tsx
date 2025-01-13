@@ -56,11 +56,7 @@ const PopupContent = () => {
                     <Tabs
                         value={selectedTab}
                         onChange={handleChange}
-                        sx={{
-                            minHeight: "32px",
-                            p: 0,
-                            m: 0,
-                        }}
+                        className="tabs"
                     >
                         <Tab icon={<PermIdentity />} value="identities" />
                         {currentId && (
@@ -70,17 +66,11 @@ const PopupContent = () => {
                         <Tab icon={<AccountBalanceWallet />} value="wallet" />
                     </Tabs>
 
-                    <TabPanel
-                        value="identities"
-                        sx={{
-                            p: 0,
-                            m: 0,
-                        }}
-                    >
+                    <TabPanel value="identities" className="tab-panel">
                         <Typography
                             variant="h5"
                             component="h5"
-                            sx={{ mb: 2, mt: 1 }}
+                            className="tab-heading"
                         >
                             Identities
                         </Typography>
@@ -88,17 +78,11 @@ const PopupContent = () => {
                     </TabPanel>
 
                     {currentId && (
-                        <TabPanel
-                            value="credentials"
-                            sx={{
-                                p: 0,
-                                m: 0,
-                            }}
-                        >
+                        <TabPanel value="credentials" className="tab-panel">
                             <Typography
                                 variant="h5"
                                 component="h5"
-                                sx={{ mb: 2, mt: 1 }}
+                                className="tab-heading"
                             >
                                 Credentials
                             </Typography>
@@ -107,17 +91,11 @@ const PopupContent = () => {
                     )}
 
                     {currentId && (
-                        <TabPanel
-                            value="auth"
-                            sx={{
-                                p: 0,
-                                m: 0,
-                            }}
-                        >
+                        <TabPanel value="auth" className="tab-panel">
                             <Typography
                                 variant="h5"
                                 component="h5"
-                                sx={{ mb: 2, mt: 1 }}
+                                className="tab-heading"
                             >
                                 Auth
                             </Typography>
@@ -125,17 +103,11 @@ const PopupContent = () => {
                         </TabPanel>
                     )}
 
-                    <TabPanel
-                        value="wallet"
-                        sx={{
-                            p: 0,
-                            m: 0,
-                        }}
-                    >
+                    <TabPanel value="wallet" className="tab-panel">
                         <Typography
                             variant="h5"
                             component="h5"
-                            sx={{ mb: 2, mt: 1 }}
+                            className="tab-heading"
                         >
                             Wallet
                         </Typography>

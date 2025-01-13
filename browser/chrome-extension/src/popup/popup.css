@@ -112,3 +112,19 @@ body {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
 }
+
+.tabs {
+    min-height: 32px;
+    padding: 0;
+    margin: 0;
+}
+
+.tab-panel {
+    padding: 0;
+    margin: 0;
+}
+
+.tab-heading {
+    margin-bottom: 16px;
+    margin-top: 8px;
+}
