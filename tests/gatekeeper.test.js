@@ -162,6 +162,43 @@ describe('generateDID', () => {
         expect(did.startsWith('did:test:')).toBe(true);
     });
 
+    it('should create DID from operation with configured prefix', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry"
+            }
+        };
+
+        process.env.KC_DID_PREFIX = 'did:mock:';
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const did = await gatekeeper.generateDID(mockTxn);
+
+        expect(did.startsWith('did:mock:')).toBe(true);
+    });
+
+    it('should create DID from operation with custom prefix', async () => {
+        mockFs({});
+
+        const mockTxn = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                registry: "mockRegistry",
+                prefix: 'did:custom'
+            }
+        };
+
+        process.env.KC_DID_PREFIX = 'did:mock:';
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const did = await gatekeeper.generateDID(mockTxn);
+
+        expect(did.startsWith('did:custom:')).toBe(true);
+    });
+
     it('should create same DID from same operation with date included', async () => {
         mockFs({});
 
