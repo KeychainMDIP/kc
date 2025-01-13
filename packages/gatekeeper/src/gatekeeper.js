@@ -7,7 +7,6 @@ import {
     InvalidOperationError
 } from '@mdip/common/errors';
 import IPFS from '@mdip/ipfs';
-import config from './config.js';
 
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
@@ -37,6 +36,7 @@ export default class Gatekeeper {
         this.isProcessingEvents = false;
         this.ipfs = new IPFS({ minimal: true });
         this.cipher = new CipherNode();
+        this.defaultPrefix = process.env.KC_DID_PREFIX || 'did:test';
     }
 
     async verifyDb(options = {}) {
@@ -211,7 +211,8 @@ export default class Gatekeeper {
 
     async generateDID(operation) {
         const cid = await this.generateCID(operation);
-        return `${config.didPrefix}:${cid}`;
+        const prefix = operation.mdip.prefix || this.defaultPrefix;
+        return `${prefix}:${cid}`;
     }
 
     async verifyOperation(operation) {
@@ -449,6 +450,7 @@ export default class Gatekeeper {
                     },
                     "didDocumentMetadata": {
                         "created": anchor.created,
+                        "canonicalId": did
                     },
                     "didDocumentData": {},
                     "mdip": anchor.mdip,
@@ -465,6 +467,7 @@ export default class Gatekeeper {
                     },
                     "didDocumentMetadata": {
                         "created": anchor.created,
+                        "canonicalId": did
                     },
                     "didDocumentData": anchor.data,
                     "mdip": anchor.mdip,
@@ -489,6 +492,7 @@ export default class Gatekeeper {
 
         const anchor = events[0];
         let doc = await this.generateDoc(anchor.operation);
+        doc.didDocument.id = did; // overwrite the canonicalId with the requested DID
 
         if (atTime && new Date(doc.mdip.created) > new Date(atTime)) {
             // TBD What to return if DID was created after specified time?
@@ -627,7 +631,7 @@ export default class Gatekeeper {
         let { dids, updatedAfter, updatedBefore, confirm, verify, resolve } = options;
         if (!dids) {
             const keys = await this.db.getAllKeys();
-            dids = keys.map(key => `${config.didPrefix}:${key}`);
+            dids = keys.map(key => `${this.defaultPrefix}:${key}`);
         }
 
         if (updatedAfter || updatedBefore || resolve) {
