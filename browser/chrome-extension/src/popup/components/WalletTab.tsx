@@ -84,7 +84,7 @@ function WalletTab() {
                     </Button>
                 </DialogActions>
             </Dialog>
-            <Box>
+            <Box className="flex-box">
                 <Button
                     className="mini-margin"
                     variant="contained"

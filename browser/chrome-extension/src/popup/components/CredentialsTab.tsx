@@ -186,7 +186,7 @@ function CredentialsTab() {
                 </DialogActions>
             </Dialog>
 
-            <Box className="flex-box">
+            <Box className="flex-box mt-2">
                 <TextField
                     label="Credential DID"
                     variant="outlined"

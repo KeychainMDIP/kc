@@ -48,7 +48,7 @@ function IdentitiesTab() {
 
     return (
         <Box>
-            <FormControl variant="outlined" size="small" sx={{ mb: 1 }}>
+            <FormControl variant="outlined" size="small" sx={{ mb: 1, mt: 2 }}>
                 <InputLabel id="current-id-label">Current ID</InputLabel>
                 <Select
                     labelId="current-id-label"
@@ -70,13 +70,7 @@ function IdentitiesTab() {
                 </Select>
             </FormControl>
 
-            <Box
-                sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0,
-                }}
-            >
+            <Box className="flex-box">
                 <TextField
                     label="Create ID"
                     variant="outlined"
