@@ -567,8 +567,10 @@ export default class Gatekeeper {
                     confirmed
                 }
                 doc.mdip.registration = blockchain || undefined;
+                continue;
             }
-            else if (operation.type === 'delete') {
+
+            if (operation.type === 'delete') {
                 doc.didDocument = {};
                 doc.didDocumentData = {};
                 doc.didDocumentMetadata = {
@@ -580,13 +582,6 @@ export default class Gatekeeper {
                     confirmed
                 }
                 doc.mdip.registration = blockchain || undefined;
-            }
-            else {
-                if (verify) {
-                    throw new InvalidOperationError('signature');
-                }
-
-                // console.error(`unknown type ${operation.type}`);
             }
         }
 
