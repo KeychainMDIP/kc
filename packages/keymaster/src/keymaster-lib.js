@@ -1720,6 +1720,31 @@ export default class Keymaster {
         return asset.poll || null;
     }
 
+    async testPoll(id) {
+        try {
+            const poll = await this.getPoll(id);
+            return poll !== null;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
+    async listPolls(owner) {
+        const assets = await this.listAssets(owner);
+        const polls = [];
+
+        for (const did of assets) {
+            const isPoll = await this.testPoll(did);
+
+            if (isPoll) {
+                polls.push(did);
+            }
+        }
+
+        return polls;
+    }
+
     async viewPoll(pollId) {
         const id = await this.fetchIdInfo();
         const poll = await this.getPoll(pollId);

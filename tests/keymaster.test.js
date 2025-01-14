@@ -3379,7 +3379,7 @@ describe('listGroups', () => {
         mockFs.restore();
     });
 
-    it('should return list of schemas', async () => {
+    it('should return list of groups', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -3570,6 +3570,73 @@ describe('createPoll', () => {
         catch (error) {
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
+    });
+});
+
+describe('testPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true only for a poll DID', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const poll = await keymaster.createPoll(template);
+        let isPoll = await keymaster.testPoll(poll);
+        expect(isPoll).toBe(true);
+
+        isPoll = await keymaster.testPoll(agentDid);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll(rosterDid);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll();
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll(100);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll('did:test:mock');
+        expect(isPoll).toBe(false);
+    });
+});
+
+describe('listPolls', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of polls', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const poll1 = await keymaster.createPoll(template);
+        const poll2 = await keymaster.createPoll(template);
+        const poll3 = await keymaster.createPoll(template);
+        const schema1 = await keymaster.createSchema();
+        // add a bogus DID to trigger the exception case
+        await keymaster.addToOwned('did:test:mock');
+
+        const polls = await keymaster.listPolls();
+
+        expect(polls.includes(poll1)).toBe(true);
+        expect(polls.includes(poll2)).toBe(true);
+        expect(polls.includes(poll3)).toBe(true);
+        expect(polls.includes(schema1)).toBe(false);
     });
 });
 

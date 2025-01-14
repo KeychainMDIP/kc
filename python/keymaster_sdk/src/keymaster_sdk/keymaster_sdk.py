@@ -503,12 +503,25 @@ def create_poll(poll, options=None):
     return response["did"]
 
 
+def list_polls(owner=None):
+    response = proxy_request(
+        "GET",
+        f"{_keymaster_api}/polls?owner={owner}",
+    )
+    return response["polls"]
+
+
 def get_poll(poll):
     response = proxy_request(
         "GET",
         f"{_keymaster_api}/polls/{poll}",
     )
     return response["poll"]
+
+
+def test_poll(identifier):
+    response = proxy_request("POST", f"{_keymaster_api}/polls/{identifier}/test")
+    return response["test"]
 
 
 def view_poll(poll):
