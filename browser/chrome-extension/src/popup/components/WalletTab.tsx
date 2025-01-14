@@ -32,7 +32,7 @@ function WalletTab() {
             await keymaster.newWallet(null, true);
             await refreshAll();
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         } finally {
             setOpen(false);
             setLoading(false);
@@ -44,7 +44,7 @@ function WalletTab() {
             const wallet = await keymaster.loadWallet();
             openBrowserTab("Wallet", "", JSON.stringify(wallet, null, 4));
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 

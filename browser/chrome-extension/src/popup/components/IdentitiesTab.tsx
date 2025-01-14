@@ -31,7 +31,7 @@ function IdentitiesTab() {
             await keymaster.setCurrentId(id);
             await refreshAll();
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -42,7 +42,7 @@ function IdentitiesTab() {
             await refreshAll();
             setName("");
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     };
 

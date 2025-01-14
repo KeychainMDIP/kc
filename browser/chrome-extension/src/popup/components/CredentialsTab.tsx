@@ -40,7 +40,7 @@ function CredentialsTab() {
                 setWarning("Credential not accepted");
             }
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -50,7 +50,7 @@ function CredentialsTab() {
             const contents = JSON.stringify(doc, null, 4);
             openBrowserTab("Resolved Credential", did, contents);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -60,7 +60,7 @@ function CredentialsTab() {
             const contents = JSON.stringify(doc, null, 4);
             openBrowserTab(prefix + " Credential", did, contents);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -70,7 +70,7 @@ function CredentialsTab() {
             await resolveId();
             await decryptCredential("Publish", did);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -80,7 +80,7 @@ function CredentialsTab() {
             await resolveId();
             await decryptCredential("Reveal", did);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -90,7 +90,7 @@ function CredentialsTab() {
             await resolveId();
             await decryptCredential("Unpublish", did);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -110,7 +110,7 @@ function CredentialsTab() {
             await keymaster.removeCredential(removeDID);
             await refreshHeld();
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         } finally {
             setOpen(false);
             setLoading(false);

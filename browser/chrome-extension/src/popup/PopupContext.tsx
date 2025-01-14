@@ -97,7 +97,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
                 let result = await chrome.storage.sync.get(["gatekeeperUrl"]);
                 url = result.gatekeeperUrl;
             } catch (error) {
-                setError(error.error || error);
+                setError(error.error || error.message || String(error));
             }
 
             const gatekeeper = new GatekeeperClient();
@@ -127,7 +127,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             const heldList = await keymaster.listCredentials();
             setHeldList(heldList);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -163,7 +163,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
             setSelectedTab("identities");
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
@@ -177,7 +177,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             const docs = await keymaster.resolveId(selectedId);
             setManifest(docs.didDocumentData.manifest);
         } catch (error) {
-            setError(error.error || error);
+            setError(error.error || error.message || String(error));
         }
     }
 
