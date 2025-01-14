@@ -1479,56 +1479,54 @@ export default class Keymaster {
     }
 
     async testGroup(groupId, memberId) {
-        const group = await this.getGroup(groupId);
+        try {
+            const group = await this.getGroup(groupId);
 
-        if (!group) {
-            return false;
-        }
+            if (!group) {
+                return false;
+            }
 
-        if (!Array.isArray(group.members)) {
-            return false;
-        }
+            if (!Array.isArray(group.members)) {
+                return false;
+            }
 
-        if (!memberId) {
-            return true;
-        }
+            if (!memberId) {
+                return true;
+            }
 
-        const didMember = await this.lookupDID(memberId);
-        let isMember = group.members.includes(didMember);
+            const didMember = await this.lookupDID(memberId);
+            let isMember = group.members.includes(didMember);
 
-        if (!isMember) {
-            for (const did of group.members) {
-                isMember = await this.testGroup(did, didMember);
+            if (!isMember) {
+                for (const did of group.members) {
+                    isMember = await this.testGroup(did, didMember);
 
-                if (isMember) {
-                    break;
+                    if (isMember) {
+                        break;
+                    }
                 }
             }
-        }
 
-        return isMember;
+            return isMember;
+        }
+        catch (error) {
+            return false;
+        }
     }
 
     async listGroups(owner) {
-        const id = await this.fetchIdInfo(owner);
-        const schemas = [];
+        const assets = await this.listAssets(owner);
+        const groups = [];
 
-        if (id.owned) {
-            for (const did of id.owned) {
-                try {
-                    const isGroup = await this.testGroup(did);
+        for (const did of assets) {
+            const isGroup = await this.testGroup(did);
 
-                    if (isGroup) {
-                        schemas.push(did);
-                    }
-                }
-                catch (error) {
-                    continue;
-                }
+            if (isGroup) {
+                groups.push(did);
             }
         }
 
-        return schemas;
+        return groups;
     }
 
     validateSchema(schema) {
