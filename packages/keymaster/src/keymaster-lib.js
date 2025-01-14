@@ -1593,32 +1593,30 @@ export default class Keymaster {
 
     // TBD add optional 2nd parameter that will validate JSON against the schema
     async testSchema(id) {
-        const schema = await this.getSchema(id);
+        try {
+            const schema = await this.getSchema(id);
 
-        // TBD Need a better way because any random object with keys can be a valid schema
-        if (!schema || Object.keys(schema).length === 0) {
+            // TBD Need a better way because any random object with keys can be a valid schema
+            if (!schema || Object.keys(schema).length === 0) {
+                return false;
+            }
+
+            return this.validateSchema(schema);
+        }
+        catch (error) {
             return false;
         }
-
-        return this.validateSchema(schema);
     }
 
     async listSchemas(owner) {
-        const id = await this.fetchIdInfo(owner);
+        const assets = await this.listAssets(owner);
         const schemas = [];
 
-        if (id.owned) {
-            for (const did of id.owned) {
-                try {
-                    const isSchema = await this.testSchema(did);
+        for (const did of assets) {
+            const isSchema = await this.testSchema(did);
 
-                    if (isSchema) {
-                        schemas.push(did);
-                    }
-                }
-                catch (error) {
-                    continue;
-                }
+            if (isSchema) {
+                schemas.push(did);
             }
         }
 

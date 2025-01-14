@@ -4153,15 +4153,26 @@ describe('testSchema', () => {
         expect(isSchema).toBe(false);
     });
 
-    it('should raise an exception when no DID provided', async () => {
+    it('should return false for non-schemas', async () => {
         mockFs({});
 
-        try {
-            await keymaster.testSchema();
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
-        }
+        let isSchema = await keymaster.testSchema();
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema(3);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema('mock7');
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema([1, 2, 3]);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema([1, 2, 3]);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema({});
+        expect(isSchema).toBe(false);
     });
 });
 
@@ -4194,7 +4205,7 @@ describe('createTemplate', () => {
             await keymaster.createTemplate();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.message).toBe('Invalid parameter: schemaId');
         }
     });
 });
