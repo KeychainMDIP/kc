@@ -47,7 +47,7 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
 
 async function createUpdateOp(keypair, did, doc) {
     const current = await gatekeeper.resolveDID(did);
-    const previd = current.mdip.opid;
+    const previd = current.didDocumentMetadata.versionId;
 
     const operation = {
         type: "update",
@@ -72,7 +72,7 @@ async function createUpdateOp(keypair, did, doc) {
 
 async function createDeleteOp(keypair, did) {
     const current = await gatekeeper.resolveDID(did);
-    const previd = current.mdip.opid;
+    const previd = current.didDocumentMetadata.versionId;
 
     const operation = {
         type: "delete",
@@ -573,12 +573,10 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did
+                canonicalId: did,
+                versionId: opid
             },
-            mdip: {
-                ...agentOp.mdip,
-                opid,
-            }
+            mdip: agentOp.mdip
         };
 
         expect(doc).toStrictEqual(expected);
@@ -622,12 +620,10 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did
+                canonicalId: did,
+                versionId: opid
             },
-            mdip: {
-                ...agentOp.mdip,
-                opid,
-            }
+            mdip: agentOp.mdip
         };
 
         expect(ok).toBe(true);
@@ -693,12 +689,10 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did
+                canonicalId: did,
+                versionId: opid
             },
-            mdip: {
-                ...agentOp.mdip,
-                opid,
-            }
+            mdip: agentOp.mdip
         };
 
         expect(ok).toBe(true);
@@ -743,12 +737,10 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: false,
-                canonicalId: did
+                canonicalId: did,
+                versionId: opid
             },
-            mdip: {
-                ...agentOp.mdip,
-                opid,
-            }
+            mdip: agentOp.mdip
         };
 
         expect(ok).toBe(true);
@@ -855,12 +847,10 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did
+                canonicalId: did,
+                versionId: opid
             },
-            mdip: {
-                ...assetOp.mdip,
-                opid,
-            }
+            mdip: assetOp.mdip
         };
 
         expect(doc).toStrictEqual(expected);
@@ -1035,7 +1025,7 @@ describe('updateDID', () => {
         const updatedDoc = await gatekeeper.resolveDID(did);
         doc.didDocumentMetadata.updated = expect.any(String);
         doc.didDocumentMetadata.version = 2;
-        doc.mdip.opid = opid;
+        doc.didDocumentMetadata.versionId = opid;
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);

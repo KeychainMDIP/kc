@@ -325,7 +325,7 @@ export default class Keymaster {
         const keypair = await this.hdKeyPair();
         const did = doc.didDocument.id;
         const current = await this.gatekeeper.resolveDID(did);
-        const previd = current.mdip.opid;
+        const previd = current.didDocumentMetadata.versionId;
 
         const operation = {
             type: "update",
@@ -663,7 +663,7 @@ export default class Keymaster {
     async updateDID(doc) {
         const did = doc.didDocument.id;
         const current = await this.resolveDID(did);
-        const previd = current.mdip.opid;
+        const previd = current.didDocumentMetadata.versionId;
 
         const operation = {
             type: "update",
@@ -679,7 +679,7 @@ export default class Keymaster {
 
     async revokeDID(did) {
         const current = await this.resolveDID(did);
-        const previd = current.mdip.opid;
+        const previd = current.didDocumentMetadata.versionId;
 
         const operation = {
             type: "delete",
