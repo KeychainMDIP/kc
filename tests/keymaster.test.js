@@ -2635,7 +2635,7 @@ describe('unpublishCredential', () => {
         await keymaster.createId('Bob');
 
         try {
-            await keymaster.unpublishCredential('did:test:mock');
+            await keymaster.unpublishCredential('did:test:mock49');
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -3389,7 +3389,7 @@ describe('listGroups', () => {
         const group3 = await keymaster.createGroup('mock-3');
         const schema1 = await keymaster.createSchema();
         // add a bogus DID to trigger the exception case
-        await keymaster.addToOwned('did:test:mock');
+        await keymaster.addToOwned('did:test:mock53');
 
         const groups = await keymaster.listGroups();
 
