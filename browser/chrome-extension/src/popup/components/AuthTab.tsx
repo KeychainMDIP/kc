@@ -52,7 +52,6 @@ function AuthTab() {
             if (callback) {
                 setDisableSendResponse(false);
             }
-            await decryptResponse(response);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
