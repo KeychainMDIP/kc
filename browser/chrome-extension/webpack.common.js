@@ -31,6 +31,11 @@ module.exports = {
         new webpack.ProvidePlugin({
             Buffer: ['buffer', 'Buffer'],
         }),
+        new webpack.DefinePlugin({
+            'process.env.KC_DEFAULT_REGISTRY': JSON.stringify(
+                process.env.KC_DEFAULT_REGISTRY || 'hyperswarm'
+            ),
+        }),
         new CleanWebpackPlugin({
             cleanStaleWEbpackAssets: false,
         }),
@@ -50,7 +55,7 @@ module.exports = {
             "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/src/cipher-web.js"),
             "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/src/gatekeeper-client.js"),
             "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/src/db/chrome.js"),
-            "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster.js"),
+            "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster-lib.js"),
         },
         fallback: {
             buffer: require.resolve("buffer")
