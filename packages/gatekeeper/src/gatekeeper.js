@@ -498,14 +498,14 @@ export default class Gatekeeper {
             // TBD What to return if DID was created after specified time?
         }
 
+        const created = doc.didDocumentMetadata.created;
+        const canonicalId = doc.didDocumentMetadata.canonicalId;
         let version = 1; // initial version is version 1 by definition
         let confirmed = true; // create event is always confirmed by definition
 
-        doc.didDocumentMetadata.version = version;
-        doc.didDocumentMetadata.confirmed = confirmed;
-
         for (const { time, operation, registry, blockchain } of events) {
-            const opid = await this.generateCID(operation);
+            const versionId = await this.generateCID(operation);
+            const updated = time;
 
             if (operation.type === 'create') {
                 if (verify) {
@@ -515,7 +515,14 @@ export default class Gatekeeper {
                         throw new InvalidOperationError('signature');
                     }
                 }
-                doc.didDocumentMetadata.versionId = opid;
+
+                doc.didDocumentMetadata = {
+                    created,
+                    canonicalId,
+                    versionId,
+                    version,
+                    confirmed
+                }
                 continue;
             }
 
@@ -550,35 +557,29 @@ export default class Gatekeeper {
                 // Increment version
                 version += 1;
 
-                // TBD if registry change in operation.doc.didDocumentMetadata.mdip,
-                // fetch updates from new registry and search for same operation
                 doc = operation.doc;
-                doc.didDocumentMetadata.updated = time;
-                doc.didDocumentMetadata.version = version;
-                doc.didDocumentMetadata.confirmed = confirmed;
-                doc.didDocumentMetadata.versionId = opid;
-
-                if (blockchain) {
-                    doc.mdip.registration = blockchain;
+                doc.didDocumentMetadata = {
+                    created,
+                    updated,
+                    canonicalId,
+                    versionId,
+                    version,
+                    confirmed
                 }
-                else {
-                    delete doc.mdip.registration;
-                }
+                doc.mdip.registration = blockchain || undefined;
             }
             else if (operation.type === 'delete') {
                 doc.didDocument = {};
                 doc.didDocumentData = {};
-                doc.didDocumentMetadata.deactivated = true;
-                doc.didDocumentMetadata.deleted = time;
-                doc.didDocumentMetadata.confirmed = confirmed;
-                doc.didDocumentMetadata.versionId = opid;
-
-                if (blockchain) {
-                    doc.mdip.registration = blockchain;
+                doc.didDocumentMetadata = {
+                    deactivated: true,
+                    created,
+                    deleted: updated,
+                    canonicalId,
+                    versionId,
+                    confirmed
                 }
-                else {
-                    delete doc.mdip.registration;
-                }
+                doc.mdip.registration = blockchain || undefined;
             }
             else {
                 if (verify) {
