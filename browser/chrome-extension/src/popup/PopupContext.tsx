@@ -27,6 +27,8 @@ interface PopupContextValue {
     heldDID: string;
     setHeldDID: Dispatch<SetStateAction<string>>;
     heldList: string[];
+    challenge: string;
+    setChallenge: Dispatch<SetStateAction<string>>;
     selectedId: string;
     setSelectedId: Dispatch<SetStateAction<string>>;
     registry: string;
@@ -59,14 +61,38 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [manifest, setManifest] = useState(null);
     const [registry, setRegistry] = useState("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
+    const [challenge, setChallenge] = useState("");
     const [selectedId, setSelectedId] = useState("");
     const [selectedTab, setSelectedTab] = useState("identities");
+    const [pendingAuth, setPendingAuth] = useState<string | null>(null);
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
         message: "",
         severity: "warning",
     });
+
+    useEffect(() => {
+        const handleMessage = (message, sender, sendResponse) => {
+            if (message.action === 'SHOW_POPUP_AUTH') {
+                setPendingAuth(message.challenge);
+                sendResponse({ success: true });
+            }
+        };
+        chrome.runtime.onMessage.addListener(handleMessage);
+
+        return () => {
+            chrome.runtime.onMessage.removeListener(handleMessage);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (currentId && pendingAuth) {
+            setSelectedTab('auth');
+            setChallenge(pendingAuth);
+            setPendingAuth(null);
+        }
+    }, [currentId, pendingAuth]);
 
     const setError = (error: string) => {
         setSnackbar({
@@ -142,6 +168,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             const regs = await keymaster.listRegistries();
 
             setRegistries(regs);
+            setSelectedTab("identities");
 
             if (cid) {
                 setCurrentId(cid);
@@ -160,8 +187,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
                 setIdList([]);
                 setManifest(null);
             }
-
-            setSelectedTab("identities");
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -210,6 +235,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         heldDID,
         setHeldDID,
         heldList,
+        setChallenge,
+        challenge,
         selectedId,
         setSelectedId,
         registry,

@@ -11,3 +11,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         }
     }
 });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'OPEN_AUTH_TAB') {
+        chrome.action.openPopup(() => {
+            chrome.runtime.sendMessage({
+                action: 'SHOW_POPUP_AUTH',
+                challenge: message.challenge
+            });
+        });
+        sendResponse({ success: true });
+    }
+});

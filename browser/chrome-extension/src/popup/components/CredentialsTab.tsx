@@ -32,7 +32,6 @@ function CredentialsTab() {
     async function acceptCredential() {
         try {
             const ok = await keymaster.acceptCredential(heldDID);
-            console.log("heldDID: ", heldDID);
             if (ok) {
                 await refreshHeld();
                 setHeldDID("");

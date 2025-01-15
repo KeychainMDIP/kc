@@ -4,11 +4,10 @@ import axios from "axios";
 import { usePopupContext } from "../PopupContext";
 
 function AuthTab() {
-    const { keymaster, openBrowserTab, setError, setWarning } =
+    const { challenge, keymaster, openBrowserTab, setChallenge, setError, setWarning } =
         usePopupContext();
     const [authDID, setAuthDID] = useState("");
     const [callback, setCallback] = useState(null);
-    const [challenge, setChallenge] = useState("");
     const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [response, setResponse] = useState("");
 
