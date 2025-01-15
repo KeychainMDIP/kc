@@ -12,6 +12,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
+    const [docsVersion, setDocsVersion] = useState(0);
+    const [docsVersions, setDocsVersions] = useState(0);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [callback, setCallback] = useState(null);
@@ -101,10 +103,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const idList = await keymaster.listIds();
                 setIdList(idList);
 
-                const docs = await keymaster.resolveId(currentId);
+                const docs = await keymaster.resolveDID(currentId);
                 setCurrentDID(docs.didDocument.id);
                 setManifest(docs.didDocumentData.manifest);
                 setDocsString(JSON.stringify(docs, null, 4));
+
+                const versions = docs.didDocumentMetadata.version;
+                setDocsVersion(versions);
+                setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
 
                 refreshNames();
                 refreshHeld();
@@ -148,6 +154,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function selectDocsVersion(version) {
+        try {
+            setDocsVersion(version);
+            const docs = await keymaster.resolveDID(currentId, { atVersion: version });
+            setDocsString(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function showCreate() {
         setSaveId(currentId);
         setCurrentId('');
@@ -173,7 +189,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function resolveId() {
         try {
-            const docs = await keymaster.resolveId(selectedId);
+            const docs = await keymaster.resolveDID(selectedId);
             setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
@@ -995,6 +1011,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <p />
                             {!widget &&
                                 <Box>
+                                    <Select
+                                        style={{ width: '150px' }}
+                                        value={docsVersion}
+                                        fullWidth
+                                        onChange={(event) => selectDocsVersion(event.target.value)}
+                                    >
+                                        {docsVersions.map((version, index) => (
+                                            <MenuItem value={version} key={index}>
+                                                version {version}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                    <br/>
                                     <textarea
                                         value={docsString}
                                         readOnly
