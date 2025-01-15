@@ -611,11 +611,38 @@ v1router.get('/templates/poll', async (req, res) => {
     }
 });
 
+v1router.get('/polls/', async (req, res) => {
+    try {
+        const polls = await keymaster.listPolls(req.query.owner);
+        res.json({ polls });
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 v1router.post('/polls/', async (req, res) => {
     try {
         const { poll, options } = req.body;
         const did = await keymaster.createPoll(poll, options);
         res.json({ did });
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/polls/:poll', async (req, res) => {
+    try {
+        const poll = await keymaster.getPoll(req.params.poll);
+        res.json({ poll });
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/polls/:poll/test', async (req, res) => {
+    try {
+        const test = await keymaster.testPoll(req.params.poll);
+        res.json({ test });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
@@ -652,18 +679,17 @@ v1router.put('/polls/update', async (req, res) => {
 
 v1router.post('/polls/:poll/publish', async (req, res) => {
     try {
-        const { poll, options } = req.body;
-        const ok = await keymaster.publishPoll(poll, options);
+        const { options } = req.body;
+        const ok = await keymaster.publishPoll(req.params.poll, options);
         res.json({ ok });
     } catch (error) {
         res.status(500).send({ error: error.toString() });
     }
 });
 
-v1router.delete('/polls/:poll/unpublish', async (req, res) => {
+v1router.post('/polls/:poll/unpublish', async (req, res) => {
     try {
-        const { poll } = req.params;
-        const ok = await keymaster.unpublishPoll(poll);
+        const ok = await keymaster.unpublishPoll(req.params.poll);
         res.json({ ok });
     } catch (error) {
         res.status(500).send({ error: error.toString() });

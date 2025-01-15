@@ -624,4 +624,84 @@ export default class KeymasterClient {
             throwError(error);
         }
     }
+
+    async pollTemplate() {
+        try {
+            const response = await axios.get(`${this.API}/templates/poll`);
+            return response.data.template;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createPoll(poll, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/polls`, { poll, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getPoll(pollId) {
+        try {
+            const response = await axios.get(`${this.API}/polls/${pollId}`);
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async viewPoll(pollId) {
+        try {
+            const response = await axios.get(`${this.API}/polls/${pollId}/view`);
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async votePoll(pollId, vote, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/polls/vote`, { pollId, vote, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updatePoll(ballot) {
+        try {
+            const response = await axios.put(`${this.API}/polls/update`, { ballot });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async publishPoll(pollId, options = {}) {
+        try {
+            const response = await axios.post(`${this.API}/polls/${pollId}/publish`, { options });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async unpublishPoll(pollId) {
+        try {
+            const response = await axios.post(`${this.API}/polls/${pollId}/unpublish`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
 }

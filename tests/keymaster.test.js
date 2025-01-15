@@ -2635,7 +2635,7 @@ describe('unpublishCredential', () => {
         await keymaster.createId('Bob');
 
         try {
-            await keymaster.unpublishCredential('did:test:mock');
+            await keymaster.unpublishCredential('did:test:mock49');
             throw new ExpectedExceptionError();
         }
         catch (error) {
@@ -3379,7 +3379,7 @@ describe('listGroups', () => {
         mockFs.restore();
     });
 
-    it('should return list of schemas', async () => {
+    it('should return list of groups', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -3389,7 +3389,7 @@ describe('listGroups', () => {
         const group3 = await keymaster.createGroup('mock-3');
         const schema1 = await keymaster.createSchema();
         // add a bogus DID to trigger the exception case
-        await keymaster.addToOwned('did:test:mock');
+        await keymaster.addToOwned('did:test:mock53');
 
         const groups = await keymaster.listGroups();
 
@@ -3570,6 +3570,73 @@ describe('createPoll', () => {
         catch (error) {
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
+    });
+});
+
+describe('testPoll', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true only for a poll DID', async () => {
+        mockFs({});
+
+        const agentDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const poll = await keymaster.createPoll(template);
+        let isPoll = await keymaster.testPoll(poll);
+        expect(isPoll).toBe(true);
+
+        isPoll = await keymaster.testPoll(agentDid);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll(rosterDid);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll();
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll(100);
+        expect(isPoll).toBe(false);
+
+        isPoll = await keymaster.testPoll('did:test:mock');
+        expect(isPoll).toBe(false);
+    });
+});
+
+describe('listPolls', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return list of polls', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const poll1 = await keymaster.createPoll(template);
+        const poll2 = await keymaster.createPoll(template);
+        const poll3 = await keymaster.createPoll(template);
+        const schema1 = await keymaster.createSchema();
+        // add a bogus DID to trigger the exception case
+        await keymaster.addToOwned('did:test:mock');
+
+        const polls = await keymaster.listPolls();
+
+        expect(polls.includes(poll1)).toBe(true);
+        expect(polls.includes(poll2)).toBe(true);
+        expect(polls.includes(poll3)).toBe(true);
+        expect(polls.includes(schema1)).toBe(false);
     });
 });
 
@@ -4086,15 +4153,26 @@ describe('testSchema', () => {
         expect(isSchema).toBe(false);
     });
 
-    it('should raise an exception when no DID provided', async () => {
+    it('should return false for non-schemas', async () => {
         mockFs({});
 
-        try {
-            await keymaster.testSchema();
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
-        }
+        let isSchema = await keymaster.testSchema();
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema(3);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema('mock7');
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema([1, 2, 3]);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema([1, 2, 3]);
+        expect(isSchema).toBe(false);
+
+        isSchema = await keymaster.testSchema({});
+        expect(isSchema).toBe(false);
     });
 });
 
@@ -4127,7 +4205,7 @@ describe('createTemplate', () => {
             await keymaster.createTemplate();
             throw new ExpectedExceptionError();
         } catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.message).toBe('Invalid parameter: schemaId');
         }
     });
 });
