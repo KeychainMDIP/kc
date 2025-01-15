@@ -209,9 +209,20 @@ v1router.post('/names', async (req, res) => {
     }
 });
 
+// eslint-disable-next-line
 v1router.get('/names/:name', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.name);
+        res.json({ docs });
+    } catch (error) {
+        res.status(404).send({ error: 'DID not found' });
+    }
+});
+
+v1router.post('/names/:name', async (req, res) => {
+    try {
+        const { options } = req.body;
+        const docs = await keymaster.resolveDID(req.params.name, options);
         res.json({ docs });
     } catch (error) {
         res.status(404).send({ error: 'DID not found' });
