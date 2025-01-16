@@ -12,6 +12,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [currentDID, setCurrentDID] = useState('');
     const [selectedId, setSelectedId] = useState('');
     const [docsString, setDocsString] = useState(null);
+    const [docsVersion, setDocsVersion] = useState(1);
+    const [docsVersionMax, setDocsVersionMax] = useState(1);
+    const [docsVersions, setDocsVersions] = useState([]);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [callback, setCallback] = useState(null);
@@ -25,6 +28,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [aliasDID, setAliasDID] = useState('');
     const [selectedName, setSelectedName] = useState('');
     const [aliasDocs, setAliasDocs] = useState('');
+    const [aliasDocsVersion, setAliasDocsVersion] = useState(1);
+    const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState(1);
+    const [aliasDocsVersions, setAliasDocsVersions] = useState([]);
     const [registries, setRegistries] = useState(null);
     const [groupList, setGroupList] = useState(null);
     const [groupName, setGroupName] = useState('');
@@ -101,10 +107,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const idList = await keymaster.listIds();
                 setIdList(idList);
 
-                const docs = await keymaster.resolveId(currentId);
+                const docs = await keymaster.resolveDID(currentId);
                 setCurrentDID(docs.didDocument.id);
                 setManifest(docs.didDocumentData.manifest);
                 setDocsString(JSON.stringify(docs, null, 4));
+
+                const versions = docs.didDocumentMetadata.version;
+                setDocsVersion(versions);
+                setDocsVersionMax(versions);
+                setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
 
                 refreshNames();
                 refreshHeld();
@@ -148,6 +159,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function selectDocsVersion(version) {
+        try {
+            setDocsVersion(version);
+            const docs = await keymaster.resolveDID(currentId, { atVersion: version });
+            setDocsString(JSON.stringify(docs, null, 4));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function showCreate() {
         setSaveId(currentId);
         setCurrentId('');
@@ -173,7 +194,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function resolveId() {
         try {
-            const docs = await keymaster.resolveId(selectedId);
+            const docs = await keymaster.resolveDID(selectedId);
             setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
@@ -411,6 +432,21 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const docs = await keymaster.resolveDID(name);
             setSelectedName(name);
+            setAliasDocs(JSON.stringify(docs, null, 4));
+            const versions = docs.didDocumentMetadata.version;
+            setAliasDocsVersion(versions);
+            setAliasDocsVersionMax(versions);
+            setAliasDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
+
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function selectAliasDocsVersion(version) {
+        try {
+            setAliasDocsVersion(version);
+            const docs = await keymaster.resolveDID(selectedName, { atVersion: version });
             setAliasDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
             showError(error);
@@ -995,6 +1031,43 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <p />
                             {!widget &&
                                 <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(1)} disabled={docsVersion === 1}>
+                                                First
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion - 1)} disabled={docsVersion === 1}>
+                                                Prev
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '150px' }}
+                                                value={docsVersion}
+                                                fullWidth
+                                                onChange={(event) => selectDocsVersion(event.target.value)}
+                                            >
+                                                {docsVersions.map((version, index) => (
+                                                    <MenuItem value={version} key={index}>
+                                                        version {version}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion + 1)} disabled={docsVersion === docsVersionMax}>
+                                                Next
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersionMax)} disabled={docsVersion === docsVersionMax}>
+                                                Last
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                    <br />
                                     <textarea
                                         value={docsString}
                                         readOnly
@@ -1067,6 +1140,44 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 </Table>
                             </TableContainer>
                             <p>{selectedName}</p>
+
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(1)} disabled={aliasDocsVersion === 1}>
+                                        First
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion - 1)} disabled={aliasDocsVersion === 1}>
+                                        Prev
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '150px' }}
+                                        value={aliasDocsVersion}
+                                        fullWidth
+                                        onChange={(event) => selectAliasDocsVersion(event.target.value)}
+                                    >
+                                        {aliasDocsVersions.map((version, index) => (
+                                            <MenuItem value={version} key={index}>
+                                                version {version}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion + 1)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
+                                        Next
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersionMax)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
+                                        Last
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <br />
                             <textarea
                                 value={aliasDocs}
                                 readOnly
@@ -1849,7 +1960,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            { encryption.isWalletEncrypted ? (
+                                            {encryption.isWalletEncrypted ? (
                                                 <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
                                                     Decrypt Wallet
                                                 </Button>
