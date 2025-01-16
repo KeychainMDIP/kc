@@ -308,14 +308,15 @@ export default class KeymasterClient {
         }
     }
 
-    async resolveDID(name, options) {
+    async resolveDID(id, options) {
         try {
             if (options) {
-                const response = await axios.post(`${this.API}/names/${name}`, { options });
+                const queryParams = new URLSearchParams(options);
+                const response = await axios.get(`${this.API}/did/${id}?${queryParams.toString()}`);
                 return response.data.docs;
             }
             else {
-                const response = await axios.get(`${this.API}/names/${name}`);
+                const response = await axios.get(`${this.API}/did/${id}`);
                 return response.data.docs;
             }
         }

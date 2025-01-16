@@ -966,6 +966,16 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
+    async getName(name) {
+        const wallet = await this.loadWallet();
+
+        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+            return wallet.names[name];
+        }
+
+        return null;
+    }
+
     async removeName(name) {
         const wallet = await this.loadWallet();
 
