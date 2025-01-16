@@ -626,23 +626,6 @@ describe('setCurrentId', () => {
     });
 });
 
-describe('resolveId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should resolve a new ID', async () => {
-        mockFs({});
-
-        const name = 'Bob';
-        const did = await keymaster.createId(name);
-        const doc = await keymaster.resolveId();
-
-        expect(doc.didDocument.id).toBe(did);
-    });
-});
-
 describe('backupId', () => {
 
     afterEach(() => {
@@ -657,7 +640,7 @@ describe('backupId', () => {
 
         const ok = await keymaster.backupId();
 
-        const doc = await keymaster.resolveId();
+        const doc = await keymaster.resolveDID(name);
         const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
 
         expect(ok).toBe(true);
@@ -988,11 +971,10 @@ describe('resolveDID', () => {
     it('should resolve a valid id name', async () => {
         mockFs({});
 
-        await keymaster.createId('Bob');
-        const doc1 = await keymaster.resolveId();
-        const doc2 = await keymaster.resolveDID('Bob');
+        const did = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID('Bob');
 
-        expect(doc1).toStrictEqual(doc2);
+        expect(doc.didDocument.id).toBe(did);
     });
 
     it('should resolve a valid asset name', async () => {

@@ -155,7 +155,7 @@ v1router.post('/ids/', async (req, res) => {
 
 v1router.get('/ids/:id', async (req, res) => {
     try {
-        const docs = await keymaster.resolveId(req.params.id);
+        const docs = await keymaster.resolveDID(req.params.id);
         res.json({ docs });
     } catch (error) {
         return res.status(404).send({ error: 'ID not found' });

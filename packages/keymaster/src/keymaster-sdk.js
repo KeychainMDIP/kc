@@ -238,16 +238,6 @@ export default class KeymasterClient {
         }
     }
 
-    async resolveId(id) {
-        try {
-            const response = await axios.get(`${this.API}/ids/${id}`);
-            return response.data.docs;
-        }
-        catch (error) {
-            throwError(error);
-        }
-    }
-
     async createId(name, options) {
         try {
             const response = await axios.post(`${this.API}/ids`, { name, options });

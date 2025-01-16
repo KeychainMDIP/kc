@@ -867,11 +867,6 @@ export default class Keymaster {
         }
     }
 
-    async resolveId(name) {
-        const id = await this.fetchIdInfo(name);
-        return this.resolveDID(id.did);
-    }
-
     async backupId(controller = null) {
         // Backs up current ID if name is missing
         const id = await this.fetchIdInfo(controller);
