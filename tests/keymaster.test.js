@@ -901,6 +901,51 @@ describe('addName', () => {
     });
 });
 
+describe('getName', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return DID for a new name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const ok = await keymaster.addName('Jack', bob);
+        const did = await keymaster.getName('Jack');
+
+        expect(ok).toBe(true);
+        expect(did).toBe(bob);
+    });
+
+    it('should return null for unknown name', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.getName('Jack');
+
+        expect(did).toBe(null);
+    });
+
+    it('should return null for non-string names', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        let did = await keymaster.getName();
+        expect(did).toBe(null);
+
+        did = await keymaster.getName(333);
+        expect(did).toBe(null);
+
+        did = await keymaster.getName([1, 2, 3]);
+        expect(did).toBe(null);
+
+        did = await keymaster.getName({ id: 'mock' });
+        expect(did).toBe(null);
+    });
+});
+
 describe('removeName', () => {
 
     afterEach(() => {
