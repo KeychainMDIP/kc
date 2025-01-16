@@ -23,28 +23,31 @@ interface SnackbarState {
 
 interface PopupContextValue {
     currentId: string;
-    setCurrentId: Dispatch<SetStateAction<string>>;
+    setCurrentId: (value: string) => Promise<void>;
+    currentDID: string;
+    setCurrentDID: Dispatch<SetStateAction<string>>;
     heldDID: string;
-    setHeldDID: Dispatch<SetStateAction<string>>;
+    setHeldDID: (value: string) => Promise<void>;
     heldList: string[];
     challenge: string;
-    setChallenge: Dispatch<SetStateAction<string>>;
+    setChallenge: (value: string) => Promise<void>;
     selectedId: string;
     setSelectedId: Dispatch<SetStateAction<string>>;
     registry: string;
-    setRegistry: Dispatch<SetStateAction<string>>;
+    setRegistry: (value: string) => Promise<void>;
     registries: string[];
     setRegistries: Dispatch<SetStateAction<string[]>>;
     idList: string[];
     setIdList: Dispatch<SetStateAction<string[]>>;
     selectedTab: string;
-    setSelectedTab: Dispatch<SetStateAction<string>>;
+    setSelectedTab: (value: string) => Promise<void>;
     snackbar: SnackbarState;
     setError(error: string): void;
     setWarning(warning: string): void;
     manifest: any;
     resolveId: () => Promise<void>;
     refreshAll: () => Promise<void>;
+    forceRefreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     handleSnackbarClose: () => void;
     openBrowserTab: (title: string, did: string, contents: string) => void;
@@ -54,16 +57,17 @@ interface PopupContextValue {
 const PopupContext = createContext<PopupContextValue | null>(null);
 
 export function PopupProvider({ children }: { children: ReactNode }) {
-    const [currentId, setCurrentId] = useState("");
+    const [currentId, setCurrentIdState] = useState("");
+    const [currentDID, setCurrentDID] = useState('');
     const [heldList, setHeldList] = useState<string[]>([]);
-    const [heldDID, setHeldDID] = useState("");
+    const [heldDID, setHeldDIDState] = useState("");
     const [idList, setIdList] = useState<string[]>([]);
     const [manifest, setManifest] = useState(null);
-    const [registry, setRegistry] = useState("hyperswarm");
+    const [registry, setRegistryState] = useState("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
-    const [challenge, setChallenge] = useState("");
+    const [challenge, setChallengeState] = useState("");
     const [selectedId, setSelectedId] = useState("");
-    const [selectedTab, setSelectedTab] = useState("identities");
+    const [selectedTab, setSelectedTabState] = useState("identities");
     const [pendingAuth, setPendingAuth] = useState<string | null>(null);
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
@@ -71,6 +75,31 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         message: "",
         severity: "warning",
     });
+
+    async function setSelectedTab(value: string) {
+        setSelectedTabState(value);
+        await chrome.storage.local.set({ selectedTab: value });
+    }
+
+    async function setCurrentId(value: string) {
+        setCurrentIdState(value);
+        await chrome.storage.local.set({ currentId: value });
+    }
+
+    async function setChallenge(value: string) {
+        setChallengeState(value);
+        await chrome.storage.local.set({ challenge: value });
+    }
+
+    async function setRegistry(value: string) {
+        setRegistryState(value);
+        await chrome.storage.local.set({ registry: value });
+    }
+
+    async function setHeldDID(value: string) {
+        setHeldDIDState(value);
+        await chrome.storage.local.set({ heldDID: value });
+    }
 
     useEffect(() => {
         const handleMessage = (message, sender, sendResponse) => {
@@ -88,9 +117,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         if (currentId && pendingAuth) {
-            setSelectedTab('auth');
-            setChallenge(pendingAuth);
-            setPendingAuth(null);
+            (async () => {
+                await setSelectedTab('auth');
+                await setChallenge(pendingAuth);
+                setPendingAuth(null);
+            })();
         }
     }, [currentId, pendingAuth]);
 
@@ -157,6 +188,29 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    async function forceRefreshAll() {
+        await chrome.storage.local.remove([
+            "selectedTab",
+            "currentId",
+            "challenge",
+            "registry",
+            "heldDID",
+        ]);
+
+        await refreshAll();
+    }
+
+    async function refreshCurrentDID(cid: string) {
+        try {
+            const docs = await keymasterRef.current.resolveId(cid);
+            setCurrentDID(docs.didDocument.id);
+            setManifest(docs.didDocumentData.manifest);
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+
+    }
+
     async function refreshAll() {
         const keymaster = keymasterRef.current;
         if (!keymaster) {
@@ -164,28 +218,74 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-            const cid = await keymaster.getCurrentId();
-            const regs = await keymaster.listRegistries();
+            const {
+                selectedTab: storedTab,
+                currentId: storedCid,
+                challenge: storedChallenge,
+                registry: storedRegistry,
+                heldDID: storedHeldDID,
+            } = await chrome.storage.local.get([
+                "selectedTab",
+                "currentId",
+                "challenge",
+                "registry",
+                "heldDID",
+            ]);
 
-            setRegistries(regs);
-            setSelectedTab("identities");
+            let usedLocal = false;
 
-            if (cid) {
-                setCurrentId(cid);
-                setSelectedId(cid);
+            if (storedTab) {
+                await setSelectedTab(storedTab);
+                // tab will always be stored.
+                usedLocal = true;
+            }
+
+            if (storedCid) {
+                await setCurrentId(storedCid);
+                setSelectedId(storedCid);
+                await refreshCurrentDID(storedCid);
+                await refreshHeld();
 
                 const ids = await keymaster.listIds();
                 setIdList(ids);
+            }
 
-                const docs = await keymaster.resolveId(currentId);
-                setManifest(docs.didDocumentData.manifest);
+            if (storedChallenge) {
+                await setChallenge(storedChallenge);
+            }
 
-                await refreshHeld();
-            } else {
-                setCurrentId("");
-                setSelectedId("");
-                setIdList([]);
-                setManifest(null);
+            if (storedRegistry) {
+                await setRegistry(storedRegistry);
+            }
+
+            if (storedHeldDID) {
+                await setHeldDID(storedHeldDID);
+            }
+
+            const regs = await keymaster.listRegistries();
+            setRegistries(regs);
+
+            if (!usedLocal) {
+                const cid = await keymaster.getCurrentId();
+                await setSelectedTab("identities");
+
+                if (cid) {
+                    await setCurrentId(cid);
+                    setSelectedId(cid);
+                    await refreshCurrentDID(cid);
+                    await refreshHeld();
+
+                    const ids = await keymaster.listIds();
+                    setIdList(ids);
+                } else {
+                    await setCurrentId("");
+                    setSelectedId("");
+                    setCurrentDID("");
+                    setIdList([]);
+                    setManifest(null);
+                }
+                
+                await setHeldDID("");
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -232,6 +332,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const value: PopupContextValue = {
         currentId,
         setCurrentId,
+        currentDID,
+        setCurrentDID,
         heldDID,
         setHeldDID,
         heldList,
@@ -253,6 +355,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setWarning,
         resolveId,
         refreshAll,
+        forceRefreshAll,
         refreshHeld,
         handleSnackbarClose,
         openBrowserTab,

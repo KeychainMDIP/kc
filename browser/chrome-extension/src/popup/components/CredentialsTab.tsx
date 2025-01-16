@@ -34,7 +34,7 @@ function CredentialsTab() {
             const ok = await keymaster.acceptCredential(heldDID);
             if (ok) {
                 await refreshHeld();
-                setHeldDID("");
+                await setHeldDID("");
             } else {
                 setWarning("Credential not accepted");
             }
@@ -149,6 +149,10 @@ function CredentialsTab() {
         return !manifest[did];
     }
 
+    async function clearHeldDID() {
+        await setHeldDID("");
+    }
+
     return (
         <Box>
             <Dialog
@@ -225,6 +229,16 @@ function CredentialsTab() {
                     disabled={!heldDID}
                 >
                     Accept
+                </Button>
+
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={clearHeldDID}
+                    className="button large bottom"
+                    disabled={!heldDID}
+                >
+                    Clear
                 </Button>
             </Box>
 

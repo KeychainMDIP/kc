@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 
 function WalletTab() {
-    const { refreshAll, keymaster, openBrowserTab, setError } =
+    const { forceRefreshAll, keymaster, openBrowserTab, setError } =
         usePopupContext();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ function WalletTab() {
         setLoading(true);
         try {
             await keymaster.newWallet(null, true);
-            await refreshAll();
+            await forceRefreshAll();
         } catch (error) {
             setError(error.error || error.message || String(error));
         } finally {

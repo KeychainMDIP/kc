@@ -127,3 +127,9 @@ body {
     margin-bottom: 16px;
     margin-top: 8px;
 }
+
+.copy-did-button {
+    height: 40px;
+    width: auto;
+    align-self: flex-end;
+}

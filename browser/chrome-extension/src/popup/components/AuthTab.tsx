@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
 import { usePopupContext } from "../PopupContext";
@@ -6,15 +6,66 @@ import { usePopupContext } from "../PopupContext";
 function AuthTab() {
     const { challenge, keymaster, openBrowserTab, setChallenge, setError, setWarning } =
         usePopupContext();
-    const [authDID, setAuthDID] = useState("");
-    const [callback, setCallback] = useState(null);
+    const [authDID, setAuthDIDState] = useState("");
+    const [callback, setCallbackState] = useState("");
     const [disableSendResponse, setDisableSendResponse] = useState(true);
-    const [response, setResponse] = useState("");
+    const [response, setResponseState] = useState("");
+
+    async function setAuthDID(value: string) {
+        setAuthDIDState(value);
+        await chrome.storage.local.set({ authDID: value });
+    }
+
+    async function setCallback(value: string) {
+        setCallbackState(value);
+        await chrome.storage.local.set({ callback: value });
+    }
+
+    async function setResponse(value: string) {
+        setResponseState(value);
+        await chrome.storage.local.set({ response: value });
+    }
+
+    useEffect(() => {
+        let isMounted = true;
+
+        (async () => {
+            try {
+                const { authDID, callback, response } =
+                    await chrome.storage.local.get([
+                        "authDID",
+                        "callback",
+                        "response",
+                    ]);
+
+                if (!isMounted) return;
+
+                if (authDID) {
+                    setAuthDIDState(authDID);
+                }
+
+                if (callback) {
+                    setCallbackState(callback);
+                    setDisableSendResponse(false);
+                }
+
+                if (response) {
+                    setResponseState(response);
+                }
+            } catch (err) {
+                console.error("Error loading AuthTab state from storage:", err);
+            }
+        })();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     async function newChallenge() {
         try {
             const challenge = await keymaster.createChallenge();
-            setChallenge(challenge);
+            await setChallenge(challenge);
             await resolveChallenge(challenge);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -24,7 +75,7 @@ function AuthTab() {
     async function resolveChallenge(did: string) {
         try {
             const asset = await keymaster.resolveAsset(did);
-            setAuthDID(did);
+            await setAuthDID(did);
             openBrowserTab(
                 "Resolve Challenge",
                 did,
@@ -41,12 +92,12 @@ function AuthTab() {
             const response = await keymaster.createResponse(challenge, {
                 retries: 10,
             });
-            setResponse(response);
+            await setResponse(response);
 
             const asset = await keymaster.resolveAsset(challenge);
             const callback = asset.challenge.callback;
 
-            setCallback(callback);
+            await setCallback(callback);
 
             if (callback) {
                 setDisableSendResponse(false);
@@ -57,13 +108,13 @@ function AuthTab() {
     }
 
     async function clearChallenge() {
-        setChallenge("");
+        await setChallenge("");
     }
 
     async function decryptResponse(did: string) {
         try {
             const decrypted = await keymaster.decryptJSON(did);
-            setAuthDID(did);
+            await setAuthDID(did);
             openBrowserTab(
                 "Decrypt Response",
                 did,
@@ -90,13 +141,14 @@ function AuthTab() {
     }
 
     async function clearResponse() {
-        setResponse("");
+        await setResponse("");
     }
 
     async function sendResponse() {
         try {
             setDisableSendResponse(true);
             await axios.post(callback, { response });
+            await setCallback(null);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

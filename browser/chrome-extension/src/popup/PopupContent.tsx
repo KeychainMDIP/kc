@@ -30,9 +30,9 @@ const PopupContent = () => {
         setSelectedTab,
     } = usePopupContext();
 
-    const handleChange = (event: React.SyntheticEvent, newValue: string) => {
-        setSelectedTab(newValue);
-    };
+    async function handleChange(event: React.SyntheticEvent, newValue: string){
+        await setSelectedTab(newValue);
+    }
 
     return (
         <Box>

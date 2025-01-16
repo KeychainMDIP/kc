@@ -8,7 +8,9 @@ import {
     MenuItem,
     Select,
     TextField,
+    IconButton,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 
 function IdentitiesTab() {
     const {
@@ -16,11 +18,12 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        refreshAll,
+        forceRefreshAll,
         selectedId,
         setSelectedId,
         setError,
         keymaster,
+        currentDID,
     } = usePopupContext();
 
     const [name, setName] = useState("");
@@ -29,7 +32,7 @@ function IdentitiesTab() {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
-            await refreshAll();
+            await forceRefreshAll();
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -39,11 +42,18 @@ function IdentitiesTab() {
         if (!name.trim()) return;
         try {
             await keymaster.createId(name.trim(), { registry });
-            await refreshAll();
+            await forceRefreshAll();
             setName("");
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
+    };
+
+    const handleCopyDID = () => {
+        if (!currentDID) return;
+        navigator.clipboard.writeText(currentDID).catch((err) => {
+            setError(err.message || String(err));
+        });
     };
 
     return (
@@ -69,6 +79,17 @@ function IdentitiesTab() {
                     ))}
                 </Select>
             </FormControl>
+
+            {currentDID && (
+                <IconButton
+                    onClick={handleCopyDID}
+                    size="small"
+                    className="copy-did-button"
+                    sx={{ mt: 2 }}
+                >
+                    <ContentCopyIcon fontSize="small" />
+                </IconButton>
+            )}
 
             <Box className="flex-box">
                 <TextField
