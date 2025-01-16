@@ -298,6 +298,16 @@ export default class KeymasterClient {
         }
     }
 
+    async getName(name) {
+        try {
+            const response = await axios.get(`${this.API}/names/${name}`);
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async removeName(name) {
         try {
             const response = await axios.delete(`${this.API}/names/${name}`);

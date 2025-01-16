@@ -613,6 +613,19 @@ program
     });
 
 program
+    .command('get-name <name>')
+    .description('Get DID assigned to name')
+    .action(async (name) => {
+        try {
+            const did = await keymaster.getName(name);
+            console.log(did || `${name} not found`);
+        }
+        catch (error) {
+            console.error(error.message || error);
+        }
+    });
+
+program
     .command('remove-name <name>')
     .description('Removes a name for a DID')
     .action(async (name) => {

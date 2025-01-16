@@ -220,8 +220,8 @@ v1router.post('/names', async (req, res) => {
 
 v1router.get('/names/:name', async (req, res) => {
     try {
-        const docs = await keymaster.resolveDID(req.params.name, req.query);
-        res.json({ docs });
+        const did = await keymaster.getName(req.params.name);
+        res.json({ did });
     } catch (error) {
         res.status(404).send({ error: 'DID not found' });
     }
