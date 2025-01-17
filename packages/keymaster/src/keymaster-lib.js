@@ -867,11 +867,6 @@ export default class Keymaster {
         }
     }
 
-    async resolveId(name) {
-        const id = await this.fetchIdInfo(name);
-        return this.resolveDID(id.did);
-    }
-
     async backupId(controller = null) {
         // Backs up current ID if name is missing
         const id = await this.fetchIdInfo(controller);
@@ -969,6 +964,16 @@ export default class Keymaster {
 
         wallet.names[name] = did;
         return this.saveWallet(wallet);
+    }
+
+    async getName(name) {
+        const wallet = await this.loadWallet();
+
+        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+            return wallet.names[name];
+        }
+
+        return null;
     }
 
     async removeName(name) {

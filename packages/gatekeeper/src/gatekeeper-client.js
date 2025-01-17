@@ -138,28 +138,17 @@ export default class GatekeeperClient {
         }
     }
 
-    async resolveDID(did, { atTime, atVersion, confirm, verify } = {}) {
+    async resolveDID(did, options) {
         try {
-            let params = '';
-
-            if (atTime) {
-                params += `atTime=${atTime}&`;
+            if (options) {
+                const queryParams = new URLSearchParams(options);
+                const response = await axios.get(`${this.API}/did/${did}?${queryParams.toString()}`);
+                return response.data;
             }
-
-            if (atVersion) {
-                params += `atVersion=${atVersion}&`;
+            else {
+                const response = await axios.get(`${this.API}/did/${did}`);
+                return response.data;
             }
-
-            if (confirm) {
-                params += `confirm=${confirm}&`;
-            }
-
-            if (verify) {
-                params += `verify=${verify}&`;
-            }
-
-            const response = await axios.get(`${this.API}/did/${did}?${params}`);
-            return response.data;
         }
         catch (error) {
             throwError(error);

@@ -115,6 +115,15 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
     }
 });
 
+v1router.get('/did/:id', async (req, res) => {
+    try {
+        const docs = await keymaster.resolveDID(req.params.id, req.query);
+        res.json({ docs });
+    } catch (error) {
+        res.status(404).send({ error: 'DID not found' });
+    }
+});
+
 v1router.get('/ids/current', async (req, res) => {
     try {
         const current = await keymaster.getCurrentId();
@@ -155,7 +164,7 @@ v1router.post('/ids/', async (req, res) => {
 
 v1router.get('/ids/:id', async (req, res) => {
     try {
-        const docs = await keymaster.resolveId(req.params.id);
+        const docs = await keymaster.resolveDID(req.params.id);
         res.json({ docs });
     } catch (error) {
         return res.status(404).send({ error: 'ID not found' });
@@ -209,21 +218,10 @@ v1router.post('/names', async (req, res) => {
     }
 });
 
-// eslint-disable-next-line
 v1router.get('/names/:name', async (req, res) => {
     try {
-        const docs = await keymaster.resolveDID(req.params.name);
-        res.json({ docs });
-    } catch (error) {
-        res.status(404).send({ error: 'DID not found' });
-    }
-});
-
-v1router.post('/names/:name', async (req, res) => {
-    try {
-        const { options } = req.body;
-        const docs = await keymaster.resolveDID(req.params.name, options);
-        res.json({ docs });
+        const did = await keymaster.getName(req.params.name);
+        res.json({ did });
     } catch (error) {
         res.status(404).send({ error: 'DID not found' });
     }

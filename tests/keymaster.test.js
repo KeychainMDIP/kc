@@ -626,23 +626,6 @@ describe('setCurrentId', () => {
     });
 });
 
-describe('resolveId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should resolve a new ID', async () => {
-        mockFs({});
-
-        const name = 'Bob';
-        const did = await keymaster.createId(name);
-        const doc = await keymaster.resolveId();
-
-        expect(doc.didDocument.id).toBe(did);
-    });
-});
-
 describe('backupId', () => {
 
     afterEach(() => {
@@ -657,7 +640,7 @@ describe('backupId', () => {
 
         const ok = await keymaster.backupId();
 
-        const doc = await keymaster.resolveId();
+        const doc = await keymaster.resolveDID(name);
         const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
 
         expect(ok).toBe(true);
@@ -918,6 +901,51 @@ describe('addName', () => {
     });
 });
 
+describe('getName', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return DID for a new name', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const ok = await keymaster.addName('Jack', bob);
+        const did = await keymaster.getName('Jack');
+
+        expect(ok).toBe(true);
+        expect(did).toBe(bob);
+    });
+
+    it('should return null for unknown name', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.getName('Jack');
+
+        expect(did).toBe(null);
+    });
+
+    it('should return null for non-string names', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        let did = await keymaster.getName();
+        expect(did).toBe(null);
+
+        did = await keymaster.getName(333);
+        expect(did).toBe(null);
+
+        did = await keymaster.getName([1, 2, 3]);
+        expect(did).toBe(null);
+
+        did = await keymaster.getName({ id: 'mock' });
+        expect(did).toBe(null);
+    });
+});
+
 describe('removeName', () => {
 
     afterEach(() => {
@@ -988,11 +1016,10 @@ describe('resolveDID', () => {
     it('should resolve a valid id name', async () => {
         mockFs({});
 
-        await keymaster.createId('Bob');
-        const doc1 = await keymaster.resolveId();
-        const doc2 = await keymaster.resolveDID('Bob');
+        const did = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID('Bob');
 
-        expect(doc1).toStrictEqual(doc2);
+        expect(doc.didDocument.id).toBe(did);
     });
 
     it('should resolve a valid asset name', async () => {

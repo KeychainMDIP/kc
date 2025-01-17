@@ -169,13 +169,8 @@ def list_registries():
     return response["registries"]
 
 
-def resolve_id(identifier):
-    response = proxy_request("GET", f"{_keymaster_api}/ids/{identifier}")
-    return response["docs"]
-
-
 def resolve_did(name):
-    response = proxy_request("GET", f"{_keymaster_api}/names/{name}")
+    response = proxy_request("GET", f"{_keymaster_api}/did/{name}")
     return response["docs"]
 
 
@@ -362,6 +357,11 @@ def add_name(name, did):
         "POST", f"{_keymaster_api}/names", json={"name": name, "did": did}
     )
     return response["ok"]
+
+
+def get_name(name):
+    response = proxy_request("GET", f"{_keymaster_api}/names/{name}")
+    return response["did"]
 
 
 def remove_name(name):
