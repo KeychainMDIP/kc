@@ -30,7 +30,7 @@ const PopupContent = () => {
         setSelectedTab,
     } = usePopupContext();
 
-    async function handleChange(event: React.SyntheticEvent, newValue: string){
+    async function handleChange(event: React.SyntheticEvent, newValue: string) {
         await setSelectedTab(newValue);
     }
 
@@ -52,7 +52,7 @@ const PopupContent = () => {
             </Snackbar>
 
             <TabContext value={selectedTab}>
-                <Stack spacing={0} >
+                <Stack spacing={0}>
                     <Tabs
                         value={selectedTab}
                         onChange={handleChange}
@@ -66,7 +66,11 @@ const PopupContent = () => {
                         <Tab icon={<AccountBalanceWallet />} value="wallet" />
                     </Tabs>
 
-                    <TabPanel value="identities" className="tab-panel" sx={{ p: 0 }}>
+                    <TabPanel
+                        value="identities"
+                        className="tab-panel"
+                        sx={{ p: 0 }}
+                    >
                         <Typography
                             variant="h5"
                             component="h5"
@@ -78,7 +82,11 @@ const PopupContent = () => {
                     </TabPanel>
 
                     {currentId && (
-                        <TabPanel value="credentials" className="tab-panel" sx={{ p: 0 }}>
+                        <TabPanel
+                            value="credentials"
+                            className="tab-panel"
+                            sx={{ p: 0 }}
+                        >
                             <Typography
                                 variant="h5"
                                 component="h5"
@@ -91,7 +99,11 @@ const PopupContent = () => {
                     )}
 
                     {currentId && (
-                        <TabPanel value="auth" className="tab-panel" sx={{ p: 0 }}>
+                        <TabPanel
+                            value="auth"
+                            className="tab-panel"
+                            sx={{ p: 0 }}
+                        >
                             <Typography
                                 variant="h5"
                                 component="h5"
@@ -103,7 +115,11 @@ const PopupContent = () => {
                         </TabPanel>
                     )}
 
-                    <TabPanel value="wallet" className="tab-panel" sx={{ p: 0 }}>
+                    <TabPanel
+                        value="wallet"
+                        className="tab-panel"
+                        sx={{ p: 0 }}
+                    >
                         <Typography
                             variant="h5"
                             component="h5"

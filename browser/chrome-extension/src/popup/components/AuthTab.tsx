@@ -1,66 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
 import { usePopupContext } from "../PopupContext";
 
 function AuthTab() {
-    const { challenge, keymaster, openBrowserTab, setChallenge, setError, setWarning } =
-        usePopupContext();
-    const [authDID, setAuthDIDState] = useState("");
-    const [callback, setCallbackState] = useState("");
-    const [disableSendResponse, setDisableSendResponse] = useState(true);
-    const [response, setResponseState] = useState("");
-
-    async function setAuthDID(value: string) {
-        setAuthDIDState(value);
-        await chrome.storage.local.set({ authDID: value });
-    }
-
-    async function setCallback(value: string) {
-        setCallbackState(value);
-        await chrome.storage.local.set({ callback: value });
-    }
-
-    async function setResponse(value: string) {
-        setResponseState(value);
-        await chrome.storage.local.set({ response: value });
-    }
-
-    useEffect(() => {
-        let isMounted = true;
-
-        (async () => {
-            try {
-                const { authDID, callback, response } =
-                    await chrome.storage.local.get([
-                        "authDID",
-                        "callback",
-                        "response",
-                    ]);
-
-                if (!isMounted) return;
-
-                if (authDID) {
-                    setAuthDIDState(authDID);
-                }
-
-                if (callback) {
-                    setCallbackState(callback);
-                    setDisableSendResponse(false);
-                }
-
-                if (response) {
-                    setResponseState(response);
-                }
-            } catch (err) {
-                console.error("Error loading AuthTab state from storage:", err);
-            }
-        })();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
+    const {
+        authDID,
+        challenge,
+        keymaster,
+        openBrowserTab,
+        setChallenge,
+        setAuthDID,
+        setError,
+        setWarning,
+        response,
+        setResponse,
+        callback,
+        setCallback,
+        disableSendResponse,
+        setDisableSendResponse,
+    } = usePopupContext();
 
     async function newChallenge() {
         try {
@@ -100,7 +59,7 @@ function AuthTab() {
             await setCallback(callback);
 
             if (callback) {
-                setDisableSendResponse(false);
+                await setDisableSendResponse(false);
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -146,7 +105,7 @@ function AuthTab() {
 
     async function sendResponse() {
         try {
-            setDisableSendResponse(true);
+            await setDisableSendResponse(true);
             await axios.post(callback, { response });
             await setCallback(null);
         } catch (error) {

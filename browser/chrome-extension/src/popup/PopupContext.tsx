@@ -41,6 +41,14 @@ interface PopupContextValue {
     setIdList: Dispatch<SetStateAction<string[]>>;
     selectedTab: string;
     setSelectedTab: (value: string) => Promise<void>;
+    authDID: string;
+    setAuthDID: (value: string) => Promise<void>;
+    callback: string;
+    setCallback: (value: string) => Promise<void>;
+    response: string;
+    setResponse: (value: string) => Promise<void>;
+    disableSendResponse: boolean;
+    setDisableSendResponse: (value: boolean) => Promise<void>;
     snackbar: SnackbarState;
     setError(error: string): void;
     setWarning(warning: string): void;
@@ -58,7 +66,7 @@ const PopupContext = createContext<PopupContextValue | null>(null);
 
 export function PopupProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentIdState] = useState("");
-    const [currentDID, setCurrentDID] = useState('');
+    const [currentDID, setCurrentDID] = useState("");
     const [heldList, setHeldList] = useState<string[]>([]);
     const [heldDID, setHeldDIDState] = useState("");
     const [idList, setIdList] = useState<string[]>([]);
@@ -69,12 +77,37 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [selectedId, setSelectedId] = useState("");
     const [selectedTab, setSelectedTabState] = useState("identities");
     const [pendingAuth, setPendingAuth] = useState<string | null>(null);
+    const [pendingTab, setPendingTab] = useState<string | null>(null);
+    const [authDID, setAuthDIDState] = useState("");
+    const [callback, setCallbackState] = useState("");
+    const [response, setResponseState] = useState("");
+    const [disableSendResponse, setDisableSendResponseState] = useState(true);
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
         message: "",
         severity: "warning",
     });
+
+    async function setCallback(value: string) {
+        setCallbackState(value);
+        await chrome.storage.local.set({ callback: value });
+    }
+
+    async function setResponse(value: string) {
+        setResponseState(value);
+        await chrome.storage.local.set({ response: value });
+    }
+
+    async function setDisableSendResponse(value: boolean) {
+        setDisableSendResponseState(value);
+        await chrome.storage.local.set({ disableSendResponse: value });
+    }
+
+    async function setAuthDID(value: string) {
+        setAuthDIDState(value);
+        await chrome.storage.local.set({ authDID: value });
+    }
 
     async function setSelectedTab(value: string) {
         setSelectedTabState(value);
@@ -102,8 +135,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     }
 
     useEffect(() => {
-        const handleMessage = (message, sender, sendResponse) => {
-            if (message.action === 'SHOW_POPUP_AUTH') {
+        const handleMessage = (message, _, sendResponse) => {
+            if (message.action === "SHOW_POPUP_AUTH") {
                 setPendingAuth(message.challenge);
                 sendResponse({ success: true });
             }
@@ -116,14 +149,24 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        if (currentId && pendingAuth) {
+        if (!currentId) return;
+        if (pendingAuth) {
             (async () => {
-                await setSelectedTab('auth');
+                await setSelectedTab("auth");
                 await setChallenge(pendingAuth);
+                await setResponse("");
+                await setCallback("");
                 setPendingAuth(null);
+                await setDisableSendResponse(true);
             })();
         }
-    }, [currentId, pendingAuth]);
+        if (pendingTab) {
+            (async () => {
+                await setSelectedTab(pendingTab);
+                setPendingTab(null);
+            })();
+        }
+    }, [currentId, pendingAuth, pendingTab]);
 
     const setError = (error: string) => {
         setSnackbar({
@@ -188,15 +231,20 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    async function forceRefreshAll() {
-        await chrome.storage.local.remove([
-            "selectedTab",
-            "currentId",
-            "challenge",
-            "registry",
-            "heldDID",
-        ]);
+    const storedValues = [
+        "selectedTab",
+        "currentId",
+        "challenge",
+        "registry",
+        "heldDID",
+        "authDID",
+        "callback",
+        "response",
+        "disableSendResponse",
+    ];
 
+    async function forceRefreshAll() {
+        await chrome.storage.local.remove(storedValues);
         await refreshAll();
     }
 
@@ -208,7 +256,106 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
+    }
 
+    async function refreshStored() {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return;
+        }
+
+        const {
+            selectedTab: storedTab,
+            currentId: storedCid,
+            challenge: storedChallenge,
+            registry: storedRegistry,
+            heldDID: storedHeldDID,
+            authDID: storedAuthDID,
+            callback: storedCallback,
+            response: storedResponse,
+            disableSendResponse: storedDisableSendResponse,
+        } = await chrome.storage.local.get(storedValues);
+
+        // Tab always present if store used
+        if (!storedTab) {
+            return false;
+        }
+
+        setPendingTab(storedTab);
+
+        if (storedChallenge) {
+            await setChallenge(storedChallenge);
+        }
+
+        if (storedRegistry) {
+            await setRegistry(storedRegistry);
+        }
+
+        if (storedHeldDID) {
+            await setHeldDID(storedHeldDID);
+        }
+
+        if (storedAuthDID) {
+            setAuthDIDState(storedAuthDID);
+        }
+
+        if (storedCallback) {
+            setCallbackState(storedCallback);
+        }
+
+        if (storedResponse) {
+            setResponseState(storedResponse);
+        }
+
+        if (typeof storedDisableSendResponse !== "undefined") {
+            setDisableSendResponseState(storedDisableSendResponse);
+        }
+
+        if (storedCid) {
+            await setCurrentId(storedCid);
+            setSelectedId(storedCid);
+            await refreshCurrentDID(storedCid);
+            await refreshHeld();
+
+            const ids = await keymaster.listIds();
+            setIdList(ids);
+        }
+
+        return true;
+    }
+
+    async function refreshDefault() {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return;
+        }
+
+        const cid = await keymaster.getCurrentId();
+        await setSelectedTab("identities");
+
+        if (cid) {
+            await setCurrentId(cid);
+            setSelectedId(cid);
+            await refreshCurrentDID(cid);
+            await refreshHeld();
+
+            const ids = await keymaster.listIds();
+            setIdList(ids);
+        } else {
+            await setCurrentId("");
+            setSelectedId("");
+            setCurrentDID("");
+            setManifest(null);
+            setHeldList([]);
+            setIdList([]);
+        }
+
+        await setAuthDID("");
+        await setCallback("");
+        await setChallenge("");
+        await setResponse("");
+        await setDisableSendResponse(true);
+        await setHeldDID("");
     }
 
     async function refreshAll() {
@@ -218,74 +365,12 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-            const {
-                selectedTab: storedTab,
-                currentId: storedCid,
-                challenge: storedChallenge,
-                registry: storedRegistry,
-                heldDID: storedHeldDID,
-            } = await chrome.storage.local.get([
-                "selectedTab",
-                "currentId",
-                "challenge",
-                "registry",
-                "heldDID",
-            ]);
-
-            let usedLocal = false;
-
-            if (storedTab) {
-                await setSelectedTab(storedTab);
-                // tab will always be stored.
-                usedLocal = true;
-            }
-
-            if (storedCid) {
-                await setCurrentId(storedCid);
-                setSelectedId(storedCid);
-                await refreshCurrentDID(storedCid);
-                await refreshHeld();
-
-                const ids = await keymaster.listIds();
-                setIdList(ids);
-            }
-
-            if (storedChallenge) {
-                await setChallenge(storedChallenge);
-            }
-
-            if (storedRegistry) {
-                await setRegistry(storedRegistry);
-            }
-
-            if (storedHeldDID) {
-                await setHeldDID(storedHeldDID);
-            }
-
             const regs = await keymaster.listRegistries();
             setRegistries(regs);
 
-            if (!usedLocal) {
-                const cid = await keymaster.getCurrentId();
-                await setSelectedTab("identities");
-
-                if (cid) {
-                    await setCurrentId(cid);
-                    setSelectedId(cid);
-                    await refreshCurrentDID(cid);
-                    await refreshHeld();
-
-                    const ids = await keymaster.listIds();
-                    setIdList(ids);
-                } else {
-                    await setCurrentId("");
-                    setSelectedId("");
-                    setCurrentDID("");
-                    setIdList([]);
-                    setManifest(null);
-                }
-                
-                await setHeldDID("");
+            const usedStored = await refreshStored();
+            if (!usedStored) {
+                await refreshDefault();
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -350,6 +435,14 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setIdList,
         selectedTab,
         setSelectedTab,
+        authDID,
+        setAuthDID,
+        callback,
+        setCallback,
+        response,
+        setResponse,
+        disableSendResponse,
+        setDisableSendResponse,
         snackbar,
         setError,
         setWarning,
