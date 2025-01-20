@@ -1,0 +1,42 @@
+{
+  "name": "mdip-chrome-extension",
+  "version": "0.1.0",
+  "description": "MDIP Chrome Extension",
+  "main": "index.js",
+  "scripts": {
+    "start": "webpack --progress --config webpack.dev.js",
+    "build": "webpack --progress --config webpack.prod.js"
+  },
+  "author": "Peter Bushnell",
+  "license": "MIT",
+  "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@fontsource/roboto": "^5.1.1",
+    "@mui/icons-material": "^6.3.0",
+    "@mui/lab": "^6.0.0-beta.21",
+    "@mui/material": "^6.3.0",
+    "@types/chrome": "^0.0.287",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "buffer": "^6.0.3",
+    "clean-webpack-plugin": "^4.0.0",
+    "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.3",
+    "prettier": "^3.4.2",
+    "process": "^0.11.10",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.2",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^5.1.4",
+    "webpack-merge": "^6.0.1"
+  },
+  "prettier": {
+    "tabWidth": 4,
+    "useTabs": false
+  }
+}

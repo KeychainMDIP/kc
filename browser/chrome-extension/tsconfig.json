@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "module": "es6",
+    "target": "es6",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types", "../../packages"],
+    "baseUrl": "./",
+    "paths": {
+      "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.js"],
+      "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.js"],
+      "@mdip/keymaster/wallet/chrome": ["../../packages/keymaster/src/db/chrome.js"],
+    }
+  }
+}

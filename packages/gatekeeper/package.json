@@ -12,6 +12,7 @@
     "./db/redis": "./src/db/redis.js",
     "./db/mongo": "./src/db/mongo.js"
   },
+  "types": "./types/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
