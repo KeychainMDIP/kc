@@ -29,14 +29,15 @@ export default class Gatekeeper {
             console = options.console;
         }
 
-        this.supportedRegistries = null;
         this.eventsQueue = [];
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
         this.ipfs = new IPFS({ minimal: true });
         this.cipher = new CipherNode();
-        this.defaultPrefix = process.env.KC_DID_PREFIX || 'did:test';
+        this.didPrefix = options.didPrefix || 'did:test';
+
+        this.initRegistries(options.registries);
     }
 
     async verifyDb(options = {}) {
@@ -211,7 +212,7 @@ export default class Gatekeeper {
 
     async generateDID(operation) {
         const cid = await this.generateCID(operation);
-        const prefix = operation.mdip.prefix || this.defaultPrefix;
+        const prefix = operation.mdip.prefix || this.didPrefix;
         return `${prefix}:${cid}`;
     }
 
@@ -627,7 +628,7 @@ export default class Gatekeeper {
         let { dids, updatedAfter, updatedBefore, confirm, verify, resolve } = options;
         if (!dids) {
             const keys = await this.db.getAllKeys();
-            dids = keys.map(key => `${this.defaultPrefix}:${key}`);
+            dids = keys.map(key => `${this.didPrefix}:${key}`);
         }
 
         if (updatedAfter || updatedBefore || resolve) {

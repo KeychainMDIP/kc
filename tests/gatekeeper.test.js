@@ -173,8 +173,7 @@ describe('generateDID', () => {
             }
         };
 
-        process.env.KC_DID_PREFIX = 'did:mock:';
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, didPrefix: 'did:mock' });
         const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.startsWith('did:mock:')).toBe(true);
@@ -188,12 +187,10 @@ describe('generateDID', () => {
             created: new Date().toISOString(),
             mdip: {
                 registry: "mockRegistry",
-                prefix: 'did:custom'
+                prefix: "did:custom"
             }
         };
 
-        process.env.KC_DID_PREFIX = 'did:mock:';
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
         const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.startsWith('did:custom:')).toBe(true);
