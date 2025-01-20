@@ -248,7 +248,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await refreshAll();
     }
 
-    async function refreshCurrentDID(cid: string) {
+    async function refreshCurrentDID() {
         try {
             const id = await keymasterRef.current.fetchIdInfo();
             const docs = await keymasterRef.current.resolveDID(id.did);
@@ -324,7 +324,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         if (storedCid) {
             await setCurrentId(storedCid);
             setSelectedId(storedCid);
-            await refreshCurrentDID(storedCid);
+            await refreshCurrentDID();
             await refreshHeld();
         }
 
@@ -348,7 +348,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         if (cid) {
             await setCurrentId(cid);
             setSelectedId(cid);
-            await refreshCurrentDID(cid);
+            await refreshCurrentDID();
             await refreshHeld();
 
             const ids = await keymaster.listIds();
