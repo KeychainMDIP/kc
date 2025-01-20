@@ -111,6 +111,7 @@ declare module '@mdip/keymaster' {
         getCredential(id: string): Promise<any>;
         getCurrentId(): Promise<string>;
         getGroup(id: string): Promise<string[] | null>;
+        getName(name: string): Promise<string | null>;
         getPoll(id: string): Promise<PollTemplate | null>;
         getSchema(id: string): Promise<any>;
         hdKeyPair(name?: string): Promise<any>;
@@ -139,7 +140,6 @@ declare module '@mdip/keymaster' {
         removeName(name: string): Promise<boolean>;
         resolveAsset(did: string): Promise<any>;
         resolveDID(did: string): Promise<any>;
-        resolveId(did: string): Promise<any>;
         resolveSeedBank(): Promise<any>;
         revokeCredential(credential: any): Promise<boolean>;
         revokeDID(did: string): Promise<boolean>;

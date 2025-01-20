@@ -18,7 +18,7 @@ function CredentialsTab() {
         heldList,
         manifest,
         openBrowserTab,
-        resolveId,
+        resolveDID,
         refreshHeld,
         setHeldDID,
         setError,
@@ -66,7 +66,7 @@ function CredentialsTab() {
     async function publishCredential(did: string) {
         try {
             await keymaster.publishCredential(did, { reveal: false });
-            await resolveId();
+            await resolveDID();
             await decryptCredential("Publish", did);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -76,7 +76,7 @@ function CredentialsTab() {
     async function revealCredential(did: string) {
         try {
             await keymaster.publishCredential(did, { reveal: true });
-            await resolveId();
+            await resolveDID();
             await decryptCredential("Reveal", did);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -86,7 +86,7 @@ function CredentialsTab() {
     async function unpublishCredential(did: string) {
         try {
             await keymaster.unpublishCredential(did);
-            await resolveId();
+            await resolveDID();
             await decryptCredential("Unpublish", did);
         } catch (error) {
             setError(error.error || error.message || String(error));

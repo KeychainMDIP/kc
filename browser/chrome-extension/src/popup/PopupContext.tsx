@@ -53,7 +53,7 @@ interface PopupContextValue {
     setError(error: string): void;
     setWarning(warning: string): void;
     manifest: any;
-    resolveId: () => Promise<void>;
+    resolveDID: () => Promise<void>;
     refreshAll: () => Promise<void>;
     forceRefreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -250,7 +250,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
     async function refreshCurrentDID(cid: string) {
         try {
-            const docs = await keymasterRef.current.resolveId(cid);
+            const id = await keymasterRef.current.fetchIdInfo();
+            const docs = await keymasterRef.current.resolveDID(id.did);
             setCurrentDID(docs.didDocument.id);
             setManifest(docs.didDocumentData.manifest);
         } catch (error) {
@@ -377,14 +378,15 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    async function resolveId() {
+    async function resolveDID() {
         const keymaster = keymasterRef.current;
         if (!keymaster) {
             return;
         }
 
         try {
-            const docs = await keymaster.resolveId(selectedId);
+            const id = await keymaster.fetchIdInfo();
+            const docs = await keymaster.resolveDID(id.did);
             setManifest(docs.didDocumentData.manifest);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -446,7 +448,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         snackbar,
         setError,
         setWarning,
-        resolveId,
+        resolveDID,
         refreshAll,
         forceRefreshAll,
         refreshHeld,
