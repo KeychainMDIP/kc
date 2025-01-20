@@ -5,18 +5,18 @@ export default class WalletChrome {
 
     async saveWallet(wallet, overwrite = false) {
         if (!overwrite) {
-            const res = await chrome.storage.sync.get([this.walletName]);
+            const res = await chrome.storage.local.get([this.walletName]);
             if (res[this.walletName]) {
                 return false;
             }
         }
 
-        await chrome.storage.sync.set({ [this.walletName]: JSON.stringify(wallet) });
+        await chrome.storage.local.set({ [this.walletName]: JSON.stringify(wallet) });
         return true;
     }
 
     async loadWallet() {
-        const res = await chrome.storage.sync.get([this.walletName]);
+        const res = await chrome.storage.local.get([this.walletName]);
 
         if (res[this.walletName]) {
             return JSON.parse(res[this.walletName]);

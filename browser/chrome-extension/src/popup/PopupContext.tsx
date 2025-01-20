@@ -282,6 +282,15 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             return false;
         }
 
+        // If ID not in wallet assume new wallet created externally
+        if (storedCid) {
+            const wallet = await keymaster.loadWallet();
+            if (!Object.keys(wallet.ids).includes(storedCid)) {
+                await chrome.storage.local.remove(storedValues);
+                return false;
+            }
+        }
+
         setPendingTab(storedTab);
 
         if (storedChallenge) {
@@ -317,8 +326,10 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             setSelectedId(storedCid);
             await refreshCurrentDID(storedCid);
             await refreshHeld();
+        }
 
-            const ids = await keymaster.listIds();
+        const ids = await keymaster.listIds();
+        if (ids.length) {
             setIdList(ids);
         }
 
