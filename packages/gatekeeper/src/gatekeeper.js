@@ -10,8 +10,7 @@ import IPFS from '@mdip/ipfs';
 
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
-// We'll leave TESS here so existing TESS DIDs are not deleted
-// TBD? Remove TESS when we switch to did:mdip
+// Registries that are considered valid when importing DIDs from the network
 const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 
 export default class Gatekeeper {
@@ -24,6 +23,7 @@ export default class Gatekeeper {
         }
 
         // Only used for unit testing
+        // TBD replace console with a real logging package
         if (options.console) {
             // eslint-disable-next-line
             console = options.console;
@@ -37,6 +37,10 @@ export default class Gatekeeper {
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
 
+        // Only DIDs on supported registries will be created by this node
+        // Generally this tells the gatekeeper which mediators are running
+        // TBD: Maybe mediators should register themselves with the gatekeeper
+        // or the gatekeeper can infer this with mediator queue requests?
         if (options.registries) {
             this.supportedRegistries = [];
 
