@@ -22,7 +22,7 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
                     : null;
 await db.start();
 
-const gatekeeper = new Gatekeeper({ db });
+const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries });
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
@@ -397,8 +397,8 @@ async function main() {
     console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 
-    const registries = await gatekeeper.initRegistries(config.registries);
-    console.log(`Supported registries: ${registries}`);
+    console.log(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
+    console.log(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
     app.listen(config.port, () => {
         console.log(`Server is running on port ${config.port}`);

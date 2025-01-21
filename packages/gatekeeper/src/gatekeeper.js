@@ -10,8 +10,7 @@ import IPFS from '@mdip/ipfs';
 
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
-// We'll leave TESS here so existing TESS DIDs are not deleted
-// TBD? Remove TESS when we switch to did:mdip
+// Registries that are considered valid when importing DIDs from the network
 const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 
 export default class Gatekeeper {
@@ -24,19 +23,28 @@ export default class Gatekeeper {
         }
 
         // Only used for unit testing
+        // TBD replace console with a real logging package
         if (options.console) {
             // eslint-disable-next-line
             console = options.console;
         }
 
-        this.supportedRegistries = null;
         this.eventsQueue = [];
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
         this.ipfs = new IPFS({ minimal: true });
         this.cipher = new CipherNode();
-        this.defaultPrefix = process.env.KC_DID_PREFIX || 'did:test';
+        this.didPrefix = options.didPrefix || 'did:test';
+
+        // Only DIDs registered on supported registries will be created by this node
+        this.supportedRegistries = options.registries ||  ['local'];
+
+        for (const registry of this.supportedRegistries) {
+            if (!ValidRegistries.includes(registry)) {
+                throw new InvalidParameterError(`registry=${registry}`);
+            }
+        }
     }
 
     async verifyDb(options = {}) {
@@ -174,29 +182,8 @@ export default class Gatekeeper {
         return { total, byType, byRegistry, byVersion };
     }
 
-    async initRegistries(csvRegistries) {
-        if (!csvRegistries) {
-            this.supportedRegistries = ValidRegistries;
-        }
-        else {
-            const registries = csvRegistries.split(',').map(registry => registry.trim());
-            this.supportedRegistries = [];
-
-            for (const registry of registries) {
-                if (ValidRegistries.includes(registry)) {
-                    this.supportedRegistries.push(registry);
-                }
-                else {
-                    throw new InvalidParameterError(`registry=${registry}`);
-                }
-            }
-        }
-
-        return this.supportedRegistries;
-    }
-
     async listRegistries() {
-        return this.supportedRegistries || ValidRegistries;
+        return this.supportedRegistries;
     }
 
     // For testing purposes
@@ -211,7 +198,7 @@ export default class Gatekeeper {
 
     async generateDID(operation) {
         const cid = await this.generateCID(operation);
-        const prefix = operation.mdip.prefix || this.defaultPrefix;
+        const prefix = operation.mdip.prefix || this.didPrefix;
         return `${prefix}:${cid}`;
     }
 
@@ -380,6 +367,11 @@ export default class Gatekeeper {
         const valid = await this.verifyCreateOperation(operation);
 
         if (valid) {
+            // Reject operations with unsupported registries
+            if (this.supportedRegistries && !this.supportedRegistries.includes(operation.mdip.registry)) {
+                throw new InvalidOperationError(`mdip.registry=${operation.mdip.registry}`);
+            }
+
             const did = await this.generateDID(operation);
             const ops = await this.exportDID(did);
 
@@ -627,7 +619,7 @@ export default class Gatekeeper {
         let { dids, updatedAfter, updatedBefore, confirm, verify, resolve } = options;
         if (!dids) {
             const keys = await this.db.getAllKeys();
-            dids = keys.map(key => `${this.defaultPrefix}:${key}`);
+            dids = keys.map(key => `${this.didPrefix}:${key}`);
         }
 
         if (updatedAfter || updatedBefore || resolve) {
@@ -952,6 +944,10 @@ export default class Gatekeeper {
     async getQueue(registry) {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        if (!this.supportedRegistries.includes(registry)) {
+            this.supportedRegistries.push(registry);
         }
 
         return this.db.getQueue(registry);
