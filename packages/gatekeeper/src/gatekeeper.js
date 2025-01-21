@@ -37,7 +37,18 @@ export default class Gatekeeper {
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
 
-        this.initRegistries(options.registries);
+        if (options.registries) {
+            this.supportedRegistries = [];
+
+            for (const registry of options.registries) {
+                if (ValidRegistries.includes(registry)) {
+                    this.supportedRegistries.push(registry);
+                }
+                else {
+                    throw new InvalidParameterError(`registry=${registry}`);
+                }
+            }
+        }
     }
 
     async verifyDb(options = {}) {
@@ -173,27 +184,6 @@ export default class Gatekeeper {
 
         const byType = { agents, assets, confirmed, unconfirmed, ephemeral, invalid };
         return { total, byType, byRegistry, byVersion };
-    }
-
-    async initRegistries(csvRegistries) {
-        if (!csvRegistries) {
-            this.supportedRegistries = ValidRegistries;
-        }
-        else {
-            const registries = csvRegistries.split(',').map(registry => registry.trim());
-            this.supportedRegistries = [];
-
-            for (const registry of registries) {
-                if (ValidRegistries.includes(registry)) {
-                    this.supportedRegistries.push(registry);
-                }
-                else {
-                    throw new InvalidParameterError(`registry=${registry}`);
-                }
-            }
-        }
-
-        return this.supportedRegistries;
     }
 
     async listRegistries() {
@@ -381,6 +371,11 @@ export default class Gatekeeper {
         const valid = await this.verifyCreateOperation(operation);
 
         if (valid) {
+            // Reject operations with unsupported registries
+            if (this.supportedRegistries && !this.supportedRegistries.includes(operation.mdip.registry)) {
+                throw new InvalidOperationError(`mdip.registry=${operation.mdip.registry}`);
+            }
+
             const did = await this.generateDID(operation);
             const ops = await this.exportDID(did);
 

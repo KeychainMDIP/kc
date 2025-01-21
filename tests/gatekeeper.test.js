@@ -138,6 +138,14 @@ describe('constructor', () => {
         catch (error) {
             expect(error.message).toBe('Invalid parameter: missing options.db');
         }
+
+        try {
+            new Gatekeeper({ db: db_json, registries: ['hyperswarm', 'bogus_reg'] });
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: registry=bogus_reg');
+        }
     });
 });
 
@@ -383,6 +391,22 @@ describe('createDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.message).toBe('Invalid operation: mdip.registry=mockRegistry');
+        }
+    });
+
+    it('should throw exception on unsupported registry', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['hyperswarm'] });
+
+        try {
+            await gatekeeper.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: mdip.registry=TFTC');
         }
     });
 
@@ -2374,56 +2398,6 @@ describe('getDids', () => {
     });
 });
 
-describe('initRegistries', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
-    it('should default to valid registries', async () => {
-        mockFs({});
-
-        const registries = await gatekeeper.initRegistries();
-
-        expect(registries.length).toBe(5);
-        expect(registries.includes('local')).toBe(true);
-        expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TFTC')).toBe(true);
-        expect(registries.includes('TBTC')).toBe(true);
-        expect(registries.includes('TFTC')).toBe(true);
-    });
-
-    it('should parse supported registries', async () => {
-        mockFs({});
-
-        const registries = await gatekeeper.initRegistries("local, hyperswarm");
-
-        expect(registries.length).toBe(2);
-        expect(registries.includes('local')).toBe(true);
-        expect(registries.includes('hyperswarm')).toBe(true);
-    });
-
-    it('should parse supported registries with extra whitespace', async () => {
-        mockFs({});
-
-        const registries = await gatekeeper.initRegistries("   local,    hyperswarm    ");
-
-        expect(registries.length).toBe(2);
-        expect(registries.includes('local')).toBe(true);
-        expect(registries.includes('hyperswarm')).toBe(true);
-    });
-
-    it('should throw an exception on invalid registries', async () => {
-        mockFs({});
-
-        try {
-            await gatekeeper.initRegistries("local, hyperswarm, mock");
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid parameter: registry=mock');
-        }
-    });
-});
-
 describe('listRegistries', () => {
     afterEach(() => {
         mockFs.restore();
@@ -2432,7 +2406,6 @@ describe('listRegistries', () => {
     it('should return list of valid registries', async () => {
         mockFs({});
 
-        await gatekeeper.initRegistries();
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(5);
@@ -2446,7 +2419,7 @@ describe('listRegistries', () => {
     it('should return list of configured registries', async () => {
         mockFs({});
 
-        await gatekeeper.initRegistries("hyperswarm, TFTC");
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['hyperswarm', 'TFTC'] });
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(2);
