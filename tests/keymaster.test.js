@@ -12,7 +12,7 @@ import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 
 const db = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db });
+const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
 const wallet = new WalletJson();
 const cipher = new CipherNode();
 const keymaster = new Keymaster({ gatekeeper, wallet, cipher });

@@ -14,7 +14,7 @@ const mockConsole = {
 
 const cipher = new CipherNode();
 const db_json = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 
 beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
@@ -2403,17 +2403,14 @@ describe('listRegistries', () => {
         mockFs.restore();
     });
 
-    it('should return list of valid registries', async () => {
+    it('should return list of default valid registries', async () => {
         mockFs({});
 
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
         const registries = await gatekeeper.listRegistries();
 
-        expect(registries.length).toBe(5);
+        expect(registries.length).toBe(1);
         expect(registries.includes('local')).toBe(true);
-        expect(registries.includes('hyperswarm')).toBe(true);
-        expect(registries.includes('TFTC')).toBe(true);
-        expect(registries.includes('TBTC')).toBe(true);
-        expect(registries.includes('TFTC')).toBe(true);
     });
 
     it('should return list of configured registries', async () => {
@@ -2425,6 +2422,42 @@ describe('listRegistries', () => {
         expect(registries.length).toBe(2);
         expect(registries.includes('hyperswarm')).toBe(true);
         expect(registries.includes('TFTC')).toBe(true);
+    });
+
+    it('should return list of inferred registries', async () => {
+        mockFs({});
+
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        gatekeeper.getQueue('hyperswarm');
+        gatekeeper.getQueue('TFTC');
+        gatekeeper.getQueue('TBTC');
+        const registries = await gatekeeper.listRegistries();
+
+        expect(registries.length).toBe(4);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
+        expect(registries.includes('TBTC')).toBe(true);
+    });
+
+    it('should return non-redundant list of inferred registries', async () => {
+        mockFs({});
+
+        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        gatekeeper.getQueue('hyperswarm');
+        gatekeeper.getQueue('hyperswarm');
+        gatekeeper.getQueue('TFTC');
+        gatekeeper.getQueue('TFTC');
+        gatekeeper.getQueue('TBTC');
+        gatekeeper.getQueue('TBTC');
+        gatekeeper.getQueue('TBTC');
+        const registries = await gatekeeper.listRegistries();
+
+        expect(registries.length).toBe(4);
+        expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
+        expect(registries.includes('TFTC')).toBe(true);
+        expect(registries.includes('TBTC')).toBe(true);
     });
 });
 

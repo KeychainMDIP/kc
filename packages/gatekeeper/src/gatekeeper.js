@@ -37,20 +37,12 @@ export default class Gatekeeper {
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
 
-        // Only DIDs on supported registries will be created by this node
-        // Generally this tells the gatekeeper which mediators are running
-        // TBD: Maybe mediators should register themselves with the gatekeeper
-        // or the gatekeeper can infer this with mediator queue requests?
-        if (options.registries) {
-            this.supportedRegistries = [];
+        // Only DIDs registered on supported registries will be created by this node
+        this.supportedRegistries = options.registries ||  ['local'];
 
-            for (const registry of options.registries) {
-                if (ValidRegistries.includes(registry)) {
-                    this.supportedRegistries.push(registry);
-                }
-                else {
-                    throw new InvalidParameterError(`registry=${registry}`);
-                }
+        for (const registry of this.supportedRegistries) {
+            if (!ValidRegistries.includes(registry)) {
+                throw new InvalidParameterError(`registry=${registry}`);
             }
         }
     }
@@ -191,7 +183,7 @@ export default class Gatekeeper {
     }
 
     async listRegistries() {
-        return this.supportedRegistries || ValidRegistries;
+        return this.supportedRegistries;
     }
 
     // For testing purposes
@@ -952,6 +944,10 @@ export default class Gatekeeper {
     async getQueue(registry) {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        if (!this.supportedRegistries.includes(registry)) {
+            this.supportedRegistries.push(registry);
         }
 
         return this.db.getQueue(registry);
