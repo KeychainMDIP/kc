@@ -257,7 +257,6 @@ describe('generateDoc', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
-                canonicalId: did
             },
             mdip: agentOp.mdip,
         };
@@ -288,7 +287,6 @@ describe('generateDoc', () => {
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
-                canonicalId: did
             },
             mdip: assetOp.mdip,
         };
@@ -594,7 +592,6 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -641,7 +638,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -710,7 +706,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -758,7 +753,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: false,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -868,7 +862,6 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: assetOp.mdip
