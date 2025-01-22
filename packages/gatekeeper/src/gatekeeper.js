@@ -579,6 +579,9 @@ export default class Gatekeeper {
             }
         }
 
+        // Remove deprecated fields
+        delete doc.mdip.opid; // Replaced by didDocumentMetadata.versionId
+
         return copyJSON(doc);
     }
 
