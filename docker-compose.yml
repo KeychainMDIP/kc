@@ -21,6 +21,7 @@ services:
       dockerfile: Dockerfile.gatekeeper
     image: keychainmdip/gatekeeper
     environment:
+      - KC_DID_PREFIX=${KC_DID_PREFIX}
       - KC_GATEKEEPER_PORT=4224
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
