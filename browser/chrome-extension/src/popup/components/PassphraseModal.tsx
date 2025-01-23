@@ -30,7 +30,7 @@ const PassphraseModal = ({ isOpen, title, errorText, onSubmit, encrypt }) => {
         setLocalError("");
     };
 
-    function checkPassphraseMismatch(newPass, newConfirm) {
+    function checkPassphraseMismatch(newPass: string, newConfirm: string) {
         if (!encrypt) {
             return;
         }
@@ -47,12 +47,12 @@ const PassphraseModal = ({ isOpen, title, errorText, onSubmit, encrypt }) => {
         }
     }
 
-    function handlePassphraseChange(newValue) {
+    function handlePassphraseChange(newValue: string) {
         setPassphrase(newValue);
         checkPassphraseMismatch(newValue, confirmPassphrase);
     }
 
-    function handleConfirmChange(newValue) {
+    function handleConfirmChange(newValue: string) {
         setConfirmPassphrase(newValue);
         checkPassphraseMismatch(passphrase, newValue);
     }
