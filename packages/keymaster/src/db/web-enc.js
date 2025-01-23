@@ -79,7 +79,7 @@ export default class WalletWebEncrypted {
             data: bufferToBase64(ciphertext)
         };
 
-        return this.baseWallet.saveWallet(encryptedData, overwrite);
+        return await this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
     async loadWallet() {
@@ -87,7 +87,7 @@ export default class WalletWebEncrypted {
             throw new Error('Passphrase not set');
         }
 
-        const encryptedData = this.baseWallet.loadWallet();
+        const encryptedData = await this.baseWallet.loadWallet();
         if (!encryptedData) {
             return null;
         }

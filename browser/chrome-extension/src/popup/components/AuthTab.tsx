@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Button, TextField } from "@mui/material";
+import { Box, Button, TextField, Typography } from "@mui/material";
 import axios from "axios";
 import { usePopupContext } from "../PopupContext";
 
@@ -7,6 +7,7 @@ function AuthTab() {
     const {
         authDID,
         challenge,
+        currentId,
         keymaster,
         openBrowserTab,
         setChallenge,
@@ -115,6 +116,8 @@ function AuthTab() {
 
     return (
         <Box>
+            <Typography variant="h6">Current ID: {currentId}</Typography>
+
             <Box className="flex-box mt-2">
                 <TextField
                     label="Challenge"

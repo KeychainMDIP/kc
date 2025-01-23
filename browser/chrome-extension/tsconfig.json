@@ -12,6 +12,8 @@
       "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.js"],
       "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.js"],
       "@mdip/keymaster/wallet/chrome": ["../../packages/keymaster/src/db/chrome.js"],
+      "@mdip/keymaster/wallet/web-enc": ["../../packages/keymaster/src/db/web-enc.js"],
+      "@mdip/keymaster/wallet/cache-async": ["../../packages/keymaster/src/db/cache-async.js"],
     }
   }
 }
