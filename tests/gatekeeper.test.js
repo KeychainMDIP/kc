@@ -20,7 +20,8 @@ beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
-async function createAgentOp(keypair, version = 1, registry = 'local') {
+async function createAgentOp(keypair, options = {}) {
+    const { version = 1, registry = 'local', prefix } = options;
     const operation = {
         type: "create",
         created: new Date().toISOString(),
@@ -31,6 +32,10 @@ async function createAgentOp(keypair, version = 1, registry = 'local') {
         },
         publicJwk: keypair.publicJwk,
     };
+
+    if (prefix) {
+        operation.mdip.prefix = prefix;
+    }
 
     const msgHash = cipher.hashJSON(operation);
     const signature = cipher.signHash(msgHash, keypair.privateJwk);
@@ -94,7 +99,8 @@ async function createDeleteOp(keypair, did) {
     };
 }
 
-async function createAssetOp(agent, keypair, registry = 'local', validUntil = null) {
+async function createAssetOp(agent, keypair, options = {}) {
+    const { registry = 'local', validUntil = null } = options;
     const dataAnchor = {
         type: "create",
         created: new Date().toISOString(),
@@ -257,7 +263,45 @@ describe('generateDoc', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
-                canonicalId: did
+            },
+            mdip: agentOp.mdip,
+        };
+
+        expect(doc).toStrictEqual(expected);
+    });
+
+    it('should generate an agent doc with a custom prefix', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { prefix: 'did:custom' });
+        const did = await gatekeeper.generateDID(agentOp);
+        const doc = await gatekeeper.generateDoc(agentOp);
+        const expected = {
+            // eslint-disable-next-line
+            "@context": "https://w3id.org/did-resolution/v1",
+            didDocument: {
+                "@context": [
+                    // eslint-disable-next-line
+                    "https://www.w3.org/ns/did/v1",
+                ],
+                authentication: [
+                    "#key-1",
+                ],
+                id: did,
+                verificationMethod: [
+                    {
+                        controller: expect.any(String),
+                        id: "#key-1",
+                        publicKeyJwk: agentOp.publicJwk,
+                        type: "EcdsaSecp256k1VerificationKey2019",
+                    },
+                ],
+            },
+            didDocumentData: {},
+            didDocumentMetadata: {
+                created: expect.any(String),
+                canonicalId: did,
             },
             mdip: agentOp.mdip,
         };
@@ -288,7 +332,6 @@ describe('generateDoc', () => {
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
-                canonicalId: did
             },
             mdip: assetOp.mdip,
         };
@@ -311,7 +354,7 @@ describe('generateDoc', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 0);
+        const agentOp = await createAgentOp(keypair, { version: 0 });
         const doc = await gatekeeper.generateDoc(agentOp);
 
         expect(doc).toStrictEqual({});
@@ -332,7 +375,7 @@ describe('generateDoc', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'mock');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mock' });
         const doc = await gatekeeper.generateDoc(agentOp);
 
         expect(doc).toStrictEqual({});
@@ -359,7 +402,7 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'local');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'local' });
 
         const did = await gatekeeper.createDID(agentOp);
 
@@ -370,7 +413,7 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 2);
+        const agentOp = await createAgentOp(keypair, { version: 2 });
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -384,7 +427,7 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'mockRegistry');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -398,7 +441,7 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
 
         const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['hyperswarm'] });
 
@@ -414,7 +457,7 @@ describe('createDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'mockRegistry');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
         agentOp.mdip.type = 'mock';
 
         try {
@@ -515,7 +558,7 @@ describe('createDID', () => {
 
         try {
             // inconsistent registry
-            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
@@ -525,7 +568,7 @@ describe('createDID', () => {
 
         try {
             // invalid controller
-            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             assetOp.controller = 'mock';
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
@@ -535,7 +578,7 @@ describe('createDID', () => {
 
         try {
             // invalid signature
-            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm');
+            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             assetOp.signature = null;
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
@@ -545,7 +588,7 @@ describe('createDID', () => {
 
         try {
             // invalid validUntil date
-            const assetOp = await createAssetOp(agent, keypair, 'hyperswarm', 'mock');
+            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm', validUntil: 'mock' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error) {
@@ -594,7 +637,6 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -641,7 +683,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -656,7 +697,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const expected = await gatekeeper.resolveDID(did);
         const update = await gatekeeper.resolveDID(did);
@@ -710,7 +751,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -725,7 +765,7 @@ describe('resolveDID', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm'); // Specify hyperswarm registry for this agent
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
@@ -758,7 +798,6 @@ describe('resolveDID', () => {
                 updated: expect.any(String),
                 version: 2,
                 confirmed: false,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: agentOp.mdip
@@ -868,7 +907,6 @@ describe('resolveDID', () => {
                 created: expect.any(String),
                 version: 1,
                 confirmed: true,
-                canonicalId: did,
                 versionId: opid
             },
             mdip: assetOp.mdip
@@ -1332,7 +1370,7 @@ describe('exportBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
 
         const exports = await gatekeeper.exportBatch([did]);
@@ -1345,11 +1383,11 @@ describe('exportBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
 
         for (let i = 0; i < 5; i++) {
-            const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+            const assetOp = await createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
             await gatekeeper.createDID(assetOp);
         }
 
@@ -1362,7 +1400,7 @@ describe('exportBatch', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
@@ -1771,9 +1809,9 @@ describe('processEvents', () => {
 
         const keypair = cipher.generateRandomJwk();
         // create on hyperswarm because exportBatch will not export local DIDs
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
         await gatekeeper.createDID(assetOp);
         const batch = await gatekeeper.exportBatch();
 
@@ -1790,12 +1828,12 @@ describe('processEvents', () => {
 
         const keypair = cipher.generateRandomJwk();
         // create on hyperswarm because exportBatch will not export local DIDs
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(agentDID);
         const updateOp = await createUpdateOp(keypair, agentDID, doc);
         await gatekeeper.updateDID(updateOp);
-        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
         await gatekeeper.createDID(assetOp);
         const batch = await gatekeeper.exportBatch();
 
@@ -1833,7 +1871,7 @@ describe('processEvents', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
@@ -1873,7 +1911,7 @@ describe('processEvents', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
@@ -1895,7 +1933,7 @@ describe('processEvents', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
@@ -2011,14 +2049,14 @@ describe('processEvents', () => {
         mockFs({});
 
         const keypair1 = cipher.generateRandomJwk();
-        const agentOp1 = await createAgentOp(keypair1, 1, 'TFTC');
+        const agentOp1 = await createAgentOp(keypair1, { version: 1, registry: 'TFTC' });
         const agentDID1 = await gatekeeper.createDID(agentOp1);
 
         const keypair2 = cipher.generateRandomJwk();
-        const agentOp2 = await createAgentOp(keypair2, 1, 'TFTC');
+        const agentOp2 = await createAgentOp(keypair2, { version: 1, registry: 'TFTC' });
         const agentDID2 = await gatekeeper.createDID(agentOp2);
 
-        const assetOp = await createAssetOp(agentDID1, keypair1, 'TFTC');
+        const assetOp = await createAssetOp(agentDID1, keypair1, { registry: 'TFTC' });
         const assetDID = await gatekeeper.createDID(assetOp);
         const assetDoc1 = await gatekeeper.resolveDID(assetDID);
 
@@ -2079,7 +2117,7 @@ describe('getQueue', () => {
 
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, registry);
+        const agentOp = await createAgentOp(keypair, { version: 1, registry });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -2114,7 +2152,7 @@ describe('clearQueue', () => {
 
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, registry);
+        const agentOp = await createAgentOp(keypair, { version: 1, registry });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -2133,7 +2171,7 @@ describe('clearQueue', () => {
 
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, registry);
+        const agentOp = await createAgentOp(keypair, { version: 1, registry });
         const did = await gatekeeper.createDID(agentOp);
         const queue1 = [];
         const queue2 = [];
@@ -2174,7 +2212,7 @@ describe('clearQueue', () => {
 
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, registry);
+        const agentOp = await createAgentOp(keypair, { version: 1, registry });
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
@@ -2245,7 +2283,7 @@ describe('getDids', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const agentDoc = await gatekeeper.resolveDID(agentDID);
 
@@ -2269,7 +2307,7 @@ describe('getDids', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'TFTC');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const agentDoc = await gatekeeper.resolveDID(agentDID);
 
@@ -2547,13 +2585,13 @@ describe('verifyDb', () => {
 
         // create asset that should expire
         const validUntil = new Date().toISOString();
-        const assetOp1 = await createAssetOp(agentDID, keypair, 'local', validUntil);
+        const assetOp1 = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil });
         await gatekeeper.createDID(assetOp1);
 
         // create asset that expires later
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        const assetOp3 = await createAssetOp(agentDID, keypair, 'local', expires.toISOString());
+        const assetOp3 = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil: expires.toISOString() });
         await gatekeeper.createDID(assetOp3);
 
         const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
@@ -2576,7 +2614,7 @@ describe('checkDIDs', () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair, 'local', new Date().toISOString());
+        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil: new Date().toISOString() });
         await gatekeeper.createDID(assetOp);
 
         const check = await gatekeeper.checkDIDs({ chatty: true });
@@ -2594,9 +2632,9 @@ describe('checkDIDs', () => {
         mockFs({});
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, 1, 'hyperswarm');
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair, 'hyperswarm');
+        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
         const assetDID = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(assetDID);
         doc.didDocumentData = { mock: 1 };

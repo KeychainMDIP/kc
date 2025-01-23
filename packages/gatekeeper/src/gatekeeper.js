@@ -442,7 +442,6 @@ export default class Gatekeeper {
                     },
                     "didDocumentMetadata": {
                         "created": anchor.created,
-                        "canonicalId": did
                     },
                     "didDocumentData": {},
                     "mdip": anchor.mdip,
@@ -459,11 +458,14 @@ export default class Gatekeeper {
                     },
                     "didDocumentMetadata": {
                         "created": anchor.created,
-                        "canonicalId": did
                     },
                     "didDocumentData": anchor.data,
                     "mdip": anchor.mdip,
                 };
+            }
+
+            if (anchor.mdip.prefix) {
+                doc.didDocumentMetadata.canonicalId = did;
             }
         }
         catch (error) {
@@ -576,6 +578,9 @@ export default class Gatekeeper {
                 doc.mdip.registration = blockchain || undefined;
             }
         }
+
+        // Remove deprecated fields
+        delete doc.mdip.opid; // Replaced by didDocumentMetadata.versionId
 
         return copyJSON(doc);
     }
