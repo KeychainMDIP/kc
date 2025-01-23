@@ -10,10 +10,27 @@ chrome.runtime.onInstalled.addListener(async (details) => {
             console.error("Error setting gatekeeperUrl:", error);
         }
     }
+
+    createOffscreen();
+});
+
+async function createOffscreen() {
+    if (await chrome.offscreen.hasDocument()) {
+        return;
+    }
+    await chrome.offscreen.createDocument({
+        url: "offscreen.html",
+        reasons: [chrome.offscreen.Reason.WORKERS],
+        justification: "Communicate with the extension",
+    });
+}
+
+chrome.runtime.onStartup.addListener(() => {
+    createOffscreen();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === "OPEN_AUTH_TAB") {
+    if (message.action === "REQUEST_POPUP_OPEN") {
         chrome.action.openPopup(() => {
             chrome.runtime.sendMessage({
                 action: "SHOW_POPUP_AUTH",
@@ -22,4 +39,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         sendResponse({ success: true });
     }
+
+    return true;
 });

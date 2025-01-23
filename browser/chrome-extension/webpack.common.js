@@ -8,8 +8,10 @@ module.exports = {
     entry: {
         popup: path.resolve("./src/popup/popup.tsx"),
         options: path.resolve("./src/options/options.tsx"),
+        wallet: path.resolve("./src/wallet/wallet.tsx"),
         background: path.resolve("./src/background/background.ts"),
         contentScript: path.resolve("./src/contentScript/contentScript.ts"),
+        offscreen: path.resolve("./src/offscreen/offscreen.ts"),
     },
     module: {
         rules: [
@@ -48,7 +50,7 @@ module.exports = {
                 }
             ]
         }),
-        ...getHtmlPlugins(["popup", "options"]),
+        ...getHtmlPlugins(["popup", "offscreen", "options", "wallet"]),
     ],
     resolve: {
         extensions: [".ts", ".tsx", ".js"],
@@ -56,6 +58,8 @@ module.exports = {
             "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/src/cipher-web.js"),
             "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/src/gatekeeper-client.js"),
             "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/src/db/chrome.js"),
+            "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/src/db/web-enc.js"),
+            "@mdip/keymaster/wallet/cache-async": path.resolve(__dirname, "../../packages/keymaster/src/db/cache-async.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster-lib.js"),
         },
         fallback: {

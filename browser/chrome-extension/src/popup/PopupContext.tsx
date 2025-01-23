@@ -13,7 +13,13 @@ import GatekeeperClient from "@mdip/gatekeeper/client";
 import Keymaster from "@mdip/keymaster";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
+import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
+import WalletCacheAsync from "@mdip/keymaster/wallet/cache-async";
 import { AlertColor } from "@mui/material";
+import PassphraseModal from "./components/PassphraseModal";
+
+const gatekeeper = new GatekeeperClient();
+const cipher = new CipherWeb();
 
 interface SnackbarState {
     open: boolean;
@@ -82,6 +88,9 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [callback, setCallbackState] = useState("");
     const [response, setResponseState] = useState("");
     const [disableSendResponse, setDisableSendResponseState] = useState(true);
+    const [passphraseErrorText, setPassphraseErrorText] = useState(null);
+    const [modalAction, setModalAction] = useState(null);
+    const [isReady, setIsReady] = useState(false);
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -192,30 +201,102 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const init = async () => {
-            let url: string;
-            try {
-                let result = await chrome.storage.sync.get(["gatekeeperUrl"]);
-                url = result.gatekeeperUrl;
-            } catch (error) {
-                setError(error.error || error.message || String(error));
+            const { gatekeeperUrl } = await chrome.storage.sync.get([
+                "gatekeeperUrl",
+            ]);
+            await gatekeeper.connect({ url: gatekeeperUrl });
+
+            const wallet = new WalletChrome();
+            const walletData = await wallet.loadWallet();
+
+            let pass: string;
+            let response = await chrome.runtime.sendMessage({
+                action: "GET_PASSPHRASE",
+            });
+            if (response && response.passphrase) {
+                pass = response.passphrase;
             }
 
-            const gatekeeper = new GatekeeperClient();
-            await gatekeeper.connect({ url });
-            const wallet = new WalletChrome();
-            const cipher = new CipherWeb();
-            if (!keymasterRef.current) {
+            if (pass) {
+                let res = await decryptWallet(pass);
+                if (res) {
+                    return;
+                }
+            }
+
+            if (
+                walletData &&
+                walletData.salt &&
+                walletData.iv &&
+                walletData.data
+            ) {
+                setModalAction("decrypt");
+            } else {
                 keymasterRef.current = new Keymaster({
                     gatekeeper,
                     wallet,
                     cipher,
                 });
-            }
 
-            await refreshAll();
+                if (!walletData) {
+                    await keymasterRef.current.newWallet();
+                }
+
+                setModalAction("encrypt");
+            }
         };
         init();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    async function clearStoredPassphrase() {
+        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
+    }
+
+    async function decryptWallet(passphrase: string, modal: boolean = false) {
+        const wallet_chrome = new WalletChrome();
+        const wallet_enc = new WalletWebEncrypted(wallet_chrome, passphrase);
+        const wallet_cache = new WalletCacheAsync(wallet_enc);
+
+        if (modal && modalAction === "encrypt") {
+            const walletData = await wallet_chrome.loadWallet();
+            await wallet_enc.saveWallet(walletData, true);
+        } else {
+            try {
+                await wallet_enc.loadWallet();
+            } catch (e) {
+                if (modal) {
+                    setPassphraseErrorText("Incorrect passphrase");
+                } else {
+                    await clearStoredPassphrase();
+                }
+                return false;
+            }
+        }
+
+        if (modal) {
+            await chrome.runtime.sendMessage({
+                action: "STORE_PASSPHRASE",
+                passphrase,
+            });
+        }
+
+        keymasterRef.current = new Keymaster({
+            gatekeeper,
+            wallet: wallet_cache,
+            cipher,
+        });
+
+        setIsReady(true);
+        setModalAction(null);
+        setPassphraseErrorText(null);
+
+        return true;
+    }
+
+    async function handlePassphraseSubmit(passphrase: string) {
+        await decryptWallet(passphrase, true);
+    }
 
     async function refreshHeld() {
         const keymaster = keymasterRef.current;
@@ -231,10 +312,9 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    const storedValues = [
+    const deleteValues = [
         "selectedTab",
         "currentId",
-        "challenge",
         "registry",
         "heldDID",
         "authDID",
@@ -243,8 +323,10 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         "disableSendResponse",
     ];
 
+    const storedValues = [...deleteValues, "challenge"];
+
     async function forceRefreshAll() {
-        await chrome.storage.local.remove(storedValues);
+        await chrome.storage.local.remove(deleteValues);
         await refreshAll();
     }
 
@@ -364,7 +446,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
         await setAuthDID("");
         await setCallback("");
-        await setChallenge("");
         await setResponse("");
         await setDisableSendResponse(true);
         await setHeldDID("");
@@ -469,7 +550,25 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <PopupContext.Provider value={value}>{children}</PopupContext.Provider>
+        <>
+            <PassphraseModal
+                isOpen={modalAction !== null}
+                title={
+                    modalAction === "decrypt"
+                        ? "Enter Your Wallet Passphrase"
+                        : "Set Your Wallet Passphrase"
+                }
+                errorText={passphraseErrorText}
+                onSubmit={handlePassphraseSubmit}
+                encrypt={modalAction === "encrypt"}
+            />
+
+            {isReady && (
+                <PopupContext.Provider value={value}>
+                    {children}
+                </PopupContext.Provider>
+            )}
+        </>
     );
 }
 

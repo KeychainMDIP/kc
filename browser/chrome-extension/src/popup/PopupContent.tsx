@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
     Box,
     Tabs,
@@ -7,6 +7,9 @@ import {
     Stack,
     Snackbar,
     Alert,
+    IconButton,
+    Menu,
+    MenuItem,
 } from "@mui/material";
 import { TabContext, TabPanel } from "@mui/lab";
 import {
@@ -14,12 +17,12 @@ import {
     Badge,
     Key,
     PermIdentity,
+    MoreVert,
 } from "@mui/icons-material";
 import { usePopupContext } from "./PopupContext";
 import IdentitiesTab from "./components/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
-import WalletTab from "./components/WalletTab";
 
 const PopupContent = () => {
     const {
@@ -28,10 +31,39 @@ const PopupContent = () => {
         snackbar,
         selectedTab,
         setSelectedTab,
+        refreshAll,
     } = usePopupContext();
+
+    const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
         await setSelectedTab(newValue);
+    }
+
+    useEffect(() => {
+        const init = async () => {
+            await refreshAll();
+        };
+        init();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    function handleMenuOpen(event: React.MouseEvent<HTMLElement>) {
+        setMenuAnchorEl(event.currentTarget);
+    }
+
+    function handleMenuClose() {
+        setMenuAnchorEl(null);
+    }
+
+    function handleWalletClick() {
+        handleMenuClose();
+        chrome.tabs.create({ url: "wallet.html" });
+    }
+
+    function handleOptionsClick() {
+        handleMenuClose();
+        chrome.tabs.create({ url: "options.html" });
     }
 
     return (
@@ -52,7 +84,11 @@ const PopupContent = () => {
             </Snackbar>
 
             <TabContext value={selectedTab}>
-                <Stack spacing={0}>
+                <Box
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="space-between"
+                >
                     <Tabs
                         value={selectedTab}
                         onChange={handleChange}
@@ -63,9 +99,33 @@ const PopupContent = () => {
                             <Tab icon={<Badge />} value="credentials" />
                         )}
                         {currentId && <Tab icon={<Key />} value="auth" />}
-                        <Tab icon={<AccountBalanceWallet />} value="wallet" />
                     </Tabs>
 
+                    <IconButton onClick={handleMenuOpen}>
+                        <MoreVert />
+                    </IconButton>
+
+                    <Menu
+                        anchorEl={menuAnchorEl}
+                        open={Boolean(menuAnchorEl)}
+                        onClose={handleMenuClose}
+                        anchorOrigin={{
+                            vertical: "bottom",
+                            horizontal: "right",
+                        }}
+                        transformOrigin={{
+                            vertical: "top",
+                            horizontal: "right",
+                        }}
+                    >
+                        <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
+                        <MenuItem onClick={handleOptionsClick}>
+                            Options
+                        </MenuItem>
+                    </Menu>
+                </Box>
+
+                <Stack spacing={0}>
                     <TabPanel
                         value="identities"
                         className="tab-panel"
@@ -114,21 +174,6 @@ const PopupContent = () => {
                             <AuthTab />
                         </TabPanel>
                     )}
-
-                    <TabPanel
-                        value="wallet"
-                        className="tab-panel"
-                        sx={{ p: 0 }}
-                    >
-                        <Typography
-                            variant="h5"
-                            component="h5"
-                            className="tab-heading"
-                        >
-                            Wallet
-                        </Typography>
-                        <WalletTab />
-                    </TabPanel>
                 </Stack>
             </TabContext>
         </Box>
