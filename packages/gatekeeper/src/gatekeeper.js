@@ -548,7 +548,6 @@ export default class Gatekeeper {
             }
 
             if (operation.type === 'update') {
-                // Increment version
                 version += 1;
 
                 doc = operation.doc;
@@ -565,6 +564,8 @@ export default class Gatekeeper {
             }
 
             if (operation.type === 'delete') {
+                version += 1;
+
                 doc.didDocument = {};
                 doc.didDocumentData = {};
                 doc.didDocumentMetadata = {
@@ -573,6 +574,7 @@ export default class Gatekeeper {
                     deleted: updated,
                     canonicalId,
                     versionId,
+                    version,
                     confirmed
                 }
                 doc.mdip.registration = blockchain || undefined;
