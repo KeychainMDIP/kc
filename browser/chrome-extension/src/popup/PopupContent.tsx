@@ -3,7 +3,6 @@ import {
     Box,
     Tabs,
     Tab,
-    Typography,
     Stack,
     Snackbar,
     Alert,
@@ -11,17 +10,13 @@ import {
     Menu,
     MenuItem,
 } from "@mui/material";
-import { TabContext, TabPanel } from "@mui/lab";
-import {
-    Badge,
-    Key,
-    PermIdentity,
-    MoreVert,
-} from "@mui/icons-material";
+import { TabContext } from "@mui/lab";
+import { Badge, Key, PermIdentity, MoreVert } from "@mui/icons-material";
 import { usePopupContext } from "./PopupContext";
 import IdentitiesTab from "./components/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
+import PanelHeader from "./components/PanelHeader";
 
 const PopupContent = () => {
     const {
@@ -125,53 +120,26 @@ const PopupContent = () => {
                 </Box>
 
                 <Stack spacing={0}>
-                    <TabPanel
-                        value="identities"
-                        className="tab-panel"
-                        sx={{ p: 0 }}
-                    >
-                        <Typography
-                            variant="h5"
-                            component="h5"
-                            className="tab-heading"
-                        >
-                            Identities
-                        </Typography>
-                        <IdentitiesTab />
-                    </TabPanel>
+                    <PanelHeader
+                        title="Identities"
+                        tabValue="identities"
+                        childComponent={<IdentitiesTab />}
+                    />
 
                     {currentId && (
-                        <TabPanel
-                            value="credentials"
-                            className="tab-panel"
-                            sx={{ p: 0 }}
-                        >
-                            <Typography
-                                variant="h5"
-                                component="h5"
-                                className="tab-heading"
-                            >
-                                Credentials
-                            </Typography>
-                            <CredentialsTab />
-                        </TabPanel>
-                    )}
+                        <>
+                            <PanelHeader
+                                title="Credentials"
+                                tabValue="credentials"
+                                childComponent={<CredentialsTab />}
+                            />
 
-                    {currentId && (
-                        <TabPanel
-                            value="auth"
-                            className="tab-panel"
-                            sx={{ p: 0 }}
-                        >
-                            <Typography
-                                variant="h5"
-                                component="h5"
-                                className="tab-heading"
-                            >
-                                Auth
-                            </Typography>
-                            <AuthTab />
-                        </TabPanel>
+                            <PanelHeader
+                                title="Auth"
+                                tabValue="auth"
+                                childComponent={<AuthTab />}
+                            />
+                        </>
                     )}
                 </Stack>
             </TabContext>

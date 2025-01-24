@@ -425,7 +425,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         const cid = await keymaster.getCurrentId();
-        await setSelectedTab("identities");
 
         if (cid) {
             await setCurrentId(cid);

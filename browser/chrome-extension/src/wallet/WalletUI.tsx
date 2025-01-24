@@ -31,6 +31,8 @@ const WalletUI = () => {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
+    const [mnemonicString, setMnemonicString] = useState("");
+    const [walletString, setWalletString] = useState("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -105,63 +107,61 @@ const WalletUI = () => {
         setPendingWallet(null);
     };
 
-    function openBrowserTab(title: string, did: string, contents: string) {
-        const newTab = window.open("", "_blank");
-        if (newTab) {
-            newTab.document.write(`
-                <html lang="en-US">
-                    <head>
-                        <title>${title}</title>
-                    </head>
-                    <body>
-                        <h1>${title}</h1>
-                        <p style="font-family: Courier,monospace;">${did}</p>
-                        <textarea style="width: 100%; height: 100%" readOnly>
-                            ${contents}
-                        </textarea>
-                    </body>
-                </html>
-            `);
-            newTab.document.close();
-        } else {
-            setError("Unable to open new tab.");
+    async function showMnemonic() {
+        try {
+            const keymaster = await getKeymaster();
+            const response = await keymaster.decryptMnemonic();
+            setMnemonicString(response);
+        } catch (error) {
+            setError(error.error || error.message || String(error));
         }
+    }
+
+    async function hideMnemonic() {
+        setMnemonicString("");
+    }
+
+    async function getKeymaster() {
+        let pass: string;
+        let response = await chrome.runtime.sendMessage({
+            action: "GET_PASSPHRASE",
+        });
+        if (response && response.passphrase) {
+            pass = response.passphrase;
+        } else {
+            setError("Unable to get passphrase.");
+            return;
+        }
+
+        const wallet_chrome = new WalletChrome();
+        const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
+
+        try {
+            await wallet_enc.loadWallet();
+        } catch (e) {
+            setError("Invalid passphrase.");
+            return;
+        }
+
+        return new Keymaster({
+            gatekeeper,
+            wallet: wallet_enc,
+            cipher,
+        });
     }
 
     async function showWallet() {
         try {
-            let pass: string;
-            let response = await chrome.runtime.sendMessage({
-                action: "GET_PASSPHRASE",
-            });
-            if (response && response.passphrase) {
-                pass = response.passphrase;
-            } else {
-                setError("Unable to get passphrase.");
-                return;
-            }
-
-            const wallet_chrome = new WalletChrome();
-            const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
-
-            try {
-                await wallet_enc.loadWallet();
-            } catch (e) {
-                setError("Invalid passphrase.");
-                return;
-            }
-
-            const keymaster = new Keymaster({
-                gatekeeper,
-                wallet: wallet_enc,
-                cipher,
-            });
-
+            const keymaster = await getKeymaster();
             const wallet = await keymaster.loadWallet();
-            openBrowserTab("Wallet", "", JSON.stringify(wallet, null, 4));
+            setWalletString(JSON.stringify(wallet, null, 4));
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
+    }
+
+    async function hideWallet() {
+        setWalletString("");
     }
 
     async function handleUploadClick() {
@@ -263,7 +263,7 @@ const WalletUI = () => {
             </Dialog>
 
             <Typography variant="h4" gutterBottom>
-                Options
+                Wallet
             </Typography>
 
             <Box className="flex-box" sx={{ gap: 2 }}>
@@ -296,6 +296,66 @@ const WalletUI = () => {
                 >
                     Upload
                 </Button>
+
+                {walletString ? (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={hideWallet}
+                        sx={{ mr: 2 }}
+                    >
+                        Hide Wallet
+                    </Button>
+                ) : (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={showWallet}
+                        sx={{ mr: 2 }}
+                    >
+                        Show Wallet
+                    </Button>
+                )}
+
+                {mnemonicString ? (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={hideMnemonic}
+                        sx={{ mr: 2 }}
+                    >
+                        Hide Mnemonic
+                    </Button>
+                ) : (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={showMnemonic}
+                        sx={{ mr: 2 }}
+                    >
+                        Show Mnemonic
+                    </Button>
+                )}
+            </Box>
+            <Box>
+                <pre>{mnemonicString}</pre>
+            </Box>
+            <Box>
+                {walletString && (
+                    <textarea
+                        value={walletString}
+                        readOnly
+                        style={{
+                            width: "800px",
+                            height: "600px",
+                            overflow: "auto",
+                        }}
+                    />
+                )}
             </Box>
         </Box>
     );

@@ -1,0 +1,108 @@
+import React, { useState } from "react";
+import { Box, Button, IconButton, Menu, MenuItem } from "@mui/material";
+import { ArrowDropDown, ContentCopy } from "@mui/icons-material";
+import { usePopupContext } from "../PopupContext";
+
+const DropDownID = () => {
+    const {
+        currentDID,
+        currentId,
+        forceRefreshAll,
+        idList,
+        keymaster,
+        setError,
+        setSelectedId,
+    } = usePopupContext();
+
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+    const truncatedId =
+        currentId?.length > 10 ? currentId.slice(0, 10) + "..." : currentId;
+
+    const handleCopyDID = () => {
+        navigator.clipboard.writeText(currentDID).catch((err) => {
+            setError(err.message || String(err));
+        });
+    };
+
+    async function selectId(id: string) {
+        try {
+            setSelectedId(id);
+            await keymaster.setCurrentId(id);
+            await forceRefreshAll();
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
+    const handleOpenMenu = (event: React.MouseEvent<HTMLElement>) => {
+        setAnchorEl(event.currentTarget);
+    };
+
+    const handleCloseMenu = () => {
+        setAnchorEl(null);
+    };
+
+    async function handleSelectID(id: string) {
+        handleCloseMenu();
+        await selectId(id);
+    }
+
+    const multipleIds = idList && idList.length > 1;
+
+    return (
+        currentId && (
+            <Box display="flex" alignItems="center" gap={1}>
+                {currentDID && (
+                    <IconButton onClick={handleCopyDID} size="small">
+                        <ContentCopy fontSize="small" />
+                    </IconButton>
+                )}
+
+                {multipleIds ? (
+                    <>
+                        <Button
+                            className="drop-down-id-button"
+                            onClick={handleOpenMenu}
+                            endIcon={<ArrowDropDown />}
+                            sx={{
+                                textTransform: "none",
+                            }}
+                            size="small"
+                            variant="outlined"
+                        >
+                            {truncatedId}
+                        </Button>
+
+                        <Menu
+                            anchorEl={anchorEl}
+                            open={Boolean(anchorEl)}
+                            onClose={handleCloseMenu}
+                            anchorOrigin={{
+                                vertical: "bottom",
+                                horizontal: "right",
+                            }}
+                            transformOrigin={{
+                                vertical: "top",
+                                horizontal: "right",
+                            }}
+                        >
+                            {idList.map((id) => (
+                                <MenuItem
+                                    key={id}
+                                    onClick={() => handleSelectID(id)}
+                                >
+                                    {id}
+                                </MenuItem>
+                            ))}
+                        </Menu>
+                    </>
+                ) : (
+                    <Box className="drop-down-id-box">{truncatedId}</Box>
+                )}
+            </Box>
+        )
+    );
+};
+
+export default DropDownID;
