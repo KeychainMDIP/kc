@@ -98,49 +98,57 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         severity: "warning",
     });
 
+    async function storeState(key: string, value: string | boolean) {
+        await chrome.runtime.sendMessage({
+            action: "STORE_STATE",
+            key,
+            value,
+        });
+    }
+
     async function setCallback(value: string) {
         setCallbackState(value);
-        await chrome.storage.local.set({ callback: value });
+        await storeState("callback", value);
     }
 
     async function setResponse(value: string) {
         setResponseState(value);
-        await chrome.storage.local.set({ response: value });
+        await storeState("response", value);
     }
 
     async function setDisableSendResponse(value: boolean) {
         setDisableSendResponseState(value);
-        await chrome.storage.local.set({ disableSendResponse: value });
+        await storeState("disableSendResponse", value);
     }
 
     async function setAuthDID(value: string) {
         setAuthDIDState(value);
-        await chrome.storage.local.set({ authDID: value });
+        await storeState("authDID", value);
     }
 
     async function setSelectedTab(value: string) {
         setSelectedTabState(value);
-        await chrome.storage.local.set({ selectedTab: value });
+        await storeState("selectedTab", value);
     }
 
     async function setCurrentId(value: string) {
         setCurrentIdState(value);
-        await chrome.storage.local.set({ currentId: value });
+        await storeState("currentId", value);
     }
 
     async function setChallenge(value: string) {
         setChallengeState(value);
-        await chrome.storage.local.set({ challenge: value });
+        await storeState("challenge", value);
     }
 
     async function setRegistry(value: string) {
         setRegistryState(value);
-        await chrome.storage.local.set({ registry: value });
+        await storeState("registry", value);
     }
 
     async function setHeldDID(value: string) {
         setHeldDIDState(value);
-        await chrome.storage.local.set({ heldDID: value });
+        await storeState("heldDID", value);
     }
 
     useEffect(() => {
@@ -175,6 +183,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
                 setPendingTab(null);
             })();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentId, pendingAuth, pendingTab]);
 
     const setError = (error: string) => {
@@ -323,10 +332,13 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         "disableSendResponse",
     ];
 
-    const storedValues = [...deleteValues, "challenge"];
-
     async function forceRefreshAll() {
-        await chrome.storage.local.remove(deleteValues);
+        for (const key of deleteValues) {
+            await chrome.runtime.sendMessage({
+                action: "CLEAR_STATE",
+                key,
+            });
+        }
         await refreshAll();
     }
 
@@ -347,65 +359,57 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        const {
-            selectedTab: storedTab,
-            currentId: storedCid,
-            challenge: storedChallenge,
-            registry: storedRegistry,
-            heldDID: storedHeldDID,
-            authDID: storedAuthDID,
-            callback: storedCallback,
-            response: storedResponse,
-            disableSendResponse: storedDisableSendResponse,
-        } = await chrome.storage.local.get(storedValues);
+        const { extensionState } = await chrome.runtime.sendMessage({
+            action: "GET_ALL_STATE",
+        });
 
         // Tab always present if store used
-        if (!storedTab) {
+        if (!extensionState.selectedTab) {
             return false;
         }
 
         // If ID not in wallet assume new wallet created externally
-        if (storedCid) {
+        if (extensionState.currentId) {
             const wallet = await keymaster.loadWallet();
-            if (!Object.keys(wallet.ids).includes(storedCid)) {
-                await chrome.storage.local.remove(storedValues);
+            if (!Object.keys(wallet.ids).includes(extensionState.currentId)) {
+                await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
                 return false;
             }
         }
 
-        setPendingTab(storedTab);
+        setPendingTab(extensionState.selectedTab);
 
-        if (storedChallenge) {
-            await setChallenge(storedChallenge);
+        if (extensionState.challenge) {
+            await setChallenge(extensionState.challenge);
         }
 
-        if (storedRegistry) {
-            await setRegistry(storedRegistry);
+        if (extensionState.registry) {
+            await setRegistry(extensionState.registry);
         }
 
-        if (storedHeldDID) {
-            await setHeldDID(storedHeldDID);
+        if (extensionState.heldDID) {
+            await setHeldDID(extensionState.heldDID);
         }
 
-        if (storedAuthDID) {
-            setAuthDIDState(storedAuthDID);
+        if (extensionState.authDID) {
+            setAuthDIDState(extensionState.authDID);
         }
 
-        if (storedCallback) {
-            setCallbackState(storedCallback);
+        if (extensionState.callback) {
+            setCallbackState(extensionState.callback);
         }
 
-        if (storedResponse) {
-            setResponseState(storedResponse);
+        if (extensionState.response) {
+            setResponseState(extensionState.response);
         }
 
-        if (typeof storedDisableSendResponse !== "undefined") {
-            setDisableSendResponseState(storedDisableSendResponse);
+        if (typeof extensionState.disableSendResponse !== "undefined") {
+            setDisableSendResponseState(extensionState.disableSendResponse);
         }
 
-        if (storedCid) {
-            await setCurrentId(storedCid);
-            setSelectedId(storedCid);
+        if (extensionState.currentId) {
+            await setCurrentId(extensionState.currentId);
+            setSelectedId(extensionState.currentId);
             await refreshCurrentDID();
             await refreshHeld();
         }

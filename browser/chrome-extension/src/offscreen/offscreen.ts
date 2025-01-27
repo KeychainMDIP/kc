@@ -1,4 +1,5 @@
-let passphrase: string = null;
+let passphrase: string | null = null;
+const extensionState: Record<string, any> = {};
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "OPEN_AUTH_TAB") {
@@ -14,6 +15,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ passphrase });
     } else if (message.action === "CLEAR_PASSPHRASE") {
         passphrase = null;
+        sendResponse({ success: true });
+    } else if (message.action === "STORE_STATE") {
+        extensionState[message.key] = message.value;
+        sendResponse({ success: true });
+    } else if (message.action === "GET_ALL_STATE") {
+        sendResponse({ extensionState });
+    } else if (message.action === "GET_STATE") {
+        const val = extensionState[message.key];
+        sendResponse({ value: val });
+    } else if (message.action === "CLEAR_ALL_STATE") {
+        for (const key in extensionState) {
+            delete extensionState[key];
+        }
+        sendResponse({ success: true });
+    } else if (message.action === "CLEAR_STATE") {
+        delete extensionState[message.key];
         sendResponse({ success: true });
     }
 
