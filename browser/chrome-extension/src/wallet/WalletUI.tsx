@@ -52,17 +52,6 @@ const WalletUI = () => {
         setPendingWallet(null);
     };
 
-    const deleteValues = [
-        "selectedTab",
-        "currentId",
-        "registry",
-        "heldDID",
-        "authDID",
-        "callback",
-        "response",
-        "disableSendResponse",
-    ];
-
     const setError = (error: string) => {
         setSnackbar({
             open: true,
