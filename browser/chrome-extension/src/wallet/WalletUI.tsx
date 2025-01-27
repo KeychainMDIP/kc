@@ -52,17 +52,6 @@ const WalletUI = () => {
         setPendingWallet(null);
     };
 
-    const deleteValues = [
-        "selectedTab",
-        "currentId",
-        "registry",
-        "heldDID",
-        "authDID",
-        "callback",
-        "response",
-        "disableSendResponse",
-    ];
-
     const setError = (error: string) => {
         setSnackbar({
             open: true,
@@ -72,8 +61,7 @@ const WalletUI = () => {
     };
 
     async function wipeStoredValues() {
-        await chrome.storage.local.remove(deleteValues);
-        await chrome.storage.local.remove(["challenge"]);
+        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
         window.close();
     }
