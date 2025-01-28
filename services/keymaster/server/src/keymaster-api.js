@@ -6,6 +6,7 @@ import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
+import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
@@ -755,8 +756,9 @@ async function waitForCurrentId() {
 
 async function initWallet() {
     let wallet = (config.db === 'redis') ? new WalletRedis()
-        : (config.db === 'json') ? new WalletJson()
-            : null;
+        : (config.db === 'mongodb') ? await WalletMongo.create()
+            : (config.db === 'json') ? new WalletJson()
+                : null;
 
     if (!wallet) {
         throw new InvalidParameterError(`db=${config.db}`);
