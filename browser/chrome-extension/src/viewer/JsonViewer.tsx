@@ -22,7 +22,7 @@ function JsonViewer() {
             <Typography sx={{ fontFamily: "Courier, monospace" }}>
                 {did}
             </Typography>
-            <JsonView value={data} />
+            <JsonView value={data} shortenTextAfterLength={0} />
         </div>
     );
 }

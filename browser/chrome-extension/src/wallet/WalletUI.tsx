@@ -333,7 +333,11 @@ const WalletUI = () => {
             <Box>
                 <pre>{mnemonicString}</pre>
             </Box>
-            <Box>{walletObject && <JsonView value={walletObject} />}</Box>
+            <Box>
+                {walletObject && (
+                    <JsonView value={walletObject} shortenTextAfterLength={0} />
+                )}
+            </Box>
         </Box>
     );
 };
