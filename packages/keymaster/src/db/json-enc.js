@@ -50,7 +50,7 @@ export default class WalletEncrypted {
         }
 
         if (!encryptedData.salt || !encryptedData.iv || !encryptedData.data) {
-            //throw new Error('Wallet not encrypted');
+            // We'll assume here that the passphrase has just been set and the wallet is not yet encrypted
             return encryptedData;
         }
 

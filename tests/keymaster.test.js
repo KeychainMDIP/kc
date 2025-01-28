@@ -116,7 +116,7 @@ describe('loadWallet', () => {
         mockFs({});
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        const check_wallet = wallet_enc.loadWallet();
+        const check_wallet = await wallet_enc.loadWallet();
         expect(check_wallet).toBe(null);
     });
 
@@ -163,7 +163,7 @@ describe('saveWallet', () => {
         mockFs({});
         const mockWallet = { mock: 0 };
 
-        const ok = wallet.saveWallet(mockWallet);
+        const ok = await wallet.saveWallet(mockWallet);
         expect(ok).toBe(true);
     });
 
@@ -171,7 +171,7 @@ describe('saveWallet', () => {
         mockFs({});
         const mockWallet = { mock: 0 };
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        const ok = wallet_enc.saveWallet(mockWallet);
+        const ok = await wallet_enc.saveWallet(mockWallet);
 
         expect(ok).toBe(true);
     });
@@ -282,7 +282,7 @@ describe('saveWallet', () => {
         }
     });
 
-    it('encrypted wallet should throw when loading unencrypted wallet', async () => {
+    it('encrypted wallet should return unencrypted wallet', async () => {
         mockFs({
             'data': {}
         });
@@ -293,13 +293,9 @@ describe('saveWallet', () => {
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
+        const testWallet = await keymaster.loadWallet();
 
-        try {
-            await keymaster.loadWallet();
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Wallet not encrypted');
-        }
+        expect(testWallet).toStrictEqual(mockWallet);
     });
 });
 
