@@ -1,8 +1,9 @@
 import Redis from 'ioredis';
 
 export default class WalletRedis {
-    constructor(redisUrl = 'redis://localhost:6379', walletKey = 'wallet') {
-        this.redis = new Redis(redisUrl);
+    constructor(walletKey = 'wallet') {
+        const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
+        this.redis = new Redis(url);
         this.walletKey = walletKey;
     }
 

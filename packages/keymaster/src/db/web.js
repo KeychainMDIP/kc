@@ -3,7 +3,7 @@ export default class WalletWeb {
         this.walletName = walletName;
     }
 
-    saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet, overwrite = false) {
         if (!overwrite && window.localStorage.getItem(this.walletName)) {
             return false;
         }
@@ -12,7 +12,7 @@ export default class WalletWeb {
         return true;
     }
 
-    loadWallet() {
+    async loadWallet() {
         const walletJson = window.localStorage.getItem(this.walletName);
 
         if (walletJson) {

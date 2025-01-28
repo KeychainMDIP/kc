@@ -13,7 +13,7 @@ export default class WalletEncrypted {
         this.passphrase = passphrase;
     }
 
-    saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet, overwrite = false) {
         if (!this.passphrase) {
             throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }
@@ -39,18 +39,19 @@ export default class WalletEncrypted {
         return this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    loadWallet() {
+    async loadWallet() {
         if (!this.passphrase) {
             throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }
 
-        const encryptedData = this.baseWallet.loadWallet();
+        const encryptedData = await this.baseWallet.loadWallet();
         if (!encryptedData) {
             return null;
         }
 
         if (!encryptedData.salt || !encryptedData.iv || !encryptedData.data) {
-            throw new Error('Wallet not encrypted');
+            //throw new Error('Wallet not encrypted');
+            return encryptedData;
         }
 
         const salt = Buffer.from(encryptedData.salt, 'base64');

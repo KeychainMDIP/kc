@@ -8,6 +8,7 @@
     "./client": "./src/keymaster-sdk.js",
     "./wallet/json": "./src/db/json.js",
     "./wallet/json-enc": "./src/db/json-enc.js",
+    "./wallet/redis": "./src/db/redis.js",
     "./wallet/cache": "./src/db/cache.js",
     "./wallet/cache-async": "./src/db/cache-async.js",
     "./wallet/web": "./src/db/web.js",
