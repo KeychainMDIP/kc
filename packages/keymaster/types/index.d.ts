@@ -1,5 +1,4 @@
 declare module '@mdip/keymaster/wallet/cache';
-declare module '@mdip/keymaster/wallet/cache-async';
 declare module '@mdip/keymaster/wallet/chrome';
 declare module '@mdip/keymaster/wallet/json';
 declare module '@mdip/keymaster/wallet/json-enc';
