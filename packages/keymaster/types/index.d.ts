@@ -124,7 +124,7 @@ declare module '@mdip/keymaster' {
         listIds(): Promise<string[]>;
         listIssued(issuer: string): Promise<any>;
         listNames(): Promise<any>;
-        listRegistries(): Promise<string[]>;
+        listRegistries(): Promise<any>;
         listSchemas(owner: string): Promise<any>;
         newWallet(mnemonic?: string, overwrite?: boolean): Promise<any>;
         pollTemplate(): Promise<PollTemplate>;
@@ -139,7 +139,7 @@ declare module '@mdip/keymaster' {
         removeId(name: string): Promise<boolean>;
         removeName(name: string): Promise<boolean>;
         resolveAsset(did: string): Promise<any>;
-        resolveDID(did: string): Promise<any>;
+        resolveDID(did: string, options?: any): Promise<any>;
         resolveSeedBank(): Promise<any>;
         revokeCredential(credential: any): Promise<boolean>;
         revokeDID(did: string): Promise<boolean>;

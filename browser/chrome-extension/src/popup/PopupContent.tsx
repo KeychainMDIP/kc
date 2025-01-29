@@ -11,12 +11,13 @@ import {
     MenuItem,
 } from "@mui/material";
 import { TabContext } from "@mui/lab";
-import { Badge, Key, PermIdentity, MoreVert } from "@mui/icons-material";
+import { Badge, Key, List, PermIdentity, MoreVert } from "@mui/icons-material";
 import { usePopupContext } from "./PopupContext";
 import IdentitiesTab from "./components/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";
+import DIDsTab from "./components/DIDsTab";
 
 const PopupContent = () => {
     const {
@@ -89,6 +90,7 @@ const PopupContent = () => {
                         className="tabs"
                     >
                         <Tab icon={<PermIdentity />} value="identities" />
+                        {currentId && <Tab icon={<List />} value="dids" />}
                         {currentId && (
                             <Tab icon={<Badge />} value="credentials" />
                         )}
@@ -128,6 +130,12 @@ const PopupContent = () => {
 
                     {currentId && (
                         <>
+                            <PanelHeader
+                                title="DIDs"
+                                tabValue="dids"
+                                childComponent={<DIDsTab />}
+                            />
+
                             <PanelHeader
                                 title="Credentials"
                                 tabValue="credentials"

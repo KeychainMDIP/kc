@@ -29,9 +29,7 @@ interface SnackbarState {
 
 interface PopupContextValue {
     currentId: string;
-    setCurrentId: (value: string) => Promise<void>;
     currentDID: string;
-    setCurrentDID: Dispatch<SetStateAction<string>>;
     heldDID: string;
     setHeldDID: (value: string) => Promise<void>;
     heldList: string[];
@@ -42,9 +40,7 @@ interface PopupContextValue {
     registry: string;
     setRegistry: (value: string) => Promise<void>;
     registries: string[];
-    setRegistries: Dispatch<SetStateAction<string[]>>;
     idList: string[];
-    setIdList: Dispatch<SetStateAction<string[]>>;
     selectedTab: string;
     setSelectedTab: (value: string) => Promise<void>;
     authDID: string;
@@ -56,6 +52,11 @@ interface PopupContextValue {
     disableSendResponse: boolean;
     setDisableSendResponse: (value: boolean) => Promise<void>;
     snackbar: SnackbarState;
+    nameList: any;
+    aliasName: string;
+    setAliasName: (value: string) => Promise<void>;
+    aliasDID: string;
+    setAliasDID: (value: string) => Promise<void>;
     setError(error: string): void;
     setWarning(warning: string): void;
     manifest: any;
@@ -63,8 +64,10 @@ interface PopupContextValue {
     refreshAll: () => Promise<void>;
     forceRefreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
+    refreshNames: () => Promise<void>;
     handleSnackbarClose: () => void;
-    openBrowserTab: (title: string, did: string, contents: string) => void;
+    openBrowserTab: (title: string, did: string, contents?: any) => void;
+    handleCopyDID: (did: string) => void;
     keymaster: Keymaster | null;
 }
 
@@ -91,6 +94,9 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [passphraseErrorText, setPassphraseErrorText] = useState(null);
     const [modalAction, setModalAction] = useState(null);
     const [isReady, setIsReady] = useState(false);
+    const [nameList, setNameList] = useState(null);
+    const [aliasName, setAliasNameState] = useState("");
+    const [aliasDID, setAliasDIDState] = useState("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -149,6 +155,16 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     async function setHeldDID(value: string) {
         setHeldDIDState(value);
         await storeState("heldDID", value);
+    }
+
+    async function setAliasName(value: string) {
+        setAliasNameState(value);
+        await storeState("aliasName", value);
+    }
+
+    async function setAliasDID(value: string) {
+        setAliasDIDState(value);
+        await storeState("aliasDID", value);
     }
 
     useEffect(() => {
@@ -321,6 +337,19 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    async function refreshNames() {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return;
+        }
+
+        const nameList = await keymaster.listNames();
+
+        setNameList(nameList);
+        await setAliasName("");
+        await setAliasDID("");
+    }
+
     const deleteValues = [
         "selectedTab",
         "currentId",
@@ -414,10 +443,21 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             await refreshHeld();
         }
 
+        if (extensionState.aliasName) {
+            await setAliasName(extensionState.aliasName);
+        }
+
+        if (extensionState.aliasDID) {
+            await setAliasDID(extensionState.aliasDID);
+        }
+
         const ids = await keymaster.listIds();
         if (ids.length) {
             setIdList(ids);
         }
+
+        const nameList = await keymaster.listNames();
+        setNameList(nameList);
 
         return true;
     }
@@ -434,6 +474,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             await setCurrentId(cid);
             setSelectedId(cid);
             await refreshCurrentDID();
+            await refreshNames();
             await refreshHeld();
 
             const ids = await keymaster.listIds();
@@ -452,6 +493,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await setResponse("");
         await setDisableSendResponse(true);
         await setHeldDID("");
+        await setAliasName("");
+        await setAliasDID("");
     }
 
     async function refreshAll() {
@@ -462,7 +505,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
         try {
             const regs = await keymaster.listRegistries();
-            setRegistries(regs);
+            if (Array.isArray(regs)) {
+                setRegistries(regs);
+            } else {
+                setRegistries(regs.registries);
+            }
 
             const usedStored = await refreshStored();
             if (!usedStored) {
@@ -488,19 +535,29 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    function openBrowserTab(title: string, did: string, contents: string) {
-        const jsonEncoded = encodeURIComponent(contents);
+    function openBrowserTab(title: string, did: string, contents?: any) {
         const titleEncoded = encodeURIComponent(title);
         const didEncoded = encodeURIComponent(did);
-        const viewerUrl = `chrome-extension://${chrome.runtime.id}/viewer.html?title=${titleEncoded}&did=${didEncoded}&json=${jsonEncoded}`;
+        let viewerUrl = `chrome-extension://${chrome.runtime.id}/viewer.html?title=${titleEncoded}&did=${didEncoded}`;
+
+        if (contents) {
+            const contentsString = JSON.stringify(contents, null, 4);
+            const jsonEncoded = encodeURIComponent(contentsString);
+            viewerUrl += `&json=${jsonEncoded}`;
+        }
+
         window.open(viewerUrl, "_blank");
+    }
+
+    function handleCopyDID(did: string) {
+        navigator.clipboard.writeText(did).catch((err) => {
+            setError(err.message || String(err));
+        });
     }
 
     const value: PopupContextValue = {
         currentId,
-        setCurrentId,
         currentDID,
-        setCurrentDID,
         heldDID,
         setHeldDID,
         heldList,
@@ -511,10 +568,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         registry,
         setRegistry,
         registries,
-        setRegistries,
         idList,
         manifest,
-        setIdList,
         selectedTab,
         setSelectedTab,
         authDID,
@@ -526,14 +581,21 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         disableSendResponse,
         setDisableSendResponse,
         snackbar,
+        nameList,
+        aliasName,
+        setAliasName,
+        aliasDID,
+        setAliasDID,
         setError,
         setWarning,
         resolveDID,
         refreshAll,
         forceRefreshAll,
         refreshHeld,
+        refreshNames,
         handleSnackbarClose,
         openBrowserTab,
+        handleCopyDID,
         keymaster: keymasterRef.current,
     };
 

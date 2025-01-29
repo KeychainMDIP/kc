@@ -150,7 +150,7 @@ declare module '@mdip/gatekeeper' {
         importDIDs(dids: any): Promise<ImportResult>;
         importEvent(event: any): Promise<boolean>;
         importEvents(): Promise<ImportEventsResult>;
-        listRegistries(): Promise<string[]>;
+        listRegistries(): Promise<any>;
         processEvents(): Promise<ProcessEventsResult>;
         removeDIDs(dids: string[]): Promise<boolean>;
         resolveDID(did: string, options?: ResolveDIDOptions): Promise<any>;
