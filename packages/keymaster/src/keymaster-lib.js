@@ -64,11 +64,11 @@ export default class Keymaster {
         }
 
         if (wallet.salt) {
-            throw new Error("Wallet is encrypted");
+            throw new KeymasterError("Wallet is encrypted");
         }
 
         if (!wallet.seed) {
-            throw new Error("Wallet is corrupted");
+            throw new KeymasterError("Wallet is corrupted");
         }
 
         return wallet;

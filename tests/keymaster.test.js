@@ -112,7 +112,7 @@ describe('loadWallet', () => {
         expect(wallet2).toStrictEqual(wallet1);
     });
 
-    it('loading non-existing encrypted wallet returns null', async () => {
+    it('should return null when loading non-existing encrypted wallet', async () => {
         mockFs({});
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
@@ -120,7 +120,7 @@ describe('loadWallet', () => {
         expect(check_wallet).toBe(null);
     });
 
-    it('wallet should throw when passphrase not set', async () => {
+    it('should throw exception when passphrase not set', async () => {
         mockFs({});
 
         const wallet_enc = new WalletEncrypted(wallet);
@@ -134,7 +134,7 @@ describe('loadWallet', () => {
         }
     });
 
-    it('load with incorrect passphrase throws', async () => {
+    it('should throw exception on load with incorrect passphrase', async () => {
         mockFs({});
         const mockWallet = { mock: 0 };
         const wallet_enc1 = new WalletEncrypted(wallet, 'passphrase');
@@ -149,6 +149,34 @@ describe('loadWallet', () => {
             throw new ExpectedExceptionError();
         } catch (e) {
             expect(e.message).toBe('Incorrect passphrase.');
+        }
+    });
+
+    it('should throw exception on encrypted wallet', async () => {
+        mockFs({});
+
+        const mockWallet = { salt: 1 };
+        await keymaster.saveWallet(mockWallet);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Keymaster: Wallet is encrypted');
+        }
+    });
+
+    it('should throw exception on corrupted wallet', async () => {
+        mockFs({});
+
+        const mockWallet = { mock: 123 };
+        await keymaster.saveWallet(mockWallet);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Keymaster: Wallet is corrupted');
         }
     });
 });
