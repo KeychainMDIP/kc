@@ -161,7 +161,7 @@ describe('saveWallet', () => {
 
     it('test saving directly on the unencrypted wallet', async () => {
         mockFs({});
-        const mockWallet = { mock: 0 };
+        const mockWallet = { seed: 1 };
 
         const ok = await wallet.saveWallet(mockWallet);
         expect(ok).toBe(true);
@@ -169,7 +169,7 @@ describe('saveWallet', () => {
 
     it('test saving directly on the encrypted wallet', async () => {
         mockFs({});
-        const mockWallet = { mock: 0 };
+        const mockWallet = { seed: 1 };
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const ok = await wallet_enc.saveWallet(mockWallet);
 
@@ -178,7 +178,7 @@ describe('saveWallet', () => {
 
     it('should save a wallet', async () => {
         mockFs({});
-        const mockWallet = { mock: 0 };
+        const mockWallet = { seed: 1 };
 
         const ok = await keymaster.saveWallet(mockWallet);
         const wallet = await keymaster.loadWallet();
@@ -189,7 +189,7 @@ describe('saveWallet', () => {
 
     it('should ignore overwrite flag if unnecessary', async () => {
         mockFs({});
-        const mockWallet = { mock: 0 };
+        const mockWallet = { seed: 1 };
 
         const ok = await keymaster.saveWallet(mockWallet, false);
         const wallet = await keymaster.loadWallet();
@@ -202,7 +202,7 @@ describe('saveWallet', () => {
         mockFs({
             data: {}
         });
-        const mockWallet = { mock: 0 };
+        const mockWallet = { seed: 1 };
 
         const ok = await keymaster.saveWallet(mockWallet);
         const wallet = await keymaster.loadWallet();
@@ -213,8 +213,8 @@ describe('saveWallet', () => {
 
     it('should overwrite an existing wallet', async () => {
         mockFs({});
-        const mockWallet1 = { mock: 1 };
-        const mockWallet2 = { mock: 2 };
+        const mockWallet1 = { seed: 1 };
+        const mockWallet2 = { seed: 2 };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2);
@@ -226,8 +226,8 @@ describe('saveWallet', () => {
 
     it('should not overwrite an existing wallet if specified', async () => {
         mockFs({});
-        const mockWallet1 = { mock: 1 };
-        const mockWallet2 = { mock: 2 };
+        const mockWallet1 = { seed: 1 };
+        const mockWallet2 = { seed: 2 };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2, false);
@@ -241,7 +241,7 @@ describe('saveWallet', () => {
         mockFs({});
 
         for (let i = 0; i < 10; i++) {
-            const mockWallet = { mock: i };
+            const mockWallet = { seed: i+1 };
 
             const ok = await keymaster.saveWallet(mockWallet);
             const wallet = await keymaster.loadWallet();
@@ -257,8 +257,8 @@ describe('saveWallet', () => {
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
-        const mockWallet1 = { mock: 1 };
-        const mockWallet2 = { mock: 2 };
+        const mockWallet1 = { seed: 1 };
+        const mockWallet2 = { seed: 2 };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2, false);
@@ -270,7 +270,7 @@ describe('saveWallet', () => {
 
     it('wallet should throw when passphrase not set', async () => {
         mockFs({});
-        const mockWallet = { mock: 1 };
+        const mockWallet = { seed: 1 };
         const wallet_enc = new WalletEncrypted(wallet);
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
@@ -288,7 +288,7 @@ describe('saveWallet', () => {
         });
 
         const walletFile = 'data/wallet.json';
-        const mockWallet = { mock: 1 };
+        const mockWallet = { seed: 1 };
         fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
