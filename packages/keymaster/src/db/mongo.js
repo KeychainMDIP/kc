@@ -20,6 +20,10 @@ export default class WalletMongo {
         this.collection = this.db.collection(this.collectionName);
     }
 
+    async disconnect() {
+        await this.client.close();
+    }
+
     async saveWallet(wallet, overwrite = false) {
         const exists = await this.collection.findOne({});
         if (exists && !overwrite) {

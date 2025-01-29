@@ -1,10 +1,23 @@
 import Redis from 'ioredis';
 
 export default class WalletRedis {
+    static async create(walletKey = 'wallet') {
+        const wallet = new WalletRedis(walletKey);
+        await wallet.connect();
+        return wallet;
+    }
+
     constructor(walletKey = 'wallet') {
-        const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
-        this.redis = new Redis(url);
+        this.url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.walletKey = walletKey;
+    }
+
+    async connect() {
+        this.redis = new Redis(this.url);
+    }
+
+    async disconnect() {
+        await this.redis.quit();
     }
 
     async saveWallet(wallet, overwrite = false) {

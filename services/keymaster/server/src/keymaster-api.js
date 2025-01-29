@@ -7,6 +7,7 @@ import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
+import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
@@ -755,10 +756,11 @@ async function waitForCurrentId() {
 }
 
 async function initWallet() {
-    let wallet = (config.db === 'redis') ? new WalletRedis()
+    let wallet = (config.db === 'redis') ? await WalletRedis.create()
         : (config.db === 'mongodb') ? await WalletMongo.create()
-            : (config.db === 'json') ? new WalletJson()
-                : null;
+            : (config.db === 'sqlite') ? await WalletSQLite.create()
+                : (config.db === 'json') ? new WalletJson()
+                    : null;
 
     if (!wallet) {
         throw new InvalidParameterError(`db=${config.db}`);
@@ -790,8 +792,15 @@ app.listen(port, async () => {
     const wallet = await initWallet();
     const cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
-    console.log(`keymaster server running on port ${port}`);
+    console.log(`Keymaster server running on port ${port}`);
+    console.log(`Keymaster server persisting to ${config.db}`);
 
-    await waitForCurrentId();
+    try {
+        await waitForCurrentId();
+    }
+    catch(error) {
+        console.error('Failed to resolve current ID:', error);
+    }
+
     serverReady = true;
 });
