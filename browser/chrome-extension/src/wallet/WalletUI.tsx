@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import JsonView from "@uiw/react-json-view";
 import {
     Alert,
     AlertColor,
@@ -32,7 +33,7 @@ const WalletUI = () => {
     const [loading, setLoading] = useState(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState("");
-    const [walletString, setWalletString] = useState("");
+    const [walletObject, setWalletObject] = useState(null);
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -142,14 +143,14 @@ const WalletUI = () => {
         try {
             const keymaster = await getKeymaster();
             const wallet = await keymaster.loadWallet();
-            setWalletString(JSON.stringify(wallet, null, 4));
+            setWalletObject(wallet);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function hideWallet() {
-        setWalletString("");
+        setWalletObject(null);
     }
 
     async function handleUploadClick() {
@@ -285,7 +286,7 @@ const WalletUI = () => {
                     Upload
                 </Button>
 
-                {walletString ? (
+                {walletObject ? (
                     <Button
                         className="mini-margin"
                         variant="contained"
@@ -333,16 +334,8 @@ const WalletUI = () => {
                 <pre>{mnemonicString}</pre>
             </Box>
             <Box>
-                {walletString && (
-                    <textarea
-                        value={walletString}
-                        readOnly
-                        style={{
-                            width: "800px",
-                            height: "600px",
-                            overflow: "auto",
-                        }}
-                    />
+                {walletObject && (
+                    <JsonView value={walletObject} shortenTextAfterLength={0} />
                 )}
             </Box>
         </Box>

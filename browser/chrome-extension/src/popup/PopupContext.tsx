@@ -1,12 +1,12 @@
 import React, {
     createContext,
+    Dispatch,
+    ReactNode,
+    SetStateAction,
     useContext,
-    useState,
     useEffect,
     useRef,
-    ReactNode,
-    Dispatch,
-    SetStateAction,
+    useState,
 } from "react";
 
 import GatekeeperClient from "@mdip/gatekeeper/client";
@@ -489,26 +489,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     }
 
     function openBrowserTab(title: string, did: string, contents: string) {
-        const newTab = window.open("", "_blank");
-        if (newTab) {
-            newTab.document.write(`
-                <html lang="en-US">
-                    <head>
-                        <title>${title}</title>
-                    </head>
-                    <body>
-                        <h1>${title}</h1>
-                        <p style="font-family: Courier,monospace;">${did}</p>
-                        <textarea style="width: 100%; height: 100%" readOnly>
-                            ${contents}
-                        </textarea>
-                    </body>
-                </html>
-            `);
-            newTab.document.close();
-        } else {
-            setError("Unable to open new tab.");
-        }
+        const jsonEncoded = encodeURIComponent(contents);
+        const titleEncoded = encodeURIComponent(title);
+        const didEncoded = encodeURIComponent(did);
+        const viewerUrl = `chrome-extension://${chrome.runtime.id}/viewer.html?title=${titleEncoded}&did=${didEncoded}&json=${jsonEncoded}`;
+        window.open(viewerUrl, "_blank");
     }
 
     const value: PopupContextValue = {
