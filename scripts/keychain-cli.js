@@ -2,22 +2,11 @@ import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-import GatekeeperClient from '@mdip/gatekeeper/client';
-import Keymaster from '@mdip/keymaster';
 import KeymasterClient from '@mdip/keymaster/client';
-import WalletJson from '@mdip/keymaster/wallet/json';
-import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
-import WalletCache from '@mdip/keymaster/wallet/cache';
-import CipherNode from '@mdip/cipher/node';
 
 dotenv.config();
 
-const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
-const keymasterURL = process.env.KC_KEYMASTER_URL;
 let keymaster;
-
-const keymasterPassphrase = process.env.KC_ENCRYPTED_PASSPHRASE;
-const walletCache = process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
@@ -100,6 +89,35 @@ program
     });
 
 program
+    .command('backup-wallet-file <file>')
+    .description('Backup wallet to file')
+    .action(async (file) => {
+        try {
+            const wallet = await keymaster.loadWallet();
+            fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
+            console.log(UPDATE_OK);
+        }
+        catch (error) {
+            console.error(error.message || error);
+        }
+    });
+
+program
+    .command('restore-wallet-file <file>')
+    .description('Restore wallet from backup file')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file).toString();
+            const wallet = JSON.parse(contents);
+            const ok = await keymaster.saveWallet(wallet, true);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.message || error);
+        }
+    });
+
+program
     .command('show-mnemonic')
     .description('Show recovery phrase for wallet')
     .action(async () => {
@@ -113,7 +131,7 @@ program
     });
 
 program
-    .command('backup-wallet')
+    .command('backup-wallet-did')
     .description('Backup wallet to encrypted DID and seed bank')
     .action(async () => {
         try {
@@ -126,7 +144,7 @@ program
     });
 
 program
-    .command('recover-wallet [did]')
+    .command('recover-wallet-did [did]')
     .description('Recover wallet from seed bank or encrypted DID')
     .action(async (did) => {
         try {
@@ -970,45 +988,15 @@ program
     .description('Encrypt wallet')
     .action(async () => {
         try {
-            if (!keymasterPassphrase) {
+            if (!process.env.KC_ENCRYPTED_PASSPHRASE) {
                 console.error('KC_ENCRYPTED_PASSPHRASE not set');
                 return;
             }
 
-            const wallet_json = new WalletJson();
-            let wallet = wallet_json.loadWallet();
+            const wallet = await keymaster.loadWallet();
+            const ok = await keymaster.saveWallet(wallet, true);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
 
-            if (wallet && (wallet.salt && wallet.iv && wallet.data)) {
-                console.error('Wallet already encrypted');
-                return;
-            }
-
-            if (wallet === null) {
-                const gatekeeper = new GatekeeperClient();
-                const cipher = new CipherNode();
-                const keymaster = new Keymaster({
-                    gatekeeper,
-                    wallet: wallet_json,
-                    cipher,
-                });
-                await keymaster.newWallet();
-                wallet = wallet_json.loadWallet();
-
-                if (wallet === null) {
-                    console.error('Failed to create new wallet');
-                    return;
-                }
-            }
-
-            const wallet_enc = new WalletEncrypted(wallet_json, keymasterPassphrase);
-            const ok = wallet_enc.saveWallet(wallet, true);
-
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
         } catch (error) {
             console.error(error.message || error);
         }
@@ -1052,44 +1040,17 @@ program
         }
     });
 
-function getDBWallet() {
-    let wallet = new WalletJson();
-
-    if (keymasterPassphrase) {
-        wallet = new WalletEncrypted(wallet, keymasterPassphrase);
-    }
-
-    if (walletCache) {
-        wallet = new WalletCache(wallet);
-    }
-
-    return wallet;
-}
-
 async function run() {
-    if (keymasterURL) {
-        keymaster = new KeymasterClient();
-        await keymaster.connect({
-            url: keymasterURL,
-            waitUntilReady: true,
-            intervalSeconds: 1,
-            chatty: false,
-            becomeChattyAfter: 5
-        });
-    }
-    else {
-        const gatekeeper = new GatekeeperClient();
-        await gatekeeper.connect({
-            url: gatekeeperURL,
-            waitUntilReady: false
-        });
-        const cipher = new CipherNode();
-        keymaster = new Keymaster({
-            gatekeeper,
-            wallet: getDBWallet(),
-            cipher,
-        });
-    }
+    const keymasterURL = process.env.KC_KEYMASTER_URL || 'http://localhost:4226';
+
+    keymaster = new KeymasterClient();
+    await keymaster.connect({
+        url: keymasterURL,
+        waitUntilReady: true,
+        intervalSeconds: 1,
+        chatty: false,
+        becomeChattyAfter: 5
+    });
     program.parse(process.argv);
 }
 

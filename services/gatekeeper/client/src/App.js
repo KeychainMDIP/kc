@@ -7,7 +7,7 @@ import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
-import WalletCacheAsync from '@mdip/keymaster/wallet/cache-async';
+import WalletCache from '@mdip/keymaster/wallet/cache';
 import KeymasterUI from './KeymasterUI.js';
 import PassphraseModal from './PassphraseModal.js';
 import './App.css';
@@ -57,7 +57,7 @@ function App() {
     async function handlePassphraseSubmit(passphrase) {
         const wallet_web = new WalletWeb();
         const wallet_enc = new WalletWebEncrypted(wallet_web, passphrase);
-        const wallet_cache = new WalletCacheAsync(wallet_enc);
+        const wallet_cache = new WalletCache(wallet_enc);
 
         if (modalAction === 'encrypt') {
             const walletData = await wallet_web.loadWallet();

@@ -63,6 +63,14 @@ export default class Keymaster {
             wallet = await this.newWallet();
         }
 
+        if (wallet.salt) {
+            throw new KeymasterError("Wallet is encrypted");
+        }
+
+        if (!wallet.seed) {
+            throw new KeymasterError("Wallet is corrupted");
+        }
+
         return wallet;
     }
 

@@ -8,8 +8,10 @@
     "./client": "./src/keymaster-sdk.js",
     "./wallet/json": "./src/db/json.js",
     "./wallet/json-enc": "./src/db/json-enc.js",
+    "./wallet/redis": "./src/db/redis.js",
+    "./wallet/mongo": "./src/db/mongo.js",
+    "./wallet/sqlite": "./src/db/sqlite.js",
     "./wallet/cache": "./src/db/cache.js",
-    "./wallet/cache-async": "./src/db/cache-async.js",
     "./wallet/web": "./src/db/web.js",
     "./wallet/web-enc": "./src/db/web-enc.js",
     "./wallet/chrome": "./src/db/chrome.js"
@@ -23,7 +25,11 @@
   "license": "MIT",
   "dependencies": {
     "@mdip/common": "*",
-    "axios": "^1.7.7"
+    "axios": "^1.7.7",
+    "mongodb": "^6.5.0",
+    "ioredis": "^5.4.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "repository": {
     "type": "git",

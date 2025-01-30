@@ -6,7 +6,7 @@ export default class WalletJson {
         this.walletName = `${dataFolder}/${walletFileName}`;
     }
 
-    saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet, overwrite = false) {
         if (fs.existsSync(this.walletName) && !overwrite) {
             return false;
         }
@@ -19,7 +19,7 @@ export default class WalletJson {
         return true;
     }
 
-    loadWallet() {
+    async loadWallet() {
         if (!fs.existsSync(this.walletName)) {
             return null;
         }
