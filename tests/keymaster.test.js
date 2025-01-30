@@ -715,6 +715,21 @@ describe('recoverId', () => {
         expect(wallet.counter === 1);
     });
 
+    it('should not overwrite an id with the same name', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        await keymaster.backupId();
+
+        try {
+            await keymaster.recoverId(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Keymaster: Bob already exists in wallet');
+        }
+    });
+
     it('should not recover an id to a different wallet', async () => {
         mockFs({});
 
