@@ -197,6 +197,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const docs = await keymaster.resolveDID(selectedId);
             setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
+
+            const versions = docs.didDocumentMetadata.version;
+            setDocsVersion(versions);
+            setDocsVersionMax(versions);
+            setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
