@@ -421,8 +421,6 @@ export default class Gatekeeper {
 
             const did = await this.generateDID(anchor);
 
-            // removed a line here
-
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
                 doc = {
