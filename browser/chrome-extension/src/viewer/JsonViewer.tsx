@@ -13,7 +13,7 @@ import {
 import Keymaster from "@mdip/keymaster";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCacheAsync from "@mdip/keymaster/wallet/cache-async";
+import WalletCacheAsync from "@mdip/keymaster/wallet/cache";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import CipherWeb from "@mdip/cipher/web";
 
