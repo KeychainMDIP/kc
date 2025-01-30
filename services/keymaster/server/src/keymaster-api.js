@@ -22,6 +22,8 @@ app.use(express.json());
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const DIDNotFound = { error: 'DID not found' };
+
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, '../../client/build')));
 
@@ -124,7 +126,7 @@ v1router.get('/did/:id', async (req, res) => {
         const docs = await keymaster.resolveDID(req.params.id, req.query);
         res.json({ docs });
     } catch (error) {
-        res.status(404).send({ error: 'DID not found' });
+        res.status(404).send(DIDNotFound);
     }
 });
 
@@ -195,11 +197,15 @@ v1router.post('/ids/:id/backup', async (req, res) => {
 
 v1router.post('/ids/:id/recover', async (req, res) => {
     try {
-        const { did } = req.body;
-        const current = await keymaster.recoverId(did);
+        const current = await keymaster.recoverId(req.params.id);
         res.json({ recovered: current });
     } catch (error) {
-        res.status(400).send({ error: error.toString() });
+        if (error.error === DIDNotFound.error) {
+            res.status(404).send(DIDNotFound);
+        }
+        else {
+            res.status(500).send({ error: error.toString() });
+        }
     }
 });
 
@@ -227,7 +233,7 @@ v1router.get('/names/:name', async (req, res) => {
         const did = await keymaster.getName(req.params.name);
         res.json({ did });
     } catch (error) {
-        res.status(404).send({ error: 'DID not found' });
+        res.status(404).send(DIDNotFound);
     }
 });
 
