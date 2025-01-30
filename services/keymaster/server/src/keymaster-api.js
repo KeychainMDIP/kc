@@ -5,9 +5,13 @@ import { fileURLToPath } from 'url';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster from '@mdip/keymaster';
 import WalletJson from '@mdip/keymaster/wallet/json';
+import WalletRedis from '@mdip/keymaster/wallet/redis';
+import WalletMongo from '@mdip/keymaster/wallet/mongo';
+import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
+import { InvalidParameterError } from '@mdip/common/errors';
 import config from './config.js';
 const app = express();
 const v1router = express.Router();
@@ -751,6 +755,28 @@ async function waitForCurrentId() {
     }
 }
 
+async function initWallet() {
+    let wallet = (config.db === 'redis') ? await WalletRedis.create()
+        : (config.db === 'mongodb') ? await WalletMongo.create()
+            : (config.db === 'sqlite') ? await WalletSQLite.create()
+                : (config.db === 'json') ? new WalletJson()
+                    : null;
+
+    if (!wallet) {
+        throw new InvalidParameterError(`db=${config.db}`);
+    }
+
+    if (config.keymasterPassphrase) {
+        wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
+    }
+
+    if (config.walletCache) {
+        wallet = new WalletCache(wallet);
+    }
+
+    return wallet;
+}
+
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
@@ -763,20 +789,18 @@ app.listen(port, async () => {
         chatty: true,
     });
 
-    let wallet = new WalletJson();
-
-    if (config.keymasterPassphrase) {
-        wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
-    }
-
-    if (config.walletCache) {
-        wallet = new WalletCache(wallet);
-    }
-
+    const wallet = await initWallet();
     const cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
-    console.log(`keymaster server running on port ${port}`);
+    console.log(`Keymaster server running on port ${port}`);
+    console.log(`Keymaster server persisting to ${config.db}`);
 
-    await waitForCurrentId();
+    try {
+        await waitForCurrentId();
+    }
+    catch(error) {
+        console.error('Failed to resolve current ID:', error);
+    }
+
     serverReady = true;
 });

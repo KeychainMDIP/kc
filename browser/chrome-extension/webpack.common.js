@@ -60,7 +60,7 @@ module.exports = {
             "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/src/gatekeeper-client.js"),
             "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/src/db/chrome.js"),
             "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/src/db/web-enc.js"),
-            "@mdip/keymaster/wallet/cache-async": path.resolve(__dirname, "../../packages/keymaster/src/db/cache-async.js"),
+            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/src/db/cache.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster-lib.js"),
         },
         fallback: {

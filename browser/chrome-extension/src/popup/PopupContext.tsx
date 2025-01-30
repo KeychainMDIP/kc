@@ -14,7 +14,7 @@ import Keymaster from "@mdip/keymaster";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCacheAsync from "@mdip/keymaster/wallet/cache-async";
+import WalletCache from '@mdip/keymaster/wallet/cache';
 import { AlertColor } from "@mui/material";
 import PassphraseModal from "./components/PassphraseModal";
 
@@ -281,7 +281,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     async function decryptWallet(passphrase: string, modal: boolean = false) {
         const wallet_chrome = new WalletChrome();
         const wallet_enc = new WalletWebEncrypted(wallet_chrome, passphrase);
-        const wallet_cache = new WalletCacheAsync(wallet_enc);
+        const wallet_cache = new WalletCache(wallet_enc);
 
         if (modal && modalAction === "encrypt") {
             const walletData = await wallet_chrome.loadWallet();
