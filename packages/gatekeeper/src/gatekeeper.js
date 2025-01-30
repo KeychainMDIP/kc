@@ -486,7 +486,6 @@ export default class Gatekeeper {
 
         const anchor = events[0];
         let doc = await this.generateDoc(anchor.operation);
-        doc.didDocument.id = did; // overwrite the canonicalId with the requested DID
 
         if (atTime && new Date(doc.mdip.created) > new Date(atTime)) {
             // TBD What to return if DID was created after specified time?
