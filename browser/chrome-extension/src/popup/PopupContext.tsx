@@ -39,10 +39,14 @@ interface PopupContextValue {
     setSelectedId: Dispatch<SetStateAction<string>>;
     registry: string;
     setRegistry: (value: string) => Promise<void>;
+    messageRegistry: string;
+    setMessageRegistry: (value: string) => Promise<void>;
     registries: string[];
     idList: string[];
     selectedTab: string;
     setSelectedTab: (value: string) => Promise<void>;
+    selectedMessageTab: string;
+    setSelectedMessageTab: (value: string) => Promise<void>;
     authDID: string;
     setAuthDID: (value: string) => Promise<void>;
     callback: string;
@@ -57,6 +61,15 @@ interface PopupContextValue {
     setAliasName: (value: string) => Promise<void>;
     aliasDID: string;
     setAliasDID: (value: string) => Promise<void>;
+    messageDID: string;
+    setMessageDID: (value: string) => Promise<void>;
+    messageRecipient: string;
+    setMessageRecipient: (value: string) => Promise<void>;
+    sendMessageString: string;
+    setSendMessageString: (value: string) => Promise<void>;
+    encryptedDID: string;
+    setEncryptedDID: (value: string) => Promise<void>;
+    agentList: string[];
     setError(error: string): void;
     setWarning(warning: string): void;
     manifest: any;
@@ -66,7 +79,8 @@ interface PopupContextValue {
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
     handleSnackbarClose: () => void;
-    openBrowserTab: (title: string, did: string, contents?: any) => void;
+    openJSONViewer: (title: string, did: string, contents?: any) => void;
+    openBrowserTab: (title: string, did: string, contents: string) => void;
     handleCopyDID: (did: string) => void;
     keymaster: Keymaster | null;
 }
@@ -80,13 +94,20 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [heldDID, setHeldDIDState] = useState("");
     const [idList, setIdList] = useState<string[]>([]);
     const [manifest, setManifest] = useState(null);
-    const [registry, setRegistryState] = useState("hyperswarm");
+    const [registry, setRegistryState] = useState<string>("hyperswarm");
+    const [messageRegistry, setMessageRegistryState] =
+        useState<string>("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
     const [challenge, setChallengeState] = useState("");
     const [selectedId, setSelectedId] = useState("");
     const [selectedTab, setSelectedTabState] = useState("identities");
+    const [selectedMessageTab, setSelectedMessageTabState] =
+        useState("receive");
     const [pendingAuth, setPendingAuth] = useState<string | null>(null);
     const [pendingTab, setPendingTab] = useState<string | null>(null);
+    const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(
+        null,
+    );
     const [authDID, setAuthDIDState] = useState("");
     const [callback, setCallbackState] = useState("");
     const [response, setResponseState] = useState("");
@@ -97,6 +118,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [nameList, setNameList] = useState(null);
     const [aliasName, setAliasNameState] = useState("");
     const [aliasDID, setAliasDIDState] = useState("");
+    const [messageDID, setMessageDIDState] = useState<string>("");
+    const [messageRecipient, setMessageRecipientState] = useState<string>("");
+    const [agentList, setAgentList] = useState<string[]>([]);
+    const [sendMessageString, setSendMessageStringState] = useState<string>("");
+    const [encryptedDID, setEncryptedDIDState] = useState<string>("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -137,6 +163,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await storeState("selectedTab", value);
     }
 
+    async function setSelectedMessageTab(value: string) {
+        setSelectedMessageTabState(value);
+        await storeState("selectedMessageTab", value);
+    }
+
     async function setCurrentId(value: string) {
         setCurrentIdState(value);
         await storeState("currentId", value);
@@ -152,6 +183,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await storeState("registry", value);
     }
 
+    async function setMessageRegistry(value: string) {
+        setMessageRegistryState(value);
+        await storeState("messageRegistry", value);
+    }
+
     async function setHeldDID(value: string) {
         setHeldDIDState(value);
         await storeState("heldDID", value);
@@ -165,6 +201,26 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     async function setAliasDID(value: string) {
         setAliasDIDState(value);
         await storeState("aliasDID", value);
+    }
+
+    async function setMessageDID(value: string) {
+        setMessageDIDState(value);
+        await storeState("messageDID", value);
+    }
+
+    async function setMessageRecipient(value: string) {
+        setMessageRecipientState(value);
+        await storeState("messageRecipient", value);
+    }
+
+    async function setSendMessageString(value: string) {
+        setSendMessageStringState(value);
+        await storeState("sendMessageString", value);
+    }
+
+    async function setEncryptedDID(value: string) {
+        setEncryptedDIDState(value);
+        await storeState("encryptedDID", value);
     }
 
     useEffect(() => {
@@ -199,8 +255,14 @@ export function PopupProvider({ children }: { children: ReactNode }) {
                 setPendingTab(null);
             })();
         }
+        if (pendingMessageTab) {
+            (async () => {
+                await setSelectedMessageTab(pendingMessageTab);
+                setPendingMessageTab(null);
+            })();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentId, pendingAuth, pendingTab]);
+    }, [currentId, pendingAuth, pendingTab, pendingMessageTab]);
 
     const setError = (error: string) => {
         setSnackbar({
@@ -344,21 +406,42 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         const nameList = await keymaster.listNames();
+        const names = Object.keys(nameList);
 
         setNameList(nameList);
         await setAliasName("");
         await setAliasDID("");
+
+        const agents = await keymaster.listIds();
+        for (const name of names) {
+            try {
+                const isAgent = await keymaster.testAgent(name);
+                if (isAgent) {
+                    agents.push(name);
+                }
+            } catch {}
+        }
+
+        setAgentList(agents);
     }
 
     const deleteValues = [
         "selectedTab",
         "currentId",
         "registry",
+        "messageRegistry",
         "heldDID",
         "authDID",
         "callback",
         "response",
         "disableSendResponse",
+        "aliasName",
+        "aliasDID",
+        "selectedMessageTab",
+        "messageDID",
+        "messageRecipient",
+        "sendMessageString",
+        "encryptedDID",
     ];
 
     async function forceRefreshAll() {
@@ -397,27 +480,34 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             return false;
         }
 
-        // If ID not in wallet assume new wallet created externally
         if (extensionState.currentId) {
+            // If ID not in wallet assume new wallet created externally
             const wallet = await keymaster.loadWallet();
             if (!Object.keys(wallet.ids).includes(extensionState.currentId)) {
                 await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
                 return false;
             }
+
+            await refreshNames();
         }
 
         setPendingTab(extensionState.selectedTab);
+        setPendingMessageTab(extensionState.selectedMessageTab);
 
         if (extensionState.challenge) {
-            await setChallenge(extensionState.challenge);
+            setChallengeState(extensionState.challenge);
         }
 
         if (extensionState.registry) {
-            await setRegistry(extensionState.registry);
+            setRegistryState(extensionState.registry);
+        }
+
+        if (extensionState.messageRegistry) {
+            setMessageRegistryState(extensionState.messageRegistry);
         }
 
         if (extensionState.heldDID) {
-            await setHeldDID(extensionState.heldDID);
+            setHeldDIDState(extensionState.heldDID);
         }
 
         if (extensionState.authDID) {
@@ -444,11 +534,27 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         if (extensionState.aliasName) {
-            await setAliasName(extensionState.aliasName);
+            setAliasNameState(extensionState.aliasName);
         }
 
         if (extensionState.aliasDID) {
-            await setAliasDID(extensionState.aliasDID);
+            setAliasDIDState(extensionState.aliasDID);
+        }
+
+        if (extensionState.messageDID) {
+            setMessageDIDState(extensionState.messageDID);
+        }
+
+        if (extensionState.messageRecipient) {
+            setMessageRecipientState(extensionState.messageRecipient);
+        }
+
+        if (extensionState.sendMessageString) {
+            setSendMessageStringState(extensionState.sendMessageString);
+        }
+
+        if (extensionState.encryptedDID) {
+            setEncryptedDIDState(extensionState.encryptedDID);
         }
 
         const ids = await keymaster.listIds();
@@ -495,6 +601,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await setHeldDID("");
         await setAliasName("");
         await setAliasDID("");
+        await setEncryptedDID("");
     }
 
     async function refreshAll() {
@@ -535,7 +642,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    function openBrowserTab(title: string, did: string, contents?: any) {
+    function openJSONViewer(title: string, did: string, contents?: any) {
         const titleEncoded = encodeURIComponent(title);
         const didEncoded = encodeURIComponent(did);
         let viewerUrl = `chrome-extension://${chrome.runtime.id}/viewer.html?title=${titleEncoded}&did=${didEncoded}`;
@@ -547,6 +654,29 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         }
 
         window.open(viewerUrl, "_blank");
+    }
+
+    function openBrowserTab(title: string, did: string, contents: string) {
+        const newTab = window.open("", "_blank");
+        if (newTab) {
+            newTab.document.write(`
+                <html lang="en-US">
+                    <head>
+                        <title>${title}</title>
+                    </head>
+                    <body>
+                        <h1>${title}</h1>
+                        <p style="font-family: Courier,monospace;">${did}</p>
+                        <textarea style="width: 100%; height: 100%" readOnly>
+                            ${contents}
+                        </textarea>
+                    </body>
+                </html>
+            `);
+            newTab.document.close();
+        } else {
+            setError("Unable to open new tab.");
+        }
     }
 
     function handleCopyDID(did: string) {
@@ -567,11 +697,15 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setSelectedId,
         registry,
         setRegistry,
+        messageRegistry,
+        setMessageRegistry,
         registries,
         idList,
         manifest,
         selectedTab,
         setSelectedTab,
+        selectedMessageTab,
+        setSelectedMessageTab,
         authDID,
         setAuthDID,
         callback,
@@ -586,6 +720,15 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setAliasName,
         aliasDID,
         setAliasDID,
+        messageDID,
+        setMessageDID,
+        messageRecipient,
+        setMessageRecipient,
+        sendMessageString,
+        setSendMessageString,
+        encryptedDID,
+        setEncryptedDID,
+        agentList,
         setError,
         setWarning,
         resolveDID,
@@ -594,6 +737,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         refreshHeld,
         refreshNames,
         handleSnackbarClose,
+        openJSONViewer,
         openBrowserTab,
         handleCopyDID,
         keymaster: keymasterRef.current,

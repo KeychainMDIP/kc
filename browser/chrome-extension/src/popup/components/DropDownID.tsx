@@ -14,11 +14,10 @@ const DropDownID = () => {
     const {
         currentDID,
         currentId,
-        forceRefreshAll,
         handleCopyDID,
         idList,
         keymaster,
-        openBrowserTab,
+        openJSONViewer,
         setError,
         setSelectedId,
     } = usePopupContext();
@@ -32,7 +31,6 @@ const DropDownID = () => {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
-            await forceRefreshAll();
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -72,7 +70,7 @@ const DropDownID = () => {
                         <Tooltip title="Resolve DID">
                             <IconButton
                                 onClick={() =>
-                                    openBrowserTab(currentId, currentDID)
+                                    openJSONViewer(currentId, currentDID)
                                 }
                                 size="small"
                                 sx={{

@@ -11,13 +11,21 @@ import {
     MenuItem,
 } from "@mui/material";
 import { TabContext } from "@mui/lab";
-import { Badge, Key, List, PermIdentity, MoreVert } from "@mui/icons-material";
+import {
+    Badge,
+    Key,
+    List,
+    PermIdentity,
+    MoreVert,
+    Message,
+} from "@mui/icons-material";
 import { usePopupContext } from "./PopupContext";
 import IdentitiesTab from "./components/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";
 import DIDsTab from "./components/DIDsTab";
+import MessageTab from "./components/MessageTab";
 
 const PopupContent = () => {
     const {
@@ -89,12 +97,39 @@ const PopupContent = () => {
                         onChange={handleChange}
                         className="tabs"
                     >
-                        <Tab icon={<PermIdentity />} value="identities" />
-                        {currentId && <Tab icon={<List />} value="dids" />}
+                        <Tab
+                            sx={{ minWidth: "70px", px: 0 }}
+                            icon={<PermIdentity />}
+                            value="identities"
+                        />
                         {currentId && (
-                            <Tab icon={<Badge />} value="credentials" />
+                            <Tab
+                                sx={{ minWidth: "70px", px: 0 }}
+                                icon={<List />}
+                                value="dids"
+                            />
                         )}
-                        {currentId && <Tab icon={<Key />} value="auth" />}
+                        {currentId && (
+                            <Tab
+                                sx={{ minWidth: "70px", px: 0 }}
+                                icon={<Badge />}
+                                value="credentials"
+                            />
+                        )}
+                        {currentId && (
+                            <Tab
+                                sx={{ minWidth: "70px", px: 0 }}
+                                icon={<Key />}
+                                value="auth"
+                            />
+                        )}
+                        {currentId && (
+                            <Tab
+                                sx={{ minWidth: "70px", px: 0 }}
+                                icon={<Message />}
+                                value="messages"
+                            />
+                        )}
                     </Tabs>
 
                     <IconButton onClick={handleMenuOpen}>
@@ -131,7 +166,7 @@ const PopupContent = () => {
                     {currentId && (
                         <>
                             <PanelHeader
-                                title="DIDs"
+                                title="DID List"
                                 tabValue="dids"
                                 childComponent={<DIDsTab />}
                             />
@@ -146,6 +181,12 @@ const PopupContent = () => {
                                 title="Auth"
                                 tabValue="auth"
                                 childComponent={<AuthTab />}
+                            />
+
+                            <PanelHeader
+                                title="Messages"
+                                tabValue="messages"
+                                childComponent={<MessageTab />}
                             />
                         </>
                     )}

@@ -8,7 +8,7 @@ function CredentialsTab() {
         heldDID,
         heldList,
         manifest,
-        openBrowserTab,
+        openJSONViewer,
         resolveDID,
         refreshHeld,
         setHeldDID,
@@ -37,7 +37,7 @@ function CredentialsTab() {
     async function decryptCredential(prefix: string, did: string) {
         try {
             const doc = await keymaster.getCredential(did);
-            openBrowserTab(prefix + " Credential", did, doc);
+            openJSONViewer(prefix + " Credential", did, doc);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -158,7 +158,7 @@ function CredentialsTab() {
                     variant="contained"
                     color="primary"
                     onClick={() =>
-                        openBrowserTab("Resolved Credential", heldDID)
+                        openJSONViewer("Resolved Credential", heldDID)
                     }
                     className="button large bottom"
                     disabled={!heldDID}
@@ -207,7 +207,7 @@ function CredentialsTab() {
                                 variant="outlined"
                                 className="button large top"
                                 onClick={() =>
-                                    openBrowserTab("Resolved Credential", did)
+                                    openJSONViewer("Resolved Credential", did)
                                 }
                             >
                                 Resolve

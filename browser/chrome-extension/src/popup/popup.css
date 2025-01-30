@@ -170,15 +170,17 @@ body {
     padding: 0 8px;
 }
 
-.drop-down-id-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
 .drop-down-id-button {
     max-width: 150px;
     min-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drop-down-message-button {
+    height: 40px;
+    width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
