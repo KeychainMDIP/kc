@@ -1,16 +1,7 @@
 import React, { useState } from "react";
 import { usePopupContext } from "../PopupContext";
-import {
-    Box,
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
-    TextField,
-    Typography,
-} from "@mui/material";
+import { Box, Button, TextField, Typography } from "@mui/material";
+import WarningModal from "./WarningModal";
 
 function CredentialsTab() {
     const {
@@ -43,21 +34,10 @@ function CredentialsTab() {
         }
     }
 
-    async function resolveCredential(did: string) {
-        try {
-            const doc = await keymaster.resolveDID(did);
-            const contents = JSON.stringify(doc, null, 4);
-            openBrowserTab("Resolved Credential", did, contents);
-        } catch (error) {
-            setError(error.error || error.message || String(error));
-        }
-    }
-
     async function decryptCredential(prefix: string, did: string) {
         try {
             const doc = await keymaster.getCredential(did);
-            const contents = JSON.stringify(doc, null, 4);
-            openBrowserTab(prefix + " Credential", did, contents);
+            openBrowserTab(prefix + " Credential", did, doc);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -155,39 +135,12 @@ function CredentialsTab() {
 
     return (
         <Box>
-            <Dialog
-                open={open}
+            <WarningModal
+                title="Remove Credential"
+                isOpen={open}
                 onClose={handleRemoveClose}
-                disableEnforceFocus
-                disableAutoFocus
-                disableScrollLock
-            >
-                <DialogTitle id="confirm-dialog-title">
-                    {"Remove DID?"}
-                </DialogTitle>
-                <DialogContent>
-                    <DialogContentText id="confirm-dialog-description">
-                        Are you sure?
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={handleRemoveClose}
-                        color="primary"
-                        disabled={loading}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleRemoveConfirm}
-                        color="primary"
-                        disabled={loading}
-                        autoFocus
-                    >
-                        Confirm
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                onSubmit={handleRemoveConfirm}
+            />
 
             <Box className="flex-box mt-2">
                 <TextField
@@ -204,7 +157,9 @@ function CredentialsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => resolveCredential(heldDID)}
+                    onClick={() =>
+                        openBrowserTab("Resolved Credential", heldDID)
+                    }
                     className="button large bottom"
                     disabled={!heldDID}
                 >
@@ -251,7 +206,9 @@ function CredentialsTab() {
                             <Button
                                 variant="outlined"
                                 className="button large top"
-                                onClick={() => resolveCredential(did)}
+                                onClick={() =>
+                                    openBrowserTab("Resolved Credential", did)
+                                }
                             >
                                 Resolve
                             </Button>

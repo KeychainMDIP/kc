@@ -1,6 +1,13 @@
 import React, { useState } from "react";
-import { Box, Button, IconButton, Menu, MenuItem } from "@mui/material";
-import { ArrowDropDown, ContentCopy } from "@mui/icons-material";
+import {
+    Box,
+    Button,
+    IconButton,
+    Menu,
+    MenuItem,
+    Tooltip,
+} from "@mui/material";
+import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
 import { usePopupContext } from "../PopupContext";
 
 const DropDownID = () => {
@@ -8,8 +15,10 @@ const DropDownID = () => {
         currentDID,
         currentId,
         forceRefreshAll,
+        handleCopyDID,
         idList,
         keymaster,
+        openBrowserTab,
         setError,
         setSelectedId,
     } = usePopupContext();
@@ -18,12 +27,6 @@ const DropDownID = () => {
 
     const truncatedId =
         currentId?.length > 10 ? currentId.slice(0, 10) + "..." : currentId;
-
-    const handleCopyDID = () => {
-        navigator.clipboard.writeText(currentDID).catch((err) => {
-            setError(err.message || String(err));
-        });
-    };
 
     async function selectId(id: string) {
         try {
@@ -52,11 +55,34 @@ const DropDownID = () => {
 
     return (
         currentId && (
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box display="flex" alignItems="center" gap={0}>
                 {currentDID && (
-                    <IconButton onClick={handleCopyDID} size="small">
-                        <ContentCopy fontSize="small" />
-                    </IconButton>
+                    <>
+                        <Tooltip title="Copy DID">
+                            <IconButton
+                                onClick={() => handleCopyDID(currentDID)}
+                                size="small"
+                                sx={{
+                                    px: 0.5,
+                                }}
+                            >
+                                <ContentCopy fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Resolve DID">
+                            <IconButton
+                                onClick={() =>
+                                    openBrowserTab(currentId, currentDID)
+                                }
+                                size="small"
+                                sx={{
+                                    px: 0.5,
+                                }}
+                            >
+                                <ManageSearch fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </>
                 )}
 
                 {multipleIds ? (

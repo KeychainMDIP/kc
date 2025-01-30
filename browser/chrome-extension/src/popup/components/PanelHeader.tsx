@@ -15,7 +15,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({
     childComponent,
 }) => {
     return (
-        <TabPanel value={tabValue} className="tab-panel" sx={{ p: 0 }}>
+        <TabPanel value={tabValue} className="tab-panel" sx={{ p: 0, mt: 0.5 }}>
             <Box className="panel-header-box">
                 <Typography variant="h5" component="h5" className="tab-heading">
                     {title}
