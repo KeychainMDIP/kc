@@ -195,11 +195,15 @@ v1router.post('/ids/:id/backup', async (req, res) => {
 
 v1router.post('/ids/:id/recover', async (req, res) => {
     try {
-        const { did } = req.body;
-        const current = await keymaster.recoverId(did);
+        const current = await keymaster.recoverId(req.params.id);
         res.json({ recovered: current });
     } catch (error) {
-        res.status(400).send({ error: error.toString() });
+        if (error.error === 'DID not found') {
+            res.status(404).send({ error: 'DID not found' });
+        }
+        else {
+            res.status(500).send({ error: error.toString() });
+        }
     }
 });
 

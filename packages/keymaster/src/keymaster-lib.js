@@ -903,7 +903,10 @@ export default class Keymaster {
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
             const data = JSON.parse(backup);
 
-            // TBD handle the case where name already exists in wallet
+            if (wallet.ids[data.name]) {
+                throw new KeymasterError(`${data.name} already exists in wallet`);
+            }
+
             wallet.ids[data.name] = data.id;
             wallet.current = data.name;
             wallet.counter += 1;
@@ -912,8 +915,13 @@ export default class Keymaster {
 
             return wallet.current;
         }
-        catch {
-            throw new InvalidDIDError();
+        catch (error) {
+            if (error.type === 'Keymaster') {
+                throw error;
+            }
+            else {
+                throw new InvalidDIDError();
+            }
         }
     }
 
