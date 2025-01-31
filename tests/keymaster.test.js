@@ -9,7 +9,7 @@ import DbJson from '@mdip/gatekeeper/db/json';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
-import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
+import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
@@ -610,6 +610,56 @@ describe('removeId', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+});
+
+describe('renameId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should rename an existing ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        const name2 = 'Alice';
+        const did = await keymaster.createId(name1);
+        const ok = await keymaster.renameId(name1, name2);
+
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet.ids[name2].did).toBe(did);
+        expect(wallet.current).toBe(name2);
+    });
+
+    it('should throw to rename from an non-existent ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        const name2 = 'Alice';
+
+        try {
+            await keymaster.renameId(name1, name2);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+
+    it('should throw to rename to an already existing ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        await keymaster.createId(name1);
+
+        try {
+            await keymaster.renameId(name1, name1);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.type).toBe(InvalidParameterError.type);
         }
     });
 });

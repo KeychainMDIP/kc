@@ -258,6 +258,16 @@ export default class KeymasterClient {
         }
     }
 
+    async renameId(id, name) {
+        try {
+            const response = await axios.post(`${this.API}/ids/${id}/rename`, { name });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async backupId(id) {
         try {
             const response = await axios.post(`${this.API}/ids/${id}/backup`);

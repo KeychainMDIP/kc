@@ -207,6 +207,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function renameId() {
+        try {
+            const input = window.prompt("Please enter new name:");
+
+            if (input) {
+                const name = input.trim();
+
+                if (name.length > 0) {
+                    await keymaster.renameId(selectedId, name);
+                    refreshAll();
+                }
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function removeId() {
         try {
             if (window.confirm(`Are you sure you want to remove ${selectedId}?`)) {
@@ -1018,13 +1035,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     </Button>
                                 </Grid>
                                 <Grid item>
+                                    <Button variant="contained" color="primary" onClick={renameId}>
+                                        Rename...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
                                     <Button variant="contained" color="primary" onClick={removeId}>
                                         Remove...
                                     </Button>
                                 </Grid>
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={backupId}>
-                                        Backup
+                                        Backup...
                                     </Button>
                                 </Grid>
                                 <Grid item>
