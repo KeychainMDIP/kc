@@ -24,6 +24,7 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
 
     async function clearFields() {
         await setMessageDID("");
+        await setReceiveMessage("");
     }
 
     return (
