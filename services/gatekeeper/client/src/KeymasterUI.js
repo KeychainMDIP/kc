@@ -69,7 +69,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [messagesTab, setMessagesTab] = useState('');
     const [messageDID, setMessageDID] = useState('');
     const [messageString, setMessageString] = useState('');
-    const [sendMessageString, setSendMessageString] = useState('');
+    const [sendMessage, setSendMessage] = useState('');
     const [messageRecipient, setMessageRecipient] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
 
@@ -140,7 +140,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedHeld('');
             setSelectedIssued('');
             setMessageString('');
-            setSendMessageString('');
+            setSendMessage('');
             setMessageRecipient('');
             setMessageDID('');
             setEncryptedDID('');
@@ -776,7 +776,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function encryptMessage() {
         try {
-            const did = await keymaster.encryptMessage(sendMessageString, messageRecipient, { registry });
+            const did = await keymaster.encryptMessage(sendMessage, messageRecipient, { registry });
             setEncryptedDID(did);
         } catch (error) {
             showError(error);
@@ -1726,14 +1726,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
                                                     <textarea
-                                                        value={sendMessageString}
-                                                        onChange={(e) => setSendMessageString(e.target.value)}
+                                                        value={sendMessage}
+                                                        onChange={(e) => setSendMessage(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                                     />
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessageString}>
+                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage}>
                                                             Encrypt Message
                                                         </Button>
                                                     </Grid>
