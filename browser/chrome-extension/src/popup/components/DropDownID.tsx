@@ -32,6 +32,10 @@ const DropDownID = () => {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
+            await chrome.runtime.sendMessage({
+                action: "CLEAR_STATE",
+                key: "currentId"
+            });
             refreshAll();
         } catch (error) {
             setError(error.error || error.message || String(error));

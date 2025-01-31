@@ -539,6 +539,13 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             setSelectedId(extensionState.currentId);
             await refreshCurrentDID();
             await refreshHeld();
+        } else {
+            const cid = await keymaster.getCurrentId();
+            if (cid) {
+                await setCurrentId(cid);
+                setSelectedId(cid);
+                await refreshCurrentDID();
+            }
         }
 
         if (extensionState.aliasName) {
