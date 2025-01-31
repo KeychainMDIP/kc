@@ -35,8 +35,8 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
         setAnchorEl(null);
     };
 
-    const handleSelectRecipient = (name) => {
-        setMessageRecipient(name);
+    const handleSelectRecipient = async (name: string) => {
+        await setMessageRecipient(name);
         handleCloseMenu();
     };
 
