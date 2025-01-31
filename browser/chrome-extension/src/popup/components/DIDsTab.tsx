@@ -16,7 +16,7 @@ function DIDsTab() {
         aliasName,
         aliasDID,
         nameList,
-        openBrowserTab,
+        openJSONViewer,
         setAliasDID,
         setAliasName,
         refreshNames,
@@ -103,7 +103,7 @@ function DIDsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => openBrowserTab(aliasName, aliasDID)}
+                    onClick={() => openJSONViewer(aliasName, aliasDID)}
                     className="button large bottom"
                     disabled={!aliasDID}
                 >
@@ -167,7 +167,7 @@ function DIDsTab() {
                                     <Tooltip title="Resolve DID">
                                         <IconButton
                                             onClick={() =>
-                                                openBrowserTab(name, did)
+                                                openJSONViewer(name, did)
                                             }
                                             size="small"
                                         >

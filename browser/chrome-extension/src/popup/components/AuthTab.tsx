@@ -8,7 +8,7 @@ function AuthTab() {
         authDID,
         challenge,
         keymaster,
-        openBrowserTab,
+        openJSONViewer,
         setChallenge,
         setAuthDID,
         setError,
@@ -35,7 +35,7 @@ function AuthTab() {
         try {
             const asset = await keymaster.resolveAsset(did);
             await setAuthDID(did);
-            openBrowserTab("Resolve Challenge", did, asset);
+            openJSONViewer("Resolve Challenge", did, asset);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -70,7 +70,7 @@ function AuthTab() {
         try {
             const decrypted = await keymaster.decryptJSON(did);
             await setAuthDID(did);
-            openBrowserTab("Decrypt Response", did, decrypted);
+            openJSONViewer("Decrypt Response", did, decrypted);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

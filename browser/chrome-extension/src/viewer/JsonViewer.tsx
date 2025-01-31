@@ -13,7 +13,7 @@ import {
 import Keymaster from "@mdip/keymaster";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCacheAsync from "@mdip/keymaster/wallet/cache-async";
+import WalletCache from "@mdip/keymaster/wallet/cache";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import CipherWeb from "@mdip/cipher/web";
 
@@ -50,7 +50,7 @@ function JsonViewer() {
 
             const wallet_chrome = new WalletChrome();
             const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
-            const wallet_cache = new WalletCacheAsync(wallet_enc);
+            const wallet_cache = new WalletCache(wallet_enc);
 
             try {
                 await wallet_cache.loadWallet();
