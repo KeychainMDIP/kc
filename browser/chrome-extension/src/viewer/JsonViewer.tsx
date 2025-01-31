@@ -50,7 +50,7 @@ function JsonViewer() {
 
             const wallet_chrome = new WalletChrome();
             const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
-            const wallet_cache = new WalletCacheAsync(wallet_enc);
+            const wallet_cache = new WalletCache(wallet_enc);
 
             try {
                 await wallet_cache.loadWallet();
