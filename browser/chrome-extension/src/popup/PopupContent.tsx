@@ -30,8 +30,6 @@ import MessageTab from "./components/MessageTab";
 const PopupContent = () => {
     const {
         currentId,
-        handleSnackbarClose,
-        snackbar,
         selectedTab,
         setSelectedTab,
         refreshAll,
@@ -61,31 +59,16 @@ const PopupContent = () => {
 
     function handleWalletClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "wallet.html" });
+        chrome.tabs.create({ url: "browser.html?tab=wallet" });
     }
 
-    function handleOptionsClick() {
+    function handleSettingsClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "options.html" });
+        chrome.tabs.create({ url: "browser.html?tab=settings" });
     }
 
     return (
         <Box>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-
             <TabContext value={selectedTab}>
                 <Box
                     display="flex"
@@ -150,8 +133,8 @@ const PopupContent = () => {
                         }}
                     >
                         <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
-                        <MenuItem onClick={handleOptionsClick}>
-                            Options
+                        <MenuItem onClick={handleSettingsClick}>
+                            Settings
                         </MenuItem>
                     </Menu>
                 </Box>

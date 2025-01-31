@@ -15,7 +15,7 @@ import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
-import { AlertColor } from "@mui/material";
+import { Alert, AlertColor, Snackbar } from "@mui/material";
 import PassphraseModal from "./components/PassphraseModal";
 
 const gatekeeper = new GatekeeperClient();
@@ -55,7 +55,6 @@ interface PopupContextValue {
     setResponse: (value: string) => Promise<void>;
     disableSendResponse: boolean;
     setDisableSendResponse: (value: boolean) => Promise<void>;
-    snackbar: SnackbarState;
     nameList: any;
     aliasName: string;
     setAliasName: (value: string) => Promise<void>;
@@ -80,7 +79,6 @@ interface PopupContextValue {
     forceRefreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
-    handleSnackbarClose: () => void;
     openJSONViewer: (title: string, did: string, contents?: any) => void;
     handleCopyDID: (did: string) => void;
     keymaster: Keymaster | null;
@@ -710,7 +708,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setResponse,
         disableSendResponse,
         setDisableSendResponse,
-        snackbar,
         nameList,
         aliasName,
         setAliasName,
@@ -734,7 +731,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         forceRefreshAll,
         refreshHeld,
         refreshNames,
-        handleSnackbarClose,
         openJSONViewer,
         handleCopyDID,
         keymaster: keymasterRef.current,
@@ -753,6 +749,21 @@ export function PopupProvider({ children }: { children: ReactNode }) {
                 onSubmit={handlePassphraseSubmit}
                 encrypt={modalAction === "encrypt"}
             />
+
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={5000}
+                onClose={handleSnackbarClose}
+                anchorOrigin={{ vertical: "top", horizontal: "center" }}
+            >
+                <Alert
+                    onClose={handleSnackbarClose}
+                    severity={snackbar.severity}
+                    sx={{ width: "100%" }}
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
 
             {isReady && (
                 <PopupContext.Provider value={value}>

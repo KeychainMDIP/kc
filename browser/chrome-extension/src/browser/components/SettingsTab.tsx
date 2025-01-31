@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 
-const OptionsUI = () => {
+const SettingsTab = () => {
     const [gatekeeperUrl, setGatekeeperUrl] = useState("");
 
     useEffect(() => {
@@ -26,9 +26,9 @@ const OptionsUI = () => {
     };
 
     return (
-        <Box sx={{ p: 2, maxWidth: 400 }}>
+        <Box>
             <Typography variant="h4" gutterBottom>
-                Options
+                Settings
             </Typography>
 
             <TextField
@@ -52,4 +52,4 @@ const OptionsUI = () => {
     );
 };
 
-export default OptionsUI;
+export default SettingsTab;

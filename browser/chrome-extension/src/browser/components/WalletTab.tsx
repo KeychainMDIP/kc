@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import JsonView from "@uiw/react-json-view";
+import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import {
-    Alert,
-    AlertColor,
     Box,
     Button,
     Dialog,
@@ -10,36 +9,20 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
-    Snackbar,
     Typography,
 } from "@mui/material";
-import WalletChrome from "@mdip/keymaster/wallet/chrome";
-import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import Keymaster from "@mdip/keymaster";
-import GatekeeperClient from "@mdip/gatekeeper/client";
-import CipherWeb from "@mdip/cipher/web";
+import { useBrowserContext } from '../BrowserContext';
 
-const gatekeeper = new GatekeeperClient();
-const cipher = new CipherWeb();
-
-interface SnackbarState {
-    open: boolean;
-    message: string;
-    severity: AlertColor;
-}
-
-const WalletUI = () => {
+const WalletTab = () => {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState("");
     const [walletObject, setWalletObject] = useState(null);
-
-    const [snackbar, setSnackbar] = useState<SnackbarState>({
-        open: false,
-        message: "",
-        severity: "warning",
-    });
+    const {
+        setError,
+        keymaster,
+    } = useBrowserContext();
 
     const handleClickOpen = () => {
         if (!loading) {
@@ -51,14 +34,6 @@ const WalletUI = () => {
     const handleClose = () => {
         setOpen(false);
         setPendingWallet(null);
-    };
-
-    const setError = (error: string) => {
-        setSnackbar({
-            open: true,
-            message: error,
-            severity: "error",
-        });
     };
 
     async function wipeStoredValues() {
@@ -98,7 +73,6 @@ const WalletUI = () => {
 
     async function showMnemonic() {
         try {
-            const keymaster = await getKeymaster();
             const response = await keymaster.decryptMnemonic();
             setMnemonicString(response);
         } catch (error) {
@@ -110,39 +84,11 @@ const WalletUI = () => {
         setMnemonicString("");
     }
 
-    async function getKeymaster() {
-        let pass: string;
-        let response = await chrome.runtime.sendMessage({
-            action: "GET_PASSPHRASE",
-        });
-        if (response && response.passphrase) {
-            pass = response.passphrase;
-        } else {
-            setError("Unable to get passphrase.");
-            return;
-        }
-
-        const wallet_chrome = new WalletChrome();
-        const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
-
-        try {
-            await wallet_enc.loadWallet();
-        } catch (e) {
-            setError("Invalid passphrase.");
-            return;
-        }
-
-        return new Keymaster({
-            gatekeeper,
-            wallet: wallet_enc,
-            cipher,
-        });
-    }
-
     async function showWallet() {
         try {
-            const keymaster = await getKeymaster();
+            console.log("call loadwallet");
             const wallet = await keymaster.loadWallet();
+            console.log("called loadwallet");
             setWalletObject(wallet);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -195,27 +141,8 @@ const WalletUI = () => {
         fileInput.click();
     }
 
-    const handleSnackbarClose = () => {
-        setSnackbar((prev) => ({ ...prev, open: false }));
-    };
-
     return (
         <Box>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-
             <Dialog
                 open={open}
                 onClose={handleClose}
@@ -264,16 +191,6 @@ const WalletUI = () => {
                     sx={{ mr: 2 }}
                 >
                     New
-                </Button>
-
-                <Button
-                    className="mini-margin"
-                    variant="contained"
-                    color="primary"
-                    onClick={showWallet}
-                    sx={{ mr: 2 }}
-                >
-                    Show
                 </Button>
 
                 <Button
@@ -342,4 +259,4 @@ const WalletUI = () => {
     );
 };
 
-export default WalletUI;
+export default WalletTab;

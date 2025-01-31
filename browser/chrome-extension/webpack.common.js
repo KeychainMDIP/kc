@@ -7,8 +7,7 @@ const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 module.exports = {
     entry: {
         popup: path.resolve("./src/popup/popup.tsx"),
-        options: path.resolve("./src/options/options.tsx"),
-        wallet: path.resolve("./src/wallet/wallet.tsx"),
+        browser: path.resolve("./src/browser/browser.tsx"),
         background: path.resolve("./src/background/background.ts"),
         contentScript: path.resolve("./src/contentScript/contentScript.ts"),
         offscreen: path.resolve("./src/offscreen/offscreen.ts"),
@@ -51,7 +50,7 @@ module.exports = {
                 }
             ]
         }),
-        ...getHtmlPlugins(["popup", "viewer", "offscreen", "options", "wallet"]),
+        ...getHtmlPlugins(["browser", "popup", "viewer", "offscreen"]),
     ],
     resolve: {
         extensions: [".ts", ".tsx", ".js"],
