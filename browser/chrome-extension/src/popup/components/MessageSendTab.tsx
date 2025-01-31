@@ -12,8 +12,8 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
         setMessageRegistry,
         messageRecipient,
         setMessageRecipient,
-        sendMessageString,
-        setSendMessageString,
+        sendMessage,
+        setSendMessage,
         encryptedDID,
         setEncryptedDID,
         keymaster,
@@ -23,7 +23,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
 
     async function clearFields() {
         await setMessageRecipient("");
-        await setSendMessageString("");
+        await setSendMessage("");
         await setEncryptedDID("");
     }
 
@@ -43,7 +43,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
     async function encryptMessage() {
         try {
             const did = await keymaster.encryptMessage(
-                sendMessageString,
+                sendMessage,
                 messageRecipient,
                 { registry: messageRegistry },
             );
@@ -96,8 +96,14 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                 fullWidth
                 multiline
                 rows={10}
-                value={sendMessageString}
-                onChange={(e) => setSendMessageString(e.target.value)}
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                sx={{
+                    "& .MuiOutlinedInput-root": {
+                        borderBottomLeftRadius: 0,
+                        borderBottomRightRadius: 0,
+                    },
+                }}
             />
 
             <Box className="flex-box">
@@ -106,7 +112,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                     color="primary"
                     className="button large bottom"
                     onClick={encryptMessage}
-                    disabled={!sendMessageString || !messageRecipient}
+                    disabled={!sendMessage || !messageRecipient}
                 >
                     Encrypt
                 </Button>
@@ -141,8 +147,9 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                                 setError(err.message || String(err));
                             });
                     }}
-                    startIcon={<ContentCopy />}
-                />
+                >
+                    <ContentCopy />
+                </Button>
 
                 <Button
                     variant="outlined"
@@ -150,10 +157,11 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                     onClick={clearFields}
                     className="button large bottom"
                     disabled={
-                        !sendMessageString && !encryptedDID && !messageRecipient
+                        !sendMessage && !encryptedDID && !messageRecipient
                     }
-                    startIcon={<Close sx={{ color: "red" }} />}
-                />
+                >
+                    <Close sx={{ color: "red" }} />
+                </Button>
             </Box>
         </TabPanel>
     );

@@ -14,7 +14,7 @@ import Keymaster from "@mdip/keymaster";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCache from '@mdip/keymaster/wallet/cache';
+import WalletCache from "@mdip/keymaster/wallet/cache";
 import { AlertColor } from "@mui/material";
 import PassphraseModal from "./components/PassphraseModal";
 
@@ -65,8 +65,10 @@ interface PopupContextValue {
     setMessageDID: (value: string) => Promise<void>;
     messageRecipient: string;
     setMessageRecipient: (value: string) => Promise<void>;
-    sendMessageString: string;
-    setSendMessageString: (value: string) => Promise<void>;
+    sendMessage: string;
+    setSendMessage: (value: string) => Promise<void>;
+    receiveMessage: string;
+    setReceiveMessage: (value: string) => Promise<void>;
     encryptedDID: string;
     setEncryptedDID: (value: string) => Promise<void>;
     agentList: string[];
@@ -80,7 +82,6 @@ interface PopupContextValue {
     refreshNames: () => Promise<void>;
     handleSnackbarClose: () => void;
     openJSONViewer: (title: string, did: string, contents?: any) => void;
-    openBrowserTab: (title: string, did: string, contents: string) => void;
     handleCopyDID: (did: string) => void;
     keymaster: Keymaster | null;
 }
@@ -121,7 +122,8 @@ export function PopupProvider({ children }: { children: ReactNode }) {
     const [messageDID, setMessageDIDState] = useState<string>("");
     const [messageRecipient, setMessageRecipientState] = useState<string>("");
     const [agentList, setAgentList] = useState<string[]>([]);
-    const [sendMessageString, setSendMessageStringState] = useState<string>("");
+    const [sendMessage, setSendMessageState] = useState<string>("");
+    const [receiveMessage, setReceiveMessageState] = useState<string>("");
     const [encryptedDID, setEncryptedDIDState] = useState<string>("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
@@ -213,9 +215,14 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         await storeState("messageRecipient", value);
     }
 
-    async function setSendMessageString(value: string) {
-        setSendMessageStringState(value);
-        await storeState("sendMessageString", value);
+    async function setSendMessage(value: string) {
+        setSendMessageState(value);
+        await storeState("sendMessage", value);
+    }
+
+    async function setReceiveMessage(value: string) {
+        setReceiveMessageState(value);
+        await storeState("receiveMessage", value);
     }
 
     async function setEncryptedDID(value: string) {
@@ -440,8 +447,9 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         "selectedMessageTab",
         "messageDID",
         "messageRecipient",
-        "sendMessageString",
+        "sendMessage",
         "encryptedDID",
+        "receiveMessage",
     ];
 
     async function forceRefreshAll() {
@@ -549,8 +557,12 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             setMessageRecipientState(extensionState.messageRecipient);
         }
 
-        if (extensionState.sendMessageString) {
-            setSendMessageStringState(extensionState.sendMessageString);
+        if (extensionState.sendMessage) {
+            setSendMessageState(extensionState.sendMessage);
+        }
+
+        if (extensionState.receiveMessage) {
+            setReceiveMessageState(extensionState.receiveMessage);
         }
 
         if (extensionState.encryptedDID) {
@@ -656,29 +668,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         window.open(viewerUrl, "_blank");
     }
 
-    function openBrowserTab(title: string, did: string, contents: string) {
-        const newTab = window.open("", "_blank");
-        if (newTab) {
-            newTab.document.write(`
-                <html lang="en-US">
-                    <head>
-                        <title>${title}</title>
-                    </head>
-                    <body>
-                        <h1>${title}</h1>
-                        <p style="font-family: Courier,monospace;">${did}</p>
-                        <textarea style="width: 100%; height: 100%" readOnly>
-                            ${contents}
-                        </textarea>
-                    </body>
-                </html>
-            `);
-            newTab.document.close();
-        } else {
-            setError("Unable to open new tab.");
-        }
-    }
-
     function handleCopyDID(did: string) {
         navigator.clipboard.writeText(did).catch((err) => {
             setError(err.message || String(err));
@@ -724,8 +713,10 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setMessageDID,
         messageRecipient,
         setMessageRecipient,
-        sendMessageString,
-        setSendMessageString,
+        sendMessage,
+        setSendMessage,
+        receiveMessage,
+        setReceiveMessage,
         encryptedDID,
         setEncryptedDID,
         agentList,
@@ -738,7 +729,6 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         refreshNames,
         handleSnackbarClose,
         openJSONViewer,
-        openBrowserTab,
         handleCopyDID,
         keymaster: keymasterRef.current,
     };

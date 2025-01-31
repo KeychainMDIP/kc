@@ -2,22 +2,21 @@ import React from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, TextField } from "@mui/material";
 import { usePopupContext } from "../PopupContext";
-import { Close } from "@mui/icons-material";
 
 function MessageReceiveTab({ tabValue }: { tabValue: string }) {
     const {
         messageDID,
         setMessageDID,
-        openJSONViewer,
-        openBrowserTab,
         keymaster,
         setError,
+        receiveMessage,
+        setReceiveMessage,
     } = usePopupContext();
 
     async function decryptMessage(did: string) {
         try {
             const message = await keymaster.decryptMessage(did);
-            openBrowserTab("Decrypted Message", messageDID, message);
+            await setReceiveMessage(message);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -48,18 +47,6 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
                 <Button
                     variant="outlined"
                     color="primary"
-                    onClick={() =>
-                        openJSONViewer("Resolve Message", messageDID)
-                    }
-                    className="button large bottom"
-                    disabled={!messageDID}
-                >
-                    Resolve
-                </Button>
-
-                <Button
-                    variant="outlined"
-                    color="primary"
                     onClick={() => decryptMessage(messageDID)}
                     className="button large bottom"
                     disabled={!messageDID}
@@ -73,9 +60,25 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
                     onClick={clearFields}
                     className="button large bottom"
                     disabled={!messageDID}
-                    startIcon={<Close sx={{ color: "red" }} />}
-                />
+                >
+                    Clear
+                </Button>
             </Box>
+
+            <TextField
+                label="Message"
+                variant="outlined"
+                fullWidth
+                multiline
+                rows={10}
+                value={receiveMessage}
+                slotProps={{
+                    input: {
+                        readOnly: true,
+                    },
+                }}
+                sx={{ mt: 2 }}
+            />
         </TabPanel>
     );
 }
