@@ -857,22 +857,39 @@ export default class Keymaster {
 
     async removeId(name) {
         const wallet = await this.loadWallet();
-        let ids = Object.keys(wallet.ids);
 
-        if (ids.includes(name)) {
-            delete wallet.ids[name];
-
-            if (wallet.current === name) {
-                ids = Object.keys(wallet.ids);
-                wallet.current = ids.length > 0 ? ids[0] : '';
-            }
-
-            await this.saveWallet(wallet);
-            return true;
-        }
-        else {
+        if (!(name in wallet.ids)) {
             throw new UnknownIDError();
         }
+
+        delete wallet.ids[name];
+
+        if (wallet.current === name) {
+            wallet.current = Object.keys(wallet.ids)[0] || '';
+        }
+
+        return this.saveWallet(wallet);
+    }
+
+    async renameId(oldName, newName) {
+        const wallet = await this.loadWallet();
+
+        if (!(oldName in wallet.ids)) {
+            throw new UnknownIDError();
+        }
+
+        if (newName in wallet.ids) {
+            throw new InvalidParameterError(`newName ${newName} already exists`);
+        }
+
+        wallet.ids[newName] = wallet.ids[oldName];
+        delete wallet.ids[oldName];
+
+        if (wallet.current && wallet.current === oldName) {
+            wallet.current = newName;
+        }
+
+        return this.saveWallet(wallet);
     }
 
     async backupId(controller = null) {
