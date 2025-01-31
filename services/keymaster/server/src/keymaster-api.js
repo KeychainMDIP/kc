@@ -186,6 +186,16 @@ v1router.delete('/ids/:id', async (req, res) => {
     }
 });
 
+v1router.post('/ids/:id/rename', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const ok = await keymaster.renameId(req.params.id, name);
+        res.json({ ok });
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
 v1router.post('/ids/:id/backup', async (req, res) => {
     try {
         const ok = await keymaster.backupId(req.params.id);

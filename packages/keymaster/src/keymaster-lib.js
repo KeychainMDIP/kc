@@ -871,22 +871,22 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async renameId(oldName, newName) {
+    async renameId(id, name) {
         const wallet = await this.loadWallet();
 
-        if (!(oldName in wallet.ids)) {
+        if (!(id in wallet.ids)) {
             throw new UnknownIDError();
         }
 
-        if (newName in wallet.ids) {
-            throw new InvalidParameterError(`newName ${newName} already exists`);
+        if (name in wallet.ids) {
+            throw new InvalidParameterError(`${name} already exists`);
         }
 
-        wallet.ids[newName] = wallet.ids[oldName];
-        delete wallet.ids[oldName];
+        wallet.ids[name] = wallet.ids[id];
+        delete wallet.ids[id];
 
-        if (wallet.current && wallet.current === oldName) {
-            wallet.current = newName;
+        if (wallet.current && wallet.current === id) {
+            wallet.current = name;
         }
 
         return this.saveWallet(wallet);

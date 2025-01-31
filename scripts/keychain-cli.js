@@ -228,6 +228,19 @@ program
     });
 
 program
+    .command('rename-id <oldName> <newName>')
+    .description('Renames the ID')
+    .action(async (oldName, newName) => {
+        try {
+            const ok = await keymaster.renameId(oldName, newName);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.message || error);
+        }
+    });
+
+program
     .command('list-ids')
     .description('List IDs and show current ID')
     .action(async () => {
@@ -1049,7 +1062,7 @@ async function run() {
         waitUntilReady: true,
         intervalSeconds: 1,
         chatty: false,
-        becomeChattyAfter: 5
+        becomeChattyAfter: 2
     });
     program.parse(process.argv);
 }
