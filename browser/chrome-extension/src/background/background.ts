@@ -10,6 +10,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
             console.error("Error setting gatekeeperUrl:", error);
         }
     }
+    await createOffscreen();
 });
 
 async function createOffscreen() {
