@@ -50,11 +50,7 @@ function BrowserContent() {
                                 value="credentials"
                                 iconPosition="start"
                                 className="sidebarTab"
-                                sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 0.25,
-                                }}
+                                sx={{ gap: 0.25 }}
                             />
                             <Tab
                                 icon={<AccountBalanceWallet />}
