@@ -1,5 +1,6 @@
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 
 const GATEKEEPER_URL = 'http://gatekeeper.org';
 
@@ -110,6 +111,22 @@ describe('resolveDID', () => {
 
         expect(docs).toStrictEqual(mockDocs);
     });
+
+    it('should throw exception when DID not found', async () => {
+        nock(GATEKEEPER_URL)
+            .get(`/api/v1/did/${mockDID}`)
+            .reply(404, { message: 'DID not found' });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+
+        try {
+            await gatekeeper.resolveDID(mockDID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('DID not found');
+        }
+    });
 });
 
 describe('updateDID', () => {
@@ -139,5 +156,126 @@ describe('deleteDID', () => {
         const ok = await gatekeeper.deleteDID({ did: mockDID });
 
         expect(ok).toBe(true);
+    });
+});
+
+describe('getDIDs', () => {
+    it('should return DID list', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/dids`)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const dids = await gatekeeper.getDIDs();
+
+        expect(dids).toStrictEqual([]);
+    });
+});
+
+describe('removeDIDs', () => {
+    it('should return remove status', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/dids/remove`)
+            .reply(200, true);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const ok = await gatekeeper.removeDIDs();
+
+        expect(ok).toStrictEqual(true);
+    });
+});
+
+describe('exportDIDs', () => {
+    it('should return exported DID list', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/dids/export`)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const ops = await gatekeeper.exportDIDs();
+
+        expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('importDIDs', () => {
+    it('should return imported DID results', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/dids/import`)
+            .reply(200, { queued: 0, processed: 0 });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const results = await gatekeeper.importDIDs();
+
+        expect(results).toStrictEqual({ queued: 0, processed: 0 });
+    });
+});
+
+describe('exportBatch', () => {
+    it('should return exported batch', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/batch/export`)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const ops = await gatekeeper.exportBatch();
+
+        expect(ops).toStrictEqual([]);
+    });
+});
+
+describe('importBatch', () => {
+    it('should return imported batch results', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/batch/import`)
+            .reply(200, { queued: 0, processed: 0 });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const results = await gatekeeper.importBatch();
+
+        expect(results).toStrictEqual({ queued: 0, processed: 0 });
+    });
+});
+
+describe('getQueue', () => {
+    const mockRegistry = 'local';
+
+    it('should return queue', async () => {
+        nock(GATEKEEPER_URL)
+            .get(`/api/v1/queue/${mockRegistry}`)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const queue = await gatekeeper.getQueue(mockRegistry);
+
+        expect(queue).toStrictEqual([]);
+    });
+});
+
+describe('clearQueue', () => {
+    const mockRegistry = 'local';
+
+    it('should return clear status', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/queue/${mockRegistry}/clear`)
+            .reply(200, true);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const ok = await gatekeeper.clearQueue(mockRegistry);
+
+        expect(ok).toStrictEqual(true);
+    });
+});
+
+describe('processEvents', () => {
+    it('should return process status', async () => {
+        nock(GATEKEEPER_URL)
+            .post(`/api/v1/events/process`)
+            .reply(200, { added: 0, merged: 0, pending: 0 });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
+        const status = await gatekeeper.processEvents();
+
+        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0 });
     });
 });
