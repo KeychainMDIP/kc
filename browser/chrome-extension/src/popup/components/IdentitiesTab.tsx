@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 
 function IdentitiesTab() {
@@ -7,10 +7,10 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        forceRefreshAll,
+        refreshCurrentID,
         setError,
         keymaster,
-    } = usePopupContext();
+    } = useUIContext();
 
     const [name, setName] = useState("");
 
@@ -18,7 +18,7 @@ function IdentitiesTab() {
         if (!name.trim()) return;
         try {
             await keymaster.createId(name.trim(), { registry });
-            await forceRefreshAll();
+            await refreshCurrentID();
             setName("");
         } catch (error) {
             setError(error.error || error.message || String(error));

@@ -1,13 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserProvider } from "./BrowserContext";
 import BrowserContent from "./BrowserContent";
+import { UIProvider } from "../shared/UIContext";
+import "./browser.css";
 
 const BrowserUI = () => {
     return (
-        <BrowserProvider>
+        <UIProvider>
             <BrowserContent />
-        </BrowserProvider>
+        </UIProvider>
     );
 };
 

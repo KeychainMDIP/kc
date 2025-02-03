@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Button, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 
 const SettingsTab = () => {
@@ -26,15 +26,10 @@ const SettingsTab = () => {
     };
 
     return (
-        <Box>
-            <Typography variant="h4" gutterBottom>
-                Settings
-            </Typography>
-
+        <Box sx={{ display: "flex", flexDirection: "column", width: "300px" }}>
             <TextField
                 label="Gatekeeper URL"
                 variant="outlined"
-                fullWidth
                 value={gatekeeperUrl}
                 onChange={(e) => setGatekeeperUrl(e.target.value)}
                 sx={{ mb: 2 }}

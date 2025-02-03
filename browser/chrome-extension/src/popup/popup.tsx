@@ -1,14 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { PopupProvider } from "./PopupContext";
+import { UIProvider } from "../shared/UIContext";
 import PopupContent from "./PopupContent";
 import "./popup.css";
 
 const PopupUI = () => {
     return (
-        <PopupProvider>
+        <UIProvider>
             <PopupContent />
-        </PopupProvider>
+        </UIProvider>
     );
 };
 

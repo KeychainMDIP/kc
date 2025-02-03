@@ -1,118 +1,94 @@
-import React, { useState } from 'react';
-import { Box, Tab } from '@mui/material';
-import { TabContext, TabList, TabPanel } from '@mui/lab';
-import { AccountBalanceWallet, Badge, Menu, Settings } from '@mui/icons-material';
-import CredentialsTab from './components/CredentialsTab';
-import WalletTab from './components/WalletTab';
-import SettingsTab from './components/SettingsTab';
+import React, { useEffect, useState } from "react";
+import { Box, Tab } from "@mui/material";
+import { TabContext, TabList, TabPanel } from "@mui/lab";
+import { AccountBalanceWallet, Badge, Settings } from "@mui/icons-material";
+import CredentialsTab from "./components/CredentialsTab";
+import WalletTab from "./components/WalletTab";
+import SettingsTab from "./components/SettingsTab";
+import BrowserHeader from "./components/BrowserHeader";
+import { useUIContext } from "../shared/UIContext";
 
 function BrowserContent() {
     const { search } = window.location;
-    const tabParam = new URLSearchParams(search).get('tab');
-    const [activeTab, setActiveTab] = useState<string>(tabParam || "credentials");
+    const tabParam = new URLSearchParams(search).get("tab");
+    const [activeTab, setActiveTab] = useState<string>(
+        tabParam || "credentials",
+    );
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
+    const { refreshAll } = useUIContext();
 
-    const handleTabChange = (event, value) => {
-        if (value === 'menu') {
-            setMenuOpen((prev) => !prev);
-        } else {
-            setActiveTab(value);
-        }
+    useEffect(() => {
+        const init = async () => {
+            await refreshAll();
+        };
+        init();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
+        setActiveTab(newValue);
     };
 
-    const FLEX_START = 'flex-start';
+    const handleToggleMenu = () => {
+        setMenuOpen((prev) => !prev);
+    };
 
     return (
-        <TabContext value={activeTab}>
-            <Box sx={{ display: 'flex', height: '100vh' }}>
-                <Box
-                    sx={{
-                        width: menuOpen ? 180 : 60,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        pt: 2,
-                        transition: 'width 0.2s ease-in-out',
-                        overflow: 'hidden',
-                    }}
-                >
-                    <TabList
-                        orientation="vertical"
-                        onChange={handleTabChange}
-                        sx={{
-                            '& .MuiTabs-flexContainer': {
-                                gap: 1,
-                            },
-                            width: '100%',
-                        }}
-                    >
-                        <Tab
-                            icon={<Menu />}
-                            label={menuOpen ? 'Menu' : ''}
-                            value="menu"
-                            iconPosition="start"
-                            sx={{
-                                minHeight: 48,
-                                justifyContent: FLEX_START,
-                                '& .MuiSvgIcon-root': {
-                                    marginRight: menuOpen ? 1 : 0,
-                                },
-                            }}
-                        />
-                        <Tab
-                            icon={<Badge />}
-                            label={menuOpen ? 'Credentials' : ''}
-                            value="credentials"
-                            iconPosition="start"
-                            sx={{
-                                minHeight: 48,
-                                justifyContent: FLEX_START,
-                                '& .MuiSvgIcon-root': {
-                                    marginRight: menuOpen ? 1 : 0,
-                                },
-                            }}
-                        />
-                        <Tab
-                            icon={<AccountBalanceWallet />}
-                            label={menuOpen ? 'Wallet' : ''}
-                            value="wallet"
-                            iconPosition="start"
-                            sx={{
-                                minHeight: 48,
-                                justifyContent: FLEX_START,
-                                '& .MuiSvgIcon-root': {
-                                    marginRight: menuOpen ? 1 : 0,
-                                },
-                            }}
-                        />
-                        <Tab
-                            icon={<Settings />}
-                            label={menuOpen ? 'Settings' : ''}
-                            value="settings"
-                            iconPosition="start"
-                            sx={{
-                                minHeight: 48,
-                                justifyContent: FLEX_START,
-                                '& .MuiSvgIcon-root': {
-                                    marginRight: menuOpen ? 1 : 0,
-                                },
-                            }}
-                        />
-                    </TabList>
-                </Box>
+        <Box className="rootContainer">
+            <BrowserHeader onHamburgerClick={handleToggleMenu} />
+            <TabContext value={activeTab}>
+                <Box className="layoutContainer">
+                    <Box className={`sidebar ${menuOpen ? "open" : ""}`}>
+                        <TabList
+                            orientation="vertical"
+                            onChange={handleTabChange}
+                            className="tabList"
+                        >
+                            <Tab
+                                icon={<Badge />}
+                                label={menuOpen ? "Credentials" : ""}
+                                value="credentials"
+                                iconPosition="start"
+                                className="sidebarTab"
+                                sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 0.25,
+                                }}
+                            />
+                            <Tab
+                                icon={<AccountBalanceWallet />}
+                                label={menuOpen ? "Wallet" : ""}
+                                value="wallet"
+                                iconPosition="start"
+                                className="sidebarTab"
+                                sx={{ gap: 0.25 }}
+                            />
+                            <Tab
+                                icon={<Settings />}
+                                label={menuOpen ? "Settings" : ""}
+                                value="settings"
+                                iconPosition="start"
+                                className="sidebarTab"
+                                sx={{ gap: 0.25 }}
+                            />
+                        </TabList>
+                    </Box>
 
-                <Box sx={{ flexGrow: 1, p: 2, overflow: 'auto' }}>
-                    <TabPanel value="credentials">
-                        <CredentialsTab />
-                    </TabPanel>
-                    <TabPanel value="wallet">
-                        <WalletTab />
-                    </TabPanel>
-                    <TabPanel value="settings">
-                        <SettingsTab />
-                    </TabPanel>
+                    <Box className="mainContent">
+                        <TabPanel value="credentials" sx={{ p: 0 }}>
+                            <CredentialsTab />
+                        </TabPanel>
+                        <TabPanel value="wallet" sx={{ p: 0 }}>
+                            <WalletTab />
+                        </TabPanel>
+                        <TabPanel value="settings" sx={{ p: 0 }}>
+                            <SettingsTab />
+                        </TabPanel>
+                    </Box>
                 </Box>
-            </Box>
-        </TabContext>
+            </TabContext>
+        </Box>
     );
 }
 

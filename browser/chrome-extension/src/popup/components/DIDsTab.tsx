@@ -7,7 +7,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 import WarningModal from "./WarningModal";
 import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
 
@@ -23,7 +23,7 @@ function DIDsTab() {
         handleCopyDID,
         keymaster,
         setError,
-    } = usePopupContext();
+    } = useUIContext();
     const [open, setOpen] = useState(false);
     const [removeDID, setRemoveDID] = useState("");
 

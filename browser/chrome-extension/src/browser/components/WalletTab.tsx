@@ -9,20 +9,17 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
-    Typography,
 } from "@mui/material";
-import { useBrowserContext } from '../BrowserContext';
+import { useUIContext } from "../../shared/UIContext";
 
 const WalletTab = () => {
     const [open, setOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
-    const [mnemonicString, setMnemonicString] = useState("");
-    const [walletObject, setWalletObject] = useState(null);
-    const {
-        setError,
-        keymaster,
-    } = useBrowserContext();
+    const [mnemonicString, setMnemonicString] = useState<string>("");
+    const [walletObject, setWalletObject] = useState<any>(null);
+    const { setError, keymaster, initialiseWallet, refreshAll } =
+        useUIContext();
 
     const handleClickOpen = () => {
         if (!loading) {
@@ -39,7 +36,10 @@ const WalletTab = () => {
     async function wipeStoredValues() {
         await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        window.close();
+        await initialiseWallet();
+        await refreshAll();
+        setWalletObject(null);
+        setMnemonicString("");
     }
 
     async function wipeAndClose() {
@@ -86,9 +86,7 @@ const WalletTab = () => {
 
     async function showWallet() {
         try {
-            console.log("call loadwallet");
             const wallet = await keymaster.loadWallet();
-            console.log("called loadwallet");
             setWalletObject(wallet);
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -156,7 +154,6 @@ const WalletTab = () => {
                 <DialogContent>
                     <DialogContentText id="confirm-dialog-description">
                         Are you sure you want to overwrite your existing wallet?
-                        This action will close this tab.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
@@ -177,10 +174,6 @@ const WalletTab = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-
-            <Typography variant="h4" gutterBottom>
-                Wallet
-            </Typography>
 
             <Box className="flex-box" sx={{ gap: 2 }}>
                 <Button

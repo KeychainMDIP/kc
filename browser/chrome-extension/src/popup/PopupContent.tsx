@@ -4,8 +4,6 @@ import {
     Tabs,
     Tab,
     Stack,
-    Snackbar,
-    Alert,
     IconButton,
     Menu,
     MenuItem,
@@ -19,7 +17,7 @@ import {
     MoreVert,
     Message,
 } from "@mui/icons-material";
-import { usePopupContext } from "./PopupContext";
+import { useUIContext } from "../shared/UIContext";
 import IdentitiesTab from "./components/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
@@ -28,12 +26,8 @@ import DIDsTab from "./components/DIDsTab";
 import MessageTab from "./components/MessageTab";
 
 const PopupContent = () => {
-    const {
-        currentId,
-        selectedTab,
-        setSelectedTab,
-        refreshAll,
-    } = usePopupContext();
+    const { currentId, selectedTab, setSelectedTab, refreshAll } =
+        useUIContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 

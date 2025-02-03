@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import WarningModal from "./WarningModal";
 
@@ -15,7 +15,7 @@ function CredentialsTab() {
         setError,
         setWarning,
         keymaster,
-    } = usePopupContext();
+    } = useUIContext();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [removeDID, setRemoveDID] = useState("");

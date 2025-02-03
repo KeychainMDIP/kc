@@ -1,7 +1,7 @@
 import React from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, TextField } from "@mui/material";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 
 function MessageReceiveTab({ tabValue }: { tabValue: string }) {
     const {
@@ -11,7 +11,7 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
         setError,
         receiveMessage,
         setReceiveMessage,
-    } = usePopupContext();
+    } = useUIContext();
 
     async function decryptMessage(did: string) {
         try {

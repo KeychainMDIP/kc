@@ -16,7 +16,7 @@ import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { Alert, AlertColor, Snackbar } from "@mui/material";
-import PassphraseModal from "./components/PassphraseModal";
+import PassphraseModal from "./PassphraseModal";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
@@ -27,7 +27,7 @@ interface SnackbarState {
     severity: AlertColor;
 }
 
-interface PopupContextValue {
+interface UIContextValue {
     currentId: string;
     currentDID: string;
     heldDID: string;
@@ -75,8 +75,9 @@ interface PopupContextValue {
     setWarning(warning: string): void;
     manifest: any;
     resolveDID: () => Promise<void>;
+    initialiseWallet: () => Promise<void>;
     refreshAll: () => Promise<void>;
-    forceRefreshAll: () => Promise<void>;
+    refreshCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
     openJSONViewer: (title: string, did: string, contents?: any) => void;
@@ -84,9 +85,9 @@ interface PopupContextValue {
     keymaster: Keymaster | null;
 }
 
-const PopupContext = createContext<PopupContextValue | null>(null);
+const UIContext = createContext<UIContextValue | null>(null);
 
-export function PopupProvider({ children }: { children: ReactNode }) {
+export function UIProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentIdState] = useState("");
     const [currentDID, setCurrentDID] = useState("");
     const [heldList, setHeldList] = useState<string[]>([]);
@@ -291,53 +292,49 @@ export function PopupProvider({ children }: { children: ReactNode }) {
 
     const keymasterRef = useRef<Keymaster | null>(null);
 
-    useEffect(() => {
-        const init = async () => {
-            const { gatekeeperUrl } = await chrome.storage.sync.get([
-                "gatekeeperUrl",
-            ]);
-            await gatekeeper.connect({ url: gatekeeperUrl });
+    async function initialiseWallet() {
+        const { gatekeeperUrl } = await chrome.storage.sync.get([
+            "gatekeeperUrl",
+        ]);
+        await gatekeeper.connect({ url: gatekeeperUrl });
 
-            const wallet = new WalletChrome();
-            const walletData = await wallet.loadWallet();
+        const wallet = new WalletChrome();
+        const walletData = await wallet.loadWallet();
 
-            let pass: string;
-            let response = await chrome.runtime.sendMessage({
-                action: "GET_PASSPHRASE",
+        let pass: string;
+        let response = await chrome.runtime.sendMessage({
+            action: "GET_PASSPHRASE",
+        });
+        if (response && response.passphrase) {
+            pass = response.passphrase;
+        }
+
+        if (pass) {
+            let res = await decryptWallet(pass);
+            if (res) {
+                return;
+            }
+        }
+
+        if (walletData && walletData.salt && walletData.iv && walletData.data) {
+            setModalAction("decrypt");
+        } else {
+            keymasterRef.current = new Keymaster({
+                gatekeeper,
+                wallet,
+                cipher,
             });
-            if (response && response.passphrase) {
-                pass = response.passphrase;
+
+            if (!walletData) {
+                await keymasterRef.current.newWallet();
             }
 
-            if (pass) {
-                let res = await decryptWallet(pass);
-                if (res) {
-                    return;
-                }
-            }
+            setModalAction("encrypt");
+        }
+    }
 
-            if (
-                walletData &&
-                walletData.salt &&
-                walletData.iv &&
-                walletData.data
-            ) {
-                setModalAction("decrypt");
-            } else {
-                keymasterRef.current = new Keymaster({
-                    gatekeeper,
-                    wallet,
-                    cipher,
-                });
-
-                if (!walletData) {
-                    await keymasterRef.current.newWallet();
-                }
-
-                setModalAction("encrypt");
-            }
-        };
-        init();
+    useEffect(() => {
+        initialiseWallet();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -430,33 +427,11 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setAgentList(agents);
     }
 
-    const deleteValues = [
-        "selectedTab",
-        "currentId",
-        "registry",
-        "messageRegistry",
-        "heldDID",
-        "authDID",
-        "callback",
-        "response",
-        "disableSendResponse",
-        "aliasName",
-        "aliasDID",
-        "selectedMessageTab",
-        "messageDID",
-        "messageRecipient",
-        "sendMessage",
-        "encryptedDID",
-        "receiveMessage",
-    ];
-
-    async function forceRefreshAll() {
-        for (const key of deleteValues) {
-            await chrome.runtime.sendMessage({
-                action: "CLEAR_STATE",
-                key,
-            });
-        }
+    async function refreshCurrentID() {
+        await chrome.runtime.sendMessage({
+            action: "CLEAR_STATE",
+            key: "currentId",
+        });
         await refreshAll();
     }
 
@@ -679,7 +654,7 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         });
     }
 
-    const value: PopupContextValue = {
+    const value: UIContextValue = {
         currentId,
         currentDID,
         heldDID,
@@ -727,8 +702,9 @@ export function PopupProvider({ children }: { children: ReactNode }) {
         setError,
         setWarning,
         resolveDID,
+        initialiseWallet,
         refreshAll,
-        forceRefreshAll,
+        refreshCurrentID,
         refreshHeld,
         refreshNames,
         openJSONViewer,
@@ -766,18 +742,18 @@ export function PopupProvider({ children }: { children: ReactNode }) {
             </Snackbar>
 
             {isReady && (
-                <PopupContext.Provider value={value}>
+                <UIContext.Provider value={value}>
                     {children}
-                </PopupContext.Provider>
+                </UIContext.Provider>
             )}
         </>
     );
 }
 
-export function usePopupContext() {
-    const context = useContext(PopupContext);
+export function useUIContext() {
+    const context = useContext(UIContext);
     if (!context) {
-        throw new Error("Failed to get context from PopupContext.Provider");
+        throw new Error("Failed to get context from UIContext.Provider");
     }
     return context;
 }

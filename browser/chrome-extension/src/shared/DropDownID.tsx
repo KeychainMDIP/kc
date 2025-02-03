@@ -8,7 +8,7 @@ import {
     Tooltip,
 } from "@mui/material";
 import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "./UIContext";
 
 const DropDownID = () => {
     const {
@@ -20,8 +20,8 @@ const DropDownID = () => {
         openJSONViewer,
         setError,
         setSelectedId,
-        refreshAll,
-    } = usePopupContext();
+        refreshCurrentID,
+    } = useUIContext();
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -32,11 +32,8 @@ const DropDownID = () => {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
-            await chrome.runtime.sendMessage({
-                action: "CLEAR_STATE",
-                key: "currentId"
-            });
-            refreshAll();
+
+            await refreshCurrentID();
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
