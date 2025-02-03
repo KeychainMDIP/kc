@@ -33,7 +33,7 @@ export default class GatekeeperClient {
     }
 
     async waitUntilReady(options = {}) {
-        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
 
@@ -53,6 +53,10 @@ export default class GatekeeperClient {
             }
 
             retries += 1;
+
+            if (maxRetries > 0 && retries > maxRetries) {
+                return;
+            }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
                 console.log(`Connecting to gatekeeper at ${this.API}`);

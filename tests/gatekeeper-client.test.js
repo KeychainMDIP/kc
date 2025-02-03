@@ -43,6 +43,23 @@ describe('isReady', () => {
 
         expect(gatekeeper != null).toBe(true);
     });
+
+    it('should timeout if not ready', async () => {
+        nock(GatekeeperURL)
+            .get('/api/v1/ready')
+            .reply(200, false);
+
+        const gatekeeper = await GatekeeperClient.create({
+            url: GatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 0.1,
+            maxRetries: 2,
+            chatty: false,
+            becomeChattyAfter: 1
+        });
+
+        expect(gatekeeper != null).toBe(true);
+    });
 });
 
 describe('getVersion', () => {
@@ -229,6 +246,17 @@ describe('resolveDID', () => {
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const docs = await gatekeeper.resolveDID(MockDID);
+
+        expect(docs).toStrictEqual(mockDocs);
+    });
+
+    it('should return specified DID documents', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/did/${MockDID}?version=1&confirm=true`)
+            .reply(200, mockDocs);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const docs = await gatekeeper.resolveDID(MockDID, { version: 1, confirm: true });
 
         expect(docs).toStrictEqual(mockDocs);
     });
