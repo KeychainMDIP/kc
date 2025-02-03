@@ -9,6 +9,7 @@ const MockDID = 'did:mock:1234';
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
+            // eslint-disable-next-line
             .get('/api/v1/ready')
             .reply(200, true);
 

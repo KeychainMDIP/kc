@@ -65,9 +65,6 @@ export default class GatekeeperClient {
         }
     }
 
-    async stop() {
-    }
-
     async listRegistries() {
         try {
             const response = await axios.get(`${this.API}/registries`);
