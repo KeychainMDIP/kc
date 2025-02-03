@@ -33,7 +33,7 @@ export default class GatekeeperClient {
     }
 
     async waitUntilReady(options = {}) {
-        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
 
@@ -54,6 +54,10 @@ export default class GatekeeperClient {
 
             retries += 1;
 
+            if (maxRetries > 0 && retries > maxRetries) {
+                return;
+            }
+
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
                 console.log(`Connecting to gatekeeper at ${this.API}`);
                 chatty = true;
@@ -63,9 +67,6 @@ export default class GatekeeperClient {
         if (chatty) {
             console.log('Gatekeeper service is ready!');
         }
-    }
-
-    async stop() {
     }
 
     async listRegistries() {
@@ -84,7 +85,7 @@ export default class GatekeeperClient {
             return response.data;
         }
         catch (error) {
-            return false;
+            throwError(error);
         }
     }
 
@@ -94,7 +95,7 @@ export default class GatekeeperClient {
             return response.data;
         }
         catch (error) {
-            return false;
+            throwError(error);
         }
     }
 
@@ -130,7 +131,7 @@ export default class GatekeeperClient {
 
     async createDID(operation) {
         try {
-            const response = await axios.post(`${this.API}/did/`, operation);
+            const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
@@ -177,7 +178,7 @@ export default class GatekeeperClient {
 
     async getDIDs(options = {}) {
         try {
-            const response = await axios.post(`${this.API}/dids/`, options);
+            const response = await axios.post(`${this.API}/dids`, options);
             return response.data;
         }
         catch (error) {
