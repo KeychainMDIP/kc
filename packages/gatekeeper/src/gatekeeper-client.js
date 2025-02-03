@@ -130,7 +130,7 @@ export default class GatekeeperClient {
 
     async createDID(operation) {
         try {
-            const response = await axios.post(`${this.API}/did/`, operation);
+            const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
