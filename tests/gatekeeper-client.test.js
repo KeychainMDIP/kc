@@ -88,17 +88,17 @@ describe('createDID', () => {
     it('should return a DID', async () => {
         nock(GATEKEEPER_URL)
             .post('/api/v1/did')
-            .reply(200, 'did:mock:1234');
+            .reply(200, 'did:mock:4321');
 
         const gatekeeper = await GatekeeperClient.create({ url: GATEKEEPER_URL });
         const did = await gatekeeper.createDID({});
 
-        expect(did).toBe('did:mock:1234');
+        expect(did).toBe('did:mock:4321');
     });
 });
 
 describe('resolveDID', () => {
-    const mockDID = 'did:mock:1234';
+    const mockDID = 'did:mock:5678';
     const mockDocs = { id: mockDID };
 
     it('should return DID documents', async () => {
