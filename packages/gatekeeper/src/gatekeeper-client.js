@@ -84,7 +84,7 @@ export default class GatekeeperClient {
             return response.data;
         }
         catch (error) {
-            return false;
+            throwError(error);
         }
     }
 
@@ -94,7 +94,7 @@ export default class GatekeeperClient {
             return response.data;
         }
         catch (error) {
-            return false;
+            throwError(error);
         }
     }
 
