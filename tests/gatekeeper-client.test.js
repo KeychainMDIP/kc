@@ -6,6 +6,13 @@ const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
 const MockDID = 'did:mock:1234';
 
+const mockConsole = {
+    log: () => { },
+    error: () => { },
+    time: () => { },
+    timeEnd: () => { },
+}
+
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
@@ -38,7 +45,8 @@ describe('isReady', () => {
         const gatekeeper = await GatekeeperClient.create({
             url: GatekeeperURL,
             waitUntilReady: true,
-            chatty: true
+            chatty: true,
+            console: mockConsole
         });
 
         expect(gatekeeper != null).toBe(true);
@@ -55,7 +63,8 @@ describe('isReady', () => {
             intervalSeconds: 0.1,
             maxRetries: 2,
             chatty: false,
-            becomeChattyAfter: 1
+            becomeChattyAfter: 1,
+            console: mockConsole
         });
 
         expect(gatekeeper != null).toBe(true);

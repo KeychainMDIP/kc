@@ -27,6 +27,13 @@ export default class GatekeeperClient {
             this.API = `${options.url}${VERSION}`;
         }
 
+        // Only used for unit testing
+        // TBD replace console with a real logging package
+        if (options.console) {
+            // eslint-disable-next-line
+            console = options.console;
+        }
+
         if (options.waitUntilReady) {
             await this.waitUntilReady(options);
         }

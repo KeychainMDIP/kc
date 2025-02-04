@@ -3,11 +3,11 @@ import axios from 'axios';
 const VERSION = '/api/v1';
 
 function throwError(error) {
-    if (error.response?.data?.error) {
-        throw error.response.data.error;
+    if (error.response) {
+        throw error.response.data;
     }
 
-    throw error.message;
+    throw error;
 }
 
 export default class KeymasterClient {
@@ -27,13 +27,20 @@ export default class KeymasterClient {
             this.API = `${options.url}${VERSION}`;
         }
 
+        // Only used for unit testing
+        // TBD replace console with a real logging package
+        if (options.console) {
+            // eslint-disable-next-line
+            console = options.console;
+        }
+
         if (options.waitUntilReady) {
             await this.waitUntilReady(options);
         }
     }
 
     async waitUntilReady(options = {}) {
-        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
 
@@ -54,6 +61,10 @@ export default class KeymasterClient {
 
             retries += 1;
 
+            if (maxRetries > 0 && retries > maxRetries) {
+                return;
+            }
+
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
                 console.log(`Connecting to Keymaster at ${this.API}`);
                 chatty = true;
@@ -63,9 +74,6 @@ export default class KeymasterClient {
         if (chatty) {
             console.log('Keymaster service is ready!');
         }
-    }
-
-    async stop() {
     }
 
     async isReady() {
@@ -457,11 +465,14 @@ export default class KeymasterClient {
 
     async listGroups(owner) {
         try {
-            if (!owner) {
-                owner = '';
+            if (owner) {
+                const response = await axios.get(`${this.API}/groups?owner=${owner}`);
+                return response.data.groups;
             }
-            const response = await axios.get(`${this.API}/groups?owner=${owner}`);
-            return response.data.groups;
+            else {
+                const response = await axios.get(`${this.API}/groups`);
+                return response.data.groups;
+            }
         }
         catch (error) {
             throwError(error);
@@ -510,12 +521,15 @@ export default class KeymasterClient {
 
     async listSchemas(owner) {
         try {
-            if (!owner) {
-                owner = '';
+            if (owner) {
+                const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
+                return response.data.schemas;
+            }
+            else {
+                const response = await axios.get(`${this.API}/schemas`);
+                return response.data.schemas;
             }
 
-            const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
-            return response.data.schemas;
         }
         catch (error) {
             throwError(error);
@@ -574,7 +588,7 @@ export default class KeymasterClient {
 
     async acceptCredential(did) {
         try {
-            const response = await axios.post(`${this.API}/credentials/held/`, { did });
+            const response = await axios.post(`${this.API}/credentials/held`, { did });
             return response.data.ok;
         }
         catch (error) {
@@ -665,7 +679,7 @@ export default class KeymasterClient {
     async getPoll(pollId) {
         try {
             const response = await axios.get(`${this.API}/polls/${pollId}`);
-            return response.data.did;
+            return response.data.poll;
         }
         catch (error) {
             throwError(error);
@@ -675,7 +689,7 @@ export default class KeymasterClient {
     async viewPoll(pollId) {
         try {
             const response = await axios.get(`${this.API}/polls/${pollId}/view`);
-            return response.data.did;
+            return response.data.poll;
         }
         catch (error) {
             throwError(error);
