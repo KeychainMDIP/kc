@@ -3,11 +3,11 @@ import axios from 'axios';
 const VERSION = '/api/v1';
 
 function throwError(error) {
-    if (error.response?.data?.error) {
-        throw error.response.data.error;
+    if (error.response) {
+        throw error.response.data;
     }
 
-    throw error.message;
+    throw error;
 }
 
 export default class KeymasterClient {
@@ -26,6 +26,14 @@ export default class KeymasterClient {
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
         }
+        
+        // Only used for unit testing
+        // TBD replace console with a real logging package
+        if (options.console) {
+            // eslint-disable-next-line
+            console = options.console;
+        }
+
 
         if (options.waitUntilReady) {
             await this.waitUntilReady(options);
@@ -33,7 +41,7 @@ export default class KeymasterClient {
     }
 
     async waitUntilReady(options = {}) {
-        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0 } = options;
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
 
@@ -54,6 +62,10 @@ export default class KeymasterClient {
 
             retries += 1;
 
+            if (maxRetries > 0 && retries > maxRetries) {
+                return;
+            }
+
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
                 console.log(`Connecting to Keymaster at ${this.API}`);
                 chatty = true;
@@ -63,9 +75,6 @@ export default class KeymasterClient {
         if (chatty) {
             console.log('Keymaster service is ready!');
         }
-    }
-
-    async stop() {
     }
 
     async isReady() {
