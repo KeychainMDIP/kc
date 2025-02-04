@@ -465,11 +465,14 @@ export default class KeymasterClient {
 
     async listGroups(owner) {
         try {
-            if (!owner) {
-                owner = '';
+            if (owner) {
+                const response = await axios.get(`${this.API}/groups?owner=${owner}`);
+                return response.data.groups;
             }
-            const response = await axios.get(`${this.API}/groups?owner=${owner}`);
-            return response.data.groups;
+            else {
+                const response = await axios.get(`${this.API}/groups`);
+                return response.data.groups;
+            }
         }
         catch (error) {
             throwError(error);
@@ -518,12 +521,15 @@ export default class KeymasterClient {
 
     async listSchemas(owner) {
         try {
-            if (!owner) {
-                owner = '';
+            if (owner) {
+                const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
+                return response.data.schemas;
+            }
+            else {
+                const response = await axios.get(`${this.API}/schemas`);
+                return response.data.schemas;
             }
 
-            const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
-            return response.data.schemas;
         }
         catch (error) {
             throwError(error);
@@ -582,7 +588,7 @@ export default class KeymasterClient {
 
     async acceptCredential(did) {
         try {
-            const response = await axios.post(`${this.API}/credentials/held/`, { did });
+            const response = await axios.post(`${this.API}/credentials/held`, { did });
             return response.data.ok;
         }
         catch (error) {
@@ -673,7 +679,7 @@ export default class KeymasterClient {
     async getPoll(pollId) {
         try {
             const response = await axios.get(`${this.API}/polls/${pollId}`);
-            return response.data.did;
+            return response.data.poll;
         }
         catch (error) {
             throwError(error);
@@ -683,7 +689,7 @@ export default class KeymasterClient {
     async viewPoll(pollId) {
         try {
             const response = await axios.get(`${this.API}/polls/${pollId}/view`);
-            return response.data.did;
+            return response.data.poll;
         }
         catch (error) {
             throwError(error);
