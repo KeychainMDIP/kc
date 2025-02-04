@@ -26,13 +26,16 @@ const SettingsTab = () => {
     };
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", width: "300px" }}>
+        <Box
+            sx={{ display: "flex", flexDirection: "column", maxWidth: "400px" }}
+        >
             <TextField
                 label="Gatekeeper URL"
                 variant="outlined"
                 value={gatekeeperUrl}
                 onChange={(e) => setGatekeeperUrl(e.target.value)}
                 sx={{ mb: 2 }}
+                className="text-field"
             />
 
             <Button
@@ -40,6 +43,7 @@ const SettingsTab = () => {
                 color="primary"
                 onClick={handleSave}
                 startIcon={<SaveIcon />}
+                sx={{ alignSelf: "start" }}
             >
                 Save
             </Button>

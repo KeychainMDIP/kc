@@ -18,7 +18,7 @@ import {
     Message,
 } from "@mui/icons-material";
 import { useUIContext } from "../shared/UIContext";
-import IdentitiesTab from "./components/IdentitiesTab";
+import IdentitiesTab from "../shared/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";

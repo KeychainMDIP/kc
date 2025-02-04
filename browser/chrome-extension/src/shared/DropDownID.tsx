@@ -20,7 +20,7 @@ const DropDownID = () => {
         openJSONViewer,
         setError,
         setSelectedId,
-        refreshCurrentID,
+        resetCurrentID,
     } = useUIContext();
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -33,7 +33,7 @@ const DropDownID = () => {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
 
-            await refreshCurrentID();
+            await resetCurrentID();
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

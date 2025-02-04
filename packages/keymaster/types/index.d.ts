@@ -121,7 +121,7 @@ declare module '@mdip/keymaster' {
         listCredentials(): Promise<any>;
         listGroups(owner: string): Promise<string[]>;
         listIds(): Promise<string[]>;
-        listIssued(issuer: string): Promise<any>;
+        listIssued(issuer?: string): Promise<any>;
         listNames(): Promise<any>;
         listRegistries(): Promise<any>;
         listSchemas(owner: string): Promise<any>;

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useUIContext } from "../../shared/UIContext";
 import { Box, Button, TextField, Typography } from "@mui/material";
+import { OpenInNew } from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 
 function CredentialsTab() {
@@ -133,6 +134,10 @@ function CredentialsTab() {
         await setHeldDID("");
     }
 
+    function openIssueTab() {
+        chrome.tabs.create({ url: "browser.html?tab=credentials" });
+    }
+
     return (
         <Box>
             <WarningModal
@@ -141,6 +146,28 @@ function CredentialsTab() {
                 onClose={handleRemoveClose}
                 onSubmit={handleRemoveConfirm}
             />
+
+            <Box display="flex" alignItems="center">
+                <Typography
+                    variant="h6"
+                    style={{
+                        borderBottom: "2px solid currentColor",
+                        paddingBottom: 4,
+                        marginRight: 16,
+                    }}
+                >
+                    Held
+                </Typography>
+
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={openIssueTab}
+                    endIcon={<OpenInNew />}
+                >
+                    Issue
+                </Button>
+            </Box>
 
             <Box className="flex-box mt-2">
                 <TextField

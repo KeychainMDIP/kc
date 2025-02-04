@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useUIContext } from "../../shared/UIContext";
+import { useUIContext } from "./UIContext";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 
 function IdentitiesTab() {
@@ -7,7 +7,7 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        refreshCurrentID,
+        resetCurrentID,
         setError,
         keymaster,
     } = useUIContext();
@@ -18,7 +18,7 @@ function IdentitiesTab() {
         if (!name.trim()) return;
         try {
             await keymaster.createId(name.trim(), { registry });
-            await refreshCurrentID();
+            await resetCurrentID();
             setName("");
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -26,7 +26,7 @@ function IdentitiesTab() {
     };
 
     return (
-        <Box className="flex-box mt-2">
+        <Box className="flex-box mt-2" sx={{ maxWidth: "400px" }}>
             <TextField
                 label="Create ID"
                 variant="outlined"
@@ -63,7 +63,7 @@ function IdentitiesTab() {
                 variant="contained"
                 onClick={handleCreateId}
                 size="small"
-                className="button-create"
+                className="button-right"
             >
                 Create
             </Button>

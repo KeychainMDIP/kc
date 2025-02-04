@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { UIProvider } from "../shared/UIContext";
 import PopupContent from "./PopupContent";
-import "./popup.css";
+import "../shared/extension.css";
 
 const PopupUI = () => {
     return (
@@ -13,6 +13,7 @@ const PopupUI = () => {
 };
 
 const rootElement = document.createElement("div");
+rootElement.className = "popup-div";
 document.body.appendChild(rootElement);
 const root = ReactDOM.createRoot(rootElement);
 root.render(<PopupUI />);

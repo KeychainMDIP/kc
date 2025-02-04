@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import BrowserContent from "./BrowserContent";
 import { UIProvider } from "../shared/UIContext";
-import "./browser.css";
+import "../shared/extension.css";
 
 const BrowserUI = () => {
     return (

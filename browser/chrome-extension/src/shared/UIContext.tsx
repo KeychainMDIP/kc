@@ -76,8 +76,20 @@ interface UIContextValue {
     manifest: any;
     resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
+    credentialDID: string;
+    setCredentialDID: Dispatch<SetStateAction<string>>;
+    credentialSubject: string;
+    setCredentialSubject: Dispatch<SetStateAction<string>>;
+    credentialSchema: string;
+    setCredentialSchema: Dispatch<SetStateAction<string>>;
+    credentialString: string;
+    setCredentialString: Dispatch<SetStateAction<string>>;
+    schemaList: string[];
+    issuedList: any;
+    setIssuedList: Dispatch<SetStateAction<any>>;
+    issuedString: string;
     refreshAll: () => Promise<void>;
-    refreshCurrentID: () => Promise<void>;
+    resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
     openJSONViewer: (title: string, did: string, contents?: any) => void;
@@ -88,42 +100,50 @@ interface UIContextValue {
 const UIContext = createContext<UIContextValue | null>(null);
 
 export function UIProvider({ children }: { children: ReactNode }) {
-    const [currentId, setCurrentIdState] = useState("");
-    const [currentDID, setCurrentDID] = useState("");
+    const [currentId, setCurrentIdState] = useState<string>("");
+    const [currentDID, setCurrentDID] = useState<string>("");
     const [heldList, setHeldList] = useState<string[]>([]);
-    const [heldDID, setHeldDIDState] = useState("");
+    const [heldDID, setHeldDIDState] = useState<string>("");
     const [idList, setIdList] = useState<string[]>([]);
     const [manifest, setManifest] = useState(null);
     const [registry, setRegistryState] = useState<string>("hyperswarm");
     const [messageRegistry, setMessageRegistryState] =
         useState<string>("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
-    const [challenge, setChallengeState] = useState("");
-    const [selectedId, setSelectedId] = useState("");
-    const [selectedTab, setSelectedTabState] = useState("identities");
+    const [challenge, setChallengeState] = useState<string>("");
+    const [selectedId, setSelectedId] = useState<string>("");
+    const [selectedTab, setSelectedTabState] = useState<string>("identities");
     const [selectedMessageTab, setSelectedMessageTabState] =
-        useState("receive");
+        useState<string>("receive");
     const [pendingAuth, setPendingAuth] = useState<string | null>(null);
     const [pendingTab, setPendingTab] = useState<string | null>(null);
     const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(
         null,
     );
-    const [authDID, setAuthDIDState] = useState("");
-    const [callback, setCallbackState] = useState("");
-    const [response, setResponseState] = useState("");
-    const [disableSendResponse, setDisableSendResponseState] = useState(true);
+    const [authDID, setAuthDIDState] = useState<string>("");
+    const [callback, setCallbackState] = useState<string>("");
+    const [response, setResponseState] = useState<string>("");
+    const [disableSendResponse, setDisableSendResponseState] =
+        useState<boolean>(true);
     const [passphraseErrorText, setPassphraseErrorText] = useState(null);
     const [modalAction, setModalAction] = useState(null);
-    const [isReady, setIsReady] = useState(false);
+    const [isReady, setIsReady] = useState<boolean>(false);
     const [nameList, setNameList] = useState(null);
-    const [aliasName, setAliasNameState] = useState("");
-    const [aliasDID, setAliasDIDState] = useState("");
+    const [aliasName, setAliasNameState] = useState<string>("");
+    const [aliasDID, setAliasDIDState] = useState<string>("");
     const [messageDID, setMessageDIDState] = useState<string>("");
     const [messageRecipient, setMessageRecipientState] = useState<string>("");
     const [agentList, setAgentList] = useState<string[]>([]);
     const [sendMessage, setSendMessageState] = useState<string>("");
     const [receiveMessage, setReceiveMessageState] = useState<string>("");
     const [encryptedDID, setEncryptedDIDState] = useState<string>("");
+    const [credentialDID, setCredentialDID] = useState<string>("");
+    const [credentialSubject, setCredentialSubject] = useState<string>("");
+    const [credentialSchema, setCredentialSchema] = useState<string>("");
+    const [credentialString, setCredentialString] = useState(null);
+    const [schemaList, setSchemaList] = useState<string[]>([]);
+    const [issuedList, setIssuedList] = useState(null);
+    const [issuedString, setIssuedString] = useState<string>("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -401,6 +421,21 @@ export function UIProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    async function refreshIssued() {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return;
+        }
+
+        try {
+            const issuedList = await keymaster.listIssued();
+            setIssuedList(issuedList);
+            setIssuedString("");
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
     async function refreshNames() {
         const keymaster = keymasterRef.current;
         if (!keymaster) {
@@ -414,6 +449,25 @@ export function UIProvider({ children }: { children: ReactNode }) {
         await setAliasName("");
         await setAliasDID("");
 
+        const schemaList = [];
+
+        for (const name of names) {
+            try {
+                const isSchema = await keymaster.testSchema(name);
+
+                if (isSchema) {
+                    schemaList.push(name);
+                }
+            } catch {}
+        }
+
+        setSchemaList(schemaList);
+
+        if (!schemaList.includes(credentialSchema)) {
+            setCredentialSchema("");
+            setCredentialString("");
+        }
+
         const agents = await keymaster.listIds();
         for (const name of names) {
             try {
@@ -425,25 +479,65 @@ export function UIProvider({ children }: { children: ReactNode }) {
         }
 
         setAgentList(agents);
+
+        if (!agentList.includes(credentialSubject)) {
+            setCredentialSubject("");
+            setCredentialString("");
+        }
     }
 
-    async function refreshCurrentID() {
+    async function resetCurrentID() {
         await chrome.runtime.sendMessage({
             action: "CLEAR_STATE",
             key: "currentId",
         });
-        await refreshAll();
+        await refreshCurrentID();
     }
 
-    async function refreshCurrentDID() {
+    async function refreshCurrentDID(cid: string) {
         try {
-            const id = await keymasterRef.current.fetchIdInfo();
-            const docs = await keymasterRef.current.resolveDID(id.did);
+            const docs = await keymasterRef.current.resolveDID(cid);
             setCurrentDID(docs.didDocument.id);
             setManifest(docs.didDocumentData.manifest);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
+    }
+
+    async function refreshCurrentIDInternal(cid: string) {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return false;
+        }
+
+        await setCurrentId(cid);
+        setSelectedId(cid);
+        await refreshCurrentDID(cid);
+        await refreshNames();
+        await refreshHeld();
+        await refreshIssued();
+
+        const ids = await keymaster.listIds();
+        setIdList(ids);
+    }
+
+    async function refreshCurrentID() {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            return false;
+        }
+
+        try {
+            const cid = await keymaster.getCurrentId();
+            if (cid) {
+                await refreshCurrentIDInternal(cid);
+            }
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+            return false;
+        }
+
+        return true;
     }
 
     async function refreshStored() {
@@ -468,8 +562,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
                 await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
                 return false;
             }
-
-            await refreshNames();
         }
 
         setPendingTab(extensionState.selectedTab);
@@ -508,17 +600,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
         }
 
         if (extensionState.currentId) {
-            await setCurrentId(extensionState.currentId);
-            setSelectedId(extensionState.currentId);
-            await refreshCurrentDID();
-            await refreshHeld();
-        } else {
-            const cid = await keymaster.getCurrentId();
-            if (cid) {
-                await setCurrentId(cid);
-                setSelectedId(cid);
-                await refreshCurrentDID();
-            }
+            await refreshCurrentIDInternal(extensionState.currentId);
         }
 
         if (extensionState.aliasName) {
@@ -561,29 +643,16 @@ export function UIProvider({ children }: { children: ReactNode }) {
     }
 
     async function refreshDefault() {
-        const keymaster = keymasterRef.current;
-        if (!keymaster) {
-            return;
-        }
-
-        const cid = await keymaster.getCurrentId();
-
-        if (cid) {
-            await setCurrentId(cid);
-            setSelectedId(cid);
-            await refreshCurrentDID();
-            await refreshNames();
-            await refreshHeld();
-
-            const ids = await keymaster.listIds();
-            setIdList(ids);
-        } else {
+        const refreshed = await refreshCurrentID();
+        if (!refreshed) {
             await setCurrentId("");
             setSelectedId("");
             setCurrentDID("");
             setManifest(null);
             setHeldList([]);
             setIdList([]);
+            setIssuedList(null);
+            setIssuedString("");
         }
 
         await setAuthDID("");
@@ -703,8 +772,20 @@ export function UIProvider({ children }: { children: ReactNode }) {
         setWarning,
         resolveDID,
         initialiseWallet,
+        credentialDID,
+        setCredentialDID,
+        credentialSubject,
+        setCredentialSubject,
+        credentialSchema,
+        setCredentialSchema,
+        credentialString,
+        setCredentialString,
+        schemaList,
+        issuedList,
+        setIssuedList,
+        issuedString,
         refreshAll,
-        refreshCurrentID,
+        resetCurrentID,
         refreshHeld,
         refreshNames,
         openJSONViewer,
