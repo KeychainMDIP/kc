@@ -4,7 +4,10 @@ import { ExpectedExceptionError } from '@mdip/common/errors';
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
-const MockDID = 'did:mock:1234';
+const Endpoints = {
+    ready: '/api/v1/ready',
+    wallet: '/api/v1/wallet',
+};
 
 const mockConsole = {
     log: () => { },
@@ -16,8 +19,7 @@ const mockConsole = {
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(KeymasterURL)
-            // eslint-disable-next-line
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, { ready: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -28,7 +30,7 @@ describe('isReady', () => {
 
     it('should return false on server error', async () => {
         nock(KeymasterURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -39,7 +41,7 @@ describe('isReady', () => {
 
     it('should wait until ready', async () => {
         nock(KeymasterURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, { ready: true });
 
         const keymaster = await KeymasterClient.create({
@@ -54,7 +56,7 @@ describe('isReady', () => {
 
     it('should timeout if not ready', async () => {
         nock(KeymasterURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, { ready: false });
 
         const keymaster = await KeymasterClient.create({
@@ -76,7 +78,7 @@ describe('loadWallet', () => {
         const mockWallet = { seed: 1 };
 
         nock(KeymasterURL)
-            .get('/api/v1/wallet')
+            .get(Endpoints.wallet)
             .reply(200, { wallet: mockWallet });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -87,13 +89,44 @@ describe('loadWallet', () => {
 
     it('should throw exception on loadWallet server error', async () => {
         nock(KeymasterURL)
-            .get('/api/v1/wallet')
+            .get(Endpoints.wallet)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
 
         try {
             await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('saveWallet', () => {
+    const mockWallet = { seed: 1 };
+
+    it('should save wallet', async () => {
+        nock(KeymasterURL)
+            .put(Endpoints.wallet)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.saveWallet(mockWallet);
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should throw exception on saveWallet server error', async () => {
+        nock(KeymasterURL)
+            .put(Endpoints.wallet)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         }
         catch (error) {
