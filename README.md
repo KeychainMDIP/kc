@@ -69,7 +69,7 @@ Commands:
   backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  create-asset <file>                        Create an asset from a JSON file
+  create-asset [file]                        Create an asset from a JSON file
   create-challenge [file] [name]             Create challenge (optionally from a file)
   create-challenge-cc <did> [name]           Create challenge from a credential DID
   create-group <name>                        Create a new group
@@ -87,7 +87,7 @@ Commands:
   encrypt-message <message> <did>            Encrypt a message for a DID
   encrypt-wallet                             Encrypt wallet
   fix-wallet                                 Remove invalid DIDs from the wallet
-  get-asset <did>                            Get asset by DID
+  get-asset <id>                             Get asset by name or DID
   get-credential <did>                       Get credential by DID
   get-group <did>                            Get group by DID
   get-name <name>                            Get DID assigned to name
@@ -119,6 +119,8 @@ Commands:
   reveal-poll <poll>                         Publish results to poll, revealing ballots
   revoke-credential <did>                    Revokes a verifiable credential
   rotate-keys                                Generates new set of keys for current ID
+  set-asset <id> [file]                      Update an asset from a JSON file
+  set-property <id> <key> [value]            Assign a key-value pair to an asset
   show-mnemonic                              Show recovery phrase for wallet
   show-wallet                                Show wallet
   sign-file <file>                           Sign a JSON file
