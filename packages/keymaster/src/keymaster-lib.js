@@ -435,6 +435,13 @@ export default class Keymaster {
         }
     }
 
+    didMatch(did1, did2) {
+        const suffix1 = did1.split(':').pop();
+        const suffix2 = did2.split(':').pop();
+
+        return (suffix1 === suffix2);
+    }
+
     async fetchIdInfo(id) {
         const wallet = await this.loadWallet();
         let idInfo = null;
@@ -444,7 +451,7 @@ export default class Keymaster {
                 for (const name of Object.keys(wallet.ids)) {
                     const info = wallet.ids[name];
 
-                    if (info.did === id) {
+                    if (this.didMatch(id, info.did)) {
                         idInfo = info;
                         break;
                     }
