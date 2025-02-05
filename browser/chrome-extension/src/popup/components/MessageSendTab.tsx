@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, Menu, MenuItem, Select, TextField } from "@mui/material";
 import { ArrowDropDown, Close, ContentCopy } from "@mui/icons-material";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 
 function MessageSendTab({ tabValue }: { tabValue: string }) {
     const {
@@ -18,7 +18,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
         setEncryptedDID,
         keymaster,
         setError,
-    } = usePopupContext();
+    } = useUIContext();
     const [anchorEl, setAnchorEl] = useState(null);
 
     async function clearFields() {

@@ -1,6 +1,6 @@
 import { TabPanel } from "@mui/lab";
 import { Box, Typography } from "@mui/material";
-import DropDownID from "./DropDownID";
+import DropDownID from "../../shared/DropDownID";
 import React from "react";
 
 interface PanelHeaderProps {

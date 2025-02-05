@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/UIContext";
 
 function AuthTab() {
     const {
@@ -19,7 +19,7 @@ function AuthTab() {
         setCallback,
         disableSendResponse,
         setDisableSendResponse,
-    } = usePopupContext();
+    } = useUIContext();
 
     async function newChallenge() {
         try {

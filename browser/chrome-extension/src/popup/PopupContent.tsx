@@ -4,8 +4,6 @@ import {
     Tabs,
     Tab,
     Stack,
-    Snackbar,
-    Alert,
     IconButton,
     Menu,
     MenuItem,
@@ -19,8 +17,8 @@ import {
     MoreVert,
     Message,
 } from "@mui/icons-material";
-import { usePopupContext } from "./PopupContext";
-import IdentitiesTab from "./components/IdentitiesTab";
+import { useUIContext } from "../shared/UIContext";
+import IdentitiesTab from "../shared/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";
@@ -28,14 +26,8 @@ import DIDsTab from "./components/DIDsTab";
 import MessageTab from "./components/MessageTab";
 
 const PopupContent = () => {
-    const {
-        currentId,
-        handleSnackbarClose,
-        snackbar,
-        selectedTab,
-        setSelectedTab,
-        refreshAll,
-    } = usePopupContext();
+    const { currentId, selectedTab, setSelectedTab, refreshAll } =
+        useUIContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -61,31 +53,16 @@ const PopupContent = () => {
 
     function handleWalletClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "wallet.html" });
+        chrome.tabs.create({ url: "browser.html?tab=wallet" });
     }
 
-    function handleOptionsClick() {
+    function handleSettingsClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "options.html" });
+        chrome.tabs.create({ url: "browser.html?tab=settings" });
     }
 
     return (
         <Box>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-
             <TabContext value={selectedTab}>
                 <Box
                     display="flex"
@@ -150,8 +127,8 @@ const PopupContent = () => {
                         }}
                     >
                         <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
-                        <MenuItem onClick={handleOptionsClick}>
-                            Options
+                        <MenuItem onClick={handleSettingsClick}>
+                            Settings
                         </MenuItem>
                     </Menu>
                 </Box>
