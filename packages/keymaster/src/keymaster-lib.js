@@ -435,6 +435,13 @@ export default class Keymaster {
         }
     }
 
+    didMatch(did1, did2) {
+        const suffix1 = did1.split(':').pop();
+        const suffix2 = did2.split(':').pop();
+
+        return (suffix1 === suffix2);
+    }
+
     async fetchIdInfo(id) {
         const wallet = await this.loadWallet();
         let idInfo = null;
@@ -444,7 +451,7 @@ export default class Keymaster {
                 for (const name of Object.keys(wallet.ids)) {
                     const info = wallet.ids[name];
 
-                    if (info.did === id) {
+                    if (this.didMatch(id, info.did)) {
                         idInfo = info;
                         break;
                     }
@@ -498,7 +505,7 @@ export default class Keymaster {
         return null;
     }
 
-    async createAsset(data, options = {}) {
+    async createAsset(data = {}, options = {}) {
         let { registry = this.defaultRegistry, controller, validUntil } = options;
 
         if (validUntil) {
@@ -509,15 +516,7 @@ export default class Keymaster {
             }
         }
 
-        function isEmpty(data) {
-            return (
-                !data ||
-                (Array.isArray(data) && data.length === 0) ||
-                (typeof data === 'object' && Object.keys(data).length === 0)
-            );
-        }
-
-        if (isEmpty(data)) {
+        if (!data) {
             throw new InvalidParameterError('data');
         }
 
@@ -782,7 +781,7 @@ export default class Keymaster {
     async resolveAsset(did) {
         const doc = await this.resolveDID(did);
 
-        if (doc?.didDocumentMetadata && !doc.didDocumentMetadata.deactivated) {
+        if (doc?.didDocumentData && !doc.didDocumentMetadata.deactivated) {
             return doc.didDocumentData;
         }
 

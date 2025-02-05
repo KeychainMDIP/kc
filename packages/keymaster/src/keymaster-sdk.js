@@ -373,10 +373,20 @@ export default class KeymasterClient {
         }
     }
 
-    async resolveAsset(name) {
+    async resolveAsset(id) {
         try {
-            const response = await axios.get(`${this.API}/assets/${name}`);
+            const response = await axios.get(`${this.API}/assets/${id}`);
             return response.data.asset;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateAsset(id, data) {
+        try {
+            const response = await axios.put(`${this.API}/assets/${id}`, { data });
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);
