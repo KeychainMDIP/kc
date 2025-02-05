@@ -1213,19 +1213,6 @@ describe('createAsset', () => {
         }
     });
 
-    it('should throw an exception for null anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset();
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            // eslint-disable-next-line
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
-
     it('should throw an exception for an empty string anchor', async () => {
         mockFs({});
 

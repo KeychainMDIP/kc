@@ -498,7 +498,7 @@ export default class Keymaster {
         return null;
     }
 
-    async createAsset(data, options = {}) {
+    async createAsset(data = {}, options = {}) {
         let { registry = this.defaultRegistry, controller, validUntil } = options;
 
         if (validUntil) {
