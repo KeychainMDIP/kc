@@ -637,7 +637,7 @@ v1router.put('/assets/:id', async (req, res) => {
         const ok = await keymaster.updateAsset(req.params.id, data);
         res.json({ ok });
     } catch (error) {
-        return res.status(404).send({ error: 'Asset not found' });
+        res.status(500).send({ error: error.toString() });
     }
 });
 
