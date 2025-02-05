@@ -509,15 +509,7 @@ export default class Keymaster {
             }
         }
 
-        function isEmpty(data) {
-            return (
-                !data ||
-                (Array.isArray(data) && data.length === 0) ||
-                (typeof data === 'object' && Object.keys(data).length === 0)
-            );
-        }
-
-        if (isEmpty(data)) {
+        if (!data) {
             throw new InvalidParameterError('data');
         }
 
@@ -782,7 +774,7 @@ export default class Keymaster {
     async resolveAsset(did) {
         const doc = await this.resolveDID(did);
 
-        if (doc?.didDocumentMetadata && !doc.didDocumentMetadata.deactivated) {
+        if (doc?.didDocumentData && !doc.didDocumentMetadata.deactivated) {
             return doc.didDocumentData;
         }
 

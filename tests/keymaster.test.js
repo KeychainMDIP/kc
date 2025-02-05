@@ -1237,30 +1237,6 @@ describe('createAsset', () => {
             expect(error.message).toBe('Invalid parameter: data');
         }
     });
-
-    it('should throw an exception for an empty list anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset([]);
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
-
-    it('should throw an exception for an empty object anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset({});
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
 });
 
 describe('listAssets', () => {

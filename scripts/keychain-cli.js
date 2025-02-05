@@ -827,12 +827,12 @@ program
     });
 
 program
-    .command('create-asset <file>')
+    .command('create-asset [file]')
     .description('Create an asset from a JSON file')
     .action(async (file) => {
         try {
-            const asset = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createAsset(asset);
+            const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
+            const did = await keymaster.createAsset(data);
             console.log(did);
         }
         catch (error) {
@@ -841,12 +841,53 @@ program
     });
 
 program
-    .command('get-asset <did>')
-    .description('Get asset by DID')
-    .action(async (did) => {
+    .command('get-asset <id>')
+    .description('Get asset by name or DID')
+    .action(async (id) => {
         try {
-            const asset = await keymaster.resolveAsset(did);
+            const asset = await keymaster.resolveAsset(id);
             console.log(JSON.stringify(asset, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('set-asset <id> [file]')
+    .description('Update an asset from a JSON file')
+    .action(async (id, file) => {
+        try {
+            const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
+            const ok = await keymaster.updateAsset(id, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('set-property <id> <key> [value]')
+    .description('Assign a key-value pair to an asset')
+    .action(async (id, key, value) => {
+        try {
+            const data = await keymaster.resolveAsset(id);
+
+            if (value) {
+                try {
+                    data[key] = JSON.parse(value);
+                }
+                catch {
+                    data[key] = value;
+                }
+            }
+            else {
+                delete data[key];
+            }
+
+            const ok = await keymaster.updateAsset(id, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);

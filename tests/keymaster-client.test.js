@@ -1024,6 +1024,38 @@ describe('resolveAsset', () => {
     });
 });
 
+describe('updateAsset', () => {
+    const mockAssetId = 'asset1';
+    const mockAsset = { id: mockAssetId, data: 'some data' };
+
+    it('should resolve asset', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.assets}/${mockAssetId}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.updateAsset(mockAssetId, mockAsset);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on resolveAsset server error', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.assets}/${mockAssetId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.updateAsset(mockAssetId, mockAsset);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('createChallenge', () => {
     const mockDID = 'did:mock:challenge';
 
