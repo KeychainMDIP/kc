@@ -4,13 +4,9 @@ import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import {
     Box,
     Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
 } from "@mui/material";
 import { useUIContext } from "../../shared/UIContext";
+import WarningModal from "../../shared/WarningModal";
 
 const WalletTab = () => {
     const [open, setOpen] = useState(false);
@@ -141,39 +137,13 @@ const WalletTab = () => {
 
     return (
         <Box>
-            <Dialog
-                open={open}
+            <WarningModal
+                title="Overwrite wallet"
+                warningText="Are you sure you want to overwrite your existing wallet?"
+                isOpen={open}
                 onClose={handleClose}
-                disableEnforceFocus
-                disableAutoFocus
-                disableScrollLock
-            >
-                <DialogTitle id="confirm-dialog-title">
-                    {"Overwrite Wallet?"}
-                </DialogTitle>
-                <DialogContent>
-                    <DialogContentText id="confirm-dialog-description">
-                        Are you sure you want to overwrite your existing wallet?
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button
-                        onClick={handleClose}
-                        color="primary"
-                        disabled={loading}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        onClick={handleConfirm}
-                        color="primary"
-                        disabled={loading}
-                        autoFocus
-                    >
-                        Confirm
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                onSubmit={handleConfirm}
+            />
 
             <Box className="flex-box" sx={{ gap: 2 }}>
                 <Button

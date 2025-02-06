@@ -8,7 +8,7 @@ import {
     Typography,
 } from "@mui/material";
 import { useUIContext } from "../../shared/UIContext";
-import WarningModal from "./WarningModal";
+import WarningModal from "../../shared/WarningModal";
 import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
 
 function DIDsTab() {
@@ -65,6 +65,7 @@ function DIDsTab() {
         <Box>
             <WarningModal
                 title="Remove Credential"
+                warningText="Are you sure you want to remove the credential?"
                 isOpen={open}
                 onClose={handleRemoveClose}
                 onSubmit={handleRemoveConfirm}

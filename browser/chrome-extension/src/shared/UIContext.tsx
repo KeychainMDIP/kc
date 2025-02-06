@@ -88,6 +88,13 @@ interface UIContextValue {
     issuedList: any;
     setIssuedList: Dispatch<SetStateAction<any>>;
     issuedString: string;
+    setIssuedString: Dispatch<SetStateAction<string>>;
+    issuedStringOriginal: string;
+    setIssuedStringOriginal: Dispatch<SetStateAction<string>>;
+    issuedEdit: boolean;
+    setIssuedEdit: Dispatch<SetStateAction<boolean>>;
+    selectedIssued: string;
+    setSelectedIssued: Dispatch<SetStateAction<string>>;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -144,6 +151,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
     const [schemaList, setSchemaList] = useState<string[]>([]);
     const [issuedList, setIssuedList] = useState(null);
     const [issuedString, setIssuedString] = useState<string>("");
+    const [issuedEdit, setIssuedEdit] = useState<boolean>(false);
+    const [issuedStringOriginal, setIssuedStringOriginal] = useState<string>("");
+    const [selectedIssued, setSelectedIssued] = useState<string>("");
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -524,6 +534,10 @@ export function UIProvider({ children }: { children: ReactNode }) {
         setCredentialString("");
         setCredentialSubject("");
         setCredentialSchema("");
+        setIssuedString("");
+        setSelectedIssued("");
+        setIssuedStringOriginal("");
+        setIssuedEdit(false);
     }
 
     async function refreshCurrentID() {
@@ -647,29 +661,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
         return true;
     }
 
-    async function refreshDefault() {
-        const refreshed = await refreshCurrentID();
-        if (!refreshed) {
-            await setCurrentId("");
-            setSelectedId("");
-            setCurrentDID("");
-            setManifest(null);
-            setHeldList([]);
-            setIdList([]);
-            setIssuedList(null);
-            setIssuedString("");
-        }
-
-        await setAuthDID("");
-        await setCallback("");
-        await setResponse("");
-        await setDisableSendResponse(true);
-        await setHeldDID("");
-        await setAliasName("");
-        await setAliasDID("");
-        await setEncryptedDID("");
-    }
-
     async function refreshAll() {
         const keymaster = keymasterRef.current;
         if (!keymaster) {
@@ -686,7 +677,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
             const usedStored = await refreshStored();
             if (!usedStored) {
-                await refreshDefault();
+                await refreshCurrentID();
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -789,6 +780,13 @@ export function UIProvider({ children }: { children: ReactNode }) {
         issuedList,
         setIssuedList,
         issuedString,
+        setIssuedString,
+        issuedStringOriginal,
+        setIssuedStringOriginal,
+        issuedEdit,
+        setIssuedEdit,
+        selectedIssued,
+        setSelectedIssued,
         refreshAll,
         resetCurrentID,
         refreshHeld,

@@ -2,12 +2,13 @@ import React, { useState } from "react";
 import { Box, Stack, Tab, Tabs } from "@mui/material";
 import { TabContext, TabPanel } from "@mui/lab";
 import IssueTab from "./IssueTab";
+import IssuedTab from "./IssuedTab";
 
-function CredentialsTab() {
-    const [credentialTab, setCredentialTab] = useState("issue");
+function CredentialsTab({ subTab }: {subTab: string}) {
+    const [credentialTab, setCredentialTab] = useState(subTab || "issue");
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
-        await setCredentialTab(newValue);
+        setCredentialTab(newValue);
     }
 
     return (
@@ -28,6 +29,12 @@ function CredentialsTab() {
                             label="Issue"
                             value="issue"
                         />
+
+                        <Tab
+                            sx={{ minWidth: "70px", px: 0 }}
+                            label="Issued"
+                            value="issued"
+                        />
                     </Tabs>
                 </Box>
 
@@ -38,6 +45,14 @@ function CredentialsTab() {
                         sx={{ px: 0 }}
                     >
                         <IssueTab />
+                    </TabPanel>
+
+                    <TabPanel
+                        value="issued"
+                        className="tab-panel"
+                        sx={{ px: 0 }}
+                    >
+                        <IssuedTab />
                     </TabPanel>
                 </Stack>
             </TabContext>

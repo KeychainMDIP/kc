@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useUIContext } from "../../shared/UIContext";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
-import WarningModal from "./WarningModal";
+import WarningModal from "../../shared/WarningModal";
 
 function CredentialsTab() {
     const {
@@ -134,44 +134,43 @@ function CredentialsTab() {
         await setHeldDID("");
     }
 
-    function openIssueTab() {
-        chrome.tabs.create({ url: "browser.html?tab=credentials" });
+    function openIssueTab(subTab: string) {
+        chrome.tabs.create({ url: "browser.html?tab=credentials&subTab=" + subTab });
     }
 
     return (
         <Box>
             <WarningModal
                 title="Remove Credential"
+                warningText="Are you sure you want to remove the credential?"
                 isOpen={open}
                 onClose={handleRemoveClose}
                 onSubmit={handleRemoveConfirm}
             />
 
-            <Box display="flex" alignItems="center">
-                <Typography
-                    variant="h6"
-                    style={{
-                        borderBottom: "2px solid currentColor",
-                        paddingBottom: 4,
-                        marginRight: 16,
-                    }}
+            <Box display="flex" alignItems="center" sx={{ gap: 2 }}>
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => openIssueTab("issue")}
+                    endIcon={<OpenInNew />}
                 >
-                    Held
-                </Typography>
+                    Issue
+                </Button>
 
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={openIssueTab}
+                    onClick={() => openIssueTab("issued")}
                     endIcon={<OpenInNew />}
                 >
-                    Issue
+                    Issued
                 </Button>
             </Box>
 
             <Box className="flex-box mt-2">
                 <TextField
-                    label="Credential DID"
+                    label="Add Credential DID"
                     variant="outlined"
                     value={heldDID}
                     onChange={(e) => setHeldDID(e.target.value)}

@@ -19,6 +19,7 @@ function BrowserContent() {
     const { currentId, refreshAll } = useUIContext();
     const { search } = window.location;
     const tabParam = new URLSearchParams(search).get("tab");
+    const subTabParam = new URLSearchParams(search).get("subTab");
     const initialTab =
         tabParam === "credentials" && !currentId
             ? "identities"
@@ -105,7 +106,7 @@ function BrowserContent() {
                         </TabPanel>
                         {currentId && (
                             <TabPanel value="credentials" sx={{ p: 0 }}>
-                                <CredentialsTab />
+                                <CredentialsTab subTab={subTabParam} />
                             </TabPanel>
                         )}
                         <TabPanel value="wallet" sx={{ p: 0 }}>
