@@ -48,8 +48,9 @@ export default class Keymaster {
             throw new InvalidParameterError('options.cipher');
         }
 
-        this.defaultRegistry = process.env.KC_DEFAULT_REGISTRY || 'hyperswarm';
+        this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
+        this.maxNameLength = options.maxNameLength || 32;
     }
 
     async listRegistries() {
@@ -426,7 +427,7 @@ export default class Keymaster {
 
     async setCurrentId(name) {
         const wallet = await this.loadWallet();
-        if (Object.keys(wallet.ids).includes(name)) {
+        if (name in wallet.ids) {
             wallet.current = name;
             return this.saveWallet(wallet);
         }
@@ -762,11 +763,11 @@ export default class Keymaster {
 
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             return wallet.names[name];
         }
 
-        if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        if (wallet.ids && name in wallet.ids) {
             return wallet.ids[name].did;
         }
 
@@ -801,14 +802,39 @@ export default class Keymaster {
         return id.owned || [];
     }
 
+    validateName(name, wallet) {
+        if (typeof name !== 'string' || !name.trim()) {
+            throw new InvalidParameterError('name must be a non-empty string');
+        }
+
+        name = name.trim(); // Remove leading/trailing whitespace
+
+        if (name.length > this.maxNameLength) {
+            throw new InvalidParameterError(`name too long`);
+        }
+
+        if (/[^\P{Cc}]/u.test(name)) {
+            throw new InvalidParameterError('name contains unprintable characters');
+        }
+
+        const alreadyUsedError = 'name already used';
+
+        if (wallet && wallet.names && name in wallet.names) {
+            throw new InvalidParameterError(alreadyUsedError);
+        }
+
+        if (wallet && wallet.ids && name in wallet.ids) {
+            throw new InvalidParameterError(alreadyUsedError);
+        }
+
+        return name;
+    }
+
     async createId(name, options = {}) {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
-        if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
-            // eslint-disable-next-line
-            throw new InvalidParameterError('name already used');
-        }
+        name = this.validateName(name, wallet);
 
         const account = wallet.counter;
         const index = 0;
@@ -873,12 +899,14 @@ export default class Keymaster {
     async renameId(id, name) {
         const wallet = await this.loadWallet();
 
+        name = this.validateName(name);
+
         if (!(id in wallet.ids)) {
             throw new UnknownIDError();
         }
 
         if (name in wallet.ids) {
-            throw new InvalidParameterError(`${name} already exists`);
+            throw new InvalidParameterError('name already used');
         }
 
         wallet.ids[name] = wallet.ids[id];
@@ -986,14 +1014,7 @@ export default class Keymaster {
             wallet.names = {};
         }
 
-        if (Object.keys(wallet.names).includes(name)) {
-            throw new InvalidParameterError('name already used');
-        }
-
-        if (Object.keys(wallet.ids).includes(name)) {
-            throw new InvalidParameterError('name already used');
-        }
-
+        name = this.validateName(name, wallet);
         wallet.names[name] = did;
         return this.saveWallet(wallet);
     }
@@ -1001,7 +1022,7 @@ export default class Keymaster {
     async getName(name) {
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             return wallet.names[name];
         }
 
@@ -1011,7 +1032,7 @@ export default class Keymaster {
     async removeName(name) {
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             delete wallet.names[name];
             await this.saveWallet(wallet);
         }
@@ -1207,7 +1228,7 @@ export default class Keymaster {
         const credential = await this.lookupDID(did);
         const manifest = doc.didDocumentData.manifest;
 
-        if (credential && manifest && Object.keys(manifest).includes(credential)) {
+        if (credential && manifest && credential in manifest) {
             delete manifest[credential];
             await this.updateDID(doc);
 

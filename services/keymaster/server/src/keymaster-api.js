@@ -817,7 +817,8 @@ app.listen(port, async () => {
 
     const wallet = await initWallet();
     const cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+    const defaultRegistry = config.defaultRegistry;
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
     console.log(`Keymaster server running on port ${port}`);
     console.log(`Keymaster server persisting to ${config.db}`);
 
