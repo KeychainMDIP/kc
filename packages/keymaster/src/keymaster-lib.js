@@ -13,6 +13,8 @@ const DefaultSchema = {
     ]
 };
 
+const MaxNameLength = 32;
+
 export default class Keymaster {
 
     constructor(options = {}) {
@@ -426,7 +428,7 @@ export default class Keymaster {
 
     async setCurrentId(name) {
         const wallet = await this.loadWallet();
-        if (Object.keys(wallet.ids).includes(name)) {
+        if (name in wallet.ids) {
             wallet.current = name;
             return this.saveWallet(wallet);
         }
@@ -762,11 +764,11 @@ export default class Keymaster {
 
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             return wallet.names[name];
         }
 
-        if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        if (wallet.ids && name in wallet.ids) {
             return wallet.ids[name].did;
         }
 
@@ -805,7 +807,7 @@ export default class Keymaster {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
-        if (wallet.ids && Object.keys(wallet.ids).includes(name)) {
+        if (wallet.ids && name in wallet.ids) {
             // eslint-disable-next-line
             throw new InvalidParameterError('name already used');
         }
@@ -986,11 +988,21 @@ export default class Keymaster {
             wallet.names = {};
         }
 
-        if (Object.keys(wallet.names).includes(name)) {
-            throw new InvalidParameterError('name already used');
+        if (typeof name !== 'string' || !name.trim()) {
+            throw new InvalidParameterError('name must be a non-empty string');
         }
 
-        if (Object.keys(wallet.ids).includes(name)) {
+        name = name.trim(); // Remove leading/trailing whitespace
+
+        if (name.length > MaxNameLength) {
+            throw new InvalidParameterError(`name too long`);
+        }
+
+        if (/[^\P{Cc}]/u.test(name)) {
+            throw new InvalidParameterError('name must contain only printable characters');
+        }
+
+        if (name in wallet.names || name in wallet.ids) {
             throw new InvalidParameterError('name already used');
         }
 
@@ -1001,7 +1013,7 @@ export default class Keymaster {
     async getName(name) {
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             return wallet.names[name];
         }
 
@@ -1011,7 +1023,7 @@ export default class Keymaster {
     async removeName(name) {
         const wallet = await this.loadWallet();
 
-        if (wallet.names && Object.keys(wallet.names).includes(name)) {
+        if (wallet.names && name in wallet.names) {
             delete wallet.names[name];
             await this.saveWallet(wallet);
         }
@@ -1207,7 +1219,7 @@ export default class Keymaster {
         const credential = await this.lookupDID(did);
         const manifest = doc.didDocumentData.manifest;
 
-        if (credential && manifest && Object.keys(manifest).includes(credential)) {
+        if (credential && manifest && credential in manifest) {
             delete manifest[credential];
             await this.updateDID(doc);
 

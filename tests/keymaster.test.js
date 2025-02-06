@@ -959,6 +959,19 @@ describe('addName', () => {
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
+    it('should create a Unicode name', async () => {
+        mockFs({});
+
+        const name = 'ҽ× ʍɑϲհíղɑ';
+
+        const bob = await keymaster.createId('Bob');
+        const ok = await keymaster.addName(name, bob);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet.names[name] === bob).toBe(true);
+    });
+
     it('should not add duplicate name', async () => {
         mockFs({});
 
@@ -986,6 +999,81 @@ describe('addName', () => {
         }
         catch (error) {
             expect(error.message).toBe('Invalid parameter: name already used');
+        }
+    });
+
+    it('should not add an empty name', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const expectedError = 'Invalid parameter: name must be a non-empty string';
+
+        try {
+            await keymaster.addName('', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName('    ', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName(undefined, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName(0, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName({}, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+    });
+
+    it('should not add a name that is too long', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addName('1234567890123456789012345678901234567890', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name too long');
+        }
+    });
+
+    it('should not add a name that contains unprintable characters', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addName('hello\nworld!', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name must contain only printable characters');
         }
     });
 });
