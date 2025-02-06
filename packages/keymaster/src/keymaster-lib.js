@@ -13,8 +13,6 @@ const DefaultSchema = {
     ]
 };
 
-const MaxNameLength = 32;
-
 export default class Keymaster {
 
     constructor(options = {}) {
@@ -52,6 +50,7 @@ export default class Keymaster {
 
         this.defaultRegistry = process.env.KC_DEFAULT_REGISTRY || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
+        this.maxNameLength = options.maxNameLength || 32;
     }
 
     async listRegistries() {
@@ -810,20 +809,22 @@ export default class Keymaster {
 
         name = name.trim(); // Remove leading/trailing whitespace
 
-        if (name.length > MaxNameLength) {
+        if (name.length > this.maxNameLength) {
             throw new InvalidParameterError(`name too long`);
         }
 
         if (/[^\P{Cc}]/u.test(name)) {
-            throw new InvalidParameterError('name must contain only printable characters');
+            throw new InvalidParameterError('name contains unprintable characters');
         }
 
+        const alreadyUsedError = 'name already used';
+
         if (wallet && wallet.names && name in wallet.names) {
-            throw new InvalidParameterError('name already used');
+            throw new InvalidParameterError(alreadyUsedError);
         }
 
         if (wallet && wallet.ids && name in wallet.ids) {
-            throw new InvalidParameterError('name already used');
+            throw new InvalidParameterError(alreadyUsedError);
         }
 
         return name;

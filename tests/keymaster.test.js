@@ -653,7 +653,7 @@ describe('createId', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Invalid parameter: name must contain only printable characters');
+            expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
         }
     });
 });
@@ -1154,7 +1154,7 @@ describe('addName', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Invalid parameter: name must contain only printable characters');
+            expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
         }
     });
 });
