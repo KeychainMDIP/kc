@@ -536,7 +536,7 @@ describe('createDID', () => {
         }
     });
 
-    it('should throw exception on agent op size exceeding limit', async () => {
+    it('should throw exception on create op size exceeding limit', async () => {
         mockFs({});
 
         const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxOpBytes: 100 });
