@@ -519,6 +519,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
         const ids = await keymaster.listIds();
         setIdList(ids);
+
+        setCredentialDID("");
+        setCredentialString("");
+        setCredentialSubject("");
+        setCredentialSchema("");
     }
 
     async function refreshCurrentID() {
