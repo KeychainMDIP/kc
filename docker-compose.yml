@@ -68,6 +68,7 @@ services:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_NODE_NAME=${KC_NODE_NAME}
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
+      - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
     volumes:
       - ./data:/app/hyperswarm/data
     user: "${KC_UID}:${KC_GID}"
