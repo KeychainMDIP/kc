@@ -48,7 +48,7 @@ export default class Keymaster {
             throw new InvalidParameterError('options.cipher');
         }
 
-        this.defaultRegistry = process.env.KC_DEFAULT_REGISTRY || 'hyperswarm';
+        this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
         this.maxNameLength = options.maxNameLength || 32;
     }

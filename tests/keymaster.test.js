@@ -82,6 +82,15 @@ describe('constructor', () => {
         catch (error) {
             expect(error.message).toBe('Invalid parameter: options.cipher');
         }
+
+        // Cover the ExpectedExceptionError class for completeness
+        try {
+            new Keymaster({ gatekeeper, wallet, cipher });
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Expected to throw an exception');
+        }
     });
 });
 
@@ -546,14 +555,14 @@ describe('createId', () => {
     it('should create a new ID on customized default registry', async () => {
         mockFs({});
 
-        process.env.KC_DEFAULT_REGISTRY = 'TFTC';
-        const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+        const defaultRegistry = 'TFTC';
+        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.mdip.registry).toBe('TFTC');
+        expect(doc.mdip.registry).toBe(defaultRegistry);
     });
 
     it('should throw to create a second ID with the same name', async () => {
