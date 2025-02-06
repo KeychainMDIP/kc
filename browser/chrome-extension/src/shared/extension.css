@@ -51,7 +51,7 @@
 .flex-row {
     display: flex;
     flex-direction: row;
-    gap: 16px;
+    gap: 0;
 }
 
 .flex-box.mt-2 {
@@ -132,13 +132,29 @@
     width: 340px;
 }
 
+.select-small-left,
+.select-small-right,
 .select-small {
     width: 150px;
     height: 40px;
 }
 
+.select-small-wide {
+    height: 40px;
+}
+
 .select-small .MuiOutlinedInput-notchedOutline {
     border-radius: 0;
+}
+
+.select-small-left .MuiOutlinedInput-notchedOutline {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.select-small-right .MuiOutlinedInput-notchedOutline {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
 }
 
 .MuiButton-root.button-right {
@@ -255,6 +271,6 @@
 
 .browser-context {
     flex: 1;
-    padding: 16px;
+    padding: 8px 16px 16px 16px;
     overflow: auto;
 }

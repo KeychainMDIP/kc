@@ -23,7 +23,6 @@ function BrowserContent() {
         tabParam === "credentials" && !currentId
             ? "identities"
             : tabParam || "identities";
-    console.log(initialTab);
     const [activeTab, setActiveTab] = useState<string>(initialTab);
     const [didRun, setDidRun] = useState(false);
 

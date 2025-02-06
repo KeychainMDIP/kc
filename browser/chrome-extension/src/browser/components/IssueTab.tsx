@@ -1,14 +1,17 @@
-import React from "react";
-import JsonView from "@uiw/react-json-view";
+import React, { useEffect, useState } from "react";
 import { useUIContext } from "../../shared/UIContext";
+import CredentialForm from "./CredentialForm";
 import {
     Box,
     Button,
     Select,
     MenuItem,
+    InputAdornment,
     TextField,
-    Typography,
+    Tooltip,
+    IconButton,
 } from "@mui/material";
+import { ContentCopy } from "@mui/icons-material";
 
 function IssueTab() {
     const {
@@ -17,6 +20,7 @@ function IssueTab() {
         credentialSchema,
         credentialString,
         credentialSubject,
+        handleCopyDID,
         keymaster,
         registries,
         registry,
@@ -29,6 +33,9 @@ function IssueTab() {
         setIssuedList,
         setRegistry,
     } = useUIContext();
+
+    const [schemaObject, setSchemaObject] = useState(null);
+    const [isFormValid, setIsFormValid] = useState<boolean>(false);
 
     async function editCredential() {
         try {
@@ -50,23 +57,50 @@ function IssueTab() {
                 { registry },
             );
             setCredentialDID(did);
-            setIssuedList((prevIssuedList) => [...prevIssuedList, did]);
+            setIssuedList((prevIssuedList: any) => [...prevIssuedList, did]);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
     }
 
+    useEffect(() => {
+        async function getSchema() {
+            try {
+                const credentialObject = JSON.parse(credentialString);
+                if (
+                    !credentialObject.type ||
+                    !Array.isArray(credentialObject.type) ||
+                    credentialObject.type.length < 2
+                ) {
+                    setError("Invalid credential object");
+                    return;
+                }
+                const schemaDID = credentialObject.type[1];
+                const schemaObject = await keymaster.resolveDID(schemaDID);
+                setSchemaObject(schemaObject);
+            } catch (error) {
+                setError(error.error || error.message || String(error));
+            }
+        }
+
+        if (credentialString) {
+            getSchema();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [credentialString]);
+
     return (
-        <Box>
-            <Box className="flex-row">
+        <Box sx={{ width: "742px" }}>
+            <Box className="flex-row" sx={{ mb: 2 }}>
                 <Select
                     style={{ width: "300px" }}
                     value={credentialSubject}
-                    fullWidth
-                    displayEmpty
                     onChange={(event) =>
                         setCredentialSubject(event.target.value)
                     }
+                    displayEmpty
+                    variant="outlined"
+                    className="select-small-left"
                 >
                     <MenuItem value="" disabled>
                         Select subject
@@ -80,11 +114,12 @@ function IssueTab() {
                 <Select
                     style={{ width: "300px" }}
                     value={credentialSchema}
-                    fullWidth
-                    displayEmpty
                     onChange={(event) =>
                         setCredentialSchema(event.target.value)
                     }
+                    displayEmpty
+                    variant="outlined"
+                    className="select-small"
                 >
                     <MenuItem value="" disabled>
                         Select schema
@@ -100,44 +135,40 @@ function IssueTab() {
                     color="primary"
                     onClick={editCredential}
                     disabled={!credentialSubject || !credentialSchema}
+                    size="small"
+                    className="button-right"
                 >
                     Edit Credential
                 </Button>
             </Box>
-            {credentialString && (
+            {credentialString && schemaObject && (
                 <>
-                    <Box sx={{ display: "flex", flexDirection: "column" }}>
-                        <Typography variant="h6" sx={{ my: 1 }}>
-                            {`Editing ${credentialSchema} credential for ${credentialSubject}`}
-                        </Typography>
-                        <TextField
-                            value={credentialString}
-                            onChange={(e) =>
-                                setCredentialString(e.target.value)
-                            }
-                            multiline
-                            rows={20}
-                            sx={{ width: "795px", overflow: "auto" }}
-                        />
-                    </Box>
+                    <CredentialForm
+                        schemaObject={schemaObject}
+                        baseCredential={credentialString}
+                        onChange={(credString, valid) => {
+                            setCredentialString(credString);
+                            setIsFormValid(valid);
+                        }}
+                    />
                     <Box
                         display="flex"
                         alignItems="center"
-                        sx={{ gap: 0, my: 1 }}
+                        sx={{ gap: 0, my: 2 }}
                     >
                         <Button
                             variant="contained"
                             color="primary"
                             onClick={issueCredential}
                             className="button-left"
-                            disabled={!credentialString}
+                            disabled={!isFormValid}
                         >
                             Issue Credential
                         </Button>
                         <Select
                             style={{ width: "300px" }}
                             value={registry}
-                            className="select-small"
+                            className="select-small-right"
                             onChange={(event) =>
                                 setRegistry(event.target.value)
                             }
@@ -150,14 +181,39 @@ function IssueTab() {
                         </Select>
                     </Box>
                     {credentialDID && (
-                        <Typography
-                            style={{
-                                fontSize: "1.5em",
-                                fontFamily: "Courier;monospace",
+                        <TextField
+                            value={credentialDID}
+                            variant="outlined"
+                            fullWidth
+                            size="small"
+                            className="text-field"
+                            slotProps={{
+                                input: {
+                                    readOnly: true,
+                                    style: {
+                                        fontSize: "1.5em",
+                                        fontFamily: "Courier, monospace",
+                                    },
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <Tooltip title="Copy DID">
+                                                <IconButton
+                                                    onClick={() =>
+                                                        handleCopyDID(
+                                                            credentialDID,
+                                                        )
+                                                    }
+                                                    size="small"
+                                                    sx={{ px: 0.5 }}
+                                                >
+                                                    <ContentCopy fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </InputAdornment>
+                                    ),
+                                },
                             }}
-                        >
-                            {credentialDID}
-                        </Typography>
+                        />
                     )}
                 </>
             )}
