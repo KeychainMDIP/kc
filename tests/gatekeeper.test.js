@@ -536,6 +536,21 @@ describe('createDID', () => {
         }
     });
 
+    it('should throw exception on agent op size exceeding limit', async () => {
+        mockFs({});
+
+        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxOpBytes: 100 });
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+
+        try {
+            await gk.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: size');
+        }
+    });
+
     it('should create DID from asset operation', async () => {
         mockFs({});
 
@@ -1137,6 +1152,24 @@ describe('updateDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+
+    it('should throw exception on update op size exceeding limit', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        try {
+            const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxOpBytes: 100 });
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            await gk.updateDID(updateOp);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: size');
         }
     });
 
