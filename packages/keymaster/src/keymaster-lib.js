@@ -803,14 +803,37 @@ export default class Keymaster {
         return id.owned || [];
     }
 
+    validateName(name, wallet) {
+        if (typeof name !== 'string' || !name.trim()) {
+            throw new InvalidParameterError('name must be a non-empty string');
+        }
+
+        name = name.trim(); // Remove leading/trailing whitespace
+
+        if (name.length > MaxNameLength) {
+            throw new InvalidParameterError(`name too long`);
+        }
+
+        if (/[^\P{Cc}]/u.test(name)) {
+            throw new InvalidParameterError('name must contain only printable characters');
+        }
+
+        if (wallet && wallet.names && name in wallet.names) {
+            throw new InvalidParameterError('name already used');
+        }
+
+        if (wallet && wallet.ids && name in wallet.ids) {
+            throw new InvalidParameterError('name already used');
+        }
+
+        return name;
+    }
+
     async createId(name, options = {}) {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
-        if (wallet.ids && name in wallet.ids) {
-            // eslint-disable-next-line
-            throw new InvalidParameterError('name already used');
-        }
+        name = this.validateName(name, wallet);
 
         const account = wallet.counter;
         const index = 0;
@@ -875,12 +898,14 @@ export default class Keymaster {
     async renameId(id, name) {
         const wallet = await this.loadWallet();
 
+        name = this.validateName(name);
+
         if (!(id in wallet.ids)) {
             throw new UnknownIDError();
         }
 
         if (name in wallet.ids) {
-            throw new InvalidParameterError(`${name} already exists`);
+            throw new InvalidParameterError('name already used');
         }
 
         wallet.ids[name] = wallet.ids[id];
@@ -988,24 +1013,7 @@ export default class Keymaster {
             wallet.names = {};
         }
 
-        if (typeof name !== 'string' || !name.trim()) {
-            throw new InvalidParameterError('name must be a non-empty string');
-        }
-
-        name = name.trim(); // Remove leading/trailing whitespace
-
-        if (name.length > MaxNameLength) {
-            throw new InvalidParameterError(`name too long`);
-        }
-
-        if (/[^\P{Cc}]/u.test(name)) {
-            throw new InvalidParameterError('name must contain only printable characters');
-        }
-
-        if (name in wallet.names || name in wallet.ids) {
-            throw new InvalidParameterError('name already used');
-        }
-
+        name = this.validateName(name, wallet);
         wallet.names[name] = did;
         return this.saveWallet(wallet);
     }

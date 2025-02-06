@@ -522,6 +522,17 @@ describe('createId', () => {
         expect(wallet.current).toBe(name);
     });
 
+    it('should create a new ID with a Unicode name', async () => {
+        mockFs({});
+
+        const name = 'ҽ× ʍɑϲհíղɑ';
+        const did = await keymaster.createId(name);
+        const wallet = await keymaster.loadWallet();
+
+        expect(wallet.ids[name].did).toBe(did);
+        expect(wallet.current).toBe(name);
+    });
+
     it('should create a new ID on default registry', async () => {
         mockFs({});
 
@@ -574,6 +585,76 @@ describe('createId', () => {
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
         expect(wallet.current).toBe(name2);
+    });
+
+    it('should not create an ID with an empty name', async () => {
+        mockFs({});
+
+        const expectedError = 'Invalid parameter: name must be a non-empty string';
+
+        try {
+            await keymaster.createId('');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId('    ');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId(undefined);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId(0);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId({});
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+    });
+
+    it('should not create an ID with a name that is too long', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('1234567890123456789012345678901234567890');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name too long');
+        }
+    });
+
+    it('should not create an ID with a name that contains unprintable characters', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('hello\nworld!');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name must contain only printable characters');
+        }
     });
 });
 
@@ -635,7 +716,7 @@ describe('renameId', () => {
         expect(wallet.current).toBe(name2);
     });
 
-    it('should throw to rename from an non-existent ID', async () => {
+    it('should not rename from an non-existent ID', async () => {
         mockFs({});
 
         const name1 = 'Bob';
@@ -649,7 +730,7 @@ describe('renameId', () => {
         }
     });
 
-    it('should throw to rename to an already existing ID', async () => {
+    it('should not rename to an already existing ID', async () => {
         mockFs({});
 
         const name1 = 'Bob';
