@@ -4,6 +4,7 @@ import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
+import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
@@ -502,6 +503,21 @@ async function main() {
         }
 
         jsonPersister = jsonMongo;
+    }
+    else if (config.db === 'sqlite') {
+        const jsonSQLite = await JsonSQLite.create(REGISTRY);
+        const sqlite = await jsonSQLite.loadDb();
+        const fileDb = await jsonFile.loadDb();
+
+        if (!sqlite && fileDb) {
+            await jsonSQLite.saveDb(fileDb);
+            console.log('Database upgraded to sqlite');
+        }
+        else {
+            console.log('Persisting to sqlite');
+        }
+
+        jsonPersister = jsonSQLite;
     }
 
     if (config.reimport) {
