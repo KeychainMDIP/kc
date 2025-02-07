@@ -21,6 +21,7 @@ const config = {
     feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00000,
     startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
     reimport: process.env.KC_SAT_REIMPORT ? (process.env.KC_SAT_REIMPORT === 'true') : true,
+    db: process.env.KC_SAT_DB || 'json',
 };
 
 export default config;

@@ -2,6 +2,7 @@ import BtcClient from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
+import JsonRedis from './db/redis.js';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
@@ -18,7 +19,8 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-const dbAdapter = new JsonFile(`${REGISTRY}-mediator`);
+const dbJson = new JsonFile(REGISTRY);
+let dbAdapter = dbJson;
 
 async function loadDb() {
     const newDb = {
@@ -468,6 +470,22 @@ async function main() {
     if (!config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
         return;
+    }
+
+    if (config.db === 'redis') {
+        const dbRedis = await JsonRedis.create(REGISTRY);
+        const db = await dbRedis.loadDb();
+        const oldDb = await dbJson.loadDb();
+
+        if (!db && oldDb) {
+            dbRedis.saveDb(oldDb);
+            console.log('Database upgraded to redis');
+        }
+        else {
+            console.log('Persisting to redis');
+        }
+
+        dbAdapter = dbRedis;
     }
 
     if (config.reimport) {

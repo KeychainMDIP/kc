@@ -1,9 +1,9 @@
 import fs from 'fs';
 
 export default class JsonFile {
-    constructor(name, dataFolder = 'data') {
+    constructor(registry, dataFolder = 'data') {
         this.dataFolder = dataFolder;
-        this.fileName = `${dataFolder}/${name}.json`;
+        this.fileName = `${dataFolder}/${registry}-mediator.json`;
     }
 
     async saveDb(data) {
