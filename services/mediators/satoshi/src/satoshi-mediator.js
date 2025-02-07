@@ -35,7 +35,9 @@ async function loadDb() {
         discovered: [],
     };
 
-    return jsonPersister.loadDb() || newDb;
+    const db = await jsonPersister.loadDb();
+
+    return db || newDb;
 }
 
 async function saveDb(db) {
