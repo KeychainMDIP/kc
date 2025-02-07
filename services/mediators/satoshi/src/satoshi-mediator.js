@@ -3,6 +3,7 @@ import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
+import JsonMongo from './db/mongo.js';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
@@ -19,8 +20,8 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-const dbJson = new JsonFile(REGISTRY);
-let dbAdapter = dbJson;
+const jsonFile = new JsonFile(REGISTRY);
+let jsonPersister = jsonFile;
 
 async function loadDb() {
     const newDb = {
@@ -34,11 +35,11 @@ async function loadDb() {
         discovered: [],
     };
 
-    return dbAdapter.loadDb() || newDb;
+    return jsonPersister.loadDb() || newDb;
 }
 
-async function writeDb(db) {
-    return dbAdapter.saveDb(db);
+async function saveDb(db) {
+    return jsonPersister.saveDb(db);
 }
 
 async function fetchTransaction(height, index, timestamp, txid) {
@@ -59,7 +60,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
                     txid: txid,
                     did: textString,
                 });
-                await writeDb(db);
+                await saveDb(db);
             }
         }
     }
@@ -87,7 +88,7 @@ async function fetchBlock(height, blockCount) {
         db.txnsScanned = db.txnsScanned + block.nTx;
         db.blockCount = blockCount;
         db.blocksPending = blockCount - height;
-        await writeDb(db);
+        await saveDb(db);
 
     } catch (error) {
         console.error(`Error fetching block: ${error}`);
@@ -173,7 +174,7 @@ async function importBatches() {
         }
     }
 
-    return writeDb(db);
+    return saveDb(db);
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -236,7 +237,7 @@ async function replaceByFee() {
 
     if (tx.blockhash) {
         db.pendingTxid = null;
-        await writeDb(db);
+        await saveDb(db);
         return false;
     }
 
@@ -286,7 +287,7 @@ async function replaceByFee() {
     console.log(`Transaction broadcasted with txid: ${txid}`);
 
     db.pendingTxid = txid;
-    await writeDb(db);
+    await saveDb(db);
 
     return true;
 }
@@ -296,7 +297,7 @@ async function checkExportInterval() {
 
     if (!db.lastExport) {
         db.lastExport = new Date().toISOString();
-        await writeDb(db);
+        await saveDb(db);
         return true;
     }
 
@@ -357,7 +358,7 @@ async function anchorBatch() {
                 db.pendingTxid = txid;
                 db.lastExport = new Date().toISOString();
 
-                await writeDb(db);
+                await saveDb(db);
             }
         }
     }
@@ -473,19 +474,34 @@ async function main() {
     }
 
     if (config.db === 'redis') {
-        const dbRedis = await JsonRedis.create(REGISTRY);
-        const db = await dbRedis.loadDb();
-        const oldDb = await dbJson.loadDb();
+        const jsonRedis = await JsonRedis.create(REGISTRY);
+        const redisDb = await jsonRedis.loadDb();
+        const fileDb = await jsonFile.loadDb();
 
-        if (!db && oldDb) {
-            dbRedis.saveDb(oldDb);
+        if (!redisDb && fileDb) {
+            await jsonRedis.saveDb(fileDb);
             console.log('Database upgraded to redis');
         }
         else {
             console.log('Persisting to redis');
         }
 
-        dbAdapter = dbRedis;
+        jsonPersister = jsonRedis;
+    }
+    else if (config.db === 'mongodb') {
+        const jsonMongo = await JsonMongo.create(REGISTRY);
+        const mongoDb = await jsonMongo.loadDb();
+        const fileDb = await jsonFile.loadDb();
+
+        if (!mongoDb && fileDb) {
+            await jsonMongo.saveDb(fileDb);
+            console.log('Database upgraded to mongodb');
+        }
+        else {
+            console.log('Persisting to mongodb');
+        }
+
+        jsonPersister = jsonMongo;
     }
 
     if (config.reimport) {
@@ -497,7 +513,7 @@ async function main() {
             delete item.error;
         }
 
-        await writeDb(db);
+        await saveDb(db);
     }
 
     const ok = await waitForChain();
