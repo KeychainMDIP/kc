@@ -296,6 +296,12 @@ export function UIProvider({ children, isBrowser }: { children: ReactNode, isBro
                 await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
                 return false;
             }
+        } else {
+            // We switched user in the browser so no currentId stored
+            const cid = await keymaster.getCurrentId();
+            if (cid) {
+                await refreshCurrentIDInternal(cid);
+            }
         }
 
         setPendingTab(extensionState.selectedTab);
