@@ -3,9 +3,9 @@ import { open } from 'sqlite';
 
 export default class JsonSQLite {
     static async create(registry, dataFolder = 'data') {
-        const wallet = new JsonSQLite(registry, dataFolder);
-        await wallet.connect();
-        return wallet;
+        const json = new JsonSQLite(registry, dataFolder);
+        await json.connect();
+        return json;
     }
 
     constructor(registry, dataFolder = 'data') {
@@ -19,7 +19,7 @@ export default class JsonSQLite {
         });
 
         await this.db.exec(`
-            CREATE TABLE IF NOT EXISTS wallet (
+            CREATE TABLE IF NOT EXISTS json (
                 id INTEGER PRIMARY KEY,
                 data TEXT NOT NULL
             )
@@ -31,13 +31,13 @@ export default class JsonSQLite {
     }
 
     async saveDb(data) {
-        await this.db.run('DELETE FROM wallet');
-        await this.db.run('INSERT INTO wallet (data) VALUES (?)', JSON.stringify(data));
+        await this.db.run('DELETE FROM json');
+        await this.db.run('INSERT INTO json (data) VALUES (?)', JSON.stringify(data));
         return true;
     }
 
     async loadDb() {
-        const row = await this.db.get('SELECT data FROM wallet LIMIT 1');
+        const row = await this.db.get('SELECT data FROM json LIMIT 1');
 
         if (!row) {
             return null;

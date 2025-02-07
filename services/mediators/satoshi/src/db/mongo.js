@@ -2,9 +2,9 @@ import { MongoClient } from 'mongodb';
 
 export default class JsonMongo {
     static async create(registry) {
-        const wallet = new JsonMongo(registry);
-        await wallet.connect();
-        return wallet;
+        const json = new JsonMongo(registry);
+        await json.connect();
+        return json;
     }
 
     constructor(registry) {

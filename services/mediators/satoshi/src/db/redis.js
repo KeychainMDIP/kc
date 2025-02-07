@@ -2,9 +2,9 @@ import Redis from 'ioredis';
 
 export default class JsonRedis {
     static async create(registry) {
-        const wallet = new JsonRedis(registry);
-        await wallet.connect();
-        return wallet;
+        const json = new JsonRedis(registry);
+        await json.connect();
+        return json;
     }
 
     constructor(registry) {
