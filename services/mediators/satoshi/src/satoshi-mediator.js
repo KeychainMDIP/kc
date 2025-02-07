@@ -21,8 +21,7 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-const jsonFile = new JsonFile(REGISTRY);
-let jsonPersister = jsonFile;
+let jsonPersister;
 
 async function loadDb() {
     const newDb = {
@@ -474,50 +473,32 @@ async function main() {
         return;
     }
 
+    const jsonFile = new JsonFile(REGISTRY);
+
     if (config.db === 'redis') {
-        const jsonRedis = await JsonRedis.create(REGISTRY);
-        const redisDb = await jsonRedis.loadDb();
-        const fileDb = await jsonFile.loadDb();
-
-        if (!redisDb && fileDb) {
-            await jsonRedis.saveDb(fileDb);
-            console.log('Database upgraded to redis');
-        }
-        else {
-            console.log('Persisting to redis');
-        }
-
-        jsonPersister = jsonRedis;
+        jsonPersister = await JsonRedis.create(REGISTRY);
     }
     else if (config.db === 'mongodb') {
-        const jsonMongo = await JsonMongo.create(REGISTRY);
-        const mongoDb = await jsonMongo.loadDb();
-        const fileDb = await jsonFile.loadDb();
-
-        if (!mongoDb && fileDb) {
-            await jsonMongo.saveDb(fileDb);
-            console.log('Database upgraded to mongodb');
-        }
-        else {
-            console.log('Persisting to mongodb');
-        }
-
-        jsonPersister = jsonMongo;
+        jsonPersister = await JsonMongo.create(REGISTRY);
     }
     else if (config.db === 'sqlite') {
-        const jsonSQLite = await JsonSQLite.create(REGISTRY);
-        const sqlite = await jsonSQLite.loadDb();
+        jsonPersister = await JsonSQLite.create(REGISTRY);;
+    }
+    else {
+        jsonPersister = jsonFile;
+    }
+
+    if (config.db !== 'json') {
+        const jsonDb = await jsonPersister.loadDb();
         const fileDb = await jsonFile.loadDb();
 
-        if (!sqlite && fileDb) {
-            await jsonSQLite.saveDb(fileDb);
-            console.log('Database upgraded to sqlite');
+        if (!jsonDb && fileDb) {
+            await jsonPersister.saveDb(fileDb);
+            console.log(`Database upgraded to ${config.db}`);
         }
         else {
-            console.log('Persisting to sqlite');
+            console.log(`Persisting to ${config.db}`);
         }
-
-        jsonPersister = jsonSQLite;
     }
 
     if (config.reimport) {
