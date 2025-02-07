@@ -3,7 +3,7 @@ import { Box, Stack, Tab, Tabs } from "@mui/material";
 import MessageReceiveTab from "./MessageReceiveTab";
 import MessageSendTab from "./MessageSendTab";
 import { TabContext } from "@mui/lab";
-import { useUIContext } from "../../shared/UIContext";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function MessageTab() {
     const { selectedMessageTab, setSelectedMessageTab } = useUIContext();

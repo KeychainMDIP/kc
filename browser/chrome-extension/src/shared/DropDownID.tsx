@@ -8,7 +8,8 @@ import {
     Tooltip,
 } from "@mui/material";
 import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
-import { useUIContext } from "./UIContext";
+import { useWalletContext } from "./contexts/WalletProvider";
+import { useUIContext } from "./contexts/UIContext";
 
 const DropDownID = () => {
     const {
@@ -20,6 +21,8 @@ const DropDownID = () => {
         openJSONViewer,
         setError,
         setSelectedId,
+    } = useWalletContext();
+    const {
         resetCurrentID,
     } = useUIContext();
 

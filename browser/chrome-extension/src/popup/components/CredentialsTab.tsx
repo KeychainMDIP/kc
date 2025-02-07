@@ -1,25 +1,31 @@
 import React, { useState } from "react";
-import { useUIContext } from "../../shared/UIContext";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function CredentialsTab() {
-    const {
-        heldDID,
-        heldList,
-        manifest,
-        openJSONViewer,
-        resolveDID,
-        refreshHeld,
-        setHeldDID,
-        setError,
-        setWarning,
-        keymaster,
-    } = useUIContext();
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [removeDID, setRemoveDID] = useState("");
+    const {
+        manifest,
+        openJSONViewer,
+        resolveDID,
+        setError,
+        setWarning,
+        keymaster,
+    } = useWalletContext();
+    const {
+        heldDID,
+        heldList,
+        setHeldDID,
+    } = useCredentialsContext();
+    const {
+        refreshHeld,
+    } = useUIContext();
 
     async function acceptCredential() {
         try {

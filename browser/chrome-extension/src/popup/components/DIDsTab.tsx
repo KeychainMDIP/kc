@@ -7,25 +7,31 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import { useUIContext } from "../../shared/UIContext";
 import WarningModal from "../../shared/WarningModal";
 import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function DIDsTab() {
+    const [open, setOpen] = useState(false);
+    const [removeDID, setRemoveDID] = useState("");
+    const {
+        openJSONViewer,
+        handleCopyDID,
+        keymaster,
+        setError,
+    } = useWalletContext();
     const {
         aliasName,
         aliasDID,
         nameList,
-        openJSONViewer,
         setAliasDID,
         setAliasName,
+    } = useCredentialsContext();
+    const {
         refreshNames,
-        handleCopyDID,
-        keymaster,
-        setError,
     } = useUIContext();
-    const [open, setOpen] = useState(false);
-    const [removeDID, setRemoveDID] = useState("");
 
     async function clearFields() {
         await setAliasName("");

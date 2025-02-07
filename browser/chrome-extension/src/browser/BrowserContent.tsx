@@ -12,11 +12,13 @@ import WalletTab from "./components/WalletTab";
 import SettingsTab from "./components/SettingsTab";
 import IdentitiesTab from "../shared/IdentitiesTab";
 import BrowserHeader from "./components/BrowserHeader";
-import { useUIContext } from "../shared/UIContext";
+import { useWalletContext } from "../shared/contexts/WalletProvider";
+import { useUIContext } from "../shared/contexts/UIContext";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
-    const { currentId, refreshAll } = useUIContext();
+    const { currentId } = useWalletContext();
+    const { refreshAll } = useUIContext();
     const { search } = window.location;
     const tabParam = new URLSearchParams(search).get("tab");
     const subTabParam = new URLSearchParams(search).get("subTab");
@@ -26,14 +28,6 @@ function BrowserContent() {
             : tabParam || "identities";
     const [activeTab, setActiveTab] = useState<string>(initialTab);
     const [didRun, setDidRun] = useState(false);
-
-    useEffect(() => {
-        const init = async () => {
-            await refreshAll();
-        };
-        init();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     useEffect(() => {
         if (!didRun && currentId) {

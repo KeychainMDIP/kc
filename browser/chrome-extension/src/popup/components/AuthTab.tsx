@@ -1,25 +1,28 @@
 import React from "react";
 import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
-import { useUIContext } from "../../shared/UIContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useAuthContext } from "../../shared/contexts/AuthContext";
 
 function AuthTab() {
     const {
-        authDID,
-        challenge,
         keymaster,
         openJSONViewer,
-        setChallenge,
-        setAuthDID,
         setError,
         setWarning,
+    } = useWalletContext();
+    const {
+        authDID,
+        challenge,
+        setChallenge,
+        setAuthDID,
         response,
         setResponse,
         callback,
         setCallback,
         disableSendResponse,
         setDisableSendResponse,
-    } = useUIContext();
+    } = useAuthContext();
 
     async function newChallenge() {
         try {

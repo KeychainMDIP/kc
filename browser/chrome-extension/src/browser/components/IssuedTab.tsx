@@ -5,25 +5,28 @@ import {
     TextField,
     Typography,
 } from "@mui/material";
-import { useUIContext } from "../../shared/UIContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import WarningModal from "../../shared/WarningModal";
 
 function IssuedTab() {
     const FONT_FAMILY = "Courier, monospace";
     const {
+        keymaster,
+        setError,
+    } = useWalletContext();
+    const {
         issuedEdit,
         issuedList,
         issuedString,
         issuedStringOriginal,
-        keymaster,
         selectedIssued,
-        setError,
         setIssuedEdit,
         setIssuedList,
         setIssuedString,
         setIssuedStringOriginal,
         setSelectedIssued,
-    } = useUIContext();
+    } = useCredentialsContext();
     const [open, setOpen] = useState(false);
     const [revokeDID, setRevokeDID] = useState("");
 

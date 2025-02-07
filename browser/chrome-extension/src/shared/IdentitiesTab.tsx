@@ -1,18 +1,20 @@
 import React, { useState } from "react";
-import { useUIContext } from "./UIContext";
+import { useWalletContext } from "./contexts/WalletProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
+import { useUIContext } from "./contexts/UIContext";
 
 function IdentitiesTab() {
+    const [name, setName] = useState("");
     const {
         registry,
         setRegistry,
         registries,
-        resetCurrentID,
         setError,
         keymaster,
+    } = useWalletContext();
+    const {
+        resetCurrentID,
     } = useUIContext();
-
-    const [name, setName] = useState("");
 
     const handleCreateId = async () => {
         if (!name.trim()) return;

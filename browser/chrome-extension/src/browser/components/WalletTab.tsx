@@ -5,7 +5,8 @@ import {
     Box,
     Button,
 } from "@mui/material";
-import { useUIContext } from "../../shared/UIContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 import WarningModal from "../../shared/WarningModal";
 
 const WalletTab = () => {
@@ -14,8 +15,8 @@ const WalletTab = () => {
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [walletObject, setWalletObject] = useState<any>(null);
-    const { setError, keymaster, initialiseWallet, refreshAll } =
-        useUIContext();
+    const { setError, keymaster, initialiseWallet } = useWalletContext();
+    const { wipAllStates } = useUIContext();
 
     const handleClickOpen = () => {
         if (!loading) {
@@ -33,7 +34,7 @@ const WalletTab = () => {
         await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
         await initialiseWallet();
-        await refreshAll();
+        wipAllStates();
         setWalletObject(null);
         setMnemonicString("");
     }

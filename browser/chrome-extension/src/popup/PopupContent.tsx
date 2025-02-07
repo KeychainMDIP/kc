@@ -17,7 +17,8 @@ import {
     MoreVert,
     Message,
 } from "@mui/icons-material";
-import { useUIContext } from "../shared/UIContext";
+import { useWalletContext } from "../shared/contexts/WalletProvider";
+import { useUIContext } from "../shared/contexts/UIContext";
 import IdentitiesTab from "../shared/IdentitiesTab";
 import CredentialsTab from "./components/CredentialsTab";
 import AuthTab from "./components/AuthTab";
@@ -26,22 +27,20 @@ import DIDsTab from "./components/DIDsTab";
 import MessageTab from "./components/MessageTab";
 
 const PopupContent = () => {
-    const { currentId, selectedTab, setSelectedTab, refreshAll } =
-        useUIContext();
+    const {
+        currentId,
+    } = useWalletContext();
+    const {
+        selectedTab,
+        setSelectedTab,
+        refreshAll,
+    } = useUIContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
         await setSelectedTab(newValue);
     }
-
-    useEffect(() => {
-        const init = async () => {
-            await refreshAll();
-        };
-        init();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     function handleMenuOpen(event: React.MouseEvent<HTMLElement>) {
         setMenuAnchorEl(event.currentTarget);

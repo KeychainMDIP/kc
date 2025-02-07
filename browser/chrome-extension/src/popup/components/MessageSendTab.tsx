@@ -2,12 +2,18 @@ import React, { useState } from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, Menu, MenuItem, Select, TextField } from "@mui/material";
 import { ArrowDropDown, Close, ContentCopy } from "@mui/icons-material";
-import { useUIContext } from "../../shared/UIContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useMessageContext } from "../../shared/contexts/MessageContext";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 
 function MessageSendTab({ tabValue }: { tabValue: string }) {
+    const [anchorEl, setAnchorEl] = useState(null);
     const {
-        agentList,
         registries,
+        keymaster,
+        setError,
+    } = useWalletContext();
+    const {
         messageRegistry,
         setMessageRegistry,
         messageRecipient,
@@ -16,10 +22,10 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
         setSendMessage,
         encryptedDID,
         setEncryptedDID,
-        keymaster,
-        setError,
-    } = useUIContext();
-    const [anchorEl, setAnchorEl] = useState(null);
+    } = useMessageContext();
+    const {
+        agentList,
+    } = useCredentialsContext();
 
     async function clearFields() {
         await setMessageRecipient("");

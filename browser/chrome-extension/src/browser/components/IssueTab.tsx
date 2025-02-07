@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useUIContext } from "../../shared/UIContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import CredentialForm from "./CredentialForm";
 import {
     Box,
@@ -15,24 +16,26 @@ import { ContentCopy } from "@mui/icons-material";
 
 function IssueTab() {
     const {
+        handleCopyDID,
+        keymaster,
+        registries,
+        registry,
+        setError,
+        setRegistry,
+    } = useWalletContext();
+    const {
         agentList,
         credentialDID,
         credentialSchema,
         credentialString,
         credentialSubject,
-        handleCopyDID,
-        keymaster,
-        registries,
-        registry,
         schemaList,
-        setError,
         setCredentialDID,
         setCredentialSchema,
         setCredentialString,
         setCredentialSubject,
         setIssuedList,
-        setRegistry,
-    } = useUIContext();
+    } = useCredentialsContext();
 
     const [schemaObject, setSchemaObject] = useState(null);
     const [isFormValid, setIsFormValid] = useState<boolean>(false);
