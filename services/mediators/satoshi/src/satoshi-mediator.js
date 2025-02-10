@@ -1,7 +1,10 @@
-import fs from 'fs';
 import BtcClient from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
+import JsonFile from './db/jsonfile.js';
+import JsonRedis from './db/redis.js';
+import JsonMongo from './db/mongo.js';
+import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { InvalidParameterError } from '@mdip/common/errors';
 
@@ -18,28 +21,27 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-const dbName = `data/${REGISTRY}-mediator.json`;
+let jsonPersister;
 
-function loadDb() {
-    if (fs.existsSync(dbName)) {
-        return JSON.parse(fs.readFileSync(dbName));
-    }
-    else {
-        return {
-            height: 0,
-            time: "",
-            blockCount: 0,
-            blocksScanned: 0,
-            blocksPending: 0,
-            txnsScanned: 0,
-            registered: [],
-            discovered: [],
-        }
-    }
+async function loadDb() {
+    const newDb = {
+        height: 0,
+        time: "",
+        blockCount: 0,
+        blocksScanned: 0,
+        blocksPending: 0,
+        txnsScanned: 0,
+        registered: [],
+        discovered: [],
+    };
+
+    const db = await jsonPersister.loadDb();
+
+    return db || newDb;
 }
 
-function writeDb(db) {
-    fs.writeFileSync(dbName, JSON.stringify(db, null, 4));
+async function saveDb(db) {
+    return jsonPersister.saveDb(db);
 }
 
 async function fetchTransaction(height, index, timestamp, txid) {
@@ -52,7 +54,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
             if (textString.startsWith('did:test:')) {
-                const db = loadDb();
+                const db = await loadDb();
                 db.discovered.push({
                     height: height,
                     index: index,
@@ -60,7 +62,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
                     txid: txid,
                     did: textString,
                 });
-                writeDb(db);
+                await saveDb(db);
             }
         }
     }
@@ -81,14 +83,14 @@ async function fetchBlock(height, blockCount) {
             await fetchTransaction(height, i, timestamp, txid);
         }
 
-        const db = loadDb();
+        const db = await loadDb();
         db.height = height;
         db.time = timestamp;
         db.blocksScanned = height - config.startBlock + 1;
         db.txnsScanned = db.txnsScanned + block.nTx;
         db.blockCount = blockCount;
         db.blocksPending = blockCount - height;
-        writeDb(db);
+        await saveDb(db);
 
     } catch (error) {
         console.error(`Error fetching block: ${error}`);
@@ -101,7 +103,7 @@ async function scanBlocks() {
 
     console.log(`current block height: ${blockCount}`);
 
-    const db = loadDb();
+    const db = await loadDb();
 
     if (db.height) {
         start = db.height + 1;
@@ -160,7 +162,7 @@ async function importBatch(item) {
 }
 
 async function importBatches() {
-    const db = loadDb();
+    const db = await loadDb();
 
     for (const item of db.discovered) {
         try {
@@ -174,7 +176,7 @@ async function importBatches() {
         }
     }
 
-    writeDb(db);
+    return saveDb(db);
 }
 
 export async function createOpReturnTxn(opReturnData) {
@@ -225,7 +227,7 @@ export async function createOpReturnTxn(opReturnData) {
 }
 
 async function replaceByFee() {
-    const db = loadDb();
+    const db = await loadDb();
 
     if (!db.pendingTxid) {
         return false;
@@ -237,7 +239,7 @@ async function replaceByFee() {
 
     if (tx.blockhash) {
         db.pendingTxid = null;
-        writeDb(db);
+        await saveDb(db);
         return false;
     }
 
@@ -287,17 +289,17 @@ async function replaceByFee() {
     console.log(`Transaction broadcasted with txid: ${txid}`);
 
     db.pendingTxid = txid;
-    writeDb(db);
+    await saveDb(db);
 
     return true;
 }
 
-function checkExportInterval() {
-    const db = loadDb();
+async function checkExportInterval() {
+    const db = await loadDb();
 
     if (!db.lastExport) {
         db.lastExport = new Date().toISOString();
-        writeDb(db);
+        await saveDb(db);
         return true;
     }
 
@@ -310,7 +312,7 @@ function checkExportInterval() {
 
 async function anchorBatch() {
 
-    if (checkExportInterval()) {
+    if (await checkExportInterval()) {
         return;
     }
 
@@ -344,7 +346,7 @@ async function anchorBatch() {
             const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
             if (ok) {
-                const db = loadDb();
+                const db = await loadDb();
 
                 if (!db.registered) {
                     db.registered = [];
@@ -358,7 +360,7 @@ async function anchorBatch() {
                 db.pendingTxid = txid;
                 db.lastExport = new Date().toISOString();
 
-                writeDb(db);
+                await saveDb(db);
             }
         }
     }
@@ -473,8 +475,36 @@ async function main() {
         return;
     }
 
+    const jsonFile = new JsonFile(REGISTRY);
+
+    if (config.db === 'redis') {
+        jsonPersister = await JsonRedis.create(REGISTRY);
+    }
+    else if (config.db === 'mongodb') {
+        jsonPersister = await JsonMongo.create(REGISTRY);
+    }
+    else if (config.db === 'sqlite') {
+        jsonPersister = await JsonSQLite.create(REGISTRY);;
+    }
+    else {
+        jsonPersister = jsonFile;
+    }
+
+    if (config.db !== 'json') {
+        const jsonDb = await jsonPersister.loadDb();
+        const fileDb = await jsonFile.loadDb();
+
+        if (!jsonDb && fileDb) {
+            await jsonPersister.saveDb(fileDb);
+            console.log(`Database upgraded to ${config.db}`);
+        }
+        else {
+            console.log(`Persisting to ${config.db}`);
+        }
+    }
+
     if (config.reimport) {
-        const db = loadDb();
+        const db = await loadDb();
 
         for (const item of db.discovered) {
             delete item.imported;
@@ -482,7 +512,7 @@ async function main() {
             delete item.error;
         }
 
-        writeDb(db);
+        await saveDb(db);
     }
 
     const ok = await waitForChain();
