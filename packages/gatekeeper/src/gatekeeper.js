@@ -39,7 +39,7 @@ export default class Gatekeeper {
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
 
         // Only DIDs registered on supported registries will be created by this node
-        this.supportedRegistries = options.registries ||  ['local'];
+        this.supportedRegistries = options.registries || ['local'];
 
         for (const registry of this.supportedRegistries) {
             if (!ValidRegistries.includes(registry)) {
@@ -112,6 +112,9 @@ export default class Gatekeeper {
                 verified += 1;
             }
         }
+
+        // Clear queue of permanently invalid events
+        this.eventsQueue = [];
 
         if (chatty) {
             console.timeEnd('verifyDb');
