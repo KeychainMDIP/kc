@@ -91,7 +91,7 @@ function IssuedTab() {
     };
 
     return (
-        <Box sx={{ width: "742px" }}>
+        <Box>
             <WarningModal
                 title="Remoke Credential"
                 warningText="Are you sure you want to rekove the credential?"

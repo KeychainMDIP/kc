@@ -110,7 +110,7 @@ function DIDsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => openJSONViewer(aliasName, aliasDID)}
+                    onClick={() => openJSONViewer({ title: aliasName, did: aliasDID })}
                     className="button large bottom"
                     disabled={!aliasDID}
                 >
@@ -174,7 +174,7 @@ function DIDsTab() {
                                     <Tooltip title="Resolve DID">
                                         <IconButton
                                             onClick={() =>
-                                                openJSONViewer(name, did)
+                                                openJSONViewer({ title: name, did })
                                             }
                                             size="small"
                                         >

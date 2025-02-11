@@ -27,6 +27,14 @@ interface SnackbarState {
     severity: AlertColor;
 }
 
+export interface openJSONViewerOptions {
+    title: string;
+    did: string;
+    tab?: string;
+    subTab?: string;
+    contents?: any;
+}
+
 interface WalletContextValue {
     currentId: string;
     setCurrentId: (value: string) => Promise<void>;
@@ -46,11 +54,13 @@ interface WalletContextValue {
     setManifest: Dispatch<SetStateAction<any>>;
     resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
-    openJSONViewer: (title: string, did: string, contents?: any) => void;
+    openJSONViewer: (options: openJSONViewerOptions) => void;
     handleCopyDID: (did: string) => void;
     storeState: (key: string, value: string | boolean) => Promise<void>;
     refreshWalletStored: (state: any) => Promise<void>;
     resetWalletState: () => void;
+    isBrowser: boolean;
+    reloadBrowserWallet: () => Promise<void>;
     refreshFlag: number;
     keymaster: Keymaster | null;
 }
@@ -171,6 +181,34 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
+    async function reloadBrowserWallet() {
+        if (!isBrowser) {
+            return;
+        }
+
+        let pass: string;
+        let response = await chrome.runtime.sendMessage({
+            action: "GET_PASSPHRASE",
+        });
+        if (response && response.passphrase) {
+            pass = response.passphrase;
+        }
+
+        if (!pass) {
+            return;
+        }
+
+        const wallet_chrome = new WalletChrome();
+        const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
+        const wallet_cache = new WalletCache(wallet_enc);
+
+        keymasterRef.current = new Keymaster({
+            gatekeeper,
+            wallet: wallet_cache,
+            cipher,
+        });
+    }
+
     useEffect(() => {
         initialiseWallet();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,18 +279,49 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
-    function openJSONViewer(title: string, did: string, contents?: any) {
-        const titleEncoded = encodeURIComponent(title);
-        const didEncoded = encodeURIComponent(did);
-        let viewerUrl = `chrome-extension://${chrome.runtime.id}/viewer.html?title=${titleEncoded}&did=${didEncoded}`;
+    function openJSONViewer(options: openJSONViewerOptions) {
+        const titleEncoded = encodeURIComponent(options.title);
+        const didEncoded = encodeURIComponent(options.did);
+        const tab = options.tab || "viewer";
+        let url = `browser.html?tab=${tab}&title=${titleEncoded}&did=${didEncoded}`;
 
-        if (contents) {
-            const contentsString = JSON.stringify(contents, null, 4);
-            const jsonEncoded = encodeURIComponent(contentsString);
-            viewerUrl += `&json=${jsonEncoded}`;
+        if (options.subTab) {
+            url += `&subTab=${options.subTab}`;
         }
 
-        window.open(viewerUrl, "_blank");
+        const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
+
+        if (options.contents) {
+            const jsonEncoded = encodeURIComponent(contentsString);
+            url += `&doc=${jsonEncoded}`;
+        }
+
+        chrome.tabs.query({ url: chrome.runtime.getURL("browser.html") + "*" }, (tabs) => {
+            if (!tabs || tabs.length === 0) {
+                chrome.tabs.create({ url });
+                return;
+            }
+
+            const existingTabId = tabs[0].id;
+
+            chrome.tabs.sendMessage(
+                existingTabId,
+                { type: "PING_JSON_VIEWER" },
+                (response) => {
+                    if (chrome.runtime.lastError || !response?.ack) {
+                        chrome.tabs.create({ url });
+                        return;
+                    }
+
+                    chrome.tabs.sendMessage(existingTabId, {
+                        type: "LOAD_JSON",
+                        payload: { title: options.title, tab: options.tab, subTab: options.subTab, did: options.did, contents: contentsString}
+                    });
+
+                    chrome.tabs.update(existingTabId, { active: true });
+                }
+            );
+        });
     }
 
     function handleCopyDID(did: string) {
@@ -285,7 +354,9 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         storeState,
         resetWalletState,
         refreshWalletStored,
+        reloadBrowserWallet,
         refreshFlag,
+        isBrowser,
         keymaster: keymasterRef.current,
     };
 

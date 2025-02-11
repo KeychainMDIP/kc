@@ -36,9 +36,9 @@ function AuthTab() {
 
     async function resolveChallenge(did: string) {
         try {
-            const asset = await keymaster.resolveAsset(did);
+            const contents = await keymaster.resolveAsset(did);
             await setAuthDID(did);
-            openJSONViewer("Resolve Challenge", did, asset);
+            openJSONViewer({ title: "Resolve Challenge", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -71,9 +71,9 @@ function AuthTab() {
 
     async function decryptResponse(did: string) {
         try {
-            const decrypted = await keymaster.decryptJSON(did);
+            const contents = await keymaster.decryptJSON(did);
             await setAuthDID(did);
-            openJSONViewer("Decrypt Response", did, decrypted);
+            openJSONViewer({ title: "Decrypt Response", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

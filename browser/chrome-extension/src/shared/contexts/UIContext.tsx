@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from "react";
-import { useWalletContext } from "./WalletProvider";
+import { useWalletContext, openJSONViewerOptions } from "./WalletProvider";
 import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useMessageContext} from "./MessageContext";
@@ -9,6 +9,7 @@ interface UIContextValue {
     setSelectedTab: (value: string) => Promise<void>;
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
+    jsonViewerOptions: openJSONViewerOptions | null;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -18,14 +19,26 @@ interface UIContextValue {
 
 const UIContext = createContext<UIContextValue | null>(null);
 
-export function UIProvider({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
-    const [pendingAuth, setPendingAuth] = useState<string | null>(null);
+export function UIProvider(
+    {
+        children,
+        pendingAuth,
+        jsonViewerOptions,
+        requestRefresh
+    }: {
+        children: ReactNode,
+        pendingAuth?: string,
+        jsonViewerOptions?: openJSONViewerOptions,
+        requestRefresh?: number
+    }) {
     const [pendingTab, setPendingTab] = useState<string | null>(null);
     const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(null);
     const [selectedTab, setSelectedTabState] = useState<string>("identities");
     const [selectedMessageTab, setSelectedMessageTabState] = useState<string>("receive");
+    const [pendingUsed, setPendingUsed] = useState<boolean>(false);
     const {
         currentId,
+        isBrowser,
         setCurrentId,
         setCurrentDID,
         setIdList,
@@ -38,6 +51,7 @@ export function UIProvider({ children, isBrowser }: { children: ReactNode, isBro
         resetWalletState,
         refreshWalletStored,
         refreshFlag,
+        reloadBrowserWallet,
     } = useWalletContext();
     const {
         setResponse,
@@ -73,40 +87,27 @@ export function UIProvider({ children, isBrowser }: { children: ReactNode, isBro
     } = useMessageContext();
 
     useEffect(() => {
-        const handleMessage = (message, _, sendResponse) => {
-            if (message.action === "SHOW_POPUP_AUTH") {
-                setPendingAuth(message.challenge);
-                sendResponse({ success: true });
-            }
-        };
-        chrome.runtime.onMessage.addListener(handleMessage);
-
-        return () => {
-            chrome.runtime.onMessage.removeListener(handleMessage);
-        };
-    }, []);
-
-    useEffect(() => {
         const refresh = async () => {
-            if (refreshFlag > 0) {
-                await refreshAll();
-            }
+            await reloadBrowserWallet();
+            await refreshAll();
         };
         refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshFlag]);
+    }, [refreshFlag, requestRefresh]);
 
     useEffect(() => {
         if (!currentId) return;
-        if (pendingAuth) {
+        if (pendingAuth && !pendingUsed) {
             (async () => {
                 await setSelectedTab("auth");
                 await setChallenge(pendingAuth);
                 await setResponse("");
                 await setCallback("");
-                setPendingAuth(null);
                 await setDisableSendResponse(true);
             })();
+
+            // Prevent challenge repopulating after clear on ID change
+            setPendingUsed(true);
         }
         if (pendingTab) {
             (async () => {
@@ -350,6 +351,7 @@ export function UIProvider({ children, isBrowser }: { children: ReactNode, isBro
         setSelectedTab,
         selectedMessageTab,
         setSelectedMessageTab,
+        jsonViewerOptions,
         refreshAll,
         resetCurrentID,
         refreshHeld,

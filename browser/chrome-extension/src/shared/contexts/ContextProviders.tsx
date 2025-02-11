@@ -1,17 +1,31 @@
 import React, { ReactNode } from 'react';
-import { WalletProvider } from "./WalletProvider";
+import { WalletProvider, openJSONViewerOptions } from "./WalletProvider";
 import { CredentialsProvider } from "./CredentialsProvider";
 import { AuthProvider } from "./AuthContext";
 import { MessageProvider } from "./MessageContext";
 import { UIProvider } from "./UIContext";
 
-function ContextProviders({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
+function ContextProviders(
+    {
+        children,
+        isBrowser,
+        pendingAuth,
+        jsonViewerOptions,
+        requestRefresh
+    }: {
+        children: ReactNode,
+        isBrowser: boolean,
+        pendingAuth?: string,
+        jsonViewerOptions?: openJSONViewerOptions,
+        requestRefresh?: number
+    }) {
+
     return (
         <WalletProvider isBrowser={isBrowser}>
             <CredentialsProvider>
                 <AuthProvider>
                     <MessageProvider>
-                        <UIProvider isBrowser={isBrowser}>
+                        <UIProvider pendingAuth={pendingAuth} jsonViewerOptions={jsonViewerOptions} requestRefresh={requestRefresh} >
                             {children}
                         </UIProvider>
                     </MessageProvider>

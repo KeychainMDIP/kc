@@ -93,7 +93,7 @@ function IssueTab() {
     }, [credentialString]);
 
     return (
-        <Box sx={{ width: "742px" }}>
+        <Box>
             <Box className="flex-row" sx={{ mb: 2 }}>
                 <Select
                     style={{ width: "300px" }}

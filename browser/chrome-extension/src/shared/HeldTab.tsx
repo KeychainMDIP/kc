@@ -1,16 +1,23 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
-import WarningModal from "../../shared/WarningModal";
-import { useWalletContext } from "../../shared/contexts/WalletProvider";
-import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
-import { useUIContext } from "../../shared/contexts/UIContext";
+import WarningModal from "./WarningModal";
+import { useWalletContext } from "./contexts/WalletProvider";
+import { useCredentialsContext } from "./contexts/CredentialsProvider";
+import { useUIContext } from "./contexts/UIContext";
+import JsonViewer from "../browser/components/JsonViewer";
 
-function CredentialsTab() {
-    const [open, setOpen] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [removeDID, setRemoveDID] = useState("");
+function HeldTab() {
+    const [open, setOpen] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [removeDID, setRemoveDID] = useState<string>("");
+    const [title, setTitle] = useState<string>("");
+    const [selectedDID, setSelectedDID] = useState<string>("");
+    const [selectedDoc, setSelectedDoc] = useState<any>(null);
+    const [loadURL, setLoadURL] = useState<boolean>(false);
     const {
+        currentId,
+        isBrowser,
         manifest,
         openJSONViewer,
         resolveDID,
@@ -24,8 +31,61 @@ function CredentialsTab() {
         setHeldDID,
     } = useCredentialsContext();
     const {
+        jsonViewerOptions,
         refreshHeld,
     } = useUIContext();
+
+    useEffect(() => {
+        setTitle("");
+        setSelectedDID("");
+        setSelectedDoc("");
+
+        if (loadURL) {
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const paramsTitle = params.get("title");
+        const paramsDid = params.get("did");
+        const paramsDoc = params.get("doc");
+        const paramsTab = params.get("subTab");
+        if (paramsTab !== "held") {
+            return;
+        }
+
+        if (paramsTitle && paramsDid) {
+            setTitle(paramsTitle);
+            setSelectedDID(paramsDid);
+
+            if (paramsDoc) {
+                setSelectedDoc(paramsDoc);
+            }
+        }
+
+        setLoadURL(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentId])
+
+
+    useEffect(() => {
+        if (!isBrowser || !jsonViewerOptions) {
+            return;
+        }
+
+        const {title, did, tab, subTab, contents} = jsonViewerOptions;
+
+        if (!tab || tab !== "credentials" || !subTab || subTab !== "held") {
+            return;
+        }
+
+        setTitle(title);
+        setSelectedDID(did);
+        if (contents) {
+            setSelectedDoc(contents);
+        }
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jsonViewerOptions])
 
     async function acceptCredential() {
         try {
@@ -44,7 +104,7 @@ function CredentialsTab() {
     async function decryptCredential(prefix: string, did: string) {
         try {
             const doc = await keymaster.getCredential(did);
-            openJSONViewer(prefix + " Credential", did, doc);
+            displayJson(prefix + " Credential", did, doc);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -144,6 +204,20 @@ function CredentialsTab() {
         chrome.tabs.create({ url: "browser.html?tab=credentials&subTab=" + subTab });
     }
 
+    function displayJson(title: string, did: string, contents?: any) {
+        if (isBrowser) {
+            setTitle(title);
+            setSelectedDID(did);
+            if (contents) {
+                setSelectedDoc(JSON.stringify(contents, null, 4));
+            } else {
+                setSelectedDoc("");
+            }
+        } else {
+            openJSONViewer({title, did, contents, tab: "credentials", subTab: "held"});
+        }
+    }
+
     return (
         <Box>
             <WarningModal
@@ -154,29 +228,31 @@ function CredentialsTab() {
                 onSubmit={handleRemoveConfirm}
             />
 
-            <Box display="flex" alignItems="center" sx={{ gap: 2 }}>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => openIssueTab("issue")}
-                    endIcon={<OpenInNew />}
-                >
-                    Issue
-                </Button>
+            {!isBrowser &&
+                <Box display="flex" alignItems="center" sx={{ gap: 2 }}>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => openIssueTab("issue")}
+                        endIcon={<OpenInNew />}
+                    >
+                        Issue
+                    </Button>
 
-                <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => openIssueTab("issued")}
-                    endIcon={<OpenInNew />}
-                >
-                    Issued
-                </Button>
-            </Box>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => openIssueTab("issued")}
+                        endIcon={<OpenInNew />}
+                    >
+                        Issued
+                    </Button>
+                </Box>
+            }
 
             <Box className="flex-box mt-2">
                 <TextField
-                    label="Add Credential DID"
+                    label="Accept Credential DID"
                     variant="outlined"
                     value={heldDID}
                     onChange={(e) => setHeldDID(e.target.value)}
@@ -189,9 +265,7 @@ function CredentialsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() =>
-                        openJSONViewer("Resolved Credential", heldDID)
-                    }
+                    onClick={() => displayJson("Resolved Credential", heldDID)}
                     className="button large bottom"
                     disabled={!heldDID}
                 >
@@ -229,7 +303,7 @@ function CredentialsTab() {
                 </Button>
             </Box>
 
-            <Box className="overflow-box">
+            <Box className="overflow-box" sx={{ mb: 2 }}>
                 {heldList.map((did) => (
                     <Box key={did} className="margin-bottom">
                         <Typography className="did-mono">{did}</Typography>
@@ -238,9 +312,7 @@ function CredentialsTab() {
                             <Button
                                 variant="outlined"
                                 className="button large top"
-                                onClick={() =>
-                                    openJSONViewer("Resolved Credential", did)
-                                }
+                                onClick={() => displayJson("Resolved Credential", did)}
                             >
                                 Resolve
                             </Button>
@@ -298,8 +370,11 @@ function CredentialsTab() {
                     </Box>
                 ))}
             </Box>
+            {selectedDID && title &&
+                <JsonViewer title={title} did={selectedDID} rawJson={selectedDoc} />
+            }
         </Box>
     );
 }
 
-export default CredentialsTab;
+export default HeldTab;

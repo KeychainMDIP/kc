@@ -11,7 +11,6 @@ module.exports = {
         background: path.resolve("./src/background/background.ts"),
         contentScript: path.resolve("./src/contentScript/contentScript.ts"),
         offscreen: path.resolve("./src/offscreen/offscreen.ts"),
-        viewer: path.resolve("./src/viewer/viewer.tsx"),
     },
     module: {
         rules: [
@@ -50,7 +49,7 @@ module.exports = {
                 }
             ]
         }),
-        ...getHtmlPlugins(["browser", "popup", "viewer", "offscreen"]),
+        ...getHtmlPlugins(["browser", "popup", "offscreen"]),
     ],
     resolve: {
         extensions: [".ts", ".tsx", ".js"],

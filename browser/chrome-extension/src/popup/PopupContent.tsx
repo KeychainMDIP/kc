@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
     Box,
     Tabs,
@@ -20,7 +20,7 @@ import {
 import { useWalletContext } from "../shared/contexts/WalletProvider";
 import { useUIContext } from "../shared/contexts/UIContext";
 import IdentitiesTab from "../shared/IdentitiesTab";
-import CredentialsTab from "./components/CredentialsTab";
+import HeldTab from "../shared/HeldTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";
 import DIDsTab from "./components/DIDsTab";
@@ -33,7 +33,6 @@ const PopupContent = () => {
     const {
         selectedTab,
         setSelectedTab,
-        refreshAll,
     } = useUIContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -150,7 +149,7 @@ const PopupContent = () => {
                             <PanelHeader
                                 title="Credentials"
                                 tabValue="credentials"
-                                childComponent={<CredentialsTab />}
+                                childComponent={<HeldTab />}
                             />
 
                             <PanelHeader
