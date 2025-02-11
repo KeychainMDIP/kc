@@ -180,7 +180,8 @@ export default class Gatekeeper {
         }
 
         const byType = { agents, assets, confirmed, unconfirmed, ephemeral, invalid };
-        return { total, byType, byRegistry, byVersion };
+        const eventsQueue = this.eventsQueue;
+        return { total, byType, byRegistry, byVersion, eventsQueue };
     }
 
     async listRegistries() {

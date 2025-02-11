@@ -28,7 +28,7 @@ const app = express();
 const v1router = express.Router();
 
 app.use(morgan('dev'));
-app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
+app.use(express.json({ limit: '4mb' })); // Sets the JSON payload limit to 4MB
 app.use(cors());
 
 // Define __dirname in ES module scope
@@ -320,6 +320,8 @@ async function reportStatus() {
         }
         console.log(`    6+: ${status.dids.total - count}`);
     }
+
+    console.log(`Events Queue: ${status.dids.eventsQueue.length} pending`);
 
     console.log(`Memory Usage Report:`);
     console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
