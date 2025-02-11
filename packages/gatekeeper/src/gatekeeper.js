@@ -842,6 +842,10 @@ export default class Gatekeeper {
 
         const operation = event.operation;
 
+        if (JSON.stringify(operation).length > this.maxOpBytes) {
+            return false;
+        }
+
         if (!this.verifySignatureFormat(operation.signature)) {
             return false;
         }
