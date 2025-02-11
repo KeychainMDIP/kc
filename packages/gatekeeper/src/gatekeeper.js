@@ -36,6 +36,7 @@ export default class Gatekeeper {
         this.ipfs = new IPFS({ minimal: true });
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
+        this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
 
         // Only DIDs registered on supported registries will be created by this node
         this.supportedRegistries = options.registries ||  ['local'];
@@ -259,6 +260,10 @@ export default class Gatekeeper {
             throw new InvalidOperationError('missing');
         }
 
+        if (JSON.stringify(operation).length > this.maxOpBytes) {
+            throw new InvalidOperationError('size');
+        }
+
         if (operation.type !== "create") {
             throw new InvalidOperationError(`type=${operation.type}`);
         }
@@ -327,6 +332,10 @@ export default class Gatekeeper {
     }
 
     async verifyUpdateOperation(operation, doc) {
+        if (JSON.stringify(operation).length > this.maxOpBytes) {
+            throw new InvalidOperationError('size');
+        }
+
         if (!this.verifySignatureFormat(operation.signature)) {
             throw new InvalidOperationError('signature');
         }

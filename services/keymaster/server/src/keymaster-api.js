@@ -186,6 +186,16 @@ v1router.delete('/ids/:id', async (req, res) => {
     }
 });
 
+v1router.post('/ids/:id/rename', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const ok = await keymaster.renameId(req.params.id, name);
+        res.json({ ok });
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
 v1router.post('/ids/:id/backup', async (req, res) => {
     try {
         const ok = await keymaster.backupId(req.params.id);
@@ -621,6 +631,16 @@ v1router.get('/assets/:id', async (req, res) => {
     }
 });
 
+v1router.put('/assets/:id', async (req, res) => {
+    try {
+        const { data } = req.body;
+        const ok = await keymaster.updateAsset(req.params.id, data);
+        res.json({ ok });
+    } catch (error) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 v1router.get('/templates/poll', async (req, res) => {
     try {
         const template = await keymaster.pollTemplate();
@@ -797,7 +817,8 @@ app.listen(port, async () => {
 
     const wallet = await initWallet();
     const cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+    const defaultRegistry = config.defaultRegistry;
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
     console.log(`Keymaster server running on port ${port}`);
     console.log(`Keymaster server persisting to ${config.db}`);
 

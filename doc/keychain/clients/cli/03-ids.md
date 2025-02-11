@@ -118,7 +118,7 @@ $ kc resolve-id
     "didDocumentData": {
         "vault": "did:mdip:test:z3v8AuafhKoRuEkDTjyoabgPXKx4Yi4cPmPdzUgMNyKxkzYNA6u"
     },
-    
+
     ...
 
 }
@@ -135,6 +135,15 @@ $ kc remove-id Alice
 ID Alice removed
 ```
 
+## Renamng an ID
+
+At any time, a user may rename an ID in their wallet:
+
+```sh
+$ kc rename-id Alice Bob
+OK
+```
+
 ## Recovering an ID
 
 Recovery of a DID's history using the Vault DID is possible because the Vault data is encrypted with the wallet's keys. The wallet keys are used to decrypt the Vault DID data containing the DID's private history:
@@ -148,7 +157,7 @@ Recovered Alice!
 
 A user's wallet may contain any number of MDIP agent DID identities:
 
-```sh 
+```sh
 $ kc create-id Bob
 did:mdip:test:z3v8AuairhLoGZqf6UDKw7zXyBknTvanvSzFHnLpwy8nwa7WLzk
 ```

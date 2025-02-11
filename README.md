@@ -8,6 +8,7 @@ Details on each command can be found in the [CLI User Manual](https://keychain.o
 ## Quick start
 
 Recommended system requirements:
+
 - GNU/Linux OS with [docker](https://www.docker.com/) for containerized operation
 - node 18.18.2 and npm 9.8.1 or newer for manual and local operation
 - minimum of 8Gb RAM if operating a full trustless node
@@ -18,6 +19,7 @@ $ cd kc
 $ cp sample.env .env
 $ ./start-node
 ```
+
 ## Node configuration
 
 Customize your node in the kc/.env file.
@@ -44,9 +46,9 @@ $ ./scripts/tbtc-cli getwalletinfo           # Get a general status of confirmed
 ```
 
 ## Command line interface wallet
+
 Use the CLI `./kc` or the web app at http://localhost:4226 to access the server-side wallet.
 Use the web app at http://localhost:4224 to access a client-side (browser) wallet.
-
 
 ```
 $ ./kc
@@ -63,10 +65,11 @@ Commands:
   add-group-member <group> <member>          Add a member to a group
   add-name <name> <did>                      Adds a name for a DID
   backup-id                                  Backup the current ID to its registry
-  backup-wallet                              Backup wallet to encrypted DID and seed bank
+  backup-wallet-did                          Backup wallet to encrypted DID and seed bank
+  backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  create-asset <file>                        Create an asset from a JSON file
+  create-asset [file]                        Create an asset from a JSON file
   create-challenge [file] [name]             Create challenge (optionally from a file)
   create-challenge-cc <did> [name]           Create challenge from a credential DID
   create-group <name>                        Create a new group
@@ -84,9 +87,10 @@ Commands:
   encrypt-message <message> <did>            Encrypt a message for a DID
   encrypt-wallet                             Encrypt wallet
   fix-wallet                                 Remove invalid DIDs from the wallet
-  get-asset <did>                            Get asset by DID
+  get-asset <id>                             Get asset by name or DID
   get-credential <did>                       Get credential by DID
   get-group <did>                            Get group by DID
+  get-name <name>                            Get DID assigned to name
   get-schema <did>                           Get schema by DID
   help [command]                             display help for command
   import-wallet <recovery-phrase>            Create new wallet from a recovery phrase
@@ -102,17 +106,21 @@ Commands:
   publish-credential <did>                   Publish the existence of a credential to the current user manifest
   publish-poll <poll>                        Publish results to poll, hiding ballots
   recover-id <did>                           Recovers the ID from the DID
-  recover-wallet [did]                       Recover wallet from seed bank or encrypted DID
+  recover-wallet-did [did]                   Recover wallet from seed bank or encrypted DID
   remove-group-member <group> <member>       Remove a member from a group
   remove-id <name>                           Deletes named ID
   remove-name <name>                         Removes a name for a DID
+  rename-id <oldName> <newName>              Renames the ID
   resolve-did <did> [confirm]                Return document associated with DID
   resolve-did-version <did> <version>        Return specified version of document associated with DID
   resolve-id                                 Resolves the current ID
+  restore-wallet-file <file>                 Restore wallet from backup file
   reveal-credential <did>                    Reveal a credential to the current user manifest
   reveal-poll <poll>                         Publish results to poll, revealing ballots
   revoke-credential <did>                    Revokes a verifiable credential
   rotate-keys                                Generates new set of keys for current ID
+  set-asset <id> [file]                      Update an asset from a JSON file
+  set-property <id> <key> [value]            Assign a key-value pair to an asset
   show-mnemonic                              Show recovery phrase for wallet
   show-wallet                                Show wallet
   sign-file <file>                           Sign a JSON file

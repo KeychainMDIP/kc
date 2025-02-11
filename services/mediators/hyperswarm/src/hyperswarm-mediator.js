@@ -373,11 +373,11 @@ async function flushQueue() {
 async function exportLoop() {
     try {
         await flushQueue();
-        console.log('export loop waiting 10s...');
+        console.log(`export loop waiting ${config.exportInterval}s...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, 10 * 1000);
+    setTimeout(exportLoop, config.exportInterval * 1000);
 }
 
 async function checkConnections() {

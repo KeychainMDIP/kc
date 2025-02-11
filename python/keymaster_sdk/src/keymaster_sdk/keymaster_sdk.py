@@ -70,6 +70,13 @@ def remove_id(identifier):
     return response["ok"]
 
 
+def rename_id(identifier, name):
+    response = proxy_request(
+        "POST", f"{_keymaster_api}/ids/{identifier}/rename", json={"name": name}
+    )
+    return response["ok"]
+
+
 def backup_id(identifier):
     response = proxy_request("POST", f"{_keymaster_api}/ids/{identifier}/backup")
     return response["ok"]

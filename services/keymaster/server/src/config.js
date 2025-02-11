@@ -8,6 +8,7 @@ const config = {
     db: process.env.KC_KEYMASTER_DB || 'json',
     keymasterPassphrase: process.env.KC_ENCRYPTED_PASSPHRASE,
     walletCache: process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false,
+    defaultRegistry: process.env.KC_DEFAULT_REGISTRY
 };
 
 export default config;

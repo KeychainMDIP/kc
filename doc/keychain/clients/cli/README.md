@@ -22,49 +22,49 @@ Keychain is provided as a set of docker containers and scripts:
 
 1. From your terminal, download the repository and move to it:
 
-    ```sh
-    # SSH
-    git@github.com:KeychainMDIP/kc.git
-    #HTTPS
-    https://github.com/KeychainMDIP/kc.git
+   ```sh
+   # SSH
+   git@github.com:KeychainMDIP/kc.git
+   #HTTPS
+   https://github.com/KeychainMDIP/kc.git
 
-    cd kc
-    ```
+   cd kc
+   ```
 
 1. Copy `sample.env` to `.env`:
 
-    ```env
-    cp sample.env .env
-    ```
+   ```env
+   cp sample.env .env
+   ```
 
 1. Edit the `KC_NODE_ID` and `KC_NODE_NAME` with unique values. The remaining values will be covered in futher documentation:
 
-    ```sh title=".env" {2-3}
-    # Gatekeeper
-    KC_DEBUG=false
-    KC_NODE_NAME=mynode
-    KC_NODE_ID=mynodeID
-    KC_GATEKEEPER_DB=json
-    KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC
+   ```sh title=".env" {2-3}
+   # Gatekeeper
+   KC_DEBUG=false
+   KC_NODE_NAME=mynode
+   KC_NODE_ID=mynodeID
+   KC_GATEKEEPER_DB=json
+   KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC
 
-    ...
-    ```
+   ...
+   ```
 
 1. Run the keychain start script:
 
-    ```sh
-    # Tied to the shell session:
-    ./start-node
+   ```sh
+   # Tied to the shell session:
+   ./start-node
 
-    # Daemonized:
-    ./start-node -d
-    ```
+   # Daemonized:
+   ./start-node -d
+   ```
 
 1. There's also a script to stop Keychain:
 
-    ```sh
-    ./stop-node
-    ```
+   ```sh
+   ./stop-node
+   ```
 
 ### CLI
 
@@ -82,16 +82,16 @@ Keychain CLI tool
 Options:
   -V, --version                              output the version number
   -h, --help                                 display help for command
-
-Commands:
+  Commands:
   accept-credential <did> [name]             Save verifiable credential for current ID
   add-group-member <group> <member>          Add a member to a group
   add-name <name> <did>                      Adds a name for a DID
   backup-id                                  Backup the current ID to its registry
-  backup-wallet                              Backup wallet to encrypted DID and seed bank
+  backup-wallet-did                          Backup wallet to encrypted DID and seed bank
+  backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  create-asset <file>                        Create an asset from a JSON file
+  create-asset [file]                        Create an asset from a JSON file
   create-challenge [file] [name]             Create challenge (optionally from a file)
   create-challenge-cc <did> [name]           Create challenge from a credential DID
   create-group <name>                        Create a new group
@@ -109,9 +109,10 @@ Commands:
   encrypt-message <message> <did>            Encrypt a message for a DID
   encrypt-wallet                             Encrypt wallet
   fix-wallet                                 Remove invalid DIDs from the wallet
-  get-asset <did>                            Get asset by DID
+  get-asset <id>                             Get asset by name or DID
   get-credential <did>                       Get credential by DID
   get-group <did>                            Get group by DID
+  get-name <name>                            Get DID assigned to name
   get-schema <did>                           Get schema by DID
   help [command]                             display help for command
   import-wallet <recovery-phrase>            Create new wallet from a recovery phrase
@@ -127,17 +128,21 @@ Commands:
   publish-credential <did>                   Publish the existence of a credential to the current user manifest
   publish-poll <poll>                        Publish results to poll, hiding ballots
   recover-id <did>                           Recovers the ID from the DID
-  recover-wallet [did]                       Recover wallet from seed bank or encrypted DID
+  recover-wallet-did [did]                   Recover wallet from seed bank or encrypted DID
   remove-group-member <group> <member>       Remove a member from a group
   remove-id <name>                           Deletes named ID
   remove-name <name>                         Removes a name for a DID
+  rename-id <oldName> <newName>              Renames the ID
   resolve-did <did> [confirm]                Return document associated with DID
   resolve-did-version <did> <version>        Return specified version of document associated with DID
   resolve-id                                 Resolves the current ID
+  restore-wallet-file <file>                 Restore wallet from backup file
   reveal-credential <did>                    Reveal a credential to the current user manifest
   reveal-poll <poll>                         Publish results to poll, revealing ballots
   revoke-credential <did>                    Revokes a verifiable credential
   rotate-keys                                Generates new set of keys for current ID
+  set-asset <id> [file]                      Update an asset from a JSON file
+  set-property <id> <key> [value]            Assign a key-value pair to an asset
   show-mnemonic                              Show recovery phrase for wallet
   show-wallet                                Show wallet
   sign-file <file>                           Sign a JSON file
@@ -161,7 +166,7 @@ $ kc
 ```
 
 > [!NOTE]
->Unless you edit your shell's `$PATH` variable, you need to invoke kc with a `./` prefix to run the script in the current directory:
+> Unless you edit your shell's `$PATH` variable, you need to invoke kc with a `./` prefix to run the script in the current directory:
 
 ```sh
 $ ./kc

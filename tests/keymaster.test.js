@@ -9,7 +9,7 @@ import DbJson from '@mdip/gatekeeper/db/json';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
-import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
+import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
@@ -81,6 +81,15 @@ describe('constructor', () => {
         }
         catch (error) {
             expect(error.message).toBe('Invalid parameter: options.cipher');
+        }
+
+        // Cover the ExpectedExceptionError class for completeness
+        try {
+            new Keymaster({ gatekeeper, wallet, cipher });
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Expected to throw an exception');
         }
     });
 });
@@ -522,6 +531,17 @@ describe('createId', () => {
         expect(wallet.current).toBe(name);
     });
 
+    it('should create a new ID with a Unicode name', async () => {
+        mockFs({});
+
+        const name = 'ҽ× ʍɑϲհíղɑ';
+        const did = await keymaster.createId(name);
+        const wallet = await keymaster.loadWallet();
+
+        expect(wallet.ids[name].did).toBe(did);
+        expect(wallet.current).toBe(name);
+    });
+
     it('should create a new ID on default registry', async () => {
         mockFs({});
 
@@ -535,14 +555,14 @@ describe('createId', () => {
     it('should create a new ID on customized default registry', async () => {
         mockFs({});
 
-        process.env.KC_DEFAULT_REGISTRY = 'TFTC';
-        const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+        const defaultRegistry = 'TFTC';
+        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.mdip.registry).toBe('TFTC');
+        expect(doc.mdip.registry).toBe(defaultRegistry);
     });
 
     it('should throw to create a second ID with the same name', async () => {
@@ -574,6 +594,76 @@ describe('createId', () => {
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
         expect(wallet.current).toBe(name2);
+    });
+
+    it('should not create an ID with an empty name', async () => {
+        mockFs({});
+
+        const expectedError = 'Invalid parameter: name must be a non-empty string';
+
+        try {
+            await keymaster.createId('');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId('    ');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId(undefined);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId(0);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.createId({});
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+    });
+
+    it('should not create an ID with a name that is too long', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('1234567890123456789012345678901234567890');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name too long');
+        }
+    });
+
+    it('should not create an ID with a name that contains unprintable characters', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('hello\nworld!');
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
+        }
     });
 });
 
@@ -610,6 +700,56 @@ describe('removeId', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+});
+
+describe('renameId', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should rename an existing ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        const name2 = 'Alice';
+        const did = await keymaster.createId(name1);
+        const ok = await keymaster.renameId(name1, name2);
+
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet.ids[name2].did).toBe(did);
+        expect(wallet.current).toBe(name2);
+    });
+
+    it('should not rename from an non-existent ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        const name2 = 'Alice';
+
+        try {
+            await keymaster.renameId(name1, name2);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+
+    it('should not rename to an already existing ID', async () => {
+        mockFs({});
+
+        const name1 = 'Bob';
+        await keymaster.createId(name1);
+
+        try {
+            await keymaster.renameId(name1, name1);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.type).toBe(InvalidParameterError.type);
         }
     });
 });
@@ -909,6 +1049,19 @@ describe('addName', () => {
         expect(wallet.names['Jack'] === bob).toBe(true);
     });
 
+    it('should create a Unicode name', async () => {
+        mockFs({});
+
+        const name = 'ҽ× ʍɑϲհíղɑ';
+
+        const bob = await keymaster.createId('Bob');
+        const ok = await keymaster.addName(name, bob);
+        const wallet = await keymaster.loadWallet();
+
+        expect(ok).toBe(true);
+        expect(wallet.names[name] === bob).toBe(true);
+    });
+
     it('should not add duplicate name', async () => {
         mockFs({});
 
@@ -936,6 +1089,81 @@ describe('addName', () => {
         }
         catch (error) {
             expect(error.message).toBe('Invalid parameter: name already used');
+        }
+    });
+
+    it('should not add an empty name', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const expectedError = 'Invalid parameter: name must be a non-empty string';
+
+        try {
+            await keymaster.addName('', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName('    ', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName(undefined, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName(0, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addName({}, alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(expectedError);
+        }
+    });
+
+    it('should not add a name that is too long', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addName('1234567890123456789012345678901234567890', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name too long');
+        }
+    });
+
+    it('should not add a name that contains unprintable characters', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addName('hello\nworld!', alice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
         }
     });
 });
@@ -1163,49 +1391,12 @@ describe('createAsset', () => {
         }
     });
 
-    it('should throw an exception for null anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset();
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            // eslint-disable-next-line
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
-
     it('should throw an exception for an empty string anchor', async () => {
         mockFs({});
 
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
-
-    it('should throw an exception for an empty list anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset([]);
-            throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid parameter: data');
-        }
-    });
-
-    it('should throw an exception for an empty object anchor', async () => {
-        mockFs({});
-
-        try {
-            await keymaster.createId('Bob');
-            await keymaster.createAsset({});
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.message).toBe('Invalid parameter: data');
