@@ -13,6 +13,12 @@ const ValidTypes = ['agent', 'asset'];
 // Registries that are considered valid when importing DIDs from the network
 const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 
+const ImportStatus = Object.freeze({
+    ADDED: 'added',
+    MERGED: 'merged',
+    REJECTED: 'rejected'
+});
+
 export default class Gatekeeper {
     constructor(options = {}) {
         if (options.db) {
@@ -714,47 +720,71 @@ export default class Gatekeeper {
         const did = event.did;
         const currentEvents = await this.db.getEvents(did);
 
-        const match = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+        for (const e of currentEvents) {
+            if (!e.opid) {
+                e.opid = await this.generateCID(e.operation);
+            }
+        }
 
-        if (match) {
+        if (!event.opid) {
+            event.opid = await this.generateCID(event.operation);
+        }
+
+        const opMatch = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+
+        if (opMatch) {
             const first = currentEvents[0];
             const nativeRegistry = first.operation.mdip.registry;
 
-            if (match.registry === nativeRegistry) {
+            if (opMatch.registry === nativeRegistry) {
                 // If this event is already confirmed on the native registry, no need to update
-                return false;
+                return ImportStatus.MERGED;
             }
 
             if (event.registry === nativeRegistry) {
                 // If this import is on the native registry, replace the current one
-                const index = currentEvents.indexOf(match);
+                const index = currentEvents.indexOf(opMatch);
                 currentEvents[index] = event;
                 await this.db.setEvents(did, currentEvents);
-                return true;
+                return ImportStatus.ADDED;
             }
 
-            return false;
+            return ImportStatus.MERGED;
         }
         else {
             const ok = await this.verifyOperation(event.operation);
 
-            if (ok) {
-                // TEMP during did:test, operation.previd is optional
-                if (currentEvents.length > 0 && event.operation.previd) {
-                    const lastEvent = currentEvents[currentEvents.length - 1];
-                    const opid = await this.generateCID(lastEvent.operation);
-
-                    if (opid !== event.operation.previd) {
-                        throw new InvalidOperationError('previd');
-                    }
-                }
-
-                await this.db.addEvent(did, event);
-                return true;
-            }
-            else {
+            if (!ok) {
                 throw new InvalidOperationError('signature');
             }
+
+            if (currentEvents.length === 0) {
+                await this.db.addEvent(did, event);
+                return ImportStatus.ADDED;
+            }
+
+            // TEMP during did:test, operation.previd is optional
+            if (!event.operation.previd) {
+                await this.db.addEvent(did, event);
+                return ImportStatus.ADDED;
+            }
+
+            const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
+
+            if (!idMatch) {
+                throw new InvalidOperationError('previd');
+            }
+
+            const index = currentEvents.indexOf(idMatch);
+
+            if (index === currentEvents.length - 1) {
+                await this.db.addEvent(did, event);
+                return ImportStatus.ADDED;
+            }
+
+            // Check for reorg event here
+
+            return ImportStatus.REJECTED;
         }
     }
 
@@ -765,33 +795,36 @@ export default class Gatekeeper {
         let i = 0;
         let added = 0;
         let merged = 0;
+        let rejected = 0;
 
         this.eventsQueue = [];
 
         while (event) {
-            //console.time('importEvent');
             i += 1;
             try {
-                const imported = await this.importEvent(event);
+                const status = await this.importEvent(event);
 
-                if (imported) {
+                if (status === ImportStatus.ADDED) {
                     added += 1;
                     console.log(`import ${i}/${total}: added event for ${event.did}`);
                 }
-                else {
+                else if (status === ImportStatus.MERGED) {
                     merged += 1;
                     console.log(`import ${i}/${total}: merged event for ${event.did}`);
+                }
+                else if (status === ImportStatus.REJECTED) {
+                    rejected += 1;
+                    console.log(`import ${i}/${total}: rejected event for ${event.did}`);
                 }
             }
             catch (error) {
                 this.eventsQueue.push(event);
                 console.log(`import ${i}/${total}: deferred event for ${event.did}`);
             }
-            //console.timeEnd('importEvent');
             event = tempQueue.shift();
         }
 
-        return { added, merged };
+        return { added, merged, rejected };
     }
 
     async processEvents() {
@@ -801,18 +834,18 @@ export default class Gatekeeper {
 
         let added = 0;
         let merged = 0;
+        let rejected = 0;
         let done = false;
 
         try {
             this.isProcessingEvents = true;
 
             while (!done) {
-                //console.time('importEvents');
                 const response = await this.importEvents();
-                //console.timeEnd('importEvents');
 
                 added += response.added;
                 merged += response.merged;
+                rejected += response.rejected;
 
                 done = (response.added === 0 && response.merged === 0);
             }
@@ -826,7 +859,7 @@ export default class Gatekeeper {
 
         //console.log(JSON.stringify(eventsQueue, null, 4));
         const pending = this.eventsQueue.length;
-        const response = { added, merged, pending };
+        const response = { added, merged, rejected, pending };
 
         console.log(`processEvents: ${JSON.stringify(response)}`);
 
