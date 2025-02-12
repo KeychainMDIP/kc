@@ -1,0 +1,31 @@
+name: Build Chrome Extension
+
+on:
+  push:
+
+jobs:
+  build-chrome-extension:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node 18.18.2
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.18.2'
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install extension dependencies
+        run: |
+          cd ./browser/chrome-extension
+          npm install
+
+      - name: Build extension
+        run: |
+          cd ./browser/chrome-extension
+          npm start
+
