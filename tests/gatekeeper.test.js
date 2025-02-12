@@ -3,6 +3,7 @@ import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
+import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
@@ -50,9 +51,10 @@ async function createAgentOp(keypair, options = {}) {
     };
 }
 
-async function createUpdateOp(keypair, did, doc) {
+async function createUpdateOp(keypair, did, doc, options = {}) {
+    const { excludePrevid = false, mockPrevid } = options;
     const current = await gatekeeper.resolveDID(did);
-    const previd = current.didDocumentMetadata.versionId;
+    const previd = excludePrevid ? null : mockPrevid ? mockPrevid : current.didDocumentMetadata.versionId;
 
     const operation = {
         type: "update",
@@ -2076,6 +2078,104 @@ describe('processEvents', () => {
 
         const response1 = await gatekeeper.processEvents();
         expect(response1.added).toBe(4);
+    });
+
+    it('should handle processing pre-v0.5 event without previd property', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc, { excludePrevid: true });
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc, { excludePrevid: true });
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(4);
+    });
+
+    it('should handle processing events with unknown previd property', async () => {
+        mockFs({});
+
+        const mockPrevid = 'mockPrevid';
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc, { mockPrevid });
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc, { mockPrevid });
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(2);
+        expect(response.pending).toBe(2);
+    });
+
+    it('should reject events with duplicate previd property', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc);
+        const update1 = copyJSON(agentDoc);
+        update1.didDocumentData = { mock: 1 };
+        const updateOp2 = await createUpdateOp(keypair, agentDID, update1);
+        const update2 = copyJSON(agentDoc);
+        update2.didDocumentData = { mock: 2 };
+        const updateOp3 = await createUpdateOp(keypair, agentDID, update2);
+
+        const ops = [];
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp1,
+            ordinal: 0,
+            time: new Date().toISOString(),
+        });
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp2,
+            ordinal: 1,
+            time: new Date().toISOString(),
+        });
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp3,
+            ordinal: 2,
+            time: new Date().toISOString(),
+        });
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(1);
+        expect(response.rejected).toBe(2);
     });
 
     it('should handle deferred operation validation when asset ownership changes', async () => {
