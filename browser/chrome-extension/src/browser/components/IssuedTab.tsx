@@ -101,7 +101,7 @@ function IssuedTab() {
             />
 
             <Box sx={{ height: 300, overflowY: 'auto', mb: 2 }}>
-                {issuedList.map((did: string, index: number) => (
+                {issuedList && issuedList.map((did: string, index: number) => (
                     <Box
                         key={index}
                         display="flex"

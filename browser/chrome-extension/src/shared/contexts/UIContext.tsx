@@ -24,12 +24,12 @@ export function UIProvider(
         children,
         pendingAuth,
         jsonViewerOptions,
-        requestRefresh
+        browserRefresh
     }: {
         children: ReactNode,
         pendingAuth?: string,
         jsonViewerOptions?: openJSONViewerOptions,
-        requestRefresh?: number
+        browserRefresh?: number
     }) {
     const [pendingTab, setPendingTab] = useState<string | null>(null);
     const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(null);
@@ -88,12 +88,13 @@ export function UIProvider(
 
     useEffect(() => {
         const refresh = async () => {
+            // Reload browser wallet in case user changed in popup
             await reloadBrowserWallet();
             await refreshAll();
         };
         refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshFlag, requestRefresh]);
+    }, [refreshFlag, browserRefresh]);
 
     useEffect(() => {
         if (!currentId) return;
@@ -158,8 +159,6 @@ export function UIProvider(
         const names = Object.keys(nameList);
 
         setNameList(nameList);
-        await setAliasName("");
-        await setAliasDID("");
 
         const schemaList = [];
 
@@ -264,7 +263,7 @@ export function UIProvider(
             if (cid) {
                 await refreshCurrentIDInternal(cid);
             } else {
-                wipeState()
+                wipeUserState()
             }
 
             wipeState()

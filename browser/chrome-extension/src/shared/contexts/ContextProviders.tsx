@@ -11,13 +11,13 @@ function ContextProviders(
         isBrowser,
         pendingAuth,
         jsonViewerOptions,
-        requestRefresh
+        browserRefresh
     }: {
         children: ReactNode,
         isBrowser: boolean,
         pendingAuth?: string,
         jsonViewerOptions?: openJSONViewerOptions,
-        requestRefresh?: number
+        browserRefresh?: number
     }) {
 
     return (
@@ -25,7 +25,7 @@ function ContextProviders(
             <CredentialsProvider>
                 <AuthProvider>
                     <MessageProvider>
-                        <UIProvider pendingAuth={pendingAuth} jsonViewerOptions={jsonViewerOptions} requestRefresh={requestRefresh} >
+                        <UIProvider pendingAuth={pendingAuth} jsonViewerOptions={jsonViewerOptions} browserRefresh={browserRefresh} >
                             {children}
                         </UIProvider>
                     </MessageProvider>

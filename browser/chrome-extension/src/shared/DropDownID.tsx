@@ -45,7 +45,7 @@ const DropDownID = () => {
                 const existingTabId = tab.id;
                 chrome.tabs.sendMessage(
                     existingTabId,
-                    { type: "REQUEST_REFRESH" }
+                    { type: "BROWSER_REFRESH" }
                 );
             }
         });
