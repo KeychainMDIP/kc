@@ -2887,3 +2887,54 @@ describe('checkDIDs', () => {
         expect(total).toBe(0);
     });
 });
+
+describe('compareOrdinals', () => {
+    it('should return -1 when a < b', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(-1);
+    });
+
+    it('should return 1 when a > b', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(b, a);
+
+        expect(result).toBe(1);
+    });
+
+    it('should return 0 when a = b', async () => {
+
+        const a = [444, 555, 666, 777];
+
+        const result = gatekeeper.compareOrdinals(a, a);
+
+        expect(result).toBe(0);
+    });
+
+    it('should return -1 when a = b and b in longer', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 666, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(-1);
+    });
+
+    it('should return 1 when a = b and a in longer', async () => {
+
+        const a = [444, 555, 666, 777, 888];
+        const b = [444, 555, 666, 777];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(1);
+    });
+});
