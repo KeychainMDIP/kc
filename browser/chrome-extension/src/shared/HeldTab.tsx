@@ -6,6 +6,7 @@ import { useWalletContext } from "./contexts/WalletProvider";
 import { useCredentialsContext } from "./contexts/CredentialsProvider";
 import { useUIContext } from "./contexts/UIContext";
 import JsonViewer from "../browser/components/JsonViewer";
+import { requestBrowserRefresh } from "./sharedScripts";
 
 function HeldTab() {
     const [open, setOpen] = useState<boolean>(false);
@@ -93,6 +94,7 @@ function HeldTab() {
             if (ok) {
                 await refreshHeld();
                 await setHeldDID("");
+                requestBrowserRefresh(isBrowser);
             } else {
                 setWarning("Credential not accepted");
             }
@@ -155,6 +157,7 @@ function HeldTab() {
         try {
             await keymaster.removeCredential(removeDID);
             await refreshHeld();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         } finally {

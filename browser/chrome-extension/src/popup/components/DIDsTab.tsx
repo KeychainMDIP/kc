@@ -12,6 +12,7 @@ import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { requestBrowserRefresh } from "../../shared/sharedScripts";
 
 function DIDsTab() {
     const [open, setOpen] = useState(false);
@@ -19,6 +20,7 @@ function DIDsTab() {
     const {
         openJSONViewer,
         handleCopyDID,
+        isBrowser,
         keymaster,
         setError,
     } = useWalletContext();
@@ -41,7 +43,9 @@ function DIDsTab() {
     async function addName() {
         try {
             await keymaster.addName(aliasName, aliasDID);
+            clearFields();
             await refreshNames();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -59,6 +63,7 @@ function DIDsTab() {
         try {
             await keymaster.removeName(removeDID);
             await refreshNames();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

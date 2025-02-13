@@ -10,6 +10,7 @@ import {
 import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
 import { useWalletContext } from "./contexts/WalletProvider";
 import { useUIContext } from "./contexts/UIContext";
+import { requestBrowserRefresh } from './sharedScripts'
 
 const DropDownID = () => {
     const {
@@ -32,32 +33,13 @@ const DropDownID = () => {
     const truncatedId =
         currentId?.length > 10 ? currentId.slice(0, 10) + "..." : currentId;
 
-    function browserChangeID() {
-        if (isBrowser) {
-            return;
-        }
-        chrome.tabs.query({ url: chrome.runtime.getURL("browser.html") + "*" }, (tabs) => {
-            if (!tabs || tabs.length === 0) {
-                return;
-            }
-
-            for (const tab of tabs) {
-                const existingTabId = tab.id;
-                chrome.tabs.sendMessage(
-                    existingTabId,
-                    { type: "BROWSER_REFRESH" }
-                );
-            }
-        });
-    }
-
     async function selectId(id: string) {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
 
             await resetCurrentID();
-            browserChangeID();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
