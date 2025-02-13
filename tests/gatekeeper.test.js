@@ -2178,6 +2178,70 @@ describe('processEvents', () => {
         expect(response.rejected).toBe(2);
     });
 
+    it('should handle a reorg event', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc1 = await gatekeeper.resolveDID(agentDID);
+
+        // Simulate a double-spend scenario where a bad actor creates a pair of inconsistent operations
+        // Only one of the pair can be confirmed and it depends on the order of operations
+        const update1 = copyJSON(agentDoc1);
+        update1.didDocumentData = { mock: 1 };
+        const updateOp1 = await createUpdateOp(keypair, agentDID, update1);
+        const update2 = copyJSON(agentDoc1);
+        update2.didDocumentData = { mock: 2 };
+        const updateOp2 = await createUpdateOp(keypair, agentDID, update2);
+
+        const event1 = {
+            registry: 'hyperswarm',
+            operation: updateOp1,
+            ordinal: [0],
+            time: new Date().toISOString(),
+        };
+
+        const event2 = {
+            registry: 'hyperswarm',
+            operation: updateOp2,
+            ordinal: [1],
+            time: new Date().toISOString(),
+        };
+
+        // Simulate receiving events in reverse order from hyperswarm
+        await gatekeeper.importBatch([event2, event1]);
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(1);
+        expect(response.rejected).toBe(1);
+
+        const agentDoc2 = await gatekeeper.resolveDID(agentDID);
+        expect(agentDoc2.didDocumentData.mock).toBe(2);
+
+        const event3 = {
+            registry: 'TFTC',
+            operation: updateOp1,
+            ordinal: [31226, 1, 0],
+            time: new Date().toISOString(),
+        };
+
+        const event4 = {
+            registry: 'TFTC',
+            operation: updateOp2,
+            ordinal: [31226, 1, 1],
+            time: new Date().toISOString(),
+        };
+
+        // Simulate receiving the events in the imposed order from TFTC
+        await gatekeeper.importBatch([event3, event4]);
+        const response2 = await gatekeeper.processEvents();
+        expect(response2.added).toBe(1);
+        expect(response2.rejected).toBe(1);
+
+        const agentDoc3 = await gatekeeper.resolveDID(agentDID, { confirm: true });
+        expect(agentDoc3.didDocumentData.mock).toBe(1);
+    });
+
     it('should handle deferred operation validation when asset ownership changes', async () => {
         mockFs({});
 
