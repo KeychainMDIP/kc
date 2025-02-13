@@ -3,6 +3,7 @@ import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
+import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
@@ -50,9 +51,10 @@ async function createAgentOp(keypair, options = {}) {
     };
 }
 
-async function createUpdateOp(keypair, did, doc) {
+async function createUpdateOp(keypair, did, doc, options = {}) {
+    const { excludePrevid = false, mockPrevid } = options;
     const current = await gatekeeper.resolveDID(did);
-    const previd = current.didDocumentMetadata.versionId;
+    const previd = excludePrevid ? null : mockPrevid ? mockPrevid : current.didDocumentMetadata.versionId;
 
     const operation = {
         type: "update",
@@ -2078,6 +2080,168 @@ describe('processEvents', () => {
         expect(response1.added).toBe(4);
     });
 
+    it('should handle processing pre-v0.5 event without previd property', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc, { excludePrevid: true });
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc, { excludePrevid: true });
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(4);
+    });
+
+    it('should handle processing events with unknown previd property', async () => {
+        mockFs({});
+
+        const mockPrevid = 'mockPrevid';
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc, { mockPrevid });
+        await gatekeeper.updateDID(updateOp1);
+
+        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetDID = await gatekeeper.createDID(assetOp);
+        const assetDoc = await gatekeeper.resolveDID(assetDID);
+        const updateOp2 = await createUpdateOp(keypair, assetDID, assetDoc, { mockPrevid });
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(2);
+        expect(response.pending).toBe(2);
+    });
+
+    it('should reject events with duplicate previd property', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc = await gatekeeper.resolveDID(agentDID);
+
+        const updateOp1 = await createUpdateOp(keypair, agentDID, agentDoc);
+        const update1 = copyJSON(agentDoc);
+        update1.didDocumentData = { mock: 1 };
+        const updateOp2 = await createUpdateOp(keypair, agentDID, update1);
+        const update2 = copyJSON(agentDoc);
+        update2.didDocumentData = { mock: 2 };
+        const updateOp3 = await createUpdateOp(keypair, agentDID, update2);
+
+        const ops = [];
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp1,
+            ordinal: 0,
+            time: new Date().toISOString(),
+        });
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp2,
+            ordinal: 1,
+            time: new Date().toISOString(),
+        });
+
+        ops.push({
+            registry: 'local',
+            operation: updateOp3,
+            ordinal: 2,
+            time: new Date().toISOString(),
+        });
+
+        await gatekeeper.importBatch(ops);
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(1);
+        expect(response.rejected).toBe(2);
+    });
+
+    it('should handle a reorg event', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+        const agentDID = await gatekeeper.createDID(agentOp);
+        const agentDoc1 = await gatekeeper.resolveDID(agentDID);
+
+        // Simulate a double-spend scenario where a bad actor creates a pair of inconsistent operations
+        // Only one of the pair can be confirmed and it depends on the order of operations
+        const update1 = copyJSON(agentDoc1);
+        update1.didDocumentData = { mock: 1 };
+        const updateOp1 = await createUpdateOp(keypair, agentDID, update1);
+        const update2 = copyJSON(agentDoc1);
+        update2.didDocumentData = { mock: 2 };
+        const updateOp2 = await createUpdateOp(keypair, agentDID, update2);
+
+        const event1 = {
+            registry: 'hyperswarm',
+            operation: updateOp1,
+            ordinal: [0],
+            time: new Date().toISOString(),
+        };
+
+        const event2 = {
+            registry: 'hyperswarm',
+            operation: updateOp2,
+            ordinal: [1],
+            time: new Date().toISOString(),
+        };
+
+        // Simulate receiving events in reverse order from hyperswarm
+        await gatekeeper.importBatch([event2, event1]);
+        const response = await gatekeeper.processEvents();
+        expect(response.added).toBe(1);
+        expect(response.rejected).toBe(1);
+
+        const agentDoc2 = await gatekeeper.resolveDID(agentDID);
+        expect(agentDoc2.didDocumentData.mock).toBe(2);
+
+        const event3 = {
+            registry: 'TFTC',
+            operation: updateOp1,
+            ordinal: [31226, 1, 0],
+            time: new Date().toISOString(),
+        };
+
+        const event4 = {
+            registry: 'TFTC',
+            operation: updateOp2,
+            ordinal: [31226, 1, 1],
+            time: new Date().toISOString(),
+        };
+
+        // Simulate receiving the events in the imposed order from TFTC
+        await gatekeeper.importBatch([event3, event4]);
+        const response2 = await gatekeeper.processEvents();
+        expect(response2.added).toBe(1);
+        expect(response2.rejected).toBe(1);
+
+        const agentDoc3 = await gatekeeper.resolveDID(agentDID, { confirm: true });
+        expect(agentDoc3.didDocumentData.mock).toBe(1);
+    });
+
     it('should handle deferred operation validation when asset ownership changes', async () => {
         mockFs({});
 
@@ -2721,5 +2885,56 @@ describe('checkDIDs', () => {
         const { total } = await gatekeeper.checkDIDs();
 
         expect(total).toBe(0);
+    });
+});
+
+describe('compareOrdinals', () => {
+    it('should return -1 when a < b', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(-1);
+    });
+
+    it('should return 1 when a > b', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(b, a);
+
+        expect(result).toBe(1);
+    });
+
+    it('should return 0 when a = b', async () => {
+
+        const a = [444, 555, 666, 777];
+
+        const result = gatekeeper.compareOrdinals(a, a);
+
+        expect(result).toBe(0);
+    });
+
+    it('should return -1 when a = b and b in longer', async () => {
+
+        const a = [444, 555, 666, 777];
+        const b = [444, 555, 666, 777, 888];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(-1);
+    });
+
+    it('should return 1 when a = b and a in longer', async () => {
+
+        const a = [444, 555, 666, 777, 888];
+        const b = [444, 555, 666, 777];
+
+        const result = gatekeeper.compareOrdinals(a, b);
+
+        expect(result).toBe(1);
     });
 });
