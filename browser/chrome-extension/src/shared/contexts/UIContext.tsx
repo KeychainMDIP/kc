@@ -65,8 +65,6 @@ export function UIProvider(
         setCredentialSchema,
         setCredentialString,
         setCredentialDID,
-        setAliasName,
-        setAliasDID,
         setHeldList,
         setIssuedList,
         setIssuedString,
