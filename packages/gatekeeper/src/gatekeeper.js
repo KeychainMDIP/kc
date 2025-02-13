@@ -809,7 +809,10 @@ export default class Gatekeeper {
                 return ImportStatus.ADDED;
             }
 
-            if (idMatch.operation.mdip.registry === event.registry) {
+            const first = currentEvents[0];
+            const nativeRegistry = first.operation.mdip.registry;
+
+            if (event.registry === nativeRegistry) {
                 const nextEvent = currentEvents[index + 1];
 
                 if (nextEvent.registry !== event.registry || this.compareOrdinals(event.ordinal, nextEvent.ordinal) < 0) {
