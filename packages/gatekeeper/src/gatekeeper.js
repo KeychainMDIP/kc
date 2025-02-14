@@ -1,6 +1,6 @@
 import canonicalize from 'canonicalize';
 import CipherNode from '@mdip/cipher/node';
-import { copyJSON } from '@mdip/common/utils';
+import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import {
     InvalidDIDError,
     InvalidParameterError,
@@ -497,6 +497,10 @@ export default class Gatekeeper {
     async resolveDID(did, options = {}) {
         const { atTime, atVersion, confirm = false, verify = false } = options;
 
+        if (!isValidDID(did)) {
+            throw new InvalidDIDError();
+        }
+
         const events = await this.db.getEvents(did);
 
         if (events.length === 0) {
@@ -707,33 +711,6 @@ export default class Gatekeeper {
         return true;
     }
 
-    compareOrdinals(a, b) {
-        // An ordinal is a list of integers
-        // Return -1 if a < b, 0 if a == b, 1 if a > b
-
-        const minLength = Math.min(a.length, b.length);
-
-        for (let i = 0; i < minLength; i++) {
-            if (a[i] < b[i]) {
-                return -1;
-            }
-            if (a[i] > b[i]) {
-                return 1;
-            }
-        }
-
-        // If all compared elements are equal, the longer list is considered greater
-        if (a.length < b.length) {
-            return -1;
-        }
-
-        if (a.length > b.length) {
-            return 1;
-        }
-
-        return 0;
-    }
-
     async importEvent(event) {
         if (!event.did) {
             if (event.operation.did) {
@@ -815,7 +792,7 @@ export default class Gatekeeper {
             if (event.registry === nativeRegistry) {
                 const nextEvent = currentEvents[index + 1];
 
-                if (nextEvent.registry !== event.registry || this.compareOrdinals(event.ordinal, nextEvent.ordinal) < 0) {
+                if (nextEvent.registry !== event.registry || compareOrdinals(event.ordinal, nextEvent.ordinal) < 0) {
                     // reorg event, discard the rest of the operation sequence and replace with this event
                     const newSequence = [...currentEvents.slice(0, index + 1), event];
                     await this.db.setEvents(did, newSequence);
