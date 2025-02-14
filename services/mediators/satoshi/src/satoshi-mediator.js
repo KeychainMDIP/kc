@@ -6,6 +6,7 @@ import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
+import { isValidDID } from '@mdip/common/utils';
 import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
@@ -53,7 +54,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
             const hexString = asm.slice(10);
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
-            if (textString.startsWith('did:test:')) {
+            if (isValidDID(textString)) {
                 const db = await loadDb();
                 db.discovered.push({
                     height: height,
