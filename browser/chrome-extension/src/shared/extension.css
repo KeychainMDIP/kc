@@ -1,4 +1,4 @@
-body {
+.popup-div {
     width: 420px;
     height: 500px;
 }
@@ -48,6 +48,12 @@ body {
     gap: 0;
 }
 
+.flex-row {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+}
+
 .flex-box.mt-2 {
     margin-top: 16px;
 }
@@ -63,9 +69,20 @@ body {
     height: 40px;
 }
 
+.button.large.regular,
 .button.large.top,
 .button.large.bottom {
     border-radius: 0;
+}
+
+.button.large.regular:first-child {
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+}
+
+.button.large.regular:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
 }
 
 .button.large.top:first-child {
@@ -126,8 +143,14 @@ body {
     width: 340px;
 }
 
+.select-small-left,
+.select-small-right,
 .select-small {
     width: 150px;
+    height: 40px;
+}
+
+.select-small-wide {
     height: 40px;
 }
 
@@ -135,11 +158,26 @@ body {
     border-radius: 0;
 }
 
-.button-create {
-    width: 80px;
+.select-small-left .MuiOutlinedInput-notchedOutline {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.select-small-right .MuiOutlinedInput-notchedOutline {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.MuiButton-root.button-right {
     height: 40px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
+}
+
+.MuiButton-root.button-left {
+    height: 40px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 .tabs {
@@ -195,4 +233,55 @@ body {
     padding: 0 8px;
     border-radius: 4px;
     font-size: 0.9rem;
+}
+
+.rootContainer {
+    display: flex;
+    flex-direction: column;
+}
+
+.layoutContainer {
+    display: flex;
+    flex: 1;
+}
+
+.sidebar {
+    width: 60px;
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    padding-top: 8px;
+    transition: width 0.2s ease-in-out;
+    overflow: hidden;
+}
+
+.sidebar.open {
+    width: 160px;
+}
+
+.tabList {
+    width: 100%;
+}
+
+.tabList .MuiTabs-flexContainer {
+    gap: 8px;
+}
+
+.MuiTab-root.sidebarTab {
+    min-height: 48px;
+    justify-content: flex-start;
+}
+
+.MuiTab-root.sidebarTab .MuiSvgIcon-root {
+    margin-right: 0;
+}
+
+.MuiTab-root.sidebarTab.open .MuiSvgIcon-root {
+    margin-right: 8px;
+}
+
+.browser-context {
+    padding: 8px 16px 16px 16px;
+    overflow: auto;
+    width: 742px;
 }

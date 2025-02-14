@@ -1,24 +1,26 @@
 import React, { useState } from "react";
-import { usePopupContext } from "../PopupContext";
+import { useWalletContext } from "./contexts/WalletProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
+import { useUIContext } from "./contexts/UIContext";
 
 function IdentitiesTab() {
+    const [name, setName] = useState("");
     const {
         registry,
         setRegistry,
         registries,
-        forceRefreshAll,
         setError,
         keymaster,
-    } = usePopupContext();
-
-    const [name, setName] = useState("");
+    } = useWalletContext();
+    const {
+        resetCurrentID,
+    } = useUIContext();
 
     const handleCreateId = async () => {
         if (!name.trim()) return;
         try {
             await keymaster.createId(name.trim(), { registry });
-            await forceRefreshAll();
+            await resetCurrentID();
             setName("");
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -26,7 +28,7 @@ function IdentitiesTab() {
     };
 
     return (
-        <Box className="flex-box mt-2">
+        <Box className="flex-box mt-2" sx={{ maxWidth: "400px" }}>
             <TextField
                 label="Create ID"
                 variant="outlined"
@@ -63,7 +65,7 @@ function IdentitiesTab() {
                 variant="contained"
                 onClick={handleCreateId}
                 size="small"
-                className="button-create"
+                className="button-right"
             >
                 Create
             </Button>

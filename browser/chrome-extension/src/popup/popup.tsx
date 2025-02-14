@@ -1,18 +1,35 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { PopupProvider } from "./PopupContext";
+import ContextProviders from "../shared/contexts/ContextProviders";
 import PopupContent from "./PopupContent";
-import "./popup.css";
+import "../shared/extension.css";
 
 const PopupUI = () => {
+    const [pendingAuth, setPendingAuth] = useState<string>("");
+
+    useEffect(() => {
+        const handleMessage = (message, _, sendResponse) => {
+            if (message.action === "SHOW_POPUP_AUTH") {
+                setPendingAuth(message.challenge);
+                sendResponse({ success: true });
+            }
+        };
+        chrome.runtime.onMessage.addListener(handleMessage);
+
+        return () => {
+            chrome.runtime.onMessage.removeListener(handleMessage);
+        };
+    }, []);
+
     return (
-        <PopupProvider>
+        <ContextProviders pendingAuth={pendingAuth} isBrowser={false}>
             <PopupContent />
-        </PopupProvider>
+        </ContextProviders>
     );
 };
 
 const rootElement = document.createElement("div");
+rootElement.className = "popup-div";
 document.body.appendChild(rootElement);
 const root = ReactDOM.createRoot(rootElement);
 root.render(<PopupUI />);

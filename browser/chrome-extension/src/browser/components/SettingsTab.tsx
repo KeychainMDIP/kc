@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Box, Button, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 
-const OptionsUI = () => {
+const SettingsTab = () => {
     const [gatekeeperUrl, setGatekeeperUrl] = useState("");
 
     useEffect(() => {
@@ -26,18 +26,16 @@ const OptionsUI = () => {
     };
 
     return (
-        <Box sx={{ p: 2, maxWidth: 400 }}>
-            <Typography variant="h4" gutterBottom>
-                Options
-            </Typography>
-
+        <Box
+            sx={{ display: "flex", flexDirection: "column", maxWidth: "400px" }}
+        >
             <TextField
                 label="Gatekeeper URL"
                 variant="outlined"
-                fullWidth
                 value={gatekeeperUrl}
                 onChange={(e) => setGatekeeperUrl(e.target.value)}
                 sx={{ mb: 2 }}
+                className="text-field"
             />
 
             <Button
@@ -45,6 +43,7 @@ const OptionsUI = () => {
                 color="primary"
                 onClick={handleSave}
                 startIcon={<SaveIcon />}
+                sx={{ alignSelf: "start" }}
             >
                 Save
             </Button>
@@ -52,4 +51,4 @@ const OptionsUI = () => {
     );
 };
 
-export default OptionsUI;
+export default SettingsTab;

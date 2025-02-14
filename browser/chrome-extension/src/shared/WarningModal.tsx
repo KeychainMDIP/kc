@@ -8,7 +8,7 @@ import {
     DialogContentText,
 } from "@mui/material";
 
-const WarningModal = ({ isOpen, title, onSubmit, onClose }) => {
+const WarningModal = ({ isOpen, title, warningText, onSubmit, onClose }) => {
     if (!isOpen) return null;
 
     function handleSubmit(e) {
@@ -25,20 +25,20 @@ const WarningModal = ({ isOpen, title, onSubmit, onClose }) => {
             <DialogTitle id="confirm-dialog-title">{title}</DialogTitle>
             <DialogContent>
                 <DialogContentText id="confirm-dialog-description">
-                    Are you sure?
+                    {warningText}
                 </DialogContentText>
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleClose} color="primary">
-                    Cancel
-                </Button>
                 <Button
                     onClick={handleSubmit}
                     type="submit"
                     variant="contained"
                     color="primary"
                 >
-                    Submit
+                    Confirm
+                </Button>
+                <Button onClick={handleClose} color="primary">
+                    Cancel
                 </Button>
             </DialogActions>
         </Dialog>

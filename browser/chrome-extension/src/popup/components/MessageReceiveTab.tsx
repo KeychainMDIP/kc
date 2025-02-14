@@ -1,17 +1,20 @@
 import React from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, TextField } from "@mui/material";
-import { usePopupContext } from "../PopupContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useMessageContext } from "../../shared/contexts/MessageContext";
 
 function MessageReceiveTab({ tabValue }: { tabValue: string }) {
     const {
-        messageDID,
-        setMessageDID,
         keymaster,
         setError,
+    } = useWalletContext();
+    const {
+        messageDID,
+        setMessageDID,
         receiveMessage,
         setReceiveMessage,
-    } = usePopupContext();
+    } = useMessageContext();
 
     async function decryptMessage(did: string) {
         try {

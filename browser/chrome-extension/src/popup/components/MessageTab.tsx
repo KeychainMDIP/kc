@@ -3,10 +3,10 @@ import { Box, Stack, Tab, Tabs } from "@mui/material";
 import MessageReceiveTab from "./MessageReceiveTab";
 import MessageSendTab from "./MessageSendTab";
 import { TabContext } from "@mui/lab";
-import { usePopupContext } from "../PopupContext";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function MessageTab() {
-    const { selectedMessageTab, setSelectedMessageTab } = usePopupContext();
+    const { selectedMessageTab, setSelectedMessageTab } = useUIContext();
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
         await setSelectedMessageTab(newValue);

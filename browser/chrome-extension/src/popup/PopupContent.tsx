@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
     Box,
     Tabs,
     Tab,
     Stack,
-    Snackbar,
-    Alert,
     IconButton,
     Menu,
     MenuItem,
@@ -19,9 +17,10 @@ import {
     MoreVert,
     Message,
 } from "@mui/icons-material";
-import { usePopupContext } from "./PopupContext";
-import IdentitiesTab from "./components/IdentitiesTab";
-import CredentialsTab from "./components/CredentialsTab";
+import { useWalletContext } from "../shared/contexts/WalletProvider";
+import { useUIContext } from "../shared/contexts/UIContext";
+import IdentitiesTab from "../shared/IdentitiesTab";
+import HeldTab from "../shared/HeldTab";
 import AuthTab from "./components/AuthTab";
 import PanelHeader from "./components/PanelHeader";
 import DIDsTab from "./components/DIDsTab";
@@ -30,26 +29,17 @@ import MessageTab from "./components/MessageTab";
 const PopupContent = () => {
     const {
         currentId,
-        handleSnackbarClose,
-        snackbar,
+    } = useWalletContext();
+    const {
         selectedTab,
         setSelectedTab,
-        refreshAll,
-    } = usePopupContext();
+    } = useUIContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
         await setSelectedTab(newValue);
     }
-
-    useEffect(() => {
-        const init = async () => {
-            await refreshAll();
-        };
-        init();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     function handleMenuOpen(event: React.MouseEvent<HTMLElement>) {
         setMenuAnchorEl(event.currentTarget);
@@ -61,31 +51,16 @@ const PopupContent = () => {
 
     function handleWalletClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "wallet.html" });
+        chrome.tabs.create({ url: "browser.html?tab=wallet" });
     }
 
-    function handleOptionsClick() {
+    function handleSettingsClick() {
         handleMenuClose();
-        chrome.tabs.create({ url: "options.html" });
+        chrome.tabs.create({ url: "browser.html?tab=settings" });
     }
 
     return (
         <Box>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-
             <TabContext value={selectedTab}>
                 <Box
                     display="flex"
@@ -150,8 +125,8 @@ const PopupContent = () => {
                         }}
                     >
                         <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
-                        <MenuItem onClick={handleOptionsClick}>
-                            Options
+                        <MenuItem onClick={handleSettingsClick}>
+                            Settings
                         </MenuItem>
                     </Menu>
                 </Box>
@@ -174,7 +149,7 @@ const PopupContent = () => {
                             <PanelHeader
                                 title="Credentials"
                                 tabValue="credentials"
-                                childComponent={<CredentialsTab />}
+                                childComponent={<HeldTab />}
                             />
 
                             <PanelHeader

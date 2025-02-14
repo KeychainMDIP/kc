@@ -1,142 +1,63 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import JsonView from "@uiw/react-json-view";
 import {
-    Alert,
-    AlertColor,
     Box,
     Button,
     MenuItem,
     Select,
-    Snackbar,
     Typography,
 } from "@mui/material";
-import Keymaster from "@mdip/keymaster";
-import WalletChrome from "@mdip/keymaster/wallet/chrome";
-import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCache from "@mdip/keymaster/wallet/cache";
-import GatekeeperClient from "@mdip/gatekeeper/client";
-import CipherWeb from "@mdip/cipher/web";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
 
-const gatekeeper = new GatekeeperClient();
-const cipher = new CipherWeb();
-
-function JsonViewer() {
-    const keymaster = useRef<Keymaster | null>(null);
+function JsonViewer({title, rawJson, did}: {title: string, rawJson?: string, did: string}) {
     const [data, setData] = useState<any>(null);
-    const [title, setTitle] = useState<any>(null);
-    const [selectedDID, setSelectedDID] = useState("");
     const [aliasDocs, setAliasDocs] = useState<any>(null);
     const [aliasDocsVersion, setAliasDocsVersion] = useState(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState(1);
     const [aliasDocsVersions, setAliasDocsVersions] = useState([]);
+    const { keymaster, setError } = useWalletContext();
 
     useEffect(() => {
-        const init = async () => {
-            const { gatekeeperUrl } = await chrome.storage.sync.get([
-                "gatekeeperUrl",
-            ]);
-            await gatekeeper.connect({ url: gatekeeperUrl });
-
-            let pass: string;
-            let response = await chrome.runtime.sendMessage({
-                action: "GET_PASSPHRASE",
-            });
-            if (response && response.passphrase) {
-                pass = response.passphrase;
-            } else {
-                setError("Unable to get passphrase.");
-                return;
-            }
-
-            const wallet_chrome = new WalletChrome();
-            const wallet_enc = new WalletWebEncrypted(wallet_chrome, pass);
-            const wallet_cache = new WalletCache(wallet_enc);
-
+        const populateData = async () => {
             try {
-                await wallet_cache.loadWallet();
+                if (rawJson) {
+                    const parsed = JSON.parse(rawJson);
+                    setData(parsed);
+                } else {
+                    await resolveDID(did);
+                }
             } catch (e) {
-                setError("Invalid passphrase.");
-                return;
+                setData({ error: "Failed to populate JSON" });
             }
-
-            keymaster.current = new Keymaster({
-                gatekeeper,
-                wallet: wallet_cache,
-                cipher,
-            });
-
-            await populateData();
         };
-        init();
+
+        setData("");
+        setAliasDocs(null);
+        populateData();
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    interface SnackbarState {
-        open: boolean;
-        message: string;
-        severity: AlertColor;
-    }
-
-    const [snackbar, setSnackbar] = useState<SnackbarState>({
-        open: false,
-        message: "",
-        severity: "warning",
-    });
-
-    const setError = (error: string) => {
-        setSnackbar({
-            open: true,
-            message: error,
-            severity: "error",
-        });
-    };
-
-    async function populateData() {
-        const params = new URLSearchParams(window.location.search);
-        const paramsTitle = params.get("title") || "";
-        const rawJson = params.get("json") || "";
-        const did = params.get("did") || "";
-
-        setTitle(paramsTitle);
-        setSelectedDID(did);
-
-        try {
-            if (rawJson) {
-                const parsed = JSON.parse(rawJson);
-                setData(parsed);
-            } else {
-                await resolveDID(did);
-            }
-        } catch {
-            setData({ error: "Failed to populate data JSON" });
-        }
-    }
+    }, [rawJson, did]);
 
     async function resolveDID(did: string) {
-        if (!keymaster.current) {
-            setError("Keymaster not initialized.");
-            return;
-        }
-
         try {
-            const docs = await keymaster.current.resolveDID(did);
-            setAliasDocs(docs);
-
+            const docs = await keymaster.resolveDID(did);
             const versions = docs.didDocumentMetadata.version;
+
+            setAliasDocs(docs);
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
             setAliasDocsVersions(
                 Array.from({ length: versions }, (_, i) => i + 1),
             );
-        } catch (e) {
-            setAliasDocs({ error: "Failed to populate JSON" });
+        } catch {
+            setData({ error: "Failed to populate JSON" });
         }
     }
 
     async function selectAliasDocsVersion(version: number) {
         try {
             setAliasDocsVersion(version);
-            const docs = await keymaster.current.resolveDID(selectedDID, {
+            const docs = await keymaster.resolveDID(did, {
                 atVersion: version,
             });
             setAliasDocs(docs);
@@ -145,33 +66,14 @@ function JsonViewer() {
         }
     }
 
-    const handleSnackbarClose = () => {
-        setSnackbar((prev) => ({ ...prev, open: false }));
-    };
-
     return (
         <Box>
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
-
             <Typography variant="h5" component="h5">
                 {title}
             </Typography>
-            {selectedDID && (
+            {did && (
                 <Typography sx={{ fontFamily: "Courier, monospace" }}>
-                    {selectedDID}
+                    {did}
                 </Typography>
             )}
             {data && <JsonView value={data} shortenTextAfterLength={0} />}

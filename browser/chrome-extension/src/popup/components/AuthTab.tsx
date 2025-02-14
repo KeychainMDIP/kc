@@ -1,25 +1,28 @@
 import React from "react";
 import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
-import { usePopupContext } from "../PopupContext";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useAuthContext } from "../../shared/contexts/AuthContext";
 
 function AuthTab() {
     const {
-        authDID,
-        challenge,
         keymaster,
         openJSONViewer,
-        setChallenge,
-        setAuthDID,
         setError,
         setWarning,
+    } = useWalletContext();
+    const {
+        authDID,
+        challenge,
+        setChallenge,
+        setAuthDID,
         response,
         setResponse,
         callback,
         setCallback,
         disableSendResponse,
         setDisableSendResponse,
-    } = usePopupContext();
+    } = useAuthContext();
 
     async function newChallenge() {
         try {
@@ -33,9 +36,9 @@ function AuthTab() {
 
     async function resolveChallenge(did: string) {
         try {
-            const asset = await keymaster.resolveAsset(did);
+            const contents = await keymaster.resolveAsset(did);
             await setAuthDID(did);
-            openJSONViewer("Resolve Challenge", did, asset);
+            openJSONViewer({ title: "Resolve Challenge", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -68,9 +71,9 @@ function AuthTab() {
 
     async function decryptResponse(did: string) {
         try {
-            const decrypted = await keymaster.decryptJSON(did);
+            const contents = await keymaster.decryptJSON(did);
             await setAuthDID(did);
-            openJSONViewer("Decrypt Response", did, decrypted);
+            openJSONViewer({ title: "Decrypt Response", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

@@ -7,25 +7,33 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import { usePopupContext } from "../PopupContext";
-import WarningModal from "./WarningModal";
+import WarningModal from "../../shared/WarningModal";
 import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
+import { requestBrowserRefresh } from "../../shared/sharedScripts";
 
 function DIDsTab() {
+    const [open, setOpen] = useState(false);
+    const [removeDID, setRemoveDID] = useState("");
+    const {
+        openJSONViewer,
+        handleCopyDID,
+        isBrowser,
+        keymaster,
+        setError,
+    } = useWalletContext();
     const {
         aliasName,
         aliasDID,
         nameList,
-        openJSONViewer,
         setAliasDID,
         setAliasName,
+    } = useCredentialsContext();
+    const {
         refreshNames,
-        handleCopyDID,
-        keymaster,
-        setError,
-    } = usePopupContext();
-    const [open, setOpen] = useState(false);
-    const [removeDID, setRemoveDID] = useState("");
+    } = useUIContext();
 
     async function clearFields() {
         await setAliasName("");
@@ -35,7 +43,9 @@ function DIDsTab() {
     async function addName() {
         try {
             await keymaster.addName(aliasName, aliasDID);
+            clearFields();
             await refreshNames();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -53,6 +63,7 @@ function DIDsTab() {
         try {
             await keymaster.removeName(removeDID);
             await refreshNames();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -65,6 +76,7 @@ function DIDsTab() {
         <Box>
             <WarningModal
                 title="Remove Credential"
+                warningText="Are you sure you want to remove the credential?"
                 isOpen={open}
                 onClose={handleRemoveClose}
                 onSubmit={handleRemoveConfirm}
@@ -103,7 +115,7 @@ function DIDsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => openJSONViewer(aliasName, aliasDID)}
+                    onClick={() => openJSONViewer({ title: aliasName, did: aliasDID })}
                     className="button large bottom"
                     disabled={!aliasDID}
                 >
@@ -167,7 +179,7 @@ function DIDsTab() {
                                     <Tooltip title="Resolve DID">
                                         <IconButton
                                             onClick={() =>
-                                                openJSONViewer(name, did)
+                                                openJSONViewer({ title: name, did })
                                             }
                                             size="small"
                                         >

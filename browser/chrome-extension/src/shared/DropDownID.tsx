@@ -8,7 +8,9 @@ import {
     Tooltip,
 } from "@mui/material";
 import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
-import { usePopupContext } from "../PopupContext";
+import { useWalletContext } from "./contexts/WalletProvider";
+import { useUIContext } from "./contexts/UIContext";
+import { requestBrowserRefresh } from './sharedScripts'
 
 const DropDownID = () => {
     const {
@@ -16,12 +18,15 @@ const DropDownID = () => {
         currentId,
         handleCopyDID,
         idList,
+        isBrowser,
         keymaster,
         openJSONViewer,
         setError,
         setSelectedId,
-        refreshAll,
-    } = usePopupContext();
+    } = useWalletContext();
+    const {
+        resetCurrentID,
+    } = useUIContext();
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -32,11 +37,9 @@ const DropDownID = () => {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
-            await chrome.runtime.sendMessage({
-                action: "CLEAR_STATE",
-                key: "currentId"
-            });
-            refreshAll();
+
+            await resetCurrentID();
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -76,7 +79,7 @@ const DropDownID = () => {
                         <Tooltip title="Resolve DID">
                             <IconButton
                                 onClick={() =>
-                                    openJSONViewer(currentId, currentDID)
+                                    openJSONViewer({ title: currentId, did: currentDID })
                                 }
                                 size="small"
                                 sx={{
