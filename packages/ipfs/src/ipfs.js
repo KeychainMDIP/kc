@@ -68,6 +68,15 @@ class IPFS {
         await instance.start();
         return instance;
     }
+
+    static isValidCID(cid) {
+        try {
+            CID.parse(cid);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
 }
 
 export default IPFS;

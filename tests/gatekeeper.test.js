@@ -3,7 +3,7 @@ import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
-import { copyJSON } from '@mdip/common/utils';
+import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 
 const mockConsole = {
@@ -2894,7 +2894,7 @@ describe('compareOrdinals', () => {
         const a = [444, 555, 666, 777];
         const b = [444, 555, 777, 888];
 
-        const result = gatekeeper.compareOrdinals(a, b);
+        const result = compareOrdinals(a, b);
 
         expect(result).toBe(-1);
     });
@@ -2904,7 +2904,7 @@ describe('compareOrdinals', () => {
         const a = [444, 555, 666, 777];
         const b = [444, 555, 777, 888];
 
-        const result = gatekeeper.compareOrdinals(b, a);
+        const result = compareOrdinals(b, a);
 
         expect(result).toBe(1);
     });
@@ -2913,7 +2913,7 @@ describe('compareOrdinals', () => {
 
         const a = [444, 555, 666, 777];
 
-        const result = gatekeeper.compareOrdinals(a, a);
+        const result = compareOrdinals(a, a);
 
         expect(result).toBe(0);
     });
@@ -2923,7 +2923,7 @@ describe('compareOrdinals', () => {
         const a = [444, 555, 666, 777];
         const b = [444, 555, 666, 777, 888];
 
-        const result = gatekeeper.compareOrdinals(a, b);
+        const result = compareOrdinals(a, b);
 
         expect(result).toBe(-1);
     });
@@ -2933,8 +2933,71 @@ describe('compareOrdinals', () => {
         const a = [444, 555, 666, 777, 888];
         const b = [444, 555, 666, 777];
 
-        const result = gatekeeper.compareOrdinals(a, b);
+        const result = compareOrdinals(a, b);
 
         expect(result).toBe(1);
     });
 });
+
+describe('isValidDID', () => {
+    it('should return true for valid DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const isValid = isValidDID(agentDID);
+        expect(isValid).toBe(true);
+    });
+
+    it('should return true for custome DID prefix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, {});
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const isValid = isValidDID(agentDID);
+        expect(isValid).toBe(true);
+    });
+
+    it('should return false for wrong type', async () => {
+        expect(isValidDID()).toBe(false);
+        expect(isValidDID(null)).toBe(false);
+        expect(isValidDID(123)).toBe(false);
+        expect(isValidDID([1, 2, 3])).toBe(false);
+        expect(isValidDID({ mock: 123 })).toBe(false);
+    });
+
+    it('should return false if prefix missing', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const didWithoutPrefix = agentDID.replace(/^did:/, '');
+
+        const isValid = isValidDID(didWithoutPrefix);
+        expect(isValid).toBe(false);
+    });
+
+    it('should return false if did scheme is missing', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const suffix = agentDID.split(':').pop();
+        const badDID = 'did:' + suffix;
+
+        const isValid = isValidDID(badDID);
+        expect(isValid).toBe(false);
+    });
+
+    it('should return false if suffix is not a valid CID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agentDID = await gatekeeper.createDID(agentOp);
+
+        const badDID = agentDID + 'mock';
+
+        const isValid = isValidDID(badDID);
+        expect(isValid).toBe(false);
+    });
+});
+

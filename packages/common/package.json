@@ -14,7 +14,9 @@
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "@mdip/ipfs": "*"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
