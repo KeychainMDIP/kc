@@ -2888,6 +2888,48 @@ describe('checkDIDs', () => {
     });
 });
 
+
+describe('gatekeeper.db', () => {
+    it('getEvents should return empty list on invalid did', async () => {
+        const events = await gatekeeper.db.getEvents(null);
+
+        expect(events).toStrictEqual([]);
+    });
+
+    it('addEvent should throw exception on invalid did', async () => {
+        try {
+            await gatekeeper.db.addEvent(null);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid DID');
+        }
+    });
+
+    it('setEvents should throw exception on invalid did', async () => {
+        try {
+            await gatekeeper.db.setEvents(null);
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid DID');
+        }
+    });
+
+    it('getQueue should return empty list invalid registry', async () => {
+        const queue1 = await gatekeeper.db.getQueue('mock');
+        expect(queue1).toStrictEqual([]);
+
+        await gatekeeper.db.queueOperation('hyperswarm', {});
+        const queue2 = await gatekeeper.db.getQueue('mock');
+        expect(queue2).toStrictEqual([]);
+    });
+
+    it('clearQueue should return true on unknown registry', async () => {
+        await gatekeeper.db.queueOperation('hyperswarm', {});
+        const ok = await gatekeeper.db.clearQueue('mock');
+        expect(ok).toBe(true);
+    });
+});
+
 describe('compareOrdinals', () => {
     it('should return -1 when a < b', async () => {
 
