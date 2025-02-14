@@ -23,9 +23,8 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
     onChange,
 }) => {
     const { setError } = useWalletContext();
-    const schemaDoc = schemaObject.didDocumentData.schema || schemaObject.didDocumentData;
-    const properties = schemaDoc.properties;
-    const requiredList: string[] = Array.isArray(schemaDoc.required) ? schemaDoc.required : [];
+    const properties = schemaObject.properties;
+    const requiredList: string[] = Array.isArray(schemaObject.required) ? schemaObject.required : [];
 
     const getTypes = (schema: any) => {
         let types: string[] = [];
