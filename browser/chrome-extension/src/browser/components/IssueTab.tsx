@@ -79,7 +79,7 @@ function IssueTab() {
                     return;
                 }
                 const schemaDID = credentialObject.type[1];
-                const schemaObject = await keymaster.resolveDID(schemaDID);
+                const schemaObject = await keymaster.getSchema(schemaDID);
                 setSchemaObject(schemaObject);
             } catch (error) {
                 setError(error.error || error.message || String(error));

@@ -1,8 +1,23 @@
-import React, { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import React, {
+    createContext,
+    Dispatch,
+    ReactNode,
+    SetStateAction,
+    useContext,
+    useEffect,
+    useState
+} from "react";
 import { useWalletContext, openJSONViewerOptions } from "./WalletProvider";
 import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useMessageContext} from "./MessageContext";
+import { useThemeContext } from "./ContextProviders";
+
+export enum RefreshMode {
+    NONE = 'NONE',
+    WALLET = 'WALLET',
+    THEME = 'THEME',
+}
 
 interface UIContextValue {
     selectedTab: string;
@@ -24,18 +39,21 @@ export function UIProvider(
         children,
         pendingAuth,
         jsonViewerOptions,
-        browserRefresh
+        browserRefresh,
+        setBrowserRefresh,
     }: {
         children: ReactNode,
         pendingAuth?: string,
         jsonViewerOptions?: openJSONViewerOptions,
-        browserRefresh?: number
+        browserRefresh?: RefreshMode,
+        setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
     const [pendingTab, setPendingTab] = useState<string | null>(null);
     const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(null);
     const [selectedTab, setSelectedTabState] = useState<string>("identities");
     const [selectedMessageTab, setSelectedMessageTabState] = useState<string>("receive");
     const [pendingUsed, setPendingUsed] = useState<boolean>(false);
+
     const {
         currentId,
         isBrowser,
@@ -83,16 +101,36 @@ export function UIProvider(
     const {
         refreshMessageStored
     } = useMessageContext();
+    const {
+        updateThemeFromStorage,
+    } = useThemeContext();
 
     useEffect(() => {
         const refresh = async () => {
-            // Reload browser wallet in case user changed in popup
             await reloadBrowserWallet();
             await refreshAll();
         };
         refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshFlag, browserRefresh]);
+    }, [refreshFlag]);
+
+    useEffect(() => {
+        if (!setBrowserRefresh || browserRefresh === RefreshMode.NONE) {
+            return;
+        }
+
+        const refresh = async () => {
+            if (browserRefresh === RefreshMode.WALLET) {
+                await reloadBrowserWallet();
+                await refreshAll();
+            } else if (browserRefresh === RefreshMode.THEME) {
+                updateThemeFromStorage();
+            }
+            setBrowserRefresh(RefreshMode.NONE);
+        };
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [browserRefresh]);
 
     useEffect(() => {
         if (!currentId) return;

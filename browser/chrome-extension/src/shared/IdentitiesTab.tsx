@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useWalletContext } from "./contexts/WalletProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 import { useUIContext } from "./contexts/UIContext";
+import { requestBrowserRefresh } from "./sharedScripts";
 
 function IdentitiesTab() {
     const [name, setName] = useState("");
     const {
+        isBrowser,
         registry,
         setRegistry,
         registries,
@@ -22,6 +24,7 @@ function IdentitiesTab() {
             await keymaster.createId(name.trim(), { registry });
             await resetCurrentID();
             setName("");
+            requestBrowserRefresh(isBrowser);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

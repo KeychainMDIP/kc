@@ -16,12 +16,21 @@ import BrowserHeader from "./components/BrowserHeader";
 import JsonViewer from "./components/JsonViewer";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
 import { useUIContext } from "../shared/contexts/UIContext";
+import { useThemeContext } from "../shared/contexts/ContextProviders";
+import { createTheme, ThemeProvider } from "@mui/material/styles";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
     const [didRun, setDidRun] = useState(false);
     const { currentId, isBrowser } = useWalletContext();
     const { jsonViewerOptions } = useUIContext();
+    const { darkMode } = useThemeContext();
+
+    const theme = createTheme({
+        palette: {
+            mode: darkMode ? 'dark' : 'light',
+        },
+    });
 
     const params = new URLSearchParams(window.location.search);
     const paramTab = params.get("tab") || "";
@@ -72,92 +81,90 @@ function BrowserContent() {
         setActiveTab(newValue);
     };
 
-    const handleToggleMenu = () => {
-        setMenuOpen((prev) => !prev);
-    };
-
     return (
-        <Box className="rootContainer">
-            <BrowserHeader onHamburgerClick={handleToggleMenu} />
-            <TabContext value={activeTab}>
-                <Box className="layoutContainer">
-                    <Box className={`sidebar ${menuOpen ? "open" : ""}`}>
-                        <TabList
-                            orientation="vertical"
-                            onChange={handleTabChange}
-                            className="tabList"
-                        >
-                            <Tab
-                                icon={<PermIdentity />}
-                                label={menuOpen ? "Identities" : ""}
-                                value="identities"
-                                iconPosition="start"
-                                className="sidebarTab"
-                                sx={{ gap: 0.25 }}
-                            />
-                            {currentId && (
+        <ThemeProvider theme={theme}>
+            <Box className="rootContainer">
+                <BrowserHeader menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+                <TabContext value={activeTab}>
+                    <Box className="layoutContainer">
+                        <Box className={`sidebar ${menuOpen ? "open" : ""}`}>
+                            <TabList
+                                orientation="vertical"
+                                onChange={handleTabChange}
+                                className="tabList"
+                            >
                                 <Tab
-                                    icon={<Badge />}
-                                    label={menuOpen ? "Credentials" : ""}
-                                    value="credentials"
+                                    icon={<PermIdentity />}
+                                    label={menuOpen ? "Identities" : ""}
+                                    value="identities"
                                     iconPosition="start"
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
-                            )}
-                            <Tab
-                                icon={<AccountBalanceWallet />}
-                                label={menuOpen ? "Wallet" : ""}
-                                value="wallet"
-                                iconPosition="start"
-                                className="sidebarTab"
-                                sx={{ gap: 0.25 }}
-                            />
-                            {viewerDID && (
+                                {currentId && (
+                                    <Tab
+                                        icon={<Badge />}
+                                        label={menuOpen ? "Credentials" : ""}
+                                        value="credentials"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
                                 <Tab
-                                    icon={<ManageSearch />}
-                                    label={menuOpen ? "JSON Viewer" : ""}
-                                    value="viewer"
+                                    icon={<AccountBalanceWallet />}
+                                    label={menuOpen ? "Wallet" : ""}
+                                    value="wallet"
                                     iconPosition="start"
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
-                            )}
-                            <Tab
-                                icon={<Settings />}
-                                label={menuOpen ? "Settings" : ""}
-                                value="settings"
-                                iconPosition="start"
-                                className="sidebarTab"
-                                sx={{ gap: 0.25 }}
-                            />
-                        </TabList>
-                    </Box>
+                                {viewerDID && (
+                                    <Tab
+                                        icon={<ManageSearch />}
+                                        label={menuOpen ? "JSON Viewer" : ""}
+                                        value="viewer"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
+                                <Tab
+                                    icon={<Settings />}
+                                    label={menuOpen ? "Settings" : ""}
+                                    value="settings"
+                                    iconPosition="start"
+                                    className="sidebarTab"
+                                    sx={{ gap: 0.25 }}
+                                />
+                            </TabList>
+                        </Box>
 
-                    <Box className="browser-context">
-                        <TabPanel value="identities" sx={{ p: 0 }}>
-                            <IdentitiesTab />
-                        </TabPanel>
-                        {currentId && (
-                            <TabPanel value="credentials" sx={{ p: 0 }}>
-                                <CredentialsTab subTab={activeSubTab} />
+                        <Box className="browser-context">
+                            <TabPanel value="identities" sx={{ p: 0 }}>
+                                <IdentitiesTab />
                             </TabPanel>
-                        )}
-                        <TabPanel value="wallet" sx={{ p: 0 }}>
-                            <WalletTab />
-                        </TabPanel>
-                        {viewerDID && (
-                            <TabPanel value="viewer" sx={{ p: 0 }}>
-                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} />
+                            {currentId && (
+                                <TabPanel value="credentials" sx={{ p: 0 }}>
+                                    <CredentialsTab subTab={activeSubTab} />
+                                </TabPanel>
+                            )}
+                            <TabPanel value="wallet" sx={{ p: 0 }}>
+                                <WalletTab />
                             </TabPanel>
-                        )}
-                        <TabPanel value="settings" sx={{ p: 0 }}>
-                            <SettingsTab />
-                        </TabPanel>
+                            {viewerDID && (
+                                <TabPanel value="viewer" sx={{ p: 0 }}>
+                                    <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} />
+                                </TabPanel>
+                            )}
+                            <TabPanel value="settings" sx={{ p: 0 }}>
+                                <SettingsTab />
+                            </TabPanel>
+                        </Box>
                     </Box>
-                </Box>
-            </TabContext>
-        </Box>
+                </TabContext>
+            </Box>
+        </ThemeProvider>
     );
 }
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
     Box,
+    Switch,
     Tabs,
     Tab,
     Stack,
@@ -11,7 +12,9 @@ import {
 import { TabContext } from "@mui/lab";
 import {
     Badge,
+    DarkMode,
     Key,
+    LightMode,
     List,
     PermIdentity,
     MoreVert,
@@ -19,6 +22,7 @@ import {
 } from "@mui/icons-material";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
 import { useUIContext } from "../shared/contexts/UIContext";
+import { useThemeContext } from "../shared/contexts/ContextProviders";
 import IdentitiesTab from "../shared/IdentitiesTab";
 import HeldTab from "../shared/HeldTab";
 import AuthTab from "./components/AuthTab";
@@ -34,6 +38,10 @@ const PopupContent = () => {
         selectedTab,
         setSelectedTab,
     } = useUIContext();
+    const {
+        darkMode,
+        handleDarkModeToggle,
+    } = useThemeContext();
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -60,114 +68,122 @@ const PopupContent = () => {
     }
 
     return (
-        <Box>
-            <TabContext value={selectedTab}>
-                <Box
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="space-between"
+        <TabContext value={selectedTab}>
+            <Box
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+            >
+                <Tabs
+                    value={selectedTab}
+                    onChange={handleChange}
+                    className="tabs"
                 >
-                    <Tabs
-                        value={selectedTab}
-                        onChange={handleChange}
-                        className="tabs"
-                    >
+                    <Tab
+                        sx={{ minWidth: "70px", px: 0 }}
+                        icon={<PermIdentity />}
+                        value="identities"
+                    />
+                    {currentId && (
                         <Tab
                             sx={{ minWidth: "70px", px: 0 }}
-                            icon={<PermIdentity />}
-                            value="identities"
+                            icon={<List />}
+                            value="dids"
                         />
-                        {currentId && (
-                            <Tab
-                                sx={{ minWidth: "70px", px: 0 }}
-                                icon={<List />}
-                                value="dids"
-                            />
-                        )}
-                        {currentId && (
-                            <Tab
-                                sx={{ minWidth: "70px", px: 0 }}
-                                icon={<Badge />}
-                                value="credentials"
-                            />
-                        )}
-                        {currentId && (
-                            <Tab
-                                sx={{ minWidth: "70px", px: 0 }}
-                                icon={<Key />}
-                                value="auth"
-                            />
-                        )}
-                        {currentId && (
-                            <Tab
-                                sx={{ minWidth: "70px", px: 0 }}
-                                icon={<Message />}
-                                value="messages"
-                            />
-                        )}
-                    </Tabs>
-
-                    <IconButton onClick={handleMenuOpen}>
-                        <MoreVert />
-                    </IconButton>
-
-                    <Menu
-                        anchorEl={menuAnchorEl}
-                        open={Boolean(menuAnchorEl)}
-                        onClose={handleMenuClose}
-                        anchorOrigin={{
-                            vertical: "bottom",
-                            horizontal: "right",
-                        }}
-                        transformOrigin={{
-                            vertical: "top",
-                            horizontal: "right",
-                        }}
-                    >
-                        <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
-                        <MenuItem onClick={handleSettingsClick}>
-                            Settings
-                        </MenuItem>
-                    </Menu>
-                </Box>
-
-                <Stack spacing={0}>
-                    <PanelHeader
-                        title="Identities"
-                        tabValue="identities"
-                        childComponent={<IdentitiesTab />}
-                    />
-
-                    {currentId && (
-                        <>
-                            <PanelHeader
-                                title="DID List"
-                                tabValue="dids"
-                                childComponent={<DIDsTab />}
-                            />
-
-                            <PanelHeader
-                                title="Credentials"
-                                tabValue="credentials"
-                                childComponent={<HeldTab />}
-                            />
-
-                            <PanelHeader
-                                title="Auth"
-                                tabValue="auth"
-                                childComponent={<AuthTab />}
-                            />
-
-                            <PanelHeader
-                                title="Messages"
-                                tabValue="messages"
-                                childComponent={<MessageTab />}
-                            />
-                        </>
                     )}
-                </Stack>
-            </TabContext>
-        </Box>
+                    {currentId && (
+                        <Tab
+                            sx={{ minWidth: "70px", px: 0 }}
+                            icon={<Badge />}
+                            value="credentials"
+                        />
+                    )}
+                    {currentId && (
+                        <Tab
+                            sx={{ minWidth: "70px", px: 0 }}
+                            icon={<Key />}
+                            value="auth"
+                        />
+                    )}
+                    {currentId && (
+                        <Tab
+                            sx={{ minWidth: "70px", px: 0 }}
+                            icon={<Message />}
+                            value="messages"
+                        />
+                    )}
+                </Tabs>
+
+                <IconButton onClick={handleMenuOpen}>
+                    <MoreVert />
+                </IconButton>
+
+                <Menu
+                    anchorEl={menuAnchorEl}
+                    open={Boolean(menuAnchorEl)}
+                    onClose={handleMenuClose}
+                    anchorOrigin={{
+                        vertical: "bottom",
+                        horizontal: "right",
+                    }}
+                    transformOrigin={{
+                        vertical: "top",
+                        horizontal: "right",
+                    }}
+                >
+                    <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
+                    <MenuItem onClick={handleSettingsClick}>
+                        Settings
+                    </MenuItem>
+                    <MenuItem>
+                        <LightMode sx={{ mr: 1 }} />
+                        <Switch
+                            checked={darkMode}
+                            onChange={handleDarkModeToggle}
+                            name="darkModeSwitch"
+                        />
+                        <DarkMode sx={{ ml: 1 }} />
+                    </MenuItem>
+                </Menu>
+            </Box>
+
+            <Stack spacing={0}>
+                <PanelHeader
+                    title="Identities"
+                    tabValue="identities"
+                    childComponent={<IdentitiesTab />}
+                />
+
+                {currentId && (
+                    <>
+                        <PanelHeader
+                            title="DID List"
+                            tabValue="dids"
+                            childComponent={<DIDsTab />}
+                        />
+
+                        <PanelHeader
+                            title="Credentials"
+                            tabValue="credentials"
+                            childComponent={<HeldTab />}
+                        />
+
+                        <PanelHeader
+                            title="Auth"
+                            tabValue="auth"
+                            childComponent={<AuthTab />}
+                        />
+
+                        <PanelHeader
+                            title="Messages"
+                            tabValue="messages"
+                            childComponent={<MessageTab />}
+                        />
+                    </>
+                )}
+            </Stack>
+        </TabContext>
+
     );
 };
 

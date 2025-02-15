@@ -1,4 +1,4 @@
-export function requestBrowserRefresh(isBrowser: boolean) {
+export function requestBrowserRefresh(isBrowser: boolean, theme: boolean = false) {
     if (isBrowser) {
         return;
     }
@@ -11,7 +11,7 @@ export function requestBrowserRefresh(isBrowser: boolean) {
             const existingTabId = tab.id;
             chrome.tabs.sendMessage(
                 existingTabId,
-                { type: "BROWSER_REFRESH" }
+                { type: theme ? "BROWSER_THEME" : "BROWSER_REFRESH" }
             );
         }
     });
