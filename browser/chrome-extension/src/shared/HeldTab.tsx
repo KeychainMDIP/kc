@@ -83,6 +83,8 @@ function HeldTab() {
         setSelectedDID(did);
         if (contents) {
             setSelectedDoc(contents);
+        } else {
+            setSelectedDoc("");
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -40,6 +40,7 @@ body {
     width: 190px;
 }
 
+.text-field.single-line .MuiOutlinedInput-notchedOutline,
 .text-field.name .MuiOutlinedInput-notchedOutline {
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;

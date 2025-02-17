@@ -63,6 +63,8 @@ function BrowserContent() {
         }
         if (contents) {
             setViewerContents(contents);
+        } else {
+            setViewerContents("");
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,16 +121,14 @@ function BrowserContent() {
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
-                                {viewerDID && (
-                                    <Tab
-                                        icon={<ManageSearch />}
-                                        label={menuOpen ? "JSON Viewer" : ""}
-                                        value="viewer"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{ gap: 0.25 }}
-                                    />
-                                )}
+                                <Tab
+                                    icon={<ManageSearch />}
+                                    label={menuOpen ? "JSON Viewer" : ""}
+                                    value="viewer"
+                                    iconPosition="start"
+                                    className="sidebarTab"
+                                    sx={{ gap: 0.25 }}
+                                />
                                 <Tab
                                     icon={<Settings />}
                                     label={menuOpen ? "Settings" : ""}
@@ -152,11 +152,9 @@ function BrowserContent() {
                             <TabPanel value="wallet" sx={{ p: 0 }}>
                                 <WalletTab />
                             </TabPanel>
-                            {viewerDID && (
-                                <TabPanel value="viewer" sx={{ p: 0 }}>
-                                    <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} />
-                                </TabPanel>
-                            )}
+                            <TabPanel value="viewer" sx={{ p: 0 }}>
+                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} dedicated={true} />
+                            </TabPanel>
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />
                             </TabPanel>
