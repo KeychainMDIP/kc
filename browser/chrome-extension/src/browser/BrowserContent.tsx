@@ -21,7 +21,8 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
-    const [didRun, setDidRun] = useState(false);
+    const [didRun, setDidRun] = useState<boolean>(false);
+    const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
     const { jsonViewerOptions } = useUIContext();
     const { darkMode } = useThemeContext();
@@ -54,16 +55,26 @@ function BrowserContent() {
         }
 
         const {title, did, tab, subTab, contents} = jsonViewerOptions;
-        setViewerTitle(title);
-        const useTab = tab || "viewer";
+        const useTab: string = tab || "viewer";
         setActiveTab(useTab);
-        setViewerDID(did);
         if (subTab) {
             setSubActiveTab(subTab);
         }
+
+        if (useTab !== "viewer") {
+            return;
+        }
+
+        setViewerTitle(title);
+        setViewerDID(did);
+
         if (contents) {
             setViewerContents(contents);
+        } else {
+            setViewerContents("");
         }
+
+        setRefresh(r => r + 1);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])
@@ -119,16 +130,14 @@ function BrowserContent() {
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
-                                {viewerDID && (
-                                    <Tab
-                                        icon={<ManageSearch />}
-                                        label={menuOpen ? "JSON Viewer" : ""}
-                                        value="viewer"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{ gap: 0.25 }}
-                                    />
-                                )}
+                                <Tab
+                                    icon={<ManageSearch />}
+                                    label={menuOpen ? "JSON Viewer" : ""}
+                                    value="viewer"
+                                    iconPosition="start"
+                                    className="sidebarTab"
+                                    sx={{ gap: 0.25 }}
+                                />
                                 <Tab
                                     icon={<Settings />}
                                     label={menuOpen ? "Settings" : ""}
@@ -152,11 +161,9 @@ function BrowserContent() {
                             <TabPanel value="wallet" sx={{ p: 0 }}>
                                 <WalletTab />
                             </TabPanel>
-                            {viewerDID && (
-                                <TabPanel value="viewer" sx={{ p: 0 }}>
-                                    <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} />
-                                </TabPanel>
-                            )}
+                            <TabPanel value="viewer" sx={{ p: 0 }}>
+                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} dedicated={true} refresh={refresh} />
+                            </TabPanel>
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />
                             </TabPanel>

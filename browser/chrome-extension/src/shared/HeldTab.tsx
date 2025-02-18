@@ -13,6 +13,7 @@ function HeldTab() {
     const [loading, setLoading] = useState<boolean>(false);
     const [removeDID, setRemoveDID] = useState<string>("");
     const [title, setTitle] = useState<string>("");
+    const [refresh, setRefresh] = useState<number>(0);
     const [selectedDID, setSelectedDID] = useState<string>("");
     const [selectedDoc, setSelectedDoc] = useState<any>(null);
     const [loadURL, setLoadURL] = useState<boolean>(false);
@@ -20,7 +21,6 @@ function HeldTab() {
         currentId,
         isBrowser,
         manifest,
-        openJSONViewer,
         resolveDID,
         setError,
         setWarning,
@@ -33,6 +33,7 @@ function HeldTab() {
     } = useCredentialsContext();
     const {
         jsonViewerOptions,
+        openJSONViewer,
         refreshHeld,
     } = useUIContext();
 
@@ -83,6 +84,8 @@ function HeldTab() {
         setSelectedDID(did);
         if (contents) {
             setSelectedDoc(contents);
+        } else {
+            setSelectedDoc("");
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,6 +219,7 @@ function HeldTab() {
             } else {
                 setSelectedDoc("");
             }
+            setRefresh(r => r + 1);
         } else {
             openJSONViewer({title, did, contents, tab: "credentials", subTab: "held"});
         }
@@ -374,7 +378,7 @@ function HeldTab() {
                 ))}
             </Box>
             {selectedDID && title &&
-                <JsonViewer title={title} did={selectedDID} rawJson={selectedDoc} />
+                <JsonViewer title={title} did={selectedDID} rawJson={selectedDoc} refresh={refresh} />
             }
         </Box>
     );
