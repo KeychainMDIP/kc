@@ -44,7 +44,7 @@ function JsonViewer({title, rawJson, did, dedicated = false}: {title: string, ra
         setCurrentTitle(title);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rawJson, did]);
+    }, [rawJson, title, did]);
 
     async function handleResolveDID() {
         await resolveDID(formDid);

@@ -20,7 +20,6 @@ function HeldTab() {
         currentId,
         isBrowser,
         manifest,
-        openJSONViewer,
         resolveDID,
         setError,
         setWarning,
@@ -33,6 +32,7 @@ function HeldTab() {
     } = useCredentialsContext();
     const {
         jsonViewerOptions,
+        openJSONViewer,
         refreshHeld,
     } = useUIContext();
 

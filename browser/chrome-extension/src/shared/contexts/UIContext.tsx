@@ -7,7 +7,7 @@ import React, {
     useEffect,
     useState
 } from "react";
-import { useWalletContext, openJSONViewerOptions } from "./WalletProvider";
+import { useWalletContext } from "./WalletProvider";
 import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useMessageContext} from "./MessageContext";
@@ -25,11 +25,20 @@ interface UIContextValue {
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
     jsonViewerOptions: openJSONViewerOptions | null;
+    openJSONViewer: (options: openJSONViewerOptions) => void;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
     wipAllStates: () => void;
+}
+
+export interface openJSONViewerOptions {
+    title: string;
+    did: string;
+    tab?: string;
+    subTab?: string;
+    contents?: any;
 }
 
 const UIContext = createContext<UIContextValue | null>(null);
@@ -39,12 +48,14 @@ export function UIProvider(
         children,
         pendingAuth,
         jsonViewerOptions,
+        setJsonViewerOptions,
         browserRefresh,
         setBrowserRefresh,
     }: {
         children: ReactNode,
         pendingAuth?: string,
         jsonViewerOptions?: openJSONViewerOptions,
+        setJsonViewerOptions?: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -160,6 +171,60 @@ export function UIProvider(
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentId, pendingAuth, pendingTab, pendingMessageTab]);
+
+    function openJSONViewer(options: openJSONViewerOptions) {
+        const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
+        const payload = {
+            ...options,
+            contents: contentsString
+        };
+
+        if (isBrowser) {
+            setJsonViewerOptions(payload);
+            return;
+        }
+
+        const titleEncoded = encodeURIComponent(options.title);
+        const didEncoded = encodeURIComponent(options.did);
+        const tab = options.tab || "viewer";
+        let url = `browser.html?tab=${tab}&title=${titleEncoded}&did=${didEncoded}`;
+
+        if (options.subTab) {
+            url += `&subTab=${options.subTab}`;
+        }
+
+        if (options.contents) {
+            const jsonEncoded = encodeURIComponent(contentsString);
+            url += `&doc=${jsonEncoded}`;
+        }
+
+        chrome.tabs.query({ url: chrome.runtime.getURL("browser.html") + "*" }, (tabs) => {
+            if (!tabs || tabs.length === 0) {
+                chrome.tabs.create({ url });
+                return;
+            }
+
+            const existingTabId = tabs[0].id;
+
+            chrome.tabs.sendMessage(
+                existingTabId,
+                { type: "PING_JSON_VIEWER" },
+                (response) => {
+                    if (chrome.runtime.lastError || !response?.ack) {
+                        chrome.tabs.create({ url });
+                        return;
+                    }
+
+                    chrome.tabs.sendMessage(existingTabId, {
+                        type: "LOAD_JSON",
+                        payload
+                    });
+
+                    chrome.tabs.update(existingTabId, { active: true });
+                }
+            );
+        });
+    }
 
     async function setSelectedTab(value: string) {
         setSelectedTabState(value);
@@ -386,6 +451,7 @@ export function UIProvider(
         setSelectedTab,
         selectedMessageTab,
         setSelectedMessageTab,
+        openJSONViewer,
         jsonViewerOptions,
         refreshAll,
         resetCurrentID,

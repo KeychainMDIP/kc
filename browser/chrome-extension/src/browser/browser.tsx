@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 import BrowserContent from "./BrowserContent";
 import { ContextProviders } from "../shared/contexts/ContextProviders";
-import type { openJSONViewerOptions } from "../shared/contexts/WalletProvider";
+import type { openJSONViewerOptions } from "../shared/contexts/UIContext";
 import "../shared/extension.css";
 import { RefreshMode } from '../shared/contexts/UIContext';
 
@@ -11,6 +11,7 @@ const BrowserUI = () => {
     const [browserRefresh, setBrowserRefresh] = useState<RefreshMode>(RefreshMode.NONE);
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        console.log("Received message", request, sender, sendResponse);
         if (request.type === "PING_JSON_VIEWER") {
             sendResponse({ ack: true });
         } else if (request.type === "LOAD_JSON") {
@@ -23,7 +24,13 @@ const BrowserUI = () => {
     });
 
     return (
-        <ContextProviders isBrowser jsonViewerOptions={jsonViewerOptions} browserRefresh={browserRefresh} setBrowserRefresh={setBrowserRefresh}>
+        <ContextProviders
+            isBrowser
+            jsonViewerOptions={jsonViewerOptions}
+            setJsonViewerOptions={setJsonViewerOptions}
+            browserRefresh={browserRefresh}
+            setBrowserRefresh={setBrowserRefresh}
+        >
             <BrowserContent />
         </ContextProviders>
     );

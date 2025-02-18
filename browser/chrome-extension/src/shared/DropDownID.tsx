@@ -20,11 +20,11 @@ const DropDownID = () => {
         idList,
         isBrowser,
         keymaster,
-        openJSONViewer,
         setError,
         setSelectedId,
     } = useWalletContext();
     const {
+        openJSONViewer,
         resetCurrentID,
     } = useUIContext();
 
