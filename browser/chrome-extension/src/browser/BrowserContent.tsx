@@ -54,13 +54,19 @@ function BrowserContent() {
         }
 
         const {title, did, tab, subTab, contents} = jsonViewerOptions;
-        setViewerTitle(title);
-        const useTab = tab || "viewer";
+        const useTab: string = tab || "viewer";
         setActiveTab(useTab);
-        setViewerDID(did);
         if (subTab) {
             setSubActiveTab(subTab);
         }
+
+        if (useTab !== "viewer") {
+            return;
+        }
+
+        setViewerTitle(title);
+        setViewerDID(did);
+
         if (contents) {
             setViewerContents(contents);
         } else {
