@@ -2,7 +2,7 @@ import fs from 'fs';
 import { InvalidDIDError } from '@mdip/common/errors';
 
 export default class DbJson {
-    constructor(name, folder='data') {
+    constructor(name, folder = 'data') {
         this.dataFolder = folder;
         this.dbName = `${this.dataFolder}/${name}.json`;
     }
@@ -98,7 +98,7 @@ export default class DbJson {
             db.queue = {};
         }
 
-        if (Object.keys(db.queue).includes(registry)) {
+        if (registry in db.queue) {
             db.queue[registry].push(op);
         }
         else {
@@ -106,6 +106,8 @@ export default class DbJson {
         }
 
         this.writeDb(db);
+
+        return db.queue[registry].length;
     }
 
     async getQueue(registry) {

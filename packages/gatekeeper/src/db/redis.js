@@ -77,7 +77,7 @@ export default class DbRedis {
     }
 
     async queueOperation(registry, op) {
-        await this.redis.rpush(`${this.dbName}/queue/${registry}`, JSON.stringify(op));
+        return this.redis.rpush(`${this.dbName}/queue/${registry}`, JSON.stringify(op));
     }
 
     async getQueue(registry) {

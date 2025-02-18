@@ -89,7 +89,9 @@ export default class DbSqlite {
 
         ops.push(op);
 
-        return this.db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
+        await this.db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
+
+        return ops.length;
     }
 
     async getQueue(registry) {
