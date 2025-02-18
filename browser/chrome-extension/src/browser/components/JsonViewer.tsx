@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import JsonView from "@uiw/react-json-view";
+import JsonView from '@uiw/react-json-view';
 import {
     Box,
     Button,
@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 
-function JsonViewer({title, rawJson, did, dedicated = false}: {title: string, rawJson?: string, did: string, dedicated?: boolean}) {
+function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: string, rawJson?: string, did: string, refresh: number, dedicated?: boolean}) {
     const [aliasDocs, setAliasDocs] = useState<any>(null);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
@@ -44,10 +44,13 @@ function JsonViewer({title, rawJson, did, dedicated = false}: {title: string, ra
         setCurrentTitle(title);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rawJson, title, did]);
+    }, [rawJson, title, did, refresh]);
 
-    async function handleResolveDID() {
-        await resolveDID(formDid);
+    async function handleResolveDID(did?: string) {
+        await resolveDID(did || formDid);
+        if (did) {
+            setFormDid(did);
+        }
         setCurrentTitle("");
     }
 
@@ -110,7 +113,7 @@ function JsonViewer({title, rawJson, did, dedicated = false}: {title: string, ra
                     />
                     <Button
                         variant="contained"
-                        onClick={handleResolveDID}
+                        onClick={() => handleResolveDID()}
                         size="small"
                         className="button-right"
                         disabled={!formDid}
@@ -213,7 +216,23 @@ function JsonViewer({title, rawJson, did, dedicated = false}: {title: string, ra
                         <JsonView
                             value={aliasDocs}
                             shortenTextAfterLength={0}
-                        />
+                        >
+                            <JsonView.String
+                                render={({ children, style, ...rest }, { type, value }) => {
+                                    if (typeof value === 'string' && value.startsWith('did:') && type === 'value') {
+                                        return (
+                                            <span
+                                                {...rest}
+                                                style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
+                                                onClick={() => handleResolveDID(value)}
+                                            >
+                                                {children}
+                                            </span>
+                                        );
+                                    }
+                                }}
+                            />
+                        </JsonView>
                     </Box>
                 </Box>
             )}

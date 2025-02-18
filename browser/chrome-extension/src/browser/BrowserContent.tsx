@@ -21,7 +21,8 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
-    const [didRun, setDidRun] = useState(false);
+    const [didRun, setDidRun] = useState<boolean>(false);
+    const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
     const { jsonViewerOptions } = useUIContext();
     const { darkMode } = useThemeContext();
@@ -72,6 +73,8 @@ function BrowserContent() {
         } else {
             setViewerContents("");
         }
+
+        setRefresh(r => r + 1);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])
@@ -159,7 +162,7 @@ function BrowserContent() {
                                 <WalletTab />
                             </TabPanel>
                             <TabPanel value="viewer" sx={{ p: 0 }}>
-                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} dedicated={true} />
+                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} dedicated={true} refresh={refresh} />
                             </TabPanel>
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />

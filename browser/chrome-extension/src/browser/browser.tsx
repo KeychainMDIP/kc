@@ -11,7 +11,6 @@ const BrowserUI = () => {
     const [browserRefresh, setBrowserRefresh] = useState<RefreshMode>(RefreshMode.NONE);
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        console.log("Received message", request, sender, sendResponse);
         if (request.type === "PING_JSON_VIEWER") {
             sendResponse({ ack: true });
         } else if (request.type === "LOAD_JSON") {
