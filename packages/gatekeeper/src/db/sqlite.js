@@ -31,6 +31,7 @@ export default class DbSqlite {
 
     async resetDb() {
         await this.db.run('DELETE FROM dids');
+        await this.db.run('DELETE FROM queue');
     }
 
     async addEvent(did, event) {
