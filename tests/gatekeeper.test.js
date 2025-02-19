@@ -957,7 +957,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -965,7 +965,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -973,7 +973,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -981,7 +981,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -989,7 +989,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -997,7 +997,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -1005,7 +1005,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -1013,7 +1013,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('bad format');
         }
 
         try {
@@ -1021,7 +1021,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('unknown');
         }
     });
 
@@ -1404,7 +1404,7 @@ describe('removeDIDs', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.detail).toBe('unknown');
         }
     });
 

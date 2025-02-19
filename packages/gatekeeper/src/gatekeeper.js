@@ -16,7 +16,8 @@ const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC'];
 const ImportStatus = Object.freeze({
     ADDED: 'added',
     MERGED: 'merged',
-    REJECTED: 'rejected'
+    REJECTED: 'rejected',
+    DEFERRED: 'deferred'
 });
 
 export default class Gatekeeper {
@@ -508,13 +509,13 @@ export default class Gatekeeper {
         const { atTime, atVersion, confirm = false, verify = false } = options;
 
         if (!isValidDID(did)) {
-            throw new InvalidDIDError();
+            throw new InvalidDIDError('bad format');
         }
 
         const events = await this.db.getEvents(did);
 
         if (events.length === 0) {
-            throw new InvalidDIDError();
+            throw new InvalidDIDError('unknown');
         }
 
         const anchor = events[0];
@@ -735,94 +736,105 @@ export default class Gatekeeper {
     }
 
     async importEvent(event) {
-        if (!event.did) {
-            if (event.operation.did) {
-                event.did = event.operation.did;
-            }
-            else {
-                event.did = await this.generateDID(event.operation);
-            }
-        }
-
-        const did = event.did;
-        const currentEvents = await this.db.getEvents(did);
-
-        for (const e of currentEvents) {
-            if (!e.opid) {
-                e.opid = await this.generateCID(e.operation);
-            }
-        }
-
-        if (!event.opid) {
-            event.opid = await this.generateCID(event.operation);
-        }
-
-        const opMatch = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
-
-        if (opMatch) {
-            const first = currentEvents[0];
-            const nativeRegistry = first.operation.mdip.registry;
-
-            if (opMatch.registry === nativeRegistry) {
-                // If this event is already confirmed on the native registry, no need to update
-                return ImportStatus.MERGED;
-            }
-
-            if (event.registry === nativeRegistry) {
-                // If this import is on the native registry, replace the current one
-                const index = currentEvents.indexOf(opMatch);
-                currentEvents[index] = event;
-                await this.db.setEvents(did, currentEvents);
-                return ImportStatus.ADDED;
-            }
-
-            return ImportStatus.MERGED;
-        }
-        else {
-            const ok = await this.verifyOperation(event.operation);
-
-            if (!ok) {
-                throw new InvalidOperationError('signature');
-            }
-
-            if (currentEvents.length === 0) {
-                await this.db.addEvent(did, event);
-                return ImportStatus.ADDED;
-            }
-
-            // TEMP during did:test, operation.previd is optional
-            if (!event.operation.previd) {
-                await this.db.addEvent(did, event);
-                return ImportStatus.ADDED;
-            }
-
-            const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
-
-            if (!idMatch) {
-                throw new InvalidOperationError('previd');
-            }
-
-            const index = currentEvents.indexOf(idMatch);
-
-            if (index === currentEvents.length - 1) {
-                await this.db.addEvent(did, event);
-                return ImportStatus.ADDED;
-            }
-
-            const first = currentEvents[0];
-            const nativeRegistry = first.operation.mdip.registry;
-
-            if (event.registry === nativeRegistry) {
-                const nextEvent = currentEvents[index + 1];
-
-                if (nextEvent.registry !== event.registry || compareOrdinals(event.ordinal, nextEvent.ordinal) < 0) {
-                    // reorg event, discard the rest of the operation sequence and replace with this event
-                    const newSequence = [...currentEvents.slice(0, index + 1), event];
-                    await this.db.setEvents(did, newSequence);
-                    return ImportStatus.ADDED;
+        try {
+            if (!event.did) {
+                if (event.operation.did) {
+                    event.did = event.operation.did;
+                }
+                else {
+                    event.did = await this.generateDID(event.operation);
                 }
             }
 
+            const did = event.did;
+            const currentEvents = await this.db.getEvents(did);
+
+            for (const e of currentEvents) {
+                if (!e.opid) {
+                    e.opid = await this.generateCID(e.operation);
+                }
+            }
+
+            if (!event.opid) {
+                event.opid = await this.generateCID(event.operation);
+            }
+
+            const opMatch = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
+
+            if (opMatch) {
+                const first = currentEvents[0];
+                const nativeRegistry = first.operation.mdip.registry;
+
+                if (opMatch.registry === nativeRegistry) {
+                    // If this event is already confirmed on the native registry, no need to update
+                    return ImportStatus.MERGED;
+                }
+
+                if (event.registry === nativeRegistry) {
+                    // If this import is on the native registry, replace the current one
+                    const index = currentEvents.indexOf(opMatch);
+                    currentEvents[index] = event;
+                    await this.db.setEvents(did, currentEvents);
+                    return ImportStatus.ADDED;
+                }
+
+                return ImportStatus.MERGED;
+            }
+            else {
+                const ok = await this.verifyOperation(event.operation);
+
+                if (!ok) {
+                    //throw new InvalidOperationError('signature');
+                    return ImportStatus.DEFERRED;
+                }
+
+                if (currentEvents.length === 0) {
+                    await this.db.addEvent(did, event);
+                    return ImportStatus.ADDED;
+                }
+
+                // TEMP during did:test, operation.previd is optional
+                if (!event.operation.previd) {
+                    await this.db.addEvent(did, event);
+                    return ImportStatus.ADDED;
+                }
+
+                const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
+
+                if (!idMatch) {
+                    return ImportStatus.DEFERRED;
+                }
+
+                const index = currentEvents.indexOf(idMatch);
+
+                if (index === currentEvents.length - 1) {
+                    await this.db.addEvent(did, event);
+                    return ImportStatus.ADDED;
+                }
+
+                const first = currentEvents[0];
+                const nativeRegistry = first.operation.mdip.registry;
+
+                if (event.registry === nativeRegistry) {
+                    const nextEvent = currentEvents[index + 1];
+
+                    if (nextEvent.registry !== event.registry || compareOrdinals(event.ordinal, nextEvent.ordinal) < 0) {
+                        // reorg event, discard the rest of the operation sequence and replace with this event
+                        const newSequence = [...currentEvents.slice(0, index + 1), event];
+                        await this.db.setEvents(did, newSequence);
+                        return ImportStatus.ADDED;
+                    }
+                }
+
+                return ImportStatus.REJECTED;
+            }
+        }
+        catch (error) {
+            if (error.message === 'Invalid DID: unknown') {
+                return ImportStatus.DEFERRED;
+            }
+
+            console.log(error);
             return ImportStatus.REJECTED;
         }
     }
@@ -840,26 +852,26 @@ export default class Gatekeeper {
 
         while (event) {
             i += 1;
-            try {
-                const status = await this.importEvent(event);
 
-                if (status === ImportStatus.ADDED) {
-                    added += 1;
-                    console.log(`import ${i}/${total}: added event for ${event.did}`);
-                }
-                else if (status === ImportStatus.MERGED) {
-                    merged += 1;
-                    console.log(`import ${i}/${total}: merged event for ${event.did}`);
-                }
-                else if (status === ImportStatus.REJECTED) {
-                    rejected += 1;
-                    console.log(`import ${i}/${total}: rejected event for ${event.did}`);
-                }
+            const status = await this.importEvent(event);
+
+            if (status === ImportStatus.ADDED) {
+                added += 1;
+                console.log(`import ${i}/${total}: added event for ${event.did}`);
             }
-            catch (error) {
+            else if (status === ImportStatus.MERGED) {
+                merged += 1;
+                console.log(`import ${i}/${total}: merged event for ${event.did}`);
+            }
+            else if (status === ImportStatus.REJECTED) {
+                rejected += 1;
+                console.log(`import ${i}/${total}: rejected event for ${event.did}`);
+            }
+            else if (status === ImportStatus.DEFERRED) {
                 this.eventsQueue.push(event);
                 console.log(`import ${i}/${total}: deferred event for ${event.did}`);
             }
+
             event = tempQueue.shift();
         }
 
