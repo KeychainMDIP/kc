@@ -408,11 +408,16 @@ export default class Gatekeeper {
                 // Create events are distributed only by hyperswarm
                 // (because the DID's registry specifies where to look for *update* events)
                 // Don't distribute local DIDs
-                if (operation.mdip.registry !== 'local' && this.supportedRegistries.includes('hyperswarm')) {
-                    const queueSize = await this.db.queueOperation('hyperswarm', operation);
+                if (operation.mdip.registry !== 'local') {
+                    if (this.supportedRegistries.includes('hyperswarm')) {
+                        const queueSize = await this.db.queueOperation('hyperswarm', operation);
 
-                    if (queueSize >= this.maxQueueSize) {
-                        this.supportedRegistries = this.supportedRegistries.filter(registry => registry !== 'hyperswarm');
+                        if (queueSize >= this.maxQueueSize) {
+                            this.supportedRegistries = this.supportedRegistries.filter(registry => registry !== 'hyperswarm');
+                        }
+                    }
+                    else {
+                        throw new InvalidOperationError('hyperswarm not supported');
                     }
                 }
             }
@@ -626,7 +631,7 @@ export default class Gatekeeper {
 
         // Reject operations with unsupported registries
         if (this.supportedRegistries && !this.supportedRegistries.includes(registry)) {
-            throw new InvalidOperationError(`doc.mdip.registry=${registry}`);
+            throw new InvalidOperationError(`${registry} not supported`);
         }
 
         await this.db.addEvent(operation.did, {
