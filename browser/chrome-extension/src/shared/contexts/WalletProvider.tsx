@@ -42,6 +42,7 @@ interface WalletContextValue {
     setIdList: Dispatch<SetStateAction<string[]>>;
     setError(error: string): void;
     setWarning(warning: string): void;
+    setSuccess(message: string): void;
     manifest: any;
     setManifest: Dispatch<SetStateAction<any>>;
     resolveDID: () => Promise<void>;
@@ -114,6 +115,14 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             open: true,
             message: error,
             severity: "error",
+        });
+    };
+
+    const setSuccess = (message: string) => {
+        setSnackbar({
+            open: true,
+            message: message,
+            severity: "success",
         });
     };
 
@@ -293,6 +302,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         setManifest,
         setError,
         setWarning,
+        setSuccess,
         resolveDID,
         initialiseWallet,
         handleCopyDID,

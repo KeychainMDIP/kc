@@ -6,6 +6,7 @@ import {
     Badge,
     ManageSearch,
     PermIdentity,
+    Schema,
     Settings,
 } from "@mui/icons-material";
 import CredentialsTab from "./components/CredentialsTab";
@@ -18,6 +19,7 @@ import { useWalletContext } from "../shared/contexts/WalletProvider";
 import { useUIContext } from "../shared/contexts/UIContext";
 import { useThemeContext } from "../shared/contexts/ContextProviders";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
+import SchemaTab from "./components/SchemaTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -122,6 +124,16 @@ function BrowserContent() {
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
+                                {currentId && (
+                                    <Tab
+                                        icon={<Schema />}
+                                        label={menuOpen ? "Schemas" : ""}
+                                        value="schemas"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
                                 <Tab
                                     icon={<AccountBalanceWallet />}
                                     label={menuOpen ? "Wallet" : ""}
@@ -136,7 +148,10 @@ function BrowserContent() {
                                     value="viewer"
                                     iconPosition="start"
                                     className="sidebarTab"
-                                    sx={{ gap: 0.25 }}
+                                    sx={{
+                                        gap: 0.25,
+                                        whiteSpace: "nowrap",
+                                    }}
                                 />
                                 <Tab
                                     icon={<Settings />}
@@ -156,6 +171,11 @@ function BrowserContent() {
                             {currentId && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
                                     <CredentialsTab subTab={activeSubTab} />
+                                </TabPanel>
+                            )}
+                            {currentId && (
+                                <TabPanel value="schemas" sx={{ p: 0 }}>
+                                    <SchemaTab />
                                 </TabPanel>
                             )}
                             <TabPanel value="wallet" sx={{ p: 0 }}>
