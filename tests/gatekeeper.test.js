@@ -952,12 +952,14 @@ describe('resolveDID', () => {
     it('should not resolve an invalid DID', async () => {
         mockFs({});
 
+        const BadFormat = 'bad format';
+
         try {
             await gatekeeper.resolveDID();
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -965,7 +967,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -973,7 +975,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -981,7 +983,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -989,7 +991,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -997,7 +999,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -1005,7 +1007,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
@@ -1013,7 +1015,7 @@ describe('resolveDID', () => {
             throw new ExpectedExceptionError();
         } catch (error) {
             expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('bad format');
+            expect(error.detail).toBe(BadFormat);
         }
 
         try {
