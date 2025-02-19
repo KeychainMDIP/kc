@@ -612,6 +612,23 @@ describe('createDID', () => {
             expect(error.message).toBe('Invalid operation: mdip.validUntil=mock');
         }
     });
+
+    it('should throw exception when registry queue exceeds limit', async () => {
+        mockFs({});
+
+        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
+
+        try {
+            for (let i = 0; i < 10; i++) {
+                const keypair = cipher.generateRandomJwk();
+                const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+                await gk.createDID(agentOp);
+            }
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: hyperswarm not supported');
+        }
+    });
 });
 
 describe('resolveDID', () => {
@@ -1191,6 +1208,29 @@ describe('updateDID', () => {
 
         const doc2 = await gatekeeper.resolveDID(did, { verify: true });
         expect(doc2.didDocumentMetadata.version).toBe(11);
+    });
+
+    it('should throw exception when registry queue exceeds limit', async () => {
+        mockFs({});
+
+        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+
+        const did = await gk.createDID(agentOp);
+        const doc = await gk.resolveDID(did);
+
+        try {
+            for (let i = 0; i < 10; i++) {
+                doc.didDocumentData = { mock: i };
+                const updateOp = await createUpdateOp(keypair, did, doc);
+                await gk.updateDID(updateOp);
+            }
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid operation: TFTC not supported');
+        }
     });
 });
 

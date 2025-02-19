@@ -19,6 +19,7 @@ export default class DbMongo {
 
     async resetDb() {
         await this.db.collection('dids').deleteMany({});
+        await this.db.collection('queue').deleteMany({});
     }
 
     async addEvent(did, event) {
@@ -73,11 +74,13 @@ export default class DbMongo {
     }
 
     async queueOperation(registry, op) {
-        await this.db.collection('queue').updateOne(
+        const result = await this.db.collection('queue').findOneAndUpdate(
             { id: registry },
             { $push: { ops: op } },
-            { upsert: true }
+            { upsert: true, returnDocument: 'after' }
         );
+
+        return result.value.ops.length;
     }
 
     async getQueue(registry) {
