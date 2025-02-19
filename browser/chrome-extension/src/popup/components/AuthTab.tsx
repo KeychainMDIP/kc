@@ -3,11 +3,11 @@ import { Box, Button, TextField } from "@mui/material";
 import axios from "axios";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useAuthContext } from "../../shared/contexts/AuthContext";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function AuthTab() {
     const {
         keymaster,
-        openJSONViewer,
         setError,
         setWarning,
     } = useWalletContext();
@@ -23,6 +23,9 @@ function AuthTab() {
         disableSendResponse,
         setDisableSendResponse,
     } = useAuthContext();
+    const {
+        openJSONViewer,
+    } = useUIContext();
 
     async function newChallenge() {
         try {

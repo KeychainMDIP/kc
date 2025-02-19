@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 import BrowserContent from "./BrowserContent";
 import { ContextProviders } from "../shared/contexts/ContextProviders";
-import type { openJSONViewerOptions } from "../shared/contexts/WalletProvider";
+import type { openJSONViewerOptions } from "../shared/contexts/UIContext";
 import "../shared/extension.css";
 import { RefreshMode } from '../shared/contexts/UIContext';
 
@@ -23,7 +23,13 @@ const BrowserUI = () => {
     });
 
     return (
-        <ContextProviders isBrowser jsonViewerOptions={jsonViewerOptions} browserRefresh={browserRefresh} setBrowserRefresh={setBrowserRefresh}>
+        <ContextProviders
+            isBrowser
+            jsonViewerOptions={jsonViewerOptions}
+            setJsonViewerOptions={setJsonViewerOptions}
+            browserRefresh={browserRefresh}
+            setBrowserRefresh={setBrowserRefresh}
+        >
             <BrowserContent />
         </ContextProviders>
     );

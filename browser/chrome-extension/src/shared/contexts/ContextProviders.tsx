@@ -1,9 +1,9 @@
 import React, { createContext, Dispatch, ReactNode, SetStateAction, useContext, useEffect, useState } from "react";
-import { WalletProvider, openJSONViewerOptions } from "./WalletProvider";
+import { WalletProvider } from "./WalletProvider";
 import { CredentialsProvider } from "./CredentialsProvider";
 import { AuthProvider } from "./AuthContext";
 import { MessageProvider } from "./MessageContext";
-import { RefreshMode, UIProvider } from "./UIContext";
+import { RefreshMode, UIProvider, openJSONViewerOptions } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Box } from "@mui/material";
 import { requestBrowserRefresh } from "../sharedScripts";
@@ -22,13 +22,15 @@ export function ContextProviders(
         isBrowser,
         pendingAuth,
         jsonViewerOptions,
+        setJsonViewerOptions,
         browserRefresh,
-        setBrowserRefresh
+        setBrowserRefresh,
     }: {
         children: ReactNode,
         isBrowser: boolean,
         pendingAuth?: string,
         jsonViewerOptions?: openJSONViewerOptions,
+        setJsonViewerOptions?: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -87,6 +89,7 @@ export function ContextProviders(
                                         jsonViewerOptions={jsonViewerOptions}
                                         browserRefresh={browserRefresh}
                                         setBrowserRefresh={setBrowserRefresh}
+                                        setJsonViewerOptions={setJsonViewerOptions}
                                     >
                                         {children}
                                     </UIProvider>

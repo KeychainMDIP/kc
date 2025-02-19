@@ -18,7 +18,6 @@ function DIDsTab() {
     const [open, setOpen] = useState(false);
     const [removeDID, setRemoveDID] = useState("");
     const {
-        openJSONViewer,
         handleCopyDID,
         isBrowser,
         keymaster,
@@ -32,6 +31,7 @@ function DIDsTab() {
         setAliasName,
     } = useCredentialsContext();
     const {
+        openJSONViewer,
         refreshNames,
     } = useUIContext();
 
@@ -168,35 +168,29 @@ function DIDsTab() {
                                     {name}
                                 </Typography>
                                 <Box display="flex" alignItems="center">
-                                    <Tooltip title="Copy DID">
-                                        <IconButton
-                                            onClick={() => handleCopyDID(did)}
-                                            size="small"
-                                        >
-                                            <ContentCopy fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Resolve DID">
-                                        <IconButton
-                                            onClick={() =>
-                                                openJSONViewer({ title: name, did })
-                                            }
-                                            size="small"
-                                        >
-                                            <ManageSearch fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Remove DID">
-                                        <IconButton
-                                            onClick={() => {
-                                                handleRemoveOpen();
-                                                setRemoveDID(name);
-                                            }}
-                                            size="small"
-                                        >
-                                            <Close sx={{ color: "red" }} />
-                                        </IconButton>
-                                    </Tooltip>
+                                    <IconButton
+                                        onClick={() => handleCopyDID(did)}
+                                        size="small"
+                                    >
+                                        <ContentCopy fontSize="small" />
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={() =>
+                                            openJSONViewer({ title: name, did })
+                                        }
+                                        size="small"
+                                    >
+                                        <ManageSearch fontSize="small" />
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={() => {
+                                            handleRemoveOpen();
+                                            setRemoveDID(name);
+                                        }}
+                                        size="small"
+                                    >
+                                        <Close sx={{ color: "red" }} />
+                                    </IconButton>
                                 </Box>
                             </Box>
                         ),
