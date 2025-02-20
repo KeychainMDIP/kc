@@ -2334,6 +2334,40 @@ describe('processEvents', () => {
         expect(assetDoc3.didDocumentMetadata.version).toBe(3);
         expect(assetDoc3.didDocumentMetadata.confirmed).toBe(true);
     });
+
+    it('should reject events with bad signatures', async () => {
+        mockFs({});
+
+        const keypair1 = cipher.generateRandomJwk();
+        const agentOp1 = await createAgentOp(keypair1);
+        const agentDID1 = await gatekeeper.createDID(agentOp1);
+        const agentDoc1 = await gatekeeper.resolveDID(agentDID1);
+        const updateOp1 = await createUpdateOp(keypair1, agentDID1, agentDoc1);
+        await gatekeeper.updateDID(updateOp1);
+
+        const keypair2 = cipher.generateRandomJwk();
+        const agentOp2 = await createAgentOp(keypair2);
+        const agentDID2 = await gatekeeper.createDID(agentOp2);
+        const agentDoc2 = await gatekeeper.resolveDID(agentDID2);
+        const updateOp2 = await createUpdateOp(keypair2, agentDID2, agentDoc2);
+        await gatekeeper.updateDID(updateOp2);
+
+        const dids = await gatekeeper.exportDIDs();
+        const ops = dids.flat();
+        await gatekeeper.resetDb();
+
+        const sigVal1 = ops[1].operation.signature.value;
+        const sigVal3 = ops[3].operation.signature.value;
+
+        ops[1].operation.signature.value = sigVal3;
+        ops[3].operation.signature.value = sigVal1;
+
+        await gatekeeper.importBatch(ops);
+
+        const response1 = await gatekeeper.processEvents();
+        expect(response1.added).toBe(2);
+        expect(response1.rejected).toBe(2);
+    });
 });
 
 describe('getQueue', () => {

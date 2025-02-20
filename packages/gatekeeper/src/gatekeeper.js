@@ -216,18 +216,13 @@ export default class Gatekeeper {
     }
 
     async verifyOperation(operation) {
-        try {
-            if (operation.type === 'create') {
-                return this.verifyCreateOperation(operation);
-            }
-
-            if (operation.type === 'update' || operation.type === 'delete') {
-                const doc = await this.resolveDID(operation.did);
-                return this.verifyUpdateOperation(operation, doc);
-            }
+        if (operation.type === 'create') {
+            return this.verifyCreateOperation(operation);
         }
-        catch (error) {
-            return false;
+
+        if (operation.type === 'update' || operation.type === 'delete') {
+            const doc = await this.resolveDID(operation.did);
+            return this.verifyUpdateOperation(operation, doc);
         }
     }
 
@@ -784,8 +779,7 @@ export default class Gatekeeper {
                 const ok = await this.verifyOperation(event.operation);
 
                 if (!ok) {
-                    //throw new InvalidOperationError('signature');
-                    return ImportStatus.DEFERRED;
+                    return ImportStatus.REJECTED;
                 }
 
                 if (currentEvents.length === 0) {
@@ -825,18 +819,16 @@ export default class Gatekeeper {
                         return ImportStatus.ADDED;
                     }
                 }
-
-                return ImportStatus.REJECTED;
             }
         }
         catch (error) {
             if (error.message === 'Invalid DID: unknown') {
+                // Could be an event with a controller DID that hasn't been imported yet
                 return ImportStatus.DEFERRED;
             }
-
-            console.log(error);
-            return ImportStatus.REJECTED;
         }
+
+        return ImportStatus.REJECTED;
     }
 
     async importEvents() {
