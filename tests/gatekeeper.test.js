@@ -2368,6 +2368,29 @@ describe('processEvents', () => {
         expect(response1.added).toBe(2);
         expect(response1.rejected).toBe(2);
     });
+
+    it('should return busy when already proccessing events', async () => {
+        mockFs({});
+
+        const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        gk.isProcessingEvents = true;
+        const response = await gk.processEvents();
+
+        expect(response.busy).toBe(true);
+    });
+
+    it('should gracefully handle expections', async () => {
+        mockFs({});
+
+        const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        gk.eventsQueue = null;
+        const response = await gk.processEvents();
+
+        expect(response.added).toBe(0);
+        expect(response.merged).toBe(0);
+        expect(response.rejected).toBe(0);
+        expect(response.pending).toBe(0);
+    });
 });
 
 describe('getQueue', () => {

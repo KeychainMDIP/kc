@@ -895,6 +895,7 @@ export default class Gatekeeper {
         }
         catch (error) {
             console.log(error);
+            this.eventsQueue = [];
         }
         finally {
             this.isProcessingEvents = false;
