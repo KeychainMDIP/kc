@@ -39,6 +39,22 @@ app.use(express.static(path.join(__dirname, '../../client/build')));
 
 let serverReady = false;
 
+/**
+ * @swagger
+ * /ready:
+ *   get:
+ *     summary: Check if the Gatekeeper service is ready.
+ *     description: Returns a 200 status if the Gatekeeper service is ready.
+ *     tags: [General]
+ *     responses:
+ *       200:
+ *         description: Gatekeeper service is ready.
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: boolean
+ *               example: true
+ */
 v1router.get('/ready', async (req, res) => {
     try {
         res.json(serverReady);
@@ -64,6 +80,84 @@ v1router.get('/status', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /did:
+ *   post:
+ *     summary: Create a new DID
+ *     description: Creates a DID document based on the provided operation object.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - created
+ *               - mdip
+ *               - signature
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [ "create" ]
+ *                 description: Must be "create" for a valid create operation.
+ *               created:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Timestamp indicating when the operation was created.
+ *               mdip:
+ *                 type: object
+ *                 required:
+ *                   - version
+ *                   - type
+ *                   - registry
+ *                 properties:
+ *                   version:
+ *                     type: integer
+ *                     description: Version.
+ *                     example: 1
+ *                   type:
+ *                     type: string
+ *                     enum: ["agent", "asset"]
+ *                     description: MDIP type.
+ *                   registry:
+ *                     type: string
+ *                     description: Registry where the DID will be registered.
+ *                     example: "hyperswarm"
+ *                   validUntil:
+ *                     type: string
+ *                     format: date-time
+ *                     description: Optional timestamp until which the DID is valid.
+ *               signature:
+ *                 type: object
+ *                 required:
+ *                   - value
+ *                 properties:
+ *                   value:
+ *                     type: string
+ *                     description: The actual cryptographic signature in base64/hex.
+ *                   signer:
+ *                     type: string
+ *                     description: DID or identifier of the signer.
+ *                   signed:
+ *                     type: string
+ *                     format: date-time
+ *                     description: The timestamp when the signature was created.
+ *               publicJwk:
+ *                 type: object
+ *                 description: Required if mdip.type = "agent". Contains the public key in JWK format.
+ *               controller:
+ *                 type: string
+ *                 description: Required if mdip.type = "asset". Must match the "signer" in the signature.
+ *     responses:
+ *       200:
+ *         description: Successfully created the DID.
+ *       400:
+ *         description: Invalid request.
+ *       500:
+ *         description: Server error.
+ */
 v1router.post('/did', async (req, res) => {
     try {
         const operation = req.body;

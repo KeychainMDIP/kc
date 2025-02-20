@@ -19,7 +19,7 @@ const gatekeeperOptions = {
             title: 'Gatekeeper API'
         }
     },
-    apis: ['packages/gatekeeper/src/gatekeeper-client.js']
+    apis: ['services/gatekeeper/server/src/gatekeeper-api.js']
 };
 
 const gatekeeperSpec = swaggerJsdoc(gatekeeperOptions);
