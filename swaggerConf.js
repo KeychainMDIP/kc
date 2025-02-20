@@ -23,5 +23,5 @@ const gatekeeperOptions = {
 };
 
 const gatekeeperSpec = swaggerJsdoc(gatekeeperOptions);
-fs.writeFileSync('doc/gatekeeper.json', JSON.stringify(gatekeeperSpec, null, 2));
+fs.writeFileSync('doc/gatekeeper-api.json', JSON.stringify(gatekeeperSpec, null, 2));
 
