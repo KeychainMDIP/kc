@@ -2473,7 +2473,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.type).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2481,7 +2481,7 @@ describe('createResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.type).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2795,7 +2795,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.type).toBe(InvalidDIDError.type);
         }
 
         try {
@@ -2803,7 +2803,7 @@ describe('verifyResponse', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe(InvalidDIDError.type);
+            expect(error.type).toBe(InvalidDIDError.type);
         }
     });
 });
@@ -3181,7 +3181,7 @@ describe('addGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Invalid DID: memberId');
+            expect(error.message).toBe('Invalid parameter: memberId');
         }
     });
 
@@ -3417,7 +3417,7 @@ describe('removeGroupMember', () => {
             throw new ExpectedExceptionError();
         }
         catch (error) {
-            expect(error.message).toBe('Invalid DID: memberId');
+            expect(error.message).toBe('Invalid parameter: memberId');
         }
     });
 
