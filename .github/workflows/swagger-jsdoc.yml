@@ -21,3 +21,11 @@ jobs:
       - name: Generate OpenAPI JSON files
         run: npm run generate-openapi
 
+      - name: Commit generated OpenAPI docs
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add doc/gatekeeper.json
+          git commit -m "chore: update generated OpenAPI docs" || echo "No changes to commit"
+          git push
+
