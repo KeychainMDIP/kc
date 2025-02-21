@@ -15,7 +15,7 @@ export function isValidDID(did) {
 
     const parts = did.split(':');
 
-    if (parts.length !== 3) {
+    if (parts.length < 3) {
         return false;
     }
 

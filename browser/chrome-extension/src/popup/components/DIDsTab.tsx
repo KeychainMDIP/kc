@@ -4,7 +4,6 @@ import {
     Button,
     IconButton,
     TextField,
-    Tooltip,
     Typography,
 } from "@mui/material";
 import WarningModal from "../../shared/WarningModal";
@@ -43,7 +42,7 @@ function DIDsTab() {
     async function addName() {
         try {
             await keymaster.addName(aliasName, aliasDID);
-            clearFields();
+            await clearFields();
             await refreshNames();
             requestBrowserRefresh(isBrowser);
         } catch (error) {

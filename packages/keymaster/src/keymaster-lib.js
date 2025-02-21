@@ -1479,7 +1479,7 @@ export default class Keymaster {
             await this.resolveDID(memberDID);
         }
         catch {
-            throw new InvalidDIDError('memberId');
+            throw new InvalidParameterError('memberId');
         }
 
         const group = await this.getGroup(groupId);
@@ -1521,7 +1521,7 @@ export default class Keymaster {
             await this.resolveDID(memberDID);
         }
         catch {
-            throw new InvalidDIDError('memberId');
+            throw new InvalidParameterError('memberId');
         }
 
         // If not already a member, return immediately
