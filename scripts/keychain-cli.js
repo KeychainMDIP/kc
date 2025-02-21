@@ -1063,8 +1063,8 @@ program
         try {
             const currentID = await keymaster.getCurrentId();
             const expires = new Date();
-            expires.setMinutes(expires.getMinutes() + 1);
-            const testOptions = { registry: 'local', validUntil: expires.toISOString() };
+            expires.setHours(expires.getHours() + 12);
+            const testOptions = { registry: 'hyperswarm', validUntil: expires.toISOString() };
 
             console.time('createSchema');
             const schemaDID = await keymaster.createSchema(undefined, testOptions);
