@@ -44,7 +44,7 @@ export default class Gatekeeper {
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
-        this.maxQueueSize = options.maxQueueSize || 100;
+        this.maxQueueSize = options.maxQueueSize || 1000;
 
         // Only DIDs registered on supported registries will be created by this node
         this.supportedRegistries = options.registries || ['local'];
