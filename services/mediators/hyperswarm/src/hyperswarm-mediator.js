@@ -51,6 +51,30 @@ async function createSwarm() {
     console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
+let syncQueue = asyncLib.queue(async function (conn, callback) {
+    try {
+        // Wait until the importQueue is empty
+        while (importQueue.length() > 0) {
+            console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
+            await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+        }
+
+        const msg = {
+            type: 'sync',
+            time: new Date().toISOString(),
+            relays: [],
+            node: config.nodeName,
+        };
+
+        const json = JSON.stringify(msg);
+        conn.write(json);
+    }
+    catch (error) {
+        console.log('sync error:', error);
+    }
+    callback();
+}, 1); // concurrency is 1
+
 async function addConnection(conn) {
     connections.push(conn);
 
@@ -63,15 +87,8 @@ async function addConnection(conn) {
     const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
     console.log(`${connections.length} connections: ${names}`);
 
-    const msg = {
-        type: 'sync',
-        time: new Date().toISOString(),
-        relays: [],
-        node: config.nodeName,
-    };
-
-    const json = JSON.stringify(msg);
-    conn.write(json);
+    // Push the connection to the syncQueue instead of writing directly
+    syncQueue.push(conn);
 }
 
 function closeConnection(conn, name) {
