@@ -80,7 +80,7 @@ export default class DbMongo {
             { upsert: true, returnDocument: 'after' }
         );
 
-        return result.value.ops.length;
+        return result.ops.length;
     }
 
     async getQueue(registry) {
