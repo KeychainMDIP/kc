@@ -1063,7 +1063,7 @@ program
         try {
             const currentID = await keymaster.getCurrentId();
             const expires = new Date();
-            expires.setHours(expires.getHours() + 12);
+            expires.setHours(expires.getHours() + 4);
             const testOptions = { registry: 'hyperswarm', validUntil: expires.toISOString() };
 
             console.time('createSchema');
