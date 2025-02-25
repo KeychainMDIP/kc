@@ -1414,6 +1414,10 @@
       "post": {
         "summary": "Process queued events",
         "description": "Iterates over all queued events, importing them if they are valid (adding or merging). Continues until no more new events can be processed. If `processEvents` is already running, it may return `{ busy: true }` to indicate that processing is in progress.\n",
+        "requestBody": {
+          "required": false,
+          "description": "No request body is required by default."
+        },
         "responses": {
           "200": {
             "description": "A summary of how many events were added, merged, rejected, or still pending in the queue. Or `{ busy: true }` if processing is already underway.\n",
