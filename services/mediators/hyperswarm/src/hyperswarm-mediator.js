@@ -51,6 +51,30 @@ async function createSwarm() {
     console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
+let syncQueue = asyncLib.queue(async function (conn, callback) {
+    try {
+        // Wait until the importQueue is empty
+        while (importQueue.length() > 0) {
+            console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
+            await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+        }
+
+        const msg = {
+            type: 'sync',
+            time: new Date().toISOString(),
+            relays: [],
+            node: config.nodeName,
+        };
+
+        const json = JSON.stringify(msg);
+        conn.write(json);
+    }
+    catch (error) {
+        console.log('sync error:', error);
+    }
+    callback();
+}, 1); // concurrency is 1
+
 async function addConnection(conn) {
     connections.push(conn);
 
@@ -63,15 +87,8 @@ async function addConnection(conn) {
     const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
     console.log(`${connections.length} connections: ${names}`);
 
-    const msg = {
-        type: 'sync',
-        time: new Date().toISOString(),
-        relays: [],
-        node: config.nodeName,
-    };
-
-    const json = JSON.stringify(msg);
-    conn.write(json);
+    // Push the connection to the syncQueue instead of writing directly
+    syncQueue.push(conn);
 }
 
 function closeConnection(conn, name) {
@@ -136,36 +153,34 @@ function sendBatch(conn, batch) {
 }
 
 async function shareDb(conn) {
+    console.time('shareDb');
     try {
-        console.time('exportBatch in chunks');
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
         const dids = await gatekeeper.getDIDs();
-        let allEvents = [];
 
         for (let i = 0; i < dids.length; i += batchSize) {
             const didBatch = dids.slice(i, i + batchSize);
             const exports = await gatekeeper.exportBatch(didBatch);
-            allEvents = allEvents.concat(exports);
+
+            // hyperswarm distributes only operations
+            const batch = exports.map(event => event.operation);
+            console.log(`${batch.length} operations fetched`);
+
+            if (!batch || batch.length === 0) {
+                continue;
+            }
+
+            const opsCount = batch.length;
+            console.time('sendBatch');
+            const opsSent = sendBatch(conn, batch);
+            console.timeEnd('sendBatch');
+            console.log(` * sent ${opsSent}/${opsCount} operations`);
         }
-        console.timeEnd('exportBatch in chunks');
-
-        // hyperswarm distributes only operations
-        const batch = allEvents.map(event => event.operation);
-        console.log(`${batch.length} operations fetched`);
-
-        if (!batch || batch.length === 0) {
-            return;
-        }
-
-        const opsCount = batch.length;
-        console.time('sendBatch');
-        const opsSent = sendBatch(conn, batch);
-        console.timeEnd('sendBatch');
-        console.log(` * sent ${opsSent}/${opsCount} operations`);
     }
     catch (error) {
         console.log(error);
     }
+    console.timeEnd('shareDb');
 }
 
 async function relayMsg(msg) {
