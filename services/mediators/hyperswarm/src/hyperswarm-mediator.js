@@ -153,36 +153,34 @@ function sendBatch(conn, batch) {
 }
 
 async function shareDb(conn) {
+    console.time('shareDb');
     try {
-        console.time('exportBatch in chunks');
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
         const dids = await gatekeeper.getDIDs();
-        let allEvents = [];
 
         for (let i = 0; i < dids.length; i += batchSize) {
             const didBatch = dids.slice(i, i + batchSize);
             const exports = await gatekeeper.exportBatch(didBatch);
-            allEvents = allEvents.concat(exports);
+
+            // hyperswarm distributes only operations
+            const batch = exports.map(event => event.operation);
+            console.log(`${batch.length} operations fetched`);
+
+            if (!batch || batch.length === 0) {
+                continue;
+            }
+
+            const opsCount = batch.length;
+            console.time('sendBatch');
+            const opsSent = sendBatch(conn, batch);
+            console.timeEnd('sendBatch');
+            console.log(` * sent ${opsSent}/${opsCount} operations`);
         }
-        console.timeEnd('exportBatch in chunks');
-
-        // hyperswarm distributes only operations
-        const batch = allEvents.map(event => event.operation);
-        console.log(`${batch.length} operations fetched`);
-
-        if (!batch || batch.length === 0) {
-            return;
-        }
-
-        const opsCount = batch.length;
-        console.time('sendBatch');
-        const opsSent = sendBatch(conn, batch);
-        console.timeEnd('sendBatch');
-        console.log(` * sent ${opsSent}/${opsCount} operations`);
     }
     catch (error) {
         console.log(error);
     }
+    console.timeEnd('shareDb');
 }
 
 async function relayMsg(msg) {
