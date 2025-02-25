@@ -60,6 +60,9 @@ jobs:
           - dockerfile: Dockerfile.ipfs
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:release
+          - dockerfile: Dockerfile.cli
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:release
     permissions:
       contents: read
       packages: write

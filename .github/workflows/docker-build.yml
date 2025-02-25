@@ -59,6 +59,9 @@ jobs:
           - dockerfile: Dockerfile.ipfs
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.cli
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.CALVER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
