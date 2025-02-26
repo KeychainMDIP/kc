@@ -22,6 +22,20 @@ const gatekeeperOptions = {
     apis: ['services/gatekeeper/server/src/gatekeeper-api.js']
 };
 
+const keymasterOptions = {
+    failOnErrors: true,
+    definition: {
+        ...baseDefinition,
+        info: {
+            ...baseDefinition.info,
+            title: 'Keymaster API'
+        }
+    },
+    apis: ['services/keymaster/server/src/keymaster-api.js']
+};
+
 const gatekeeperSpec = swaggerJsdoc(gatekeeperOptions);
+const keymasterSpec = swaggerJsdoc(keymasterOptions);
 fs.writeFileSync('doc/gatekeeper-api.json', JSON.stringify(gatekeeperSpec, null, 2));
+fs.writeFileSync('doc/keymaster-api.json', JSON.stringify(keymasterSpec, null, 2));
 
