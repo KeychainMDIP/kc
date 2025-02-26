@@ -155,89 +155,241 @@
     },
     "/did": {
       "post": {
-        "summary": "Create a new DID",
+        "summary": "Create, update, or delete a DID",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "required": [
-                  "type",
-                  "created",
-                  "mdip",
-                  "signature"
-                ],
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "create"
-                    ],
-                    "description": "Must be \"create\" for a valid create operation."
-                  },
-                  "created": {
-                    "type": "string",
-                    "format": "date-time",
-                    "description": "Timestamp indicating when the operation was created."
-                  },
-                  "mdip": {
+                "oneOf": [
+                  {
                     "type": "object",
                     "required": [
-                      "version",
                       "type",
-                      "registry"
+                      "created",
+                      "mdip",
+                      "signature"
                     ],
                     "properties": {
-                      "version": {
-                        "type": "integer",
-                        "description": "Version."
-                      },
                       "type": {
                         "type": "string",
                         "enum": [
-                          "agent",
-                          "asset"
+                          "create"
                         ],
-                        "description": "MDIP type."
+                        "description": "Must be \"create\" to create a new DID."
                       },
-                      "registry": {
-                        "type": "string",
-                        "description": "Registry where the DID will be registered."
-                      },
-                      "validUntil": {
+                      "created": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "Optional timestamp until which the DID is valid."
+                        "description": "Timestamp of when the operation was created."
+                      },
+                      "mdip": {
+                        "type": "object",
+                        "required": [
+                          "version",
+                          "type",
+                          "registry"
+                        ],
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "description": "MDIP version (e.g., 1)."
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "asset"
+                            ],
+                            "description": "MDIP type."
+                          },
+                          "registry": {
+                            "type": "string",
+                            "description": "Registry where the DID is created."
+                          },
+                          "validUntil": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Optional expiration time for ephemeral DIDs."
+                          }
+                        },
+                        "description": "MDIP metadata fields for creation."
+                      },
+                      "signature": {
+                        "type": "object",
+                        "description": "Cryptographic signature verifying the create operation.",
+                        "required": [
+                          "value",
+                          "signed"
+                        ],
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "description": "The signature value (base64, hex, etc.)."
+                          },
+                          "signed": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the signature was created."
+                          },
+                          "signer": {
+                            "type": "string",
+                            "description": "The DID of the signer (for asset creation, should match `controller`)."
+                          },
+                          "hash": {
+                            "type": "string",
+                            "description": "Hash of the operation payload, if applicable."
+                          }
+                        }
+                      },
+                      "publicJwk": {
+                        "type": "object",
+                        "description": "Required if mdip.type = \"agent\". Contains the public key in JWK format."
+                      },
+                      "controller": {
+                        "type": "string",
+                        "description": "Required if mdip.type = \"asset\". Must match the `signer` in `signature`."
                       }
                     }
                   },
-                  "signature": {
+                  {
                     "type": "object",
-                    "description": "Cryptographic signature."
+                    "required": [
+                      "type",
+                      "did",
+                      "signature"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "update"
+                        ],
+                        "description": "Must be \"update\" to modify an existing DID document."
+                      },
+                      "did": {
+                        "type": "string",
+                        "description": "The DID to update."
+                      },
+                      "doc": {
+                        "type": "object",
+                        "description": "The updated DID document or subset of data."
+                      },
+                      "previd": {
+                        "type": "string",
+                        "description": "Reference to the previous version CID/hash."
+                      },
+                      "signature": {
+                        "type": "object",
+                        "required": [
+                          "value",
+                          "signed"
+                        ],
+                        "description": "Cryptographic signature verifying this update operation.",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "description": "The signature value (base64, hex, etc.)."
+                          },
+                          "signed": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the signature was created."
+                          },
+                          "signer": {
+                            "type": "string",
+                            "description": "The DID of the signer (often the same as `did`)."
+                          },
+                          "hash": {
+                            "type": "string",
+                            "description": "Optional hash of the operation payload."
+                          }
+                        }
+                      }
+                    }
                   },
-                  "publicJwk": {
+                  {
                     "type": "object",
-                    "description": "Required if mdip.type = \"agent\". Contains the public key in JWK format."
-                  },
-                  "controller": {
-                    "type": "string",
-                    "description": "Required if mdip.type = \"asset\". Must match the \"signer\" in the signature."
+                    "required": [
+                      "type",
+                      "did",
+                      "signature"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "delete"
+                        ],
+                        "description": "Must be \"delete\" to deactivate an existing DID."
+                      },
+                      "did": {
+                        "type": "string",
+                        "description": "The DID to deactivate."
+                      },
+                      "signature": {
+                        "type": "object",
+                        "required": [
+                          "value",
+                          "signed"
+                        ],
+                        "description": "Cryptographic signature verifying this delete operation.",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "description": "The signature value (base64, hex, etc.)."
+                          },
+                          "signed": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the signature was created."
+                          },
+                          "signer": {
+                            "type": "string",
+                            "description": "The DID of the signer, who must have authority to delete."
+                          },
+                          "hash": {
+                            "type": "string",
+                            "description": "Optional hash of the operation payload."
+                          }
+                        }
+                      }
+                    }
                   }
-                }
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Successfully created the DID."
-          },
-          "400": {
-            "description": "Invalid request."
+            "description": "- If `type = \"create\"`, returns the newly created DID as a string. - Otherwise (for update or delete), returns a value indicating success.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "description": "A DID string (when a create operation succeeds)."
+                    },
+                    {
+                      "type": "boolean",
+                      "description": "A success indicator for update/delete operations."
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
-            "description": "Internal Server Error."
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -467,7 +619,8 @@
         }
       },
       "post": {
-        "summary": "Update an existing DID",
+        "summary": "Update an existing DID (deprecated)",
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -543,7 +696,8 @@
         }
       },
       "delete": {
-        "summary": "Delete a DID",
+        "summary": "Delete a DID (deprecated)",
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -1414,10 +1568,6 @@
       "post": {
         "summary": "Process queued events",
         "description": "Iterates over all queued events, importing them if they are valid (adding or merging). Continues until no more new events can be processed. If `processEvents` is already running, it may return `{ busy: true }` to indicate that processing is in progress.\n",
-        "requestBody": {
-          "required": false,
-          "description": "No request body is required by default."
-        },
         "responses": {
           "200": {
             "description": "A summary of how many events were added, merged, rejected, or still pending in the queue. Or `{ busy: true }` if processing is already underway.\n",
