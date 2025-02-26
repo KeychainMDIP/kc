@@ -136,7 +136,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async createDID(operation) {
+    async handleDIDOperation(operation) {
         try {
             const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
@@ -144,6 +144,10 @@ export default class GatekeeperClient {
         catch (error) {
             throwError(error);
         }
+    }
+
+    async createDID(operation) {
+        return await this.handleDIDOperation(operation);
     }
 
     async resolveDID(did, options) {
@@ -163,26 +167,12 @@ export default class GatekeeperClient {
         }
     }
 
-    // eslint-disable-next-line sonarjs/no-identical-functions
     async updateDID(operation) {
-        try {
-            const response = await axios.post(`${this.API}/did`, operation);
-            return response.data;
-        }
-        catch (error) {
-            throwError(error);
-        }
+        return await this.handleDIDOperation(operation);
     }
 
-    // eslint-disable-next-line sonarjs/no-identical-functions
     async deleteDID(operation) {
-        try {
-            const response = await axios.post(`${this.API}/did`, operation);
-            return response.data;
-        }
-        catch (error) {
-            throwError(error);
-        }
+        return await this.handleDIDOperation(operation);
     }
 
     async getDIDs(options = {}) {
