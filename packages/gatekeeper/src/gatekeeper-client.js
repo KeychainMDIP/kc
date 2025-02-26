@@ -146,8 +146,8 @@ export default class GatekeeperClient {
         }
     }
 
-    async createDID(operation) {
-        return await this.handleDIDOperation(operation);
+    createDID(operation) {
+        return this.handleDIDOperation(operation);
     }
 
     async resolveDID(did, options) {
@@ -167,12 +167,12 @@ export default class GatekeeperClient {
         }
     }
 
-    async updateDID(operation) {
-        return await this.handleDIDOperation(operation);
+    updateDID(operation) {
+        return this.handleDIDOperation(operation);
     }
 
-    async deleteDID(operation) {
-        return await this.handleDIDOperation(operation);
+    deleteDID(operation) {
+        return this.handleDIDOperation(operation);
     }
 
     async getDIDs(options = {}) {
