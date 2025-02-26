@@ -326,13 +326,13 @@ v1router.get('/status', async (req, res) => {
 v1router.post('/did', async (req, res) => {
     try {
         const operation = req.body;
-        let did;
+        let result;
         if (operation && operation.type === "create") {
-            did = await gatekeeper.createDID(operation);
+            result = await gatekeeper.createDID(operation);
         } else {
-            did = await gatekeeper.updateDID(operation);
+            result = await gatekeeper.updateDID(operation);
         }
-        res.json(did);
+        res.json(result);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
