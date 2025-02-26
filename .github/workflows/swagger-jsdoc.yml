@@ -1,0 +1,31 @@
+name: Generate OpenAPI Docs
+
+on:
+  push:
+
+jobs:
+  build-openapi-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node 18.18.2
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.18.2'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate OpenAPI JSON files
+        run: npm run generate-openapi
+
+      - name: Commit generated OpenAPI docs
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add doc/gatekeeper-api.json
+          git commit -m "chore: update generated OpenAPI docs" || echo "No changes to commit"
+          git push
+

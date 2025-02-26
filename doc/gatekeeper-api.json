@@ -1,0 +1,1479 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Gatekeeper API",
+    "version": "1.0.0",
+    "description": "Documentation for Keymaster API"
+  },
+  "paths": {
+    "/ready": {
+      "get": {
+        "summary": "Check if the Gatekeeper service is ready.",
+        "responses": {
+          "200": {
+            "description": "Gatekeeper service is ready.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "summary": "Retrieve the API version",
+        "responses": {
+          "200": {
+            "description": "The API version number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Retrieve server status",
+        "responses": {
+          "200": {
+            "description": "Status information retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "uptimeSeconds": {
+                      "type": "integer",
+                      "description": "The number of seconds since the server started."
+                    },
+                    "dids": {
+                      "type": "object",
+                      "description": "Detailed statistics of DID checks.",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "description": "Total number of DIDs processed."
+                        },
+                        "byType": {
+                          "type": "object",
+                          "description": "Breakdown of DIDs by type.",
+                          "properties": {
+                            "agents": {
+                              "type": "integer",
+                              "description": "Number of DIDs of type \"agent\"."
+                            },
+                            "assets": {
+                              "type": "integer",
+                              "description": "Number of DIDs of type \"asset\"."
+                            },
+                            "confirmed": {
+                              "type": "integer",
+                              "description": "Number of DIDs that have been confirmed."
+                            },
+                            "unconfirmed": {
+                              "type": "integer",
+                              "description": "Number of DIDs that remain unconfirmed."
+                            },
+                            "ephemeral": {
+                              "type": "integer",
+                              "description": "Number of DIDs with an expiration (validUntil) set."
+                            },
+                            "invalid": {
+                              "type": "integer",
+                              "description": "Number of DIDs that could not be resolved or are invalid."
+                            }
+                          }
+                        },
+                        "byRegistry": {
+                          "type": "object",
+                          "description": "Count of DIDs grouped by registry.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "byVersion": {
+                          "type": "object",
+                          "description": "Count of DIDs grouped by version.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "eventsQueue": {
+                          "type": "object",
+                          "description": "Details of the events queue."
+                        }
+                      }
+                    },
+                    "memoryUsage": {
+                      "type": "object",
+                      "description": "Memory usage statistics provided by Node.",
+                      "properties": {
+                        "rss": {
+                          "type": "integer",
+                          "description": "Resident Set Size – total memory allocated for the process."
+                        },
+                        "heapTotal": {
+                          "type": "integer",
+                          "description": "Total size of the allocated heap."
+                        },
+                        "heapUsed": {
+                          "type": "integer",
+                          "description": "Actual memory used during execution."
+                        },
+                        "external": {
+                          "type": "integer",
+                          "description": "Memory usage of C++ objects bound to JavaScript objects managed by V8."
+                        },
+                        "arrayBuffers": {
+                          "type": "integer",
+                          "description": "Memory allocated for ArrayBuffers and SharedArrayBuffers."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
+    "/did": {
+      "post": {
+        "summary": "Create a new DID",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "created",
+                  "mdip",
+                  "signature"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "create"
+                    ],
+                    "description": "Must be \"create\" for a valid create operation."
+                  },
+                  "created": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Timestamp indicating when the operation was created."
+                  },
+                  "mdip": {
+                    "type": "object",
+                    "required": [
+                      "version",
+                      "type",
+                      "registry"
+                    ],
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "description": "Version."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "agent",
+                          "asset"
+                        ],
+                        "description": "MDIP type."
+                      },
+                      "registry": {
+                        "type": "string",
+                        "description": "Registry where the DID will be registered."
+                      },
+                      "validUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Optional timestamp until which the DID is valid."
+                      }
+                    }
+                  },
+                  "signature": {
+                    "type": "object",
+                    "description": "Cryptographic signature."
+                  },
+                  "publicJwk": {
+                    "type": "object",
+                    "description": "Required if mdip.type = \"agent\". Contains the public key in JWK format."
+                  },
+                  "controller": {
+                    "type": "string",
+                    "description": "Required if mdip.type = \"asset\". Must match the \"signer\" in the signature."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully created the DID."
+          },
+          "400": {
+            "description": "Invalid request."
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
+    "/did/{did}": {
+      "get": {
+        "summary": "Resolve a DID Document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "did",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID to resolve."
+          },
+          {
+            "in": "query",
+            "name": "atTime",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Timestamp to return the state of the DID as of this specific time.\n"
+          },
+          {
+            "in": "query",
+            "name": "atVersion",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Specific version of the DID Document to retrieve. Versioning increments each time an `update` or `delete` operation occurs.\n"
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If `true`, returns the DID Document if it is fully confirmed.\n"
+          },
+          {
+            "in": "query",
+            "name": "verify",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If `true`, verifies the signature(s) of the DID operation(s) before returning the DID Document. If a signature is invalid, an error is thrown.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully resolved DID Document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "The fully-resolved DID Document along with metadata describing its state.",
+                  "properties": {
+                    "@context": {
+                      "type": "string",
+                      "description": "DID resolution context."
+                    },
+                    "didDocument": {
+                      "type": "object",
+                      "description": "The DID Document itself.",
+                      "properties": {
+                        "@context": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "DID document context."
+                        },
+                        "id": {
+                          "type": "string",
+                          "description": "The DID."
+                        },
+                        "controller": {
+                          "type": "string",
+                          "description": "The controller DID (for assets)."
+                        },
+                        "verificationMethod": {
+                          "type": "array",
+                          "description": "An array of verification methods (keys).",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "Identifier for the verification method."
+                              },
+                              "controller": {
+                                "type": "string",
+                                "description": "The DID or entity controlling this key."
+                              },
+                              "type": {
+                                "type": "string",
+                                "description": "Type of key."
+                              },
+                              "publicKeyJwk": {
+                                "type": "object",
+                                "description": "Public key data in JWK format."
+                              }
+                            }
+                          }
+                        },
+                        "authentication": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Refers to the verification methods used for authentication."
+                        }
+                      }
+                    },
+                    "didDocumentMetadata": {
+                      "type": "object",
+                      "description": "Metadata associated with the DID Document.",
+                      "properties": {
+                        "created": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp indicating when the DID was created."
+                        },
+                        "updated": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp indicating the last update to the DID, if any."
+                        },
+                        "deleted": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp of when the DID was deleted (if it was deleted)."
+                        },
+                        "version": {
+                          "type": "integer",
+                          "description": "Current version number of the DID Document."
+                        },
+                        "versionId": {
+                          "type": "string",
+                          "description": "CID (or similar) identifying the current version’s content."
+                        },
+                        "canonicalId": {
+                          "type": "string",
+                          "description": "The canonical DID if a custom prefix was used."
+                        },
+                        "confirmed": {
+                          "type": "boolean",
+                          "description": "Indicates whether the DID is fully confirmed."
+                        },
+                        "deactivated": {
+                          "type": "boolean",
+                          "description": "Indicates if the DID is deactivated (via a delete operation)."
+                        }
+                      }
+                    },
+                    "didDocumentData": {
+                      "type": "object",
+                      "description": "Arbitrary data attached to the DID (for assets)."
+                    },
+                    "mdip": {
+                      "type": "object",
+                      "description": "MDIP-specific metadata fields.",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "asset"
+                          ],
+                          "description": "The MDIP type."
+                        },
+                        "registry": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "hyperswarm",
+                            "TBTC",
+                            "TFTC"
+                          ],
+                          "description": "Registry in which this DID is maintained."
+                        },
+                        "version": {
+                          "type": "integer",
+                          "description": "Supported MDIP version."
+                        },
+                        "validUntil": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Optional expiration timestamp for ephemeral DIDs."
+                        },
+                        "registration": {
+                          "type": "string",
+                          "description": "Blockchain or other registry reference for an updated or deleted DID."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DID not found. The DID either does not exist or cannot be resolved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      },
+      "post": {
+        "summary": "Update an existing DID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "did",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "did",
+                  "signature"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "update"
+                    ],
+                    "description": "Must be `\"update\"` for this operation."
+                  },
+                  "did": {
+                    "type": "string",
+                    "description": "The DID being updated. Must match the path parameter `{did}`."
+                  },
+                  "doc": {
+                    "type": "object",
+                    "description": "The updated DID Document or subset of data for this DID."
+                  },
+                  "previd": {
+                    "type": "string",
+                    "description": "Reference to the previous version."
+                  },
+                  "signature": {
+                    "type": "object",
+                    "description": "Cryptographic signature."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A boolean indicating if the update was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a DID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "did",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID to delete."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "did",
+                  "signature"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "delete"
+                    ],
+                    "description": "Must be \"delete\" to deactivate the DID."
+                  },
+                  "did": {
+                    "type": "string",
+                    "description": "The DID being deleted."
+                  },
+                  "signature": {
+                    "type": "object",
+                    "description": "Cryptographic signature."
+                  },
+                  "previd": {
+                    "type": "string",
+                    "description": "Reference to the previous version."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A boolean indicating whether the deletion was accepted and processed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
+    "/dids/": {
+      "post": {
+        "summary": "Retrieve a list of DIDs or DID Documents.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dids": {
+                    "type": "array",
+                    "description": "A list of specific DIDs to check. If omitted, all known DIDs are retrieved.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "updatedAfter": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Only return DIDs/DID Docs updated *after* this time."
+                  },
+                  "updatedBefore": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Only return DIDs/DID Docs updated *before* this time."
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "If true, only return DID Docs that are fully confirmed."
+                  },
+                  "verify": {
+                    "type": "boolean",
+                    "description": "If true, verifies signatures during DID resolution. If signature checks fail, an error is thrown."
+                  },
+                  "resolve": {
+                    "type": "boolean",
+                    "description": "If true, return DID Documents instead of just string identifiers."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An array of DIDs or DID Documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "description": "An array of DID strings.",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "description": "An array of DID Document objects (if `resolve` is true).",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "@context": {
+                            "type": "string"
+                          },
+                          "didDocument": {
+                            "type": "object",
+                            "description": "DID Document contents"
+                          },
+                          "didDocumentMetadata": {
+                            "type": "object"
+                          },
+                          "mdip": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dids/remove": {
+      "post": {
+        "summary": "Remove one or more DIDs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "A valid DID."
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Indicates whether the operation succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dids/export": {
+      "post": {
+        "summary": "Export events for one or more DIDs",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dids": {
+                    "type": "array",
+                    "description": "A list of DIDs to export. If omitted, all known DIDs are exported.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Returns an array of arrays, where each sub-array contains the event objects for a single DID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "description": "Each element corresponds to a DID's event list.",
+                  "items": {
+                    "type": "array",
+                    "description": "An array of event objects for a single DID.",
+                    "items": {
+                      "type": "object",
+                      "description": "A single event in the DID's event history.",
+                      "properties": {
+                        "registry": {
+                          "type": "string",
+                          "description": "The registry."
+                        },
+                        "time": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp indicating when this event occurred."
+                        },
+                        "ordinal": {
+                          "type": "integer",
+                          "description": "An index or sequence number for ordering events."
+                        },
+                        "operation": {
+                          "type": "object",
+                          "description": "The DID operation that defines changes."
+                        },
+                        "did": {
+                          "type": "string",
+                          "description": "The DID this event belongs to."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dids/import": {
+      "post": {
+        "summary": "Import one or more DIDs",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "description": "An array where each item is itself an array of event objects corresponding to a single DID’s history.\n",
+                "items": {
+                  "type": "array",
+                  "description": "A list of all events that define one DID's state.",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "did",
+                      "operation",
+                      "registry",
+                      "time"
+                    ],
+                    "properties": {
+                      "did": {
+                        "type": "string",
+                        "description": "The DID these events belong to."
+                      },
+                      "operation": {
+                        "type": "object",
+                        "description": "The DID operation including signatures and other data.",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The operation type (\"create\", \"update\", or \"delete\")."
+                          },
+                          "created": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Creation timestamp (if `type = \"create\"`)."
+                          },
+                          "mdip": {
+                            "type": "object",
+                            "description": "MDIP metadata."
+                          },
+                          "publicJwk": {
+                            "type": "object",
+                            "description": "Public key in JWK format (required for agent creates)."
+                          },
+                          "signature": {
+                            "type": "object",
+                            "description": "Cryptographic signature"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "signature"
+                        ]
+                      },
+                      "registry": {
+                        "type": "string",
+                        "description": "The registry this event belongs to."
+                      },
+                      "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when this event was recorded."
+                      },
+                      "ordinal": {
+                        "type": "integer",
+                        "description": "Sequence number for ordering events if needed."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Summary of the import operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Object containing counts of how many events were queued, processed (duplicates), rejected, and the current queue total.",
+                  "properties": {
+                    "queued": {
+                      "type": "integer",
+                      "description": "Number of new events queued."
+                    },
+                    "processed": {
+                      "type": "integer",
+                      "description": "Number of events recognized as duplicates (already known)."
+                    },
+                    "rejected": {
+                      "type": "integer",
+                      "description": "Number of events that failed validation (bad signature, size limit, etc.)."
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "Total number of events in the queue after this import."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/batch/export": {
+      "post": {
+        "summary": "Export non-local DID events in a single sorted batch",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dids": {
+                    "type": "array",
+                    "description": "A list of DIDs to export. If omitted, all known DIDs are used for exporting.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A single sorted array of all non-local events for the specified DIDs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "description": "Each item is an event object, sorted by the signature’s signed timestamp.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "type": "string",
+                        "description": "Registry for this event. Local registry events are excluded."
+                      },
+                      "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When this event was recorded in the database."
+                      },
+                      "ordinal": {
+                        "type": "integer",
+                        "description": "Sequence number for the event if relevant (often 0 if unused)."
+                      },
+                      "operation": {
+                        "type": "object",
+                        "description": "Details of the DID operation.",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The operation type."
+                          },
+                          "did": {
+                            "type": "string",
+                            "description": "The DID for which this event applies."
+                          },
+                          "signature": {
+                            "type": "object",
+                            "description": "Cryptographic signature."
+                          }
+                        }
+                      },
+                      "did": {
+                        "type": "string",
+                        "description": "The DID this event belongs to, generally matching operation.did."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/batch/import": {
+      "post": {
+        "summary": "Import a batch of DID events",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "description": "An array of event objects representing DID operations.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "did",
+                    "operation",
+                    "registry",
+                    "time"
+                  ],
+                  "properties": {
+                    "did": {
+                      "type": "string",
+                      "description": "The DID to which this event pertains."
+                    },
+                    "operation": {
+                      "type": "object",
+                      "description": "A DID operation, such as \"create\", \"update\", or \"delete\".",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "Operation type.",
+                          "example": "create"
+                        },
+                        "created": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp when the DID was created (if `type = \"create\"`)."
+                        },
+                        "mdip": {
+                          "type": "object",
+                          "description": "MDIP metadata (type, version, registry)."
+                        },
+                        "publicJwk": {
+                          "type": "object",
+                          "description": "Public key in JWK format, required for \"agent\" creation."
+                        },
+                        "signature": {
+                          "type": "object",
+                          "description": "Cryptographic signature."
+                        }
+                      }
+                    },
+                    "registry": {
+                      "type": "string",
+                      "description": "The registry to which this event belongs.",
+                      "example": "local"
+                    },
+                    "time": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Timestamp when the event was recorded."
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "description": "Numeric index for ordering events, if relevant."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An object summarizing how many events were queued, processed, rejected, and the current queue size.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queued": {
+                      "type": "integer",
+                      "description": "Number of new, valid events that were queued."
+                    },
+                    "processed": {
+                      "type": "integer",
+                      "description": "Number of events recognized as duplicates."
+                    },
+                    "rejected": {
+                      "type": "integer",
+                      "description": "Number of events that failed validation."
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "The total event queue size after this import."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/queue/{registry}": {
+      "get": {
+        "summary": "Retrieve the queued events for a specific registry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name of the registry whose queue is being retrieved. Valid values may include \"local\", \"hyperswarm\", \"TBTC\", \"TFTC\", etc.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An array of queued event objects for the specified registry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "description": "An individual event in the queue.",
+                    "properties": {
+                      "registry": {
+                        "type": "string",
+                        "description": "The registry to which the event belongs."
+                      },
+                      "time": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when this event was added to the queue."
+                      },
+                      "ordinal": {
+                        "type": "integer",
+                        "description": "Sequence or ordering number for the event if relevant."
+                      },
+                      "operation": {
+                        "type": "object",
+                        "description": "Details of the DID operation.",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "The operation type."
+                          },
+                          "did": {
+                            "type": "string",
+                            "description": "The DID to which this event applies."
+                          },
+                          "signature": {
+                            "type": "object",
+                            "description": "Cryptographic signature."
+                          }
+                        }
+                      },
+                      "did": {
+                        "type": "string",
+                        "description": "The DID that this queue event references (often identical to `operation.did`)."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/queue/{registry}/clear": {
+      "post": {
+        "summary": "Remove specified DIDs from the queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registry",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name of the registry from which events will be cleared. Must be a valid, supported registry.\n"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "description": "An array of DID operation event objects to remove from the queue.",
+                "items": {
+                  "type": "object",
+                  "description": "A queued DID operation event.",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "The operation type."
+                    },
+                    "did": {
+                      "type": "string",
+                      "description": "The DID targeted by this operation."
+                    },
+                    "doc": {
+                      "type": "object",
+                      "description": "The (optional) DID document content, present if type is \"update\" or \"create\" with doc data."
+                    },
+                    "previd": {
+                      "type": "string",
+                      "description": "Reference to the previous version (optional)."
+                    },
+                    "signature": {
+                      "type": "object",
+                      "description": "Cryptographic signature."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "did",
+                    "signature"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated queue after clearing the specified events.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "description": "An array of remaining events in the queue. Could be empty if all events were cleared.",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registries": {
+      "get": {
+        "summary": "Retrieve supported registries",
+        "responses": {
+          "200": {
+            "description": "An array of registry names.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db/reset": {
+      "get": {
+        "summary": "Reset the database",
+        "responses": {
+          "200": {
+            "description": "The database was successfully reset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/db/verify": {
+      "get": {
+        "summary": "Verify all DIDs in the database",
+        "responses": {
+          "200": {
+            "description": "Verification results for all DIDs in the database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "description": "The total number of DIDs that were checked."
+                    },
+                    "verified": {
+                      "type": "integer",
+                      "description": "The count of DIDs that passed verification."
+                    },
+                    "expired": {
+                      "type": "integer",
+                      "description": "The count of DIDs that had expired and were removed."
+                    },
+                    "invalid": {
+                      "type": "integer",
+                      "description": "The count of DIDs that failed verification and were removed."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/process": {
+      "post": {
+        "summary": "Process queued events",
+        "description": "Iterates over all queued events, importing them if they are valid (adding or merging). Continues until no more new events can be processed. If `processEvents` is already running, it may return `{ busy: true }` to indicate that processing is in progress.\n",
+        "requestBody": {
+          "required": false,
+          "description": "No request body is required by default."
+        },
+        "responses": {
+          "200": {
+            "description": "A summary of how many events were added, merged, rejected, or still pending in the queue. Or `{ busy: true }` if processing is already underway.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "busy": {
+                          "type": "boolean",
+                          "description": "Indicates that the processing is already in progress."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "added": {
+                          "type": "integer",
+                          "description": "Number of newly imported events."
+                        },
+                        "merged": {
+                          "type": "integer",
+                          "description": "Number of duplicate events merged."
+                        },
+                        "rejected": {
+                          "type": "integer",
+                          "description": "Number of events that failed validation."
+                        },
+                        "pending": {
+                          "type": "integer",
+                          "description": "Number of events still left in the queue after processing."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {},
+  "tags": []
+}
