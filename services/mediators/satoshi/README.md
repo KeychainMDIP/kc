@@ -3,12 +3,8 @@
 The Satoshi mediator is designed to operate with all blockchains derived from Bitcoin core, that support the standard RPC interface to the blockchain (Feathercoin, Litecoin, Tesseract, etc.)
 
 The mediator has two responsibilities:
-- **Import**: Scan all confirmed transactions for MDIP DIDs mentioned in the transaction `OP_CODE`.
-  - If a DID is discovered, the mediator resolve it
-    - If the DID is a MDIP batch, it imports all the transactions in the batch to the Gatekeeper
-- **Export**: Creates batches and registers them on the blockchain
-  - The mediator polls its corresponding Gatekeeper queue for new operations
-    - If it finds new operations, it creates a new transaction that endodes the batch DID
+- **Import**: Scans all confirmed transactions for MDIP DIDs mentioned in the transaction's `OP_RETURN` field. If a DID is discovered, the mediator resolves it. If the DID is a MDIP batch, it imports all the transactions in the batch to the Gatekeeper
+- **Export**: Creates batches and registers them on the blockchain. The mediator polls its corresponding Gatekeeper queue for new operations. If it finds new operations, it creates and sends a new transaction that encodes the batch DID in the transaction's `OP_RETURN` field
 
 ## Environment variables
 

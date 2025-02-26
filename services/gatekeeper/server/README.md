@@ -2,7 +2,7 @@
 
 The Gatekeeper service is responsible for guarding the integrity of the local DID database.
 Every DID has an associated sequence of operations, starting with a create operation.
-The Gatekeeper ensures that only operations with valid signatures are added to the DID database so that it can resolve the correct documents for a given DID.
+The Gatekeeper ensures that only valid and verified operations are added to the DID database so that it can resolve the correct consensus JSON documents for a given DID.
 
 Operations come from Keymaster clients such as end-user wallets and network mediators such as the Hyperswarm mediator (used to distribute operations between nodes) and Bitcoin mediator (used to impose an objective order on operations for network consensus).
 

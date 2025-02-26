@@ -2,7 +2,7 @@
 
 The Keymaster service exposes the Keymaster client library as a REST API.
 This is necessary if the client is written is a programming language other than Javascript or Typescript, such as python.
-This service also used when clients share a wallet, such as the `kc` CLI and MDIP mediators running on an MDIP server node.
+This service is also useful when clients share a wallet, such as the `kc` CLI and MDIP mediators running on a server node.
 
 ## Environment variables
 
