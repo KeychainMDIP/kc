@@ -163,9 +163,10 @@ export default class GatekeeperClient {
         }
     }
 
+    // eslint-disable-next-line sonarjs/no-identical-functions
     async updateDID(operation) {
         try {
-            const response = await axios.post(`${this.API}/did/${operation.did}`, operation);
+            const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
@@ -173,9 +174,10 @@ export default class GatekeeperClient {
         }
     }
 
+    // eslint-disable-next-line sonarjs/no-identical-functions
     async deleteDID(operation) {
         try {
-            const response = await axios.delete(`${this.API}/did/${operation.did}`, { data: operation });
+            const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
