@@ -20,9 +20,16 @@ $ cp sample.env .env
 $ ./start-node
 ```
 
+## Overview
+
+A Keychain MDIP node includes several interoperating microservices. If you follow the dependency arrows on the diagram below, you will end up at the central core service, the [Gatekeeper service](services/gatekeeper/server/README.md) responsible for maintaining the integrity of the local DID database. The mediators are responsible for connecting the Gatekeeper to various networks such as [Hyperswarm](services/mediators/hyperswarm/README.md) and [IPFS](services/mediators/ipfs/README.md). The TBTC (testnet Bitcoin) and TFTC (testnet Feathercoin) mediators are both instances of the [Satoshi mediator](services/mediators/satoshi/README.md) since they are derived from Bitcoin core (they differ only in how they are configured). [Keymaster](packages/keymaster/README.md) is the MDIP client responsible for holding the private keys and signing DID operations (create, update, delete) sent to Gatekeeper. The [browser web wallet](services/gatekeeper/client/README.md), [browser extension](browser/chrome-extension/README.md), and [Keymaster service](services/keymaster/server/README.md) all use the [Keymaster library](packages/keymaster/README.md). The [server web wallet](services/keymaster/client/README.md) is the same as the browser web wallet, except it is configured to talk to the Keymaster service instead of hosting its own wallet. It uses the same [KeymasterClient](packages/keymaster/src/keymaster-sdk.js) as the kc CLI. There are two CLI (command line interface) components: [kc](scripts/keychain-cli.js) for talking to the Keymaster service, and [admin](scripts/admin-cli.js) for talking to the Gatekeeper service. The admin script uses the same [GatekeeperClient](packages/gatekeeper/README.md) as the Keymaster service and the mediators.
+
+
+![alt text](keychain-node.png)
+
 ## Node configuration
 
-Customize your node in the kc/.env file.
+Customize your node in the kc/.env file. Environment variables are documented for each service in the READMEs linked in the Overview above.
 
 ```
 KC_UID=1000                                        # Docker host UID
