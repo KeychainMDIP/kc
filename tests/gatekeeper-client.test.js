@@ -290,7 +290,7 @@ describe('resolveDID', () => {
 describe('updateDID', () => {
     it('should return update status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did/${MockDID}`)
+            .post(`/api/v1/did`)
             .reply(200, true);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -301,7 +301,7 @@ describe('updateDID', () => {
 
     it('should throw exception on updateDID server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did/${MockDID}`)
+            .post(`/api/v1/did`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -319,7 +319,7 @@ describe('updateDID', () => {
 describe('deleteDID', () => {
     it('should return delete status', async () => {
         nock(GatekeeperURL)
-            .delete(`/api/v1/did/${MockDID}`)
+            .post(`/api/v1/did`)
             .reply(200, true);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -330,7 +330,7 @@ describe('deleteDID', () => {
 
     it('should throw exception on getDIDs server error', async () => {
         nock(GatekeeperURL)
-            .delete(`/api/v1/did/${MockDID}`)
+            .post(`/api/v1/did`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
