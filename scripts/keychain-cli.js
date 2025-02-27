@@ -854,7 +854,7 @@ program
     });
 
 program
-    .command('set-asset <id> [file]')
+    .command('update-asset <id> [file]')
     .description('Update an asset from a JSON file')
     .action(async (id, file) => {
         try {
