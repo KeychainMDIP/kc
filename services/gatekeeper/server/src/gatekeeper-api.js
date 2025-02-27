@@ -1557,10 +1557,22 @@ function formatBytes(bytes) {
 async function main() {
     console.log(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
-    setInterval(reportStatus, config.statusInterval * 60 * 1000);
 
-    console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
-    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+    if (config.statusInterval > 0) {
+        console.log(`Starting status update every ${config.statusInterval} minutes`);
+        setInterval(reportStatus, config.statusInterval * 60 * 1000);
+    }
+    else {
+        console.log(`Status update disabled`);
+    }
+
+    if (config.gcInterval > 0) {
+        console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
+        setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+    }
+    else {
+        console.log(`DID garbage collection disabled`);
+    }
 
     console.log(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
     console.log(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
