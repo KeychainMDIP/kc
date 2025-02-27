@@ -82,7 +82,8 @@ Keychain CLI tool
 Options:
   -V, --version                              output the version number
   -h, --help                                 display help for command
-  Commands:
+
+Commands:
   accept-credential <did> [name]             Save verifiable credential for current ID
   add-group-member <group> <member>          Add a member to a group
   add-name <name> <did>                      Adds a name for a DID
@@ -141,7 +142,6 @@ Options:
   reveal-poll <poll>                         Publish results to poll, revealing ballots
   revoke-credential <did>                    Revokes a verifiable credential
   rotate-keys                                Generates new set of keys for current ID
-  set-asset <id> [file]                      Update an asset from a JSON file
   set-property <id> <key> [value]            Assign a key-value pair to an asset
   show-mnemonic                              Show recovery phrase for wallet
   show-wallet                                Show wallet
@@ -149,6 +149,7 @@ Options:
   test-group <group> [member]                Determine if a member is in a group
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
+  update-asset <id> [file]                   Update an asset from a JSON file
   update-poll <ballot>                       Add a ballot to the poll
   use-id <name>                              Set the current ID
   verify-file <file>                         Verify the signature in a JSON file

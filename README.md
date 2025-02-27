@@ -20,9 +20,16 @@ $ cp sample.env .env
 $ ./start-node
 ```
 
+## Overview
+
+A Keychain MDIP node includes several interoperating microservices. If you follow the dependency arrows on the diagram below, you will end up at the central core service, the [Gatekeeper service](services/gatekeeper/server/README.md) responsible for maintaining the integrity of the local DID database. The mediators are responsible for connecting the Gatekeeper to various networks such as [Hyperswarm](services/mediators/hyperswarm/README.md) and [IPFS](services/mediators/ipfs/README.md). The TBTC (testnet Bitcoin) and TFTC (testnet Feathercoin) mediators are both instances of the [Satoshi mediator](services/mediators/satoshi/README.md) since they are derived from Bitcoin core (they differ only in how they are configured). [Keymaster](packages/keymaster/README.md) is the MDIP client responsible for holding the private keys and signing DID operations (create, update, delete) sent to Gatekeeper. The [browser web wallet](services/gatekeeper/client/README.md), [browser extension](browser/chrome-extension/README.md), and [Keymaster service](services/keymaster/server/README.md) all use the [Keymaster library](packages/keymaster/README.md). The [server web wallet](services/keymaster/client/README.md) is the same as the browser web wallet, except it is configured to talk to the Keymaster service instead of hosting its own wallet. It uses the same [KeymasterClient](packages/keymaster/src/keymaster-sdk.js) as the kc CLI. There are two CLI (command line interface) components: [kc](scripts/keychain-cli.js) for talking to the Keymaster service, and [admin](scripts/admin-cli.js) for talking to the Gatekeeper service. The admin script uses the same [GatekeeperClient](packages/gatekeeper/README.md) as the Keymaster service and the mediators.
+
+
+![alt text](keychain-node.png)
+
 ## Node configuration
 
-Customize your node in the kc/.env file.
+Customize your node in the kc/.env file. Environment variables are documented for each service in the READMEs linked in the Overview above.
 
 ```
 KC_UID=1000                                        # Docker host UID
@@ -119,7 +126,6 @@ Commands:
   reveal-poll <poll>                         Publish results to poll, revealing ballots
   revoke-credential <did>                    Revokes a verifiable credential
   rotate-keys                                Generates new set of keys for current ID
-  set-asset <id> [file]                      Update an asset from a JSON file
   set-property <id> <key> [value]            Assign a key-value pair to an asset
   show-mnemonic                              Show recovery phrase for wallet
   show-wallet                                Show wallet
@@ -127,6 +133,7 @@ Commands:
   test-group <group> [member]                Determine if a member is in a group
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
+  update-asset <id> [file]                   Update an asset from a JSON file
   update-poll <ballot>                       Add a ballot to the poll
   use-id <name>                              Set the current ID
   verify-file <file>                         Verify the signature in a JSON file
