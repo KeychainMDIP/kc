@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "MDIP Chrome Extension",
     "description": "MDIP Chrome Extension",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "icons": {
         "16": "icon.png",
         "48": "icon.png",
