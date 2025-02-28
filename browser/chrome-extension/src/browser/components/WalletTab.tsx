@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import JsonView from "@uiw/react-json-view";
+import React, { useEffect, useState } from "react";
+import JsonViewer from "./JsonViewer";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import {
     Box,
@@ -20,7 +20,7 @@ const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
-    const [walletObject, setWalletObject] = useState<any>(null);
+    const [walletObject, setWalletObject] = useState<string>("");
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
@@ -28,7 +28,8 @@ const WalletTab = () => {
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
     const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
-    const { wipAllStates } = useUIContext();
+    const { jsonViewerOptions, setJsonViewerOptions, wipAllStates } = useUIContext();
+    const [selectedDID, setSelectedDID] = useState<string>("");
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -52,7 +53,7 @@ const WalletTab = () => {
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
         await initialiseWallet();
         wipAllStates();
-        setWalletObject(null);
+        setWalletObject("");
         setMnemonicString("");
     }
 
@@ -122,7 +123,7 @@ const WalletTab = () => {
                 `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
             );
             await initialiseWallet();
-            setWalletObject(null);
+            setWalletObject("");
             setMnemonicString("");
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -132,7 +133,7 @@ const WalletTab = () => {
     async function recoverWallet() {
         await keymaster.recoverWallet();
         await initialiseWallet();
-        setWalletObject(null);
+        setWalletObject("");
         setMnemonicString("");
     }
 
@@ -173,14 +174,15 @@ const WalletTab = () => {
     async function showWallet() {
         try {
             const wallet = await keymaster.loadWallet();
-            setWalletObject(wallet);
+            setWalletObject(JSON.stringify(wallet, null, 4));
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function hideWallet() {
-        setWalletObject(null);
+        setWalletObject("");
+        setSelectedDID("");
     }
 
     async function handleUploadClick() {
@@ -272,6 +274,24 @@ const WalletTab = () => {
             setError(error.error || error.message || String(error));
         }
     }
+
+    useEffect(() => {
+        if (!jsonViewerOptions) {
+            return;
+        }
+
+        const {did, tab} = jsonViewerOptions;
+
+        if (tab !== "wallet") {
+            return;
+        }
+
+        setSelectedDID(did);
+        setWalletObject("");
+        setJsonViewerOptions(null);
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jsonViewerOptions])
 
     return (
         <Box>
@@ -372,7 +392,7 @@ const WalletTab = () => {
                     </Button>
                 )}
 
-                {walletObject ? (
+                {(walletObject || selectedDID) ? (
                     <Button
                         className="mini-margin"
                         variant="contained"
@@ -418,8 +438,8 @@ const WalletTab = () => {
                 <pre>{mnemonicString}</pre>
             </Box>
             <Box>
-                {walletObject && (
-                    <JsonView value={walletObject} shortenTextAfterLength={0} />
+                {(walletObject || selectedDID) && (
+                    <JsonViewer title="" tab="wallet" did={selectedDID} rawJson={walletObject} />
                 )}
             </Box>
         </Box>
