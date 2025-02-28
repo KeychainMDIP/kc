@@ -26,7 +26,7 @@ function BrowserContent() {
     const [didRun, setDidRun] = useState<boolean>(false);
     const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
-    const { jsonViewerOptions } = useUIContext();
+    const { jsonViewerOptions, setJsonViewerOptions } = useUIContext();
     const { darkMode } = useThemeContext();
 
     const theme = createTheme({
@@ -35,21 +35,50 @@ function BrowserContent() {
         },
     });
 
-    const params = new URLSearchParams(window.location.search);
-    const paramTab = params.get("tab") || "";
-    const paramSubTab = params.get("subTab") || "";
-    const paramsTitle = params.get("title") || "";
-    const paramsDid = params.get("did") || "";
-    const paramsDoc = params.get("doc");
-    const initialTab =
-        paramTab === "credentials" && !currentId
-            ? "identities"
-            : paramTab || "identities";
-    const [viewerTitle, setViewerTitle] = useState<string>(paramsTitle);
-    const [viewerDID, setViewerDID] = useState<string>(paramsDid);
-    const [viewerContents, setViewerContents] = useState<any>(paramsDoc);
-    const [activeSubTab, setSubActiveTab] = useState<string>(paramSubTab);
-    const [activeTab, setActiveTab] = useState<string>(initialTab);
+    const [paramTab, setParamTab] = useState<string>("");
+    const [viewerTitle, setViewerTitle] = useState<string>("");
+    const [viewerDID, setViewerDID] = useState<string>("");
+    const [viewerContents, setViewerContents] = useState<any>("");
+    const [activeSubTab, setSubActiveTab] = useState<string>("");
+    const [activeTab, setActiveTab] = useState<string>("identities");
+
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlTab = urlParams.get("tab") || "";
+        const urlSubTab = urlParams.get("subTab") || "";
+        const urlTitle = urlParams.get("title") || "";
+        const urlDid = urlParams.get("did") || "";
+        const urlDoc = urlParams.get("doc");
+
+        const initialTab =
+            urlTab === "credentials" && !currentId
+                ? "identities"
+                : urlTab || "identities";
+
+        setActiveTab(initialTab);
+        setSubActiveTab(urlSubTab);
+        setParamTab(urlTab);
+
+        if (!urlDid && !urlDoc) {
+            return;
+        }
+
+        if (!urlTab || urlTab === "viewer") {
+            setViewerTitle(urlTitle);
+            setViewerDID(urlDid);
+            setViewerContents(urlDoc);
+        } else {
+            setJsonViewerOptions({
+                title: urlTitle,
+                did: urlDid,
+                tab: urlTab,
+                subTab: urlSubTab,
+                contents: urlDoc,
+            });
+        }
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     useEffect(() => {
         if (!isBrowser || !jsonViewerOptions) {
@@ -57,7 +86,7 @@ function BrowserContent() {
         }
 
         const {title, did, tab, subTab, contents} = jsonViewerOptions;
-        const useTab: string = tab || "viewer";
+        const useTab = tab === "credentials" && !currentId ? "identities" : tab || "viewer";
         setActiveTab(useTab);
         if (subTab) {
             setSubActiveTab(subTab);
@@ -78,9 +107,13 @@ function BrowserContent() {
 
         setRefresh(r => r + 1);
 
+        setJsonViewerOptions(null);
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])
 
+    // Set active tab once current ID is loaded as credentials tab
+    // is only available after the current ID is present.
     useEffect(() => {
         if (!didRun && currentId) {
             if (paramTab === "credentials") {

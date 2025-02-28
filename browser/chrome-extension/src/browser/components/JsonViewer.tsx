@@ -8,6 +8,7 @@ import {
     Typography
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 
 function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: string, rawJson?: string, did: string, refresh: number, dedicated?: boolean}) {
     const [aliasDocs, setAliasDocs] = useState<any>(null);
@@ -18,6 +19,7 @@ function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: s
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
     const { keymaster, setError } = useWalletContext();
+    const { setJsonViewerOptions } = useUIContext();
 
     useEffect(() => {
         if (!did) {
@@ -47,11 +49,10 @@ function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: s
     }, [rawJson, title, did, refresh]);
 
     async function handleResolveDID(did?: string) {
-        await resolveDID(did || formDid);
-        if (did) {
-            setFormDid(did);
-        }
-        setCurrentTitle("");
+        setJsonViewerOptions({
+            title: "",
+            did: did || formDid,
+        });
     }
 
     async function resolveDID(did: string) {
