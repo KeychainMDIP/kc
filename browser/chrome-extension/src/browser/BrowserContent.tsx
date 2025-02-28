@@ -215,7 +215,7 @@ function BrowserContent() {
                                 <WalletTab />
                             </TabPanel>
                             <TabPanel value="viewer" sx={{ p: 0 }}>
-                                <JsonViewer title={viewerTitle} did={viewerDID} rawJson={viewerContents} dedicated={true} refresh={refresh} />
+                                <JsonViewer title={viewerTitle} tab="viewer" did={viewerDID} rawJson={viewerContents} showResolveField={true} refresh={refresh} />
                             </TabPanel>
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />

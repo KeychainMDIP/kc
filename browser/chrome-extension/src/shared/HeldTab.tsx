@@ -346,8 +346,8 @@ function HeldTab() {
                     </Box>
                 ))}
             </Box>
-            {selectedDID && title &&
-                <JsonViewer title={title} did={selectedDID} rawJson={selectedDoc} refresh={refresh} />
+            {selectedDID &&
+                <JsonViewer title={title} tab="credentials" subTab="held" did={selectedDID} rawJson={selectedDoc} refresh={refresh} />
             }
         </Box>
     );
