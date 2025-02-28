@@ -7,7 +7,6 @@ import {
     Button,
     DialogContentText,
     TextField,
-    Typography,
 } from "@mui/material";
 
 const MnemonicModal = ({ isOpen, onSubmit, onClose }) => {
