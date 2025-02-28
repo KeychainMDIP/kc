@@ -16,9 +16,7 @@ function HeldTab() {
     const [refresh, setRefresh] = useState<number>(0);
     const [selectedDID, setSelectedDID] = useState<string>("");
     const [selectedDoc, setSelectedDoc] = useState<any>(null);
-    const [loadURL, setLoadURL] = useState<boolean>(false);
     const {
-        currentId,
         isBrowser,
         manifest,
         resolveDID,
@@ -33,41 +31,10 @@ function HeldTab() {
     } = useCredentialsContext();
     const {
         jsonViewerOptions,
+        setJsonViewerOptions,
         openJSONViewer,
         refreshHeld,
     } = useUIContext();
-
-    useEffect(() => {
-        setTitle("");
-        setSelectedDID("");
-        setSelectedDoc("");
-
-        if (loadURL) {
-            return;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const paramsTitle = params.get("title");
-        const paramsDid = params.get("did");
-        const paramsDoc = params.get("doc");
-        const paramsTab = params.get("subTab");
-        if (paramsTab !== "held") {
-            return;
-        }
-
-        if (paramsTitle && paramsDid) {
-            setTitle(paramsTitle);
-            setSelectedDID(paramsDid);
-
-            if (paramsDoc) {
-                setSelectedDoc(paramsDoc);
-            }
-        }
-
-        setLoadURL(true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentId])
-
 
     useEffect(() => {
         if (!isBrowser || !jsonViewerOptions) {
@@ -76,7 +43,7 @@ function HeldTab() {
 
         const {title, did, tab, subTab, contents} = jsonViewerOptions;
 
-        if (!tab || tab !== "credentials" || !subTab || subTab !== "held") {
+        if (tab !== "credentials" || subTab !== "held") {
             return;
         }
 
@@ -87,6 +54,8 @@ function HeldTab() {
         } else {
             setSelectedDoc("");
         }
+
+        setJsonViewerOptions(null);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])

@@ -130,7 +130,7 @@ declare module '@mdip/keymaster' {
         publishCredential(did: string, options?: { reveal?: boolean }): Promise<any>;
         publishPoll(pollId: string, options?: { reveal?: boolean }): Promise<boolean>;
         recoverId(did: string): Promise<string>;
-        recoverWallet(did: string): Promise<any>;
+        recoverWallet(did?: string): Promise<any>;
         removeCredential(id: string): Promise<any>;
         removeGroupMember(groupId: string, memberId: string): Promise<boolean>;
         removeFromHeld(did: string): Promise<boolean>;

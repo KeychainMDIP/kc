@@ -25,6 +25,7 @@ interface UIContextValue {
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
     jsonViewerOptions: openJSONViewerOptions | null;
+    setJsonViewerOptions: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
     openJSONViewer: (options: openJSONViewerOptions) => void;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
@@ -453,6 +454,7 @@ export function UIProvider(
         setSelectedMessageTab,
         openJSONViewer,
         jsonViewerOptions,
+        setJsonViewerOptions,
         refreshAll,
         resetCurrentID,
         refreshHeld,

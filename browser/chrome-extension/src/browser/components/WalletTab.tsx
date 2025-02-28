@@ -8,26 +8,43 @@ import {
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import WarningModal from "../../shared/WarningModal";
+import MnemonicModal from "./MnemonicModal";
+import Keymaster from "@mdip/keymaster";
+import GatekeeperClient from "@mdip/gatekeeper/client";
+import CipherWeb from "@mdip/cipher/web";
+
+const gatekeeper = new GatekeeperClient();
+const cipher = new CipherWeb();
 
 const WalletTab = () => {
-    const [open, setOpen] = useState(false);
-    const [loading, setLoading] = useState<boolean>(false);
+    const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [walletObject, setWalletObject] = useState<any>(null);
-    const { setError, keymaster, initialiseWallet } = useWalletContext();
+    const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
+    const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
+    const [pendingRecover, setPendingRecover] = useState<boolean>(false);
+    const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
+    const [showFixModal, setShowFixModal] = useState<boolean>(false);
+    const [checkResultMessage, setCheckResultMessage] = useState<string>("");
+    const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
     const { wipAllStates } = useUIContext();
 
     const handleClickOpen = () => {
-        if (!loading) {
-            setPendingWallet(null);
-            setOpen(true);
-        }
+        setPendingWallet(null);
+        setOpen(true);
     };
 
     const handleClose = () => {
         setOpen(false);
         setPendingWallet(null);
+        setPendingMnemonic("");
+        setPendingRecover(false);
+    };
+
+    const handleCloseFixModal = () => {
+        setShowFixModal(false);
+        setCheckResultMessage("");
     };
 
     async function wipeStoredValues() {
@@ -51,10 +68,81 @@ const WalletTab = () => {
         await wipeStoredValues();
     }
 
-    const handleConfirm = async () => {
-        setLoading(true);
+    async function getUnencryptedKeymaster() {
+        const { gatekeeperUrl } = await chrome.storage.sync.get([
+            "gatekeeperUrl",
+        ]);
+        await gatekeeper.connect({ url: gatekeeperUrl });
+
+        // Avoid using existing passphrase by using unencrypted keymaster
+        const wallet = new WalletChrome();
+        return new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+        });
+    }
+
+    async function restoreFromMnemonic(mnemonic: string) {
+        const localKeymaster = await getUnencryptedKeymaster();
+        await localKeymaster.newWallet(pendingMnemonic, true);
+        await localKeymaster.recoverWallet();
+        await wipeStoredValues();
+    }
+
+    async function checkWallet() {
+        setCheckingWallet(true);
         try {
-            if (pendingWallet) {
+            const { checked, invalid, deleted } = await keymaster.checkWallet();
+
+            if (invalid === 0 && deleted === 0) {
+                setSuccess(`${checked} DIDs checked, no problems found`);
+            } else {
+                const msg =
+                    `${checked} DIDs checked.\n` +
+                    `${invalid} invalid DIDs found.\n` +
+                    `${deleted} deleted DIDs found.\n\n` +
+                    `Would you like to fix these?`;
+                setCheckResultMessage(msg);
+                setShowFixModal(true);
+            }
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+        setCheckingWallet(false);
+    }
+
+    async function handleFixWalletConfirm() {
+        setShowFixModal(false);
+        setCheckResultMessage("");
+        try {
+            const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } =
+                await keymaster.fixWallet();
+            setSuccess(
+                `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
+            );
+            await initialiseWallet();
+            setWalletObject(null);
+            setMnemonicString("");
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
+    async function recoverWallet() {
+        await keymaster.recoverWallet();
+        await initialiseWallet();
+        setWalletObject(null);
+        setMnemonicString("");
+    }
+
+    const handleConfirm = async () => {
+        try {
+            if (pendingRecover) {
+                await recoverWallet();
+            } else if (pendingMnemonic) {
+                await restoreFromMnemonic(pendingMnemonic);
+            } else if (pendingWallet) {
                 await uploadWallet(pendingWallet);
             } else {
                 await wipeAndClose();
@@ -64,8 +152,9 @@ const WalletTab = () => {
         }
 
         setOpen(false);
-        setLoading(false);
+        setPendingMnemonic("");
         setPendingWallet(null);
+        setPendingRecover(false);
     };
 
     async function showMnemonic() {
@@ -136,6 +225,54 @@ const WalletTab = () => {
         fileInput.click();
     }
 
+    async function downloadWallet() {
+        try {
+            const wallet = await keymaster.loadWallet();
+            const walletJSON = JSON.stringify(wallet, null, 4);
+            const blob = new Blob([walletJSON], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'mdip-wallet.json';
+            link.click();
+
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
+    async function handleRecoverWallet() {
+        setPendingRecover(true);
+        setOpen(true);
+    }
+
+    async function importWallet() {
+        setShowMnemonicModal(true);
+    }
+
+    function handleMnemonicSubmit(mnemonic: string) {
+        setShowMnemonicModal(false);
+        setPendingMnemonic(mnemonic);
+        setPendingWallet(null);
+        setOpen(true);
+    }
+
+    function handleMnemonicModalClose() {
+        setShowMnemonicModal(false);
+        setPendingMnemonic("");
+    }
+
+    async function backupWallet() {
+        try {
+            await keymaster.backupWallet();
+            setSuccess("Wallet backup successful");
+        } catch (error) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
     return (
         <Box>
             <WarningModal
@@ -144,6 +281,20 @@ const WalletTab = () => {
                 isOpen={open}
                 onClose={handleClose}
                 onSubmit={handleConfirm}
+            />
+
+            <WarningModal
+                title="Fix Wallet?"
+                warningText={checkResultMessage}
+                isOpen={showFixModal}
+                onClose={handleCloseFixModal}
+                onSubmit={handleFixWalletConfirm}
+            />
+
+            <MnemonicModal
+                isOpen={showMnemonicModal}
+                onSubmit={handleMnemonicSubmit}
+                onClose={handleMnemonicModalClose}
             />
 
             <Box className="flex-box" sx={{ gap: 2 }}>
@@ -161,11 +312,65 @@ const WalletTab = () => {
                     className="mini-margin"
                     variant="contained"
                     color="primary"
-                    onClick={handleUploadClick}
+                    onClick={importWallet}
                     sx={{ mr: 2 }}
                 >
-                    Upload
+                    Import
                 </Button>
+
+                <Button
+                    className="mini-margin"
+                    variant="contained"
+                    color="primary"
+                    onClick={backupWallet}
+                    sx={{ mr: 2 }}
+                >
+                    Backup
+                </Button>
+
+                <Button
+                    className="mini-margin"
+                    variant="contained"
+                    color="primary"
+                    onClick={handleRecoverWallet}
+                    sx={{ mr: 2 }}
+                >
+                    Recover
+                </Button>
+
+                <Button
+                    className="mini-margin"
+                    variant="contained"
+                    color="primary"
+                    onClick={checkWallet}
+                    sx={{ mr: 2 }}
+                    disabled={checkingWallet}
+                >
+                    Check
+                </Button>
+            </Box>
+            <Box className="flex-box" sx={{ gap: 2 }}>
+                {mnemonicString ? (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={hideMnemonic}
+                        sx={{ mr: 2 }}
+                    >
+                        Hide Mnemonic
+                    </Button>
+                ) : (
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={showMnemonic}
+                        sx={{ mr: 2 }}
+                    >
+                        Show Mnemonic
+                    </Button>
+                )}
 
                 {walletObject ? (
                     <Button
@@ -189,27 +394,25 @@ const WalletTab = () => {
                     </Button>
                 )}
 
-                {mnemonicString ? (
-                    <Button
-                        className="mini-margin"
-                        variant="contained"
-                        color="primary"
-                        onClick={hideMnemonic}
-                        sx={{ mr: 2 }}
-                    >
-                        Hide Mnemonic
-                    </Button>
-                ) : (
-                    <Button
-                        className="mini-margin"
-                        variant="contained"
-                        color="primary"
-                        onClick={showMnemonic}
-                        sx={{ mr: 2 }}
-                    >
-                        Show Mnemonic
-                    </Button>
-                )}
+                <Button
+                    className="mini-margin"
+                    variant="contained"
+                    color="primary"
+                    onClick={downloadWallet}
+                    sx={{ mr: 2 }}
+                >
+                    Download
+                </Button>
+
+                <Button
+                    className="mini-margin"
+                    variant="contained"
+                    color="primary"
+                    onClick={handleUploadClick}
+                    sx={{ mr: 2 }}
+                >
+                    Upload
+                </Button>
             </Box>
             <Box>
                 <pre>{mnemonicString}</pre>
