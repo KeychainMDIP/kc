@@ -23,18 +23,15 @@ function JsonViewer({title, tab, subTab = "", rawJson, did, refresh, showResolve
 
     useEffect(() => {
         if (!did && !rawJson) {
-            console.log("nothing set");
             return;
         }
 
         const populateData = async () => {
             try {
                 if (rawJson) {
-                    console.log("json");
                     const parsed = JSON.parse(rawJson);
                     setAliasDocs(parsed);
                 } else {
-                    console.log("did", did);
                     await resolveDID(did);
                 }
             } catch (error) {
