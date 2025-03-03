@@ -12,8 +12,8 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY scripts ./scripts/
-COPY kc .
-COPY admin .
+COPY kc ./
+COPY admin ./
 
 # Run idle
 CMD ["tail", "-f", "/dev/null"]
