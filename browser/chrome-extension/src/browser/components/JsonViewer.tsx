@@ -10,7 +10,7 @@ import {
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 
-function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: string, rawJson?: string, did: string, refresh: number, dedicated?: boolean}) {
+function JsonViewer({title, tab, subTab = "", rawJson, did, refresh, showResolveField = false}: {tab: string, subTab?: string, title: string, rawJson?: string, did: string, refresh?: number, showResolveField?: boolean}) {
     const [aliasDocs, setAliasDocs] = useState<any>(null);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
@@ -22,7 +22,7 @@ function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: s
     const { setJsonViewerOptions } = useUIContext();
 
     useEffect(() => {
-        if (!did) {
+        if (!did && !rawJson) {
             return;
         }
 
@@ -52,6 +52,8 @@ function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: s
         setJsonViewerOptions({
             title: "",
             did: did || formDid,
+            tab,
+            subTab,
         });
     }
 
@@ -97,7 +99,7 @@ function JsonViewer({title, rawJson, did, refresh, dedicated = false}: {title: s
 
     return (
         <Box>
-            {dedicated &&
+            {showResolveField &&
                 <Box className="flex-box" sx={{ my: 2 }}>
                     <TextField
                         label="Resolve DID"
