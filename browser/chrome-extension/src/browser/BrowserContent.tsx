@@ -4,6 +4,7 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
     AccountBalanceWallet,
     Badge,
+    Groups,
     ManageSearch,
     PermIdentity,
     Schema,
@@ -13,6 +14,7 @@ import CredentialsTab from "./components/CredentialsTab";
 import WalletTab from "./components/WalletTab";
 import SettingsTab from "./components/SettingsTab";
 import IdentitiesTab from "../shared/IdentitiesTab";
+import GroupsTab from "./components/GroupsTab";
 import BrowserHeader from "./components/BrowserHeader";
 import JsonViewer from "./components/JsonViewer";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
@@ -24,7 +26,6 @@ import SchemaTab from "./components/SchemaTab";
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
     const [didRun, setDidRun] = useState<boolean>(false);
-    const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
     const { jsonViewerOptions, setJsonViewerOptions } = useUIContext();
     const { darkMode } = useThemeContext();
@@ -36,9 +37,6 @@ function BrowserContent() {
     });
 
     const [paramTab, setParamTab] = useState<string>("");
-    const [viewerTitle, setViewerTitle] = useState<string>("");
-    const [viewerDID, setViewerDID] = useState<string>("");
-    const [viewerContents, setViewerContents] = useState<any>("");
     const [activeSubTab, setSubActiveTab] = useState<string>("");
     const [activeTab, setActiveTab] = useState<string>("identities");
 
@@ -63,19 +61,22 @@ function BrowserContent() {
             return;
         }
 
-        if (!urlTab || urlTab === "viewer") {
-            setViewerTitle(urlTitle);
-            setViewerDID(urlDid);
-            setViewerContents(urlDoc);
-        } else {
-            setJsonViewerOptions({
-                title: urlTitle,
-                did: urlDid,
-                tab: urlTab,
-                subTab: urlSubTab,
-                contents: urlDoc,
-            });
+        let parsedContents = null;
+        if (urlDoc) {
+            try {
+                parsedContents = typeof urlDoc === "string" ? JSON.parse(urlDoc) : urlDoc;
+            } catch (error) {
+                return;
+            }
         }
+
+        setJsonViewerOptions({
+            title: urlTitle,
+            did: urlDid,
+            tab: urlTab,
+            subTab: urlSubTab,
+            contents: parsedContents,
+        });
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
@@ -85,29 +86,12 @@ function BrowserContent() {
             return;
         }
 
-        const {title, did, tab, subTab, contents} = jsonViewerOptions;
+        const { tab, subTab } = jsonViewerOptions;
         const useTab = tab === "credentials" && !currentId ? "identities" : tab || "viewer";
         setActiveTab(useTab);
         if (subTab) {
             setSubActiveTab(subTab);
         }
-
-        if (useTab !== "viewer") {
-            return;
-        }
-
-        setViewerTitle(title);
-        setViewerDID(did);
-
-        if (contents) {
-            setViewerContents(contents);
-        } else {
-            setViewerContents("");
-        }
-
-        setRefresh(r => r + 1);
-
-        setJsonViewerOptions(null);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])
@@ -186,6 +170,19 @@ function BrowserContent() {
                                         whiteSpace: "nowrap",
                                     }}
                                 />
+                                {currentId && (
+                                    <Tab
+                                        icon={<Groups />}
+                                        label={menuOpen ? "JSON Viewer" : ""}
+                                        value="groups"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{
+                                            gap: 0.25,
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    />
+                                )}
                                 <Tab
                                     icon={<Settings />}
                                     label={menuOpen ? "Settings" : ""}
@@ -215,8 +212,13 @@ function BrowserContent() {
                                 <WalletTab />
                             </TabPanel>
                             <TabPanel value="viewer" sx={{ p: 0 }}>
-                                <JsonViewer title={viewerTitle} tab="viewer" did={viewerDID} rawJson={viewerContents} showResolveField={true} refresh={refresh} />
+                                <JsonViewer browserTab="viewer" showResolveField={true} />
                             </TabPanel>
+                            {currentId && (
+                                <TabPanel value="groups" sx={{ p: 0 }}>
+                                    <GroupsTab />
+                                </TabPanel>
+                            )}
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />
                             </TabPanel>
