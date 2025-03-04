@@ -1,6 +1,9 @@
 # Use the official Node.js as the base image
 FROM node:18.18.2-bullseye-slim
 
+# Install Python and other dependencies
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory
 WORKDIR /app
 
