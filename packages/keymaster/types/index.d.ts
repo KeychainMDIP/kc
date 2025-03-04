@@ -147,7 +147,7 @@ declare module '@mdip/keymaster' {
         setCurrentId(name: string): Promise<any>;
         setSchema(id: string, schema: any): Promise<boolean>;
         testAgent(id: string): Promise<boolean>;
-        testGroup(groupId: string, memberId: string): Promise<boolean>;
+        testGroup(groupId: string, memberId?: string): Promise<boolean>;
         testSchema(id: string): Promise<boolean>;
         unpublishCredential(did: string): Promise<string>;
         unpublishPoll(pollId: string): Promise<boolean>;

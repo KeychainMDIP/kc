@@ -99,6 +99,7 @@ export function UIProvider(
         setIssuedList,
         setIssuedString,
         setNameList,
+        setGroupList,
         setSchemaList,
         agentList,
         credentialSubject,
@@ -175,9 +176,10 @@ export function UIProvider(
 
     function openJSONViewer(options: openJSONViewerOptions) {
         const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
+        const tab = options.tab ?? "viewer";
         const payload = {
             ...options,
-            contents: contentsString
+            tab
         };
 
         if (isBrowser) {
@@ -187,7 +189,6 @@ export function UIProvider(
 
         const titleEncoded = encodeURIComponent(options.title);
         const didEncoded = encodeURIComponent(options.did);
-        const tab = options.tab || "viewer";
         let url = `browser.html?tab=${tab}&title=${titleEncoded}&did=${didEncoded}`;
 
         if (options.subTab) {
@@ -261,6 +262,21 @@ export function UIProvider(
         const names = Object.keys(nameList);
 
         setNameList(nameList);
+
+        const groupList = [];
+
+        for (const name of names) {
+            try {
+                const isGroup = await keymaster.testGroup(name);
+
+                if (isGroup) {
+                    groupList.push(name);
+                }
+            }
+            catch {}
+        }
+
+        setGroupList(groupList);
 
         const schemaList = [];
 

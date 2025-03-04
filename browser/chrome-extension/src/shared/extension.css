@@ -178,6 +178,11 @@ body {
     border-bottom-left-radius: 0;
 }
 
+.MuiButton-root.button-center {
+    height: 40px;
+    border-radius: 0;
+}
+
 .MuiButton-root.button-left {
     height: 40px;
     border-top-right-radius: 0;

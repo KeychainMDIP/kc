@@ -7,7 +7,9 @@ import {
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 import WarningModal from "../../shared/WarningModal";
+import JsonViewer from "./JsonViewer";
 
 function IssuedTab() {
     const FONT_FAMILY = "Courier, monospace";
@@ -27,17 +29,21 @@ function IssuedTab() {
         setIssuedStringOriginal,
         setSelectedIssued,
     } = useCredentialsContext();
+    const {
+        setJsonViewerOptions
+    } = useUIContext();
     const [open, setOpen] = useState(false);
     const [revokeDID, setRevokeDID] = useState("");
 
     async function resolveIssued(did: string) {
-        try {
-            const doc = await keymaster.resolveDID(did);
-            setSelectedIssued(did);
-            setIssuedString(JSON.stringify(doc, null, 4));
-        } catch (error) {
-            setError(error.error || error.message || String(error));
-        }
+        setJsonViewerOptions({
+            title: "",
+            did,
+            tab: "credentials",
+            subTab: "issued",
+        });
+        setSelectedIssued(did);
+        setIssuedEdit(false);
     }
 
     async function decryptIssued(did: string) {
@@ -73,6 +79,12 @@ function IssuedTab() {
                 setIssuedEdit(false);
                 setIssuedString("");
                 setIssuedStringOriginal("");
+                setJsonViewerOptions({
+                    title: "",
+                    did: "",
+                    tab: "credentials",
+                    subTab: "issued",
+                });
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -155,11 +167,11 @@ function IssuedTab() {
                     </Box>
                 ))}
             </Box>
-            {selectedIssued && issuedString && <>
+            {selectedIssued && <>
                 <Typography style={{ fontSize: '1.5em', fontFamily: FONT_FAMILY }}>
                     {selectedIssued}
                 </Typography>
-                {issuedEdit ? (
+                {(issuedEdit && issuedString) ? (
                     <TextField
                         value={issuedString}
                         onChange={(e) => setIssuedString(e.target.value)}
@@ -176,24 +188,8 @@ function IssuedTab() {
                             }
                         }}
                     />
-
                 ) : (
-                    <TextField
-                        value={issuedString}
-                        multiline
-                        rows={20}
-                        fullWidth
-                        variant="outlined"
-                        slotProps={{
-                            input: {
-                                readOnly: true,
-                                style: {
-                                    fontSize: "1em",
-                                    fontFamily: FONT_FAMILY,
-                                },
-                            }
-                        }}
-                    />
+                    <JsonViewer browserTab="credentials" browserSubTab="issued" />
                 )}
             </>
             }
