@@ -11,7 +11,7 @@ name: Build & Publish
 
 on:
   push:
-    branches: ['release']
+    branches: ['release-multiarch']
 
 env:
   REGISTRY: docker.io
@@ -47,22 +47,22 @@ jobs:
         include:
           - dockerfile: Dockerfile.gatekeeper
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:multiarch
           - dockerfile: Dockerfile.keymaster
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:multiarch
           - dockerfile: Dockerfile.hyperswarm
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:multiarch
           - dockerfile: Dockerfile.satoshi
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:multiarch
           - dockerfile: Dockerfile.ipfs
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/ipfs-mediator:multiarch
           - dockerfile: Dockerfile.cli
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:multiarch
     permissions:
       contents: read
       packages: write
