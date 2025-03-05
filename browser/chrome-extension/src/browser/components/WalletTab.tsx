@@ -20,7 +20,7 @@ const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<any>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
-    const [walletObject, setWalletObject] = useState<string>("");
+    const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
@@ -28,8 +28,17 @@ const WalletTab = () => {
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
     const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
-    const { jsonViewerOptions, setJsonViewerOptions, wipAllStates } = useUIContext();
-    const [selectedDID, setSelectedDID] = useState<string>("");
+    const { setJsonViewerOptions } = useUIContext();
+
+    const storageKey = "jsonViewerState-wallet-noSubTab";
+
+    useEffect(() => {
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) {
+            setJsonViewerOpen(true);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -43,6 +52,15 @@ const WalletTab = () => {
         setPendingRecover(false);
     };
 
+    function clearJsonWallet() {
+        setJsonViewerOpen(false);
+        setJsonViewerOptions({
+            title: "",
+            did: "",
+            tab: "wallet",
+        });
+    }
+
     const handleCloseFixModal = () => {
         setShowFixModal(false);
         setCheckResultMessage("");
@@ -52,8 +70,7 @@ const WalletTab = () => {
         await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
         await initialiseWallet();
-        wipAllStates();
-        setWalletObject("");
+        clearJsonWallet();
         setMnemonicString("");
     }
 
@@ -84,7 +101,7 @@ const WalletTab = () => {
         });
     }
 
-    async function restoreFromMnemonic(mnemonic: string) {
+    async function restoreFromMnemonic() {
         const localKeymaster = await getUnencryptedKeymaster();
         await localKeymaster.newWallet(pendingMnemonic, true);
         await localKeymaster.recoverWallet();
@@ -123,7 +140,7 @@ const WalletTab = () => {
                 `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
             );
             await initialiseWallet();
-            setWalletObject("");
+            clearJsonWallet();
             setMnemonicString("");
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -133,7 +150,7 @@ const WalletTab = () => {
     async function recoverWallet() {
         await keymaster.recoverWallet();
         await initialiseWallet();
-        setWalletObject("");
+        clearJsonWallet();
         setMnemonicString("");
     }
 
@@ -142,7 +159,7 @@ const WalletTab = () => {
             if (pendingRecover) {
                 await recoverWallet();
             } else if (pendingMnemonic) {
-                await restoreFromMnemonic(pendingMnemonic);
+                await restoreFromMnemonic();
             } else if (pendingWallet) {
                 await uploadWallet(pendingWallet);
             } else {
@@ -174,15 +191,20 @@ const WalletTab = () => {
     async function showWallet() {
         try {
             const wallet = await keymaster.loadWallet();
-            setWalletObject(JSON.stringify(wallet, null, 4));
+            setJsonViewerOpen(true);
+            setJsonViewerOptions({
+                title: "",
+                did: "",
+                tab: "wallet",
+                contents: wallet,
+            });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function hideWallet() {
-        setWalletObject("");
-        setSelectedDID("");
+        clearJsonWallet();
     }
 
     async function handleUploadClick() {
@@ -274,24 +296,6 @@ const WalletTab = () => {
             setError(error.error || error.message || String(error));
         }
     }
-
-    useEffect(() => {
-        if (!jsonViewerOptions) {
-            return;
-        }
-
-        const {did, tab} = jsonViewerOptions;
-
-        if (tab !== "wallet") {
-            return;
-        }
-
-        setSelectedDID(did);
-        setWalletObject("");
-        setJsonViewerOptions(null);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonViewerOptions])
 
     return (
         <Box>
@@ -392,7 +396,7 @@ const WalletTab = () => {
                     </Button>
                 )}
 
-                {(walletObject || selectedDID) ? (
+                {jsonViewerOpen ? (
                     <Button
                         className="mini-margin"
                         variant="contained"
@@ -438,9 +442,7 @@ const WalletTab = () => {
                 <pre>{mnemonicString}</pre>
             </Box>
             <Box>
-                {(walletObject || selectedDID) && (
-                    <JsonViewer title="" tab="wallet" did={selectedDID} rawJson={walletObject} />
-                )}
+                <JsonViewer browserTab="wallet" />
             </Box>
         </Box>
     );
