@@ -158,8 +158,7 @@ export function UIProvider(
 
             // Prevent challenge repopulating after clear on ID change
             setPendingUsed(true);
-        }
-        if (pendingTab) {
+        } else if (pendingTab) {
             (async () => {
                 await setSelectedTab(pendingTab);
                 setPendingTab(null);

@@ -48,14 +48,14 @@ function BrowserContent() {
         const urlDid = urlParams.get("did") || "";
         const urlDoc = urlParams.get("doc");
 
-        const initialTab =
-            urlTab === "credentials" && !currentId
-                ? "identities"
-                : urlTab || "identities";
+        let initialTab = urlTab || "identities";
+        if (!currentId && (urlTab === "credentials" || urlTab === "groups" || urlTab === "schemas")) {
+            initialTab = "identities";
+            setParamTab(urlTab);
+        }
 
         setActiveTab(initialTab);
         setSubActiveTab(urlSubTab);
-        setParamTab(urlTab);
 
         if (!urlDid && !urlDoc) {
             return;
@@ -96,12 +96,12 @@ function BrowserContent() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonViewerOptions])
 
-    // Set active tab once current ID is loaded as credentials tab
+    // Set active tab once current ID is loaded as the paramTab value
     // is only available after the current ID is present.
     useEffect(() => {
         if (!didRun && currentId) {
-            if (paramTab === "credentials") {
-                setActiveTab("credentials");
+            if (paramTab) {
+                setActiveTab(paramTab);
             }
             setDidRun(true);
         }
@@ -151,6 +151,16 @@ function BrowserContent() {
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
+                                {currentId && (
+                                    <Tab
+                                        icon={<Groups />}
+                                        label={menuOpen ? "Groups" : ""}
+                                        value="groups"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
                                 <Tab
                                     icon={<AccountBalanceWallet />}
                                     label={menuOpen ? "Wallet" : ""}
@@ -170,19 +180,6 @@ function BrowserContent() {
                                         whiteSpace: "nowrap",
                                     }}
                                 />
-                                {currentId && (
-                                    <Tab
-                                        icon={<Groups />}
-                                        label={menuOpen ? "JSON Viewer" : ""}
-                                        value="groups"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{
-                                            gap: 0.25,
-                                            whiteSpace: "nowrap",
-                                        }}
-                                    />
-                                )}
                                 <Tab
                                     icon={<Settings />}
                                     label={menuOpen ? "Settings" : ""}

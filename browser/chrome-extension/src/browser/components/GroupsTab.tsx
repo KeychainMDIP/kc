@@ -62,6 +62,11 @@ const GroupsTab = () => {
             const group = await keymaster.getGroup(groupName);
             setSelectedGroup(group);
             setMemberDID('');
+            setJsonViewerOptions({
+                title: "",
+                did: "",
+                tab: "groups",
+            });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

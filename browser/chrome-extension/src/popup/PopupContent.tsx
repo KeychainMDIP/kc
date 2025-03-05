@@ -57,14 +57,9 @@ const PopupContent = () => {
         setMenuAnchorEl(null);
     }
 
-    function handleWalletClick() {
+    function handleMenuClick(tab?: string) {
         handleMenuClose();
-        chrome.tabs.create({ url: "browser.html?tab=wallet" });
-    }
-
-    function handleSettingsClick() {
-        handleMenuClose();
-        chrome.tabs.create({ url: "browser.html?tab=settings" });
+        chrome.tabs.create({ url: "browser.html" + (tab ? `?tab=${tab}` : "") });
     }
 
     return (
@@ -131,10 +126,11 @@ const PopupContent = () => {
                         horizontal: "right",
                     }}
                 >
-                    <MenuItem onClick={handleWalletClick}>Wallet</MenuItem>
-                    <MenuItem onClick={handleSettingsClick}>
-                        Settings
-                    </MenuItem>
+                    <MenuItem onClick={() => handleMenuClick()}>Open Browser</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("groups")}>Groups</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("schemas")}>Schemas</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("wallet")}>Wallet</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("settings")}>Settings</MenuItem>
                     <MenuItem>
                         <LightMode sx={{ mr: 1 }} />
                         <Switch
