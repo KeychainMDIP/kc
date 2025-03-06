@@ -16,7 +16,6 @@ const DropDownID = () => {
     const {
         currentDID,
         currentId,
-        handleCopyDID,
         idList,
         isBrowser,
         keymaster,
@@ -24,7 +23,8 @@ const DropDownID = () => {
         setSelectedId,
     } = useWalletContext();
     const {
-        openJSONViewer,
+        handleCopyDID,
+        openBrowserWindow,
         resetCurrentID,
     } = useUIContext();
 
@@ -79,7 +79,7 @@ const DropDownID = () => {
                         <Tooltip title="Resolve DID">
                             <IconButton
                                 onClick={() =>
-                                    openJSONViewer({ title: currentId, did: currentDID })
+                                    openBrowserWindow({ title: currentId, did: currentDID })
                                 }
                                 size="small"
                                 sx={{
