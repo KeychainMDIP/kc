@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Button, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 import { useWalletContext } from "./contexts/WalletProvider";
@@ -7,6 +7,7 @@ import { useCredentialsContext } from "./contexts/CredentialsProvider";
 import { useUIContext } from "./contexts/UIContext";
 import JsonViewer from "../browser/components/JsonViewer";
 import { requestBrowserRefresh } from "./sharedScripts";
+import DisplayDID from "./DisplayDID";
 
 function HeldTab() {
     const [open, setOpen] = useState<boolean>(false);
@@ -26,8 +27,8 @@ function HeldTab() {
         setHeldDID,
     } = useCredentialsContext();
     const {
-        setJsonViewerOptions,
-        openJSONViewer,
+        setOpenBrowser,
+        openBrowserWindow,
         refreshHeld,
     } = useUIContext();
 
@@ -147,12 +148,12 @@ function HeldTab() {
     }
 
     function openIssueTab(subTab: string) {
-        chrome.tabs.create({ url: "browser.html?tab=credentials&subTab=" + subTab });
+        openBrowserWindow({ tab: "credentials", subTab });
     }
 
     function displayJson(title: string, did: string, contents?: any) {
         if (isBrowser) {
-            setJsonViewerOptions({
+            setOpenBrowser({
                 title,
                 did,
                 contents,
@@ -160,7 +161,7 @@ function HeldTab() {
                 subTab: "held",
             });
         } else {
-            openJSONViewer({title, did, contents, tab: "credentials", subTab: "held"});
+            openBrowserWindow({title, did, contents, tab: "credentials", subTab: "held"});
         }
     }
 
@@ -252,7 +253,7 @@ function HeldTab() {
             <Box className="overflow-box" sx={{ mb: 2 }}>
                 {heldList.map((did) => (
                     <Box key={did} className="margin-bottom">
-                        <Typography className="did-mono">{did}</Typography>
+                        <DisplayDID did={did} />
 
                         <Box className="flex-box">
                             <Button

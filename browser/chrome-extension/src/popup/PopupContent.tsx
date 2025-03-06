@@ -35,6 +35,7 @@ const PopupContent = () => {
         currentId,
     } = useWalletContext();
     const {
+        openBrowserWindow,
         selectedTab,
         setSelectedTab,
     } = useUIContext();
@@ -59,7 +60,7 @@ const PopupContent = () => {
 
     function handleMenuClick(tab?: string) {
         handleMenuClose();
-        chrome.tabs.create({ url: "browser.html" + (tab ? `?tab=${tab}` : "") });
+        openBrowserWindow({ tab });
     }
 
     return (
@@ -126,7 +127,7 @@ const PopupContent = () => {
                         horizontal: "right",
                     }}
                 >
-                    <MenuItem onClick={() => handleMenuClick()}>Open Browser</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("identities")}>Open Browser</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("groups")}>Groups</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("schemas")}>Schemas</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("wallet")}>Wallet</MenuItem>
@@ -179,7 +180,6 @@ const PopupContent = () => {
                 )}
             </Stack>
         </TabContext>
-
     );
 };
 

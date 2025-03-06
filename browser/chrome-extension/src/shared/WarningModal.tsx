@@ -8,7 +8,15 @@ import {
     DialogContentText,
 } from "@mui/material";
 
-const WarningModal = ({ isOpen, title, warningText, onSubmit, onClose }) => {
+interface WarningModalProps {
+    isOpen: boolean;
+    title: string;
+    warningText: string;
+    onSubmit: () => void;
+    onClose: () => void;
+}
+
+const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText, onSubmit, onClose }) => {
     if (!isOpen) return null;
 
     function handleSubmit(e) {

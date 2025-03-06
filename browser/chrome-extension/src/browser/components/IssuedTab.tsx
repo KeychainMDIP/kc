@@ -3,16 +3,15 @@ import {
     Box,
     Button,
     TextField,
-    Typography,
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import WarningModal from "../../shared/WarningModal";
 import JsonViewer from "./JsonViewer";
+import DisplayDID from "../../shared/DisplayDID";
 
 function IssuedTab() {
-    const FONT_FAMILY = "Courier, monospace";
     const {
         keymaster,
         setError,
@@ -30,13 +29,13 @@ function IssuedTab() {
         setSelectedIssued,
     } = useCredentialsContext();
     const {
-        setJsonViewerOptions
+        setOpenBrowser
     } = useUIContext();
     const [open, setOpen] = useState(false);
     const [revokeDID, setRevokeDID] = useState("");
 
     async function resolveIssued(did: string) {
-        setJsonViewerOptions({
+        setOpenBrowser({
             title: "",
             did,
             tab: "credentials",
@@ -79,7 +78,7 @@ function IssuedTab() {
                 setIssuedEdit(false);
                 setIssuedString("");
                 setIssuedStringOriginal("");
-                setJsonViewerOptions({
+                setOpenBrowser({
                     title: "",
                     did: "",
                     tab: "credentials",
@@ -123,9 +122,7 @@ function IssuedTab() {
                             alignItems: "center",
                         }}
                     >
-                        <Typography style={{ fontSize: '1.5em', fontFamily: FONT_FAMILY }}>
-                            {did}
-                        </Typography>
+                        <DisplayDID did={did} />
                         <Box className="flex-row" sx={{ width: '80%'}}>
                             <Button
                                 variant="contained"
@@ -168,9 +165,7 @@ function IssuedTab() {
                 ))}
             </Box>
             {selectedIssued && <>
-                <Typography style={{ fontSize: '1.5em', fontFamily: FONT_FAMILY }}>
-                    {selectedIssued}
-                </Typography>
+                <DisplayDID did={selectedIssued} />
                 {(issuedEdit && issuedString) ? (
                     <TextField
                         value={issuedString}
@@ -183,7 +178,7 @@ function IssuedTab() {
                             input: {
                                 style: {
                                     fontSize: "1em",
-                                    fontFamily: FONT_FAMILY,
+                                    fontFamily: "Courier, monospace",
                                 },
                             }
                         }}

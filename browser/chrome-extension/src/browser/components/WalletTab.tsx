@@ -28,7 +28,7 @@ const WalletTab = () => {
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
     const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
-    const { setJsonViewerOptions } = useUIContext();
+    const { setOpenBrowser } = useUIContext();
 
     const storageKey = "jsonViewerState-wallet-noSubTab";
 
@@ -54,7 +54,7 @@ const WalletTab = () => {
 
     function clearJsonWallet() {
         setJsonViewerOpen(false);
-        setJsonViewerOptions({
+        setOpenBrowser({
             title: "",
             did: "",
             tab: "wallet",
@@ -192,7 +192,7 @@ const WalletTab = () => {
         try {
             const wallet = await keymaster.loadWallet();
             setJsonViewerOpen(true);
-            setJsonViewerOptions({
+            setOpenBrowser({
                 title: "",
                 did: "",
                 tab: "wallet",

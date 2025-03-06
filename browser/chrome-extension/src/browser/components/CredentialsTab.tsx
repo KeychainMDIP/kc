@@ -1,12 +1,16 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Stack, Tab, Tabs } from "@mui/material";
 import { TabContext, TabPanel } from "@mui/lab";
 import IssueTab from "./IssueTab";
 import IssuedTab from "./IssuedTab";
 import HeldTab from "../../shared/HeldTab";
 
-function CredentialsTab({ subTab }: {subTab: string}) {
-    const [credentialTab, setCredentialTab] = useState(subTab || "held");
+function CredentialsTab({ subTab, refresh }: {subTab: string, refresh: number}) {
+    const [credentialTab, setCredentialTab] = useState("held");
+
+    useEffect(() => {
+        setCredentialTab(subTab || "held");
+    }, [subTab, refresh])
 
     async function handleChange(event: React.SyntheticEvent, newValue: string) {
         setCredentialTab(newValue);

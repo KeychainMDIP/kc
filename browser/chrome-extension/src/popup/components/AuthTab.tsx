@@ -24,7 +24,7 @@ function AuthTab() {
         setDisableSendResponse,
     } = useAuthContext();
     const {
-        openJSONViewer,
+        openBrowserWindow,
     } = useUIContext();
 
     async function newChallenge() {
@@ -41,7 +41,7 @@ function AuthTab() {
         try {
             const contents = await keymaster.resolveAsset(did);
             await setAuthDID(did);
-            openJSONViewer({ title: "Resolve Challenge", did, contents });
+            openBrowserWindow({ title: "Resolve Challenge", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -76,7 +76,7 @@ function AuthTab() {
         try {
             const contents = await keymaster.decryptJSON(did);
             await setAuthDID(did);
-            openJSONViewer({ title: "Decrypt Response", did, contents });
+            openBrowserWindow({ title: "Decrypt Response", did, contents });
         } catch (error) {
             setError(error.error || error.message || String(error));
         }

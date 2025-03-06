@@ -26,8 +26,9 @@ import SchemaTab from "./components/SchemaTab";
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
     const [didRun, setDidRun] = useState<boolean>(false);
+    const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
-    const { jsonViewerOptions, setJsonViewerOptions } = useUIContext();
+    const { openBrowser, setOpenBrowser } = useUIContext();
     const { darkMode } = useThemeContext();
 
     const theme = createTheme({
@@ -37,7 +38,7 @@ function BrowserContent() {
     });
 
     const [paramTab, setParamTab] = useState<string>("");
-    const [activeSubTab, setSubActiveTab] = useState<string>("");
+    const [activeSubTab, setActiveSubTab] = useState<string>("");
     const [activeTab, setActiveTab] = useState<string>("identities");
 
     useEffect(() => {
@@ -55,7 +56,7 @@ function BrowserContent() {
         }
 
         setActiveTab(initialTab);
-        setSubActiveTab(urlSubTab);
+        setActiveSubTab(urlSubTab);
 
         if (!urlDid && !urlDoc) {
             return;
@@ -70,7 +71,7 @@ function BrowserContent() {
             }
         }
 
-        setJsonViewerOptions({
+        setOpenBrowser({
             title: urlTitle,
             did: urlDid,
             tab: urlTab,
@@ -82,19 +83,20 @@ function BrowserContent() {
     }, [])
 
     useEffect(() => {
-        if (!isBrowser || !jsonViewerOptions) {
+        if (!isBrowser || !openBrowser) {
             return;
         }
 
-        const { tab, subTab } = jsonViewerOptions;
+        const { tab, subTab } = openBrowser;
         const useTab = tab === "credentials" && !currentId ? "identities" : tab || "viewer";
         setActiveTab(useTab);
         if (subTab) {
-            setSubActiveTab(subTab);
+            setActiveSubTab(subTab);
+            setRefresh(r => r + 1);
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonViewerOptions])
+    }, [openBrowser])
 
     // Set active tab once current ID is loaded as the paramTab value
     // is only available after the current ID is present.
@@ -197,7 +199,7 @@ function BrowserContent() {
                             </TabPanel>
                             {currentId && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
-                                    <CredentialsTab subTab={activeSubTab} />
+                                    <CredentialsTab subTab={activeSubTab} refresh={refresh} />
                                 </TabPanel>
                             )}
                             {currentId && (
