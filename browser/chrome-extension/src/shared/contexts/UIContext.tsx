@@ -24,9 +24,10 @@ interface UIContextValue {
     setSelectedTab: (value: string) => Promise<void>;
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
-    jsonViewerOptions: openJSONViewerOptions | null;
-    setJsonViewerOptions: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
-    openJSONViewer: (options: openJSONViewerOptions) => void;
+    openBrowser: openBrowserValues | null;
+    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | null>>,
+    openBrowserWindow: (options: openBrowserValues) => void;
+    handleCopyDID: (did: string) => void;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -34,9 +35,9 @@ interface UIContextValue {
     wipAllStates: () => void;
 }
 
-export interface openJSONViewerOptions {
-    title: string;
-    did: string;
+export interface openBrowserValues {
+    title?: string;
+    did?: string;
     tab?: string;
     subTab?: string;
     contents?: any;
@@ -48,15 +49,15 @@ export function UIProvider(
     {
         children,
         pendingAuth,
-        jsonViewerOptions,
-        setJsonViewerOptions,
+        openBrowser,
+        setOpenBrowser,
         browserRefresh,
         setBrowserRefresh,
     }: {
         children: ReactNode,
         pendingAuth?: string,
-        jsonViewerOptions?: openJSONViewerOptions,
-        setJsonViewerOptions?: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
+        openBrowser?: openBrowserValues,
+        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | null>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -173,28 +174,37 @@ export function UIProvider(
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentId, pendingAuth, pendingTab, pendingMessageTab]);
 
-    function openJSONViewer(options: openJSONViewerOptions) {
-        const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
+    function openBrowserWindow(options: openBrowserValues) {
         const tab = options.tab ?? "viewer";
+
         const payload = {
             ...options,
             tab
         };
 
         if (isBrowser) {
-            setJsonViewerOptions(payload);
+            setOpenBrowser(payload);
             return;
         }
 
-        const titleEncoded = encodeURIComponent(options.title);
-        const didEncoded = encodeURIComponent(options.did);
-        let url = `browser.html?tab=${tab}&title=${titleEncoded}&did=${didEncoded}`;
+        let url = `browser.html?tab=${tab}`;
+
+        if (options.did) {
+            const didEncoded = encodeURIComponent(options.did);
+            url += `&did=${didEncoded}`;
+        }
+
+        if (options.title) {
+            const titleEncoded = encodeURIComponent(options.title);
+            url += `&title=${titleEncoded}`;
+        }
 
         if (options.subTab) {
             url += `&subTab=${options.subTab}`;
         }
 
         if (options.contents) {
+            const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
             const jsonEncoded = encodeURIComponent(contentsString);
             url += `&doc=${jsonEncoded}`;
         }
@@ -462,14 +472,21 @@ export function UIProvider(
         }
     }
 
+    function handleCopyDID(did: string) {
+        navigator.clipboard.writeText(did).catch((err) => {
+            setError(err.message || String(err));
+        });
+    }
+
     const value: UIContextValue = {
         selectedTab,
         setSelectedTab,
         selectedMessageTab,
         setSelectedMessageTab,
-        openJSONViewer,
-        jsonViewerOptions,
-        setJsonViewerOptions,
+        openBrowserWindow,
+        openBrowser,
+        setOpenBrowser,
+        handleCopyDID,
         refreshAll,
         resetCurrentID,
         refreshHeld,

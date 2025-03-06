@@ -6,13 +6,13 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 import { ContentCopy } from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
 import JsonViewer from "./JsonViewer";
+import DisplayDID from "../../shared/DisplayDID";
 
 const GroupsTab = () => {
     const {
         keymaster,
         registries,
         setError,
-        handleCopyDID,
     } = useWalletContext();
     const {
         groupList,
@@ -20,7 +20,8 @@ const GroupsTab = () => {
     } = useCredentialsContext();
     const {
         refreshNames,
-        setJsonViewerOptions,
+        handleCopyDID,
+        setOpenBrowser,
     } = useUIContext();
 
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -62,7 +63,7 @@ const GroupsTab = () => {
             const group = await keymaster.getGroup(groupName);
             setSelectedGroup(group);
             setMemberDID('');
-            setJsonViewerOptions({
+            setOpenBrowser({
                 title: "",
                 did: "",
                 tab: "groups",
@@ -79,7 +80,7 @@ const GroupsTab = () => {
     async function resolveMember(did: string) {
         try {
             setJsonDID(did);
-            setJsonViewerOptions({
+            setOpenBrowser({
                 title: "",
                 did,
                 tab: "groups",
@@ -107,7 +108,7 @@ const GroupsTab = () => {
         }
         if (removeDID === jsonDID) {
             setJsonDID('');
-            setJsonViewerOptions({
+            setOpenBrowser({
                 title: "",
                 did: "",
                 tab: "groups",
@@ -264,48 +265,25 @@ const GroupsTab = () => {
                         </Box>
                         {selectedGroup.members.map((did: string, index: number) => (
                             <Box key={index} display="flex" flexDirection="row" alignItems="center" sx={{ mb: 2 }}>
-                                <Tooltip title={did}>
-                                    <Typography
-                                        noWrap
-                                        sx={{
-                                            fontSize: '1.5em',
-                                            fontFamily: "Courier, monospace",
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
-                                        }}
+                                <DisplayDID did={did} />
+                                <Box display="flex" flexDirection="row" sx={{ gap: 0 }}>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        onClick={() => resolveMember(did)}
+                                        className="button-left"
                                     >
-                                        {did}
-                                    </Typography>
-                                </Tooltip>
-                                <Tooltip title="Copy DID">
-                                    <IconButton
-                                        onClick={() => handleCopyDID(did)}
-                                        size="small"
-                                        sx={{
-                                            px: 0.5,
-                                            ml: 1,
-                                        }}
+                                        Resolve
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        onClick={() => handleRemoveMember(did)}
+                                        className="button-right"
                                     >
-                                        <ContentCopy fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    onClick={() => resolveMember(did)}
-                                    className="button-left"
-                                >
-                                    Resolve
-                                </Button>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    onClick={() => handleRemoveMember(did)}
-                                    className="button-right"
-                                >
-                                    Remove
-                                </Button>
+                                        Remove
+                                    </Button>
+                                </Box>
                             </Box>
                         ))}
                         <JsonViewer browserTab="groups" />

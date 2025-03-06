@@ -17,7 +17,6 @@ function DIDsTab() {
     const [open, setOpen] = useState(false);
     const [removeDID, setRemoveDID] = useState("");
     const {
-        handleCopyDID,
         isBrowser,
         keymaster,
         setError,
@@ -30,7 +29,8 @@ function DIDsTab() {
         setAliasName,
     } = useCredentialsContext();
     const {
-        openJSONViewer,
+        handleCopyDID,
+        openBrowserWindow,
         refreshNames,
     } = useUIContext();
 
@@ -114,7 +114,7 @@ function DIDsTab() {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => openJSONViewer({ title: aliasName, did: aliasDID })}
+                    onClick={() => openBrowserWindow({ title: aliasName, did: aliasDID })}
                     className="button large bottom"
                     disabled={!aliasDID}
                 >
@@ -175,7 +175,7 @@ function DIDsTab() {
                                     </IconButton>
                                     <IconButton
                                         onClick={() =>
-                                            openJSONViewer({ title: name, did })
+                                            openBrowserWindow({ title: name, did })
                                         }
                                         size="small"
                                     >

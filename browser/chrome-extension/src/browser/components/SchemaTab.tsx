@@ -7,13 +7,13 @@ import { ContentCopy } from "@mui/icons-material";
 
 const SchemaTab = ()=> {
     const {
-        handleCopyDID,
         keymaster,
         registries,
         setError,
         setSuccess,
     } = useWalletContext();
     const {
+        handleCopyDID,
         refreshNames,
     } = useUIContext();
     const {

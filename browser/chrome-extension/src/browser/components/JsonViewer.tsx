@@ -22,7 +22,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
     const { keymaster, setError } = useWalletContext();
-    const { jsonViewerOptions, setJsonViewerOptions } = useUIContext();
+    const { openBrowser, setOpenBrowser } = useUIContext();
 
     useEffect(() => {
         const stored = sessionStorage.getItem(storageKey);
@@ -67,11 +67,11 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     ]);
 
     useEffect(() => {
-        if (!jsonViewerOptions) {
+        if (!openBrowser) {
             return;
         }
 
-        const {title, did, tab, subTab, contents} = jsonViewerOptions;
+        const {title, did, tab, subTab, contents} = openBrowser;
 
         if (tab !== browserTab || (subTab && subTab !== browserSubTab)) {
             return;
@@ -102,13 +102,13 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
 
         setFormDid(did);
         setCurrentTitle(title);
-        setJsonViewerOptions(null);
+        setOpenBrowser(null);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonViewerOptions]);
+    }, [openBrowser]);
 
     async function handleResolveDID(did?: string) {
-        setJsonViewerOptions({
+        setOpenBrowser({
             title: "",
             did: did || formDid,
             tab: browserTab === "wallet" ? "viewer" : browserTab,

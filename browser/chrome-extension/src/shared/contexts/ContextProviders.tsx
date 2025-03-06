@@ -3,7 +3,7 @@ import { WalletProvider } from "./WalletProvider";
 import { CredentialsProvider } from "./CredentialsProvider";
 import { AuthProvider } from "./AuthContext";
 import { MessageProvider } from "./MessageContext";
-import { RefreshMode, UIProvider, openJSONViewerOptions } from "./UIContext";
+import { RefreshMode, UIProvider, openBrowserValues } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Box } from "@mui/material";
 import { requestBrowserRefresh } from "../sharedScripts";
@@ -21,16 +21,16 @@ export function ContextProviders(
         children,
         isBrowser,
         pendingAuth,
-        jsonViewerOptions,
-        setJsonViewerOptions,
+        openBrowser,
+        setOpenBrowser,
         browserRefresh,
         setBrowserRefresh,
     }: {
         children: ReactNode,
         isBrowser: boolean,
         pendingAuth?: string,
-        jsonViewerOptions?: openJSONViewerOptions,
-        setJsonViewerOptions?: Dispatch<SetStateAction<openJSONViewerOptions | null>>,
+        openBrowser?: openBrowserValues,
+        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | null>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -86,10 +86,10 @@ export function ContextProviders(
                                 <MessageProvider>
                                     <UIProvider
                                         pendingAuth={pendingAuth}
-                                        jsonViewerOptions={jsonViewerOptions}
+                                        openBrowser={openBrowser}
                                         browserRefresh={browserRefresh}
                                         setBrowserRefresh={setBrowserRefresh}
-                                        setJsonViewerOptions={setJsonViewerOptions}
+                                        setOpenBrowser={setOpenBrowser}
                                     >
                                         {children}
                                     </UIProvider>
