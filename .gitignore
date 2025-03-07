@@ -6,3 +6,4 @@ coverage/
 **/*.log
 .clinic/
 .idea/
+dist/
