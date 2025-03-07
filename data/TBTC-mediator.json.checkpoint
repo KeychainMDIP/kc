@@ -1,0 +1,2729 @@
+{
+    "height": 72996,
+    "time": "2025-03-07T16:06:03.000Z",
+    "blockCount": 72996,
+    "blocksScanned": 34997,
+    "blocksPending": 0,
+    "txnsScanned": 7132867,
+    "registered": [],
+    "discovered": [
+        {
+            "height": 39290,
+            "index": 2,
+            "time": "2024-08-12T18:38:44.000Z",
+            "txid": "4f3128a4bcc2e3d2d3dcc1689cb29d690692adf149442bbe1d1fe8af94745347",
+            "did": "did:test:z3v8AuaegAmpm7afUrnNpiLetknuxDzymhNntWPUPkSSpRe1DuN",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39292,
+            "index": 5,
+            "time": "2024-08-12T19:07:37.000Z",
+            "txid": "48a6dc8d0edb608be6094bca0cf4cd0bd6e8c54665b64b0f8b4d0633bf9cb082",
+            "did": "did:test:z3v8AuadvEzxqTxHBwvLEw8CVWR5u58ZxXaa48ApM9zH9c3R8XZ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39293,
+            "index": 3,
+            "time": "2024-08-12T19:16:28.000Z",
+            "txid": "d2bb41baff50236d37024dba2b730583fcfc161e1d11a716d2d0bc3ec05ba9f2",
+            "did": "did:test:z3v8AuadYPnXi7Gynwy3nqDZ9G8Wn3Cp7pD7BpmtagywULZbY8u",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39413,
+            "index": 5,
+            "time": "2024-08-13T15:18:13.000Z",
+            "txid": "a607797e3e777f807a5fb7613e2821bb524dd53fd15c5c2533ab31c03b3ec6a4",
+            "did": "did:test:z3v8Auaar33hFBUS5cG5kZszhQoBRgThD3H9Cuw7GEYaq3LM9sz",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39419,
+            "index": 1,
+            "time": "2024-08-13T15:53:22.000Z",
+            "txid": "718bd078d3bd9cc2530222cc8206f0e3b156fb109e81444964c1bf1b7dc47b27",
+            "did": "did:test:z3v8AuaT5y9XmQLQ3BaJg5sYcUgfZiZygaFGFC4QyCTZgsJp9Yn",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39436,
+            "index": 2,
+            "time": "2024-08-13T18:01:33.000Z",
+            "txid": "42bcc26fd8ec599543a2a7c9b79671e80e10f4827524a601330a281f9fad3dc2",
+            "did": "did:test:z3v8AuafSLDCXJGpNNEd8yqqfBGD8aPs8zL8w1ZLKzrv86s4SLJ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39437,
+            "index": 2,
+            "time": "2024-08-13T18:18:58.000Z",
+            "txid": "6475284a93c60e5f96c72ec3dc21b6e788408e9984fccee270014e099f1783d3",
+            "did": "did:test:z3v8AuaX1qDvTytktxvWUqFadhsWhNRHvAgJfN2UPxHAC1b9zzP",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39451,
+            "index": 1,
+            "time": "2024-08-13T20:37:04.000Z",
+            "txid": "d276561ca34f6d693da64040435d8f4cb3dd8357bb942bfc4ee7c04353c5937c",
+            "did": "did:test:z3v8AuafZs2QyiSXQD6diADptRh8f3FRsaiAKAi81cKnz22kXzF",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39548,
+            "index": 2,
+            "time": "2024-08-14T15:35:05.000Z",
+            "txid": "9914df8374c550d72805f94c1f3d2fc13b4aa95c5e192c2fee66b84160369a5a",
+            "did": "did:test:z3v8AuaY7vN6MRyMsfNYJQ8StjcJXpZ6PnNQMmA2Hr3T7muqgVg",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39691,
+            "index": 2,
+            "time": "2024-08-15T16:31:58.000Z",
+            "txid": "7ec8f00751e72a5a53e1a4a87f4652e7a0b490fe337d579df95ac849e8afbe55",
+            "did": "did:test:z3v8AuafMFBgvpSbyYLEzjPhi1Y1ww2zHsrNuu8oZshmLAQWeUY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39694,
+            "index": 3,
+            "time": "2024-08-15T17:06:15.000Z",
+            "txid": "316fc6a7b0fe5a9256ff2fc4daf7b6ee574d4b473ab701b5e447df24ac8edf10",
+            "did": "did:test:z3v8AuaY5bUNBHwXUHxXp4d8upqpcSnXgvMFjeBLYYuKrfaHyZ4",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39694,
+            "index": 4,
+            "time": "2024-08-15T17:06:15.000Z",
+            "txid": "b36025012acf9daf6cff9df00fef45919ad9ceac299b904cec7e738c6bcb84ab",
+            "did": "did:test:z3v8AuaWbWuG2gjnTSjAMDiBFV8ckkBtNcHFDy9dHhhp6MKf8KV",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39695,
+            "index": 2,
+            "time": "2024-08-15T17:18:34.000Z",
+            "txid": "dda6873db7759de149a24a56e040c45c27b4198640870615ebc86f7823532a4c",
+            "did": "did:test:z3v8AuaZdAVVdB5uMgpyZmQteMfa4AhyQMfirGfJUGYATiYjx4g",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39695,
+            "index": 3,
+            "time": "2024-08-15T17:18:34.000Z",
+            "txid": "186af2a30e01223abdadeb345ce69dd3282926ab886a161415d4f3c800b6d9fd",
+            "did": "did:test:z3v8AuabUqJriyEH3hCe7Q7EpVRx9vXeQX1w2VVxVhwtJ9JrFtF",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39812,
+            "index": 4,
+            "time": "2024-08-16T14:45:29.000Z",
+            "txid": "33e50da104dca70d07ecd86dde7fb7c4a5f6ba7919b0d2207f5b09186ada98e6",
+            "did": "did:test:z3v8AuaXYRdxmnHssDoozZ7H56fpRiEB1Ge4CBCC1YD2XsJNH9T",
+            "imported": {
+                "queued": 7,
+                "processed": 0,
+                "rejected": 0,
+                "total": 7
+            },
+            "processed": {
+                "added": 0,
+                "merged": 7,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39820,
+            "index": 5,
+            "time": "2024-08-16T16:20:05.000Z",
+            "txid": "0a1d8e3e31d65943b12b1ea9e8fd28799905c69d72b50e749b58139cc23c2daf",
+            "did": "did:test:z3v8AuaTewsKqChABw5tMitxDWYh8e8AQGXhWc1hfw4poTBdD6R",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 39821,
+            "index": 4,
+            "time": "2024-08-16T16:40:11.000Z",
+            "txid": "85fd40f4a0b73a2aa82d5e709e79abaec114204d23e4634dcb7b6448ccf66629",
+            "did": "did:test:z3v8AuahfEX2fTqFMBHRxeCqj1XbezsMrfwKiCLpHDgK9PDzW5e",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40342,
+            "index": 6,
+            "time": "2024-08-19T19:19:03.000Z",
+            "txid": "0b90f58cff9bc07ebfc6e6f3dfa62f0e8e1dc47309459b3757839e5beac60c48",
+            "did": "did:test:z3v8AuajxkjjY8Crj21ixSB11fdghCA1bh3ZJBmAr34eQ4BUJ76",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40633,
+            "index": 4,
+            "time": "2024-08-21T19:23:51.000Z",
+            "txid": "a16d919d92d6c4a2162f2d09945cf27c0b10fd9940cc90cef9777a17fe31479b",
+            "did": "did:test:z3v8AuadFMYnHC1H9iqMnoiCrdd4c89JrZNhWgQpPz43XEPCb14",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40634,
+            "index": 2,
+            "time": "2024-08-21T19:28:53.000Z",
+            "txid": "134e0566caa16dc4e31628f27eb68fc28f9e87fd461dfddd005046c01b41ea60",
+            "did": "did:test:z3v8AuaWm6JWcQFZEsPvtuGrLT4UmRCkWiEgR1CYKrvpDz3Wdbf",
+            "imported": {
+                "queued": 8,
+                "processed": 0,
+                "rejected": 0,
+                "total": 8
+            },
+            "processed": {
+                "added": 0,
+                "merged": 8,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40636,
+            "index": 1,
+            "time": "2024-08-21T19:36:03.000Z",
+            "txid": "2053338a9e9001eaab780c0cbd0af6f49af9e025881f4bdf2b6807d1bbcdff5a",
+            "did": "did:test:z3v8AuaUXjC8sFqjo8VEg1ZQNZWYhDjRBKt1Sro9eiSstYKWfkY",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40638,
+            "index": 3,
+            "time": "2024-08-21T19:57:21.000Z",
+            "txid": "b6078381b14faa7da211e5505481a454e9c5defb286f2670b1555f7af983fc77",
+            "did": "did:test:z3v8AuahpFTpQB98j2xGFGaA8ahfBfAibHasMostJAX4Z95Ey9j",
+            "imported": {
+                "queued": 5,
+                "processed": 0,
+                "rejected": 0,
+                "total": 5
+            },
+            "processed": {
+                "added": 0,
+                "merged": 5,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40639,
+            "index": 2,
+            "time": "2024-08-21T19:51:48.000Z",
+            "txid": "82d99ba0820fff1313c6b2d6ed01064379173f9ee984881d68f5d2ae4d7d853b",
+            "did": "did:test:z3v8Auajq7whLEkFRAfYJFyFrw2nkJv9epfxnPdEmNSoGQ3M8XV",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40641,
+            "index": 5,
+            "time": "2024-08-21T20:14:33.000Z",
+            "txid": "d2fac22f12b8e88bd42a42f0c91bf21f5342a83b649f1d279af679b4fdfba4bc",
+            "did": "did:test:z3v8Auacp2cVa8kBiU5S2Z9e385F8TZJxiy8VEXej4TzYmXxWPY",
+            "imported": {
+                "queued": 5,
+                "processed": 0,
+                "rejected": 0,
+                "total": 5
+            },
+            "processed": {
+                "added": 0,
+                "merged": 5,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40642,
+            "index": 5,
+            "time": "2024-08-21T20:29:13.000Z",
+            "txid": "d76e7ba8af4f79573e33f186cf7f4e104a2758271844bd23b340d4b5bbd7cab2",
+            "did": "did:test:z3v8AuaY7FaoBbk3eUFnDu1xrGmo7JgHYQNHoitMTbxZB6tqhh4",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40643,
+            "index": 5,
+            "time": "2024-08-21T20:34:23.000Z",
+            "txid": "fd697aae75be58f7bb7a388ee16818c2d6b870459cc5c370a86dd2442ea2b8c2",
+            "did": "did:test:z3v8AuafPLMqV7U11wyznra9dduG9ccJgtaUixbnWad2EjHSsts",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40651,
+            "index": 5,
+            "time": "2024-08-21T21:11:13.000Z",
+            "txid": "8ebef343286ee6824d558ef293dc8fea36bf23e4d168deb24201aeab17ae38ea",
+            "did": "did:test:z3v8AuaWsPWgbgoPdEg1hDdEq3bzT6KNfSyVUXa49QbYb7Xiuxt",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40766,
+            "index": 6,
+            "time": "2024-08-22T16:35:07.000Z",
+            "txid": "7dc31d6de2e6ad1fd17e353a0a3bccd073f92cbb332d34be0a695c62f0deefed",
+            "did": "did:test:z3v8AuaYUYx79QSFQetvsuVkHA7TnxbhQnHEoSpdfTks3Mi18rH",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40767,
+            "index": 1,
+            "time": "2024-08-22T16:55:22.000Z",
+            "txid": "3ffa734bbc42ac364edc367e919bc0b0940290f62ec49fa355997c735b8b9dd1",
+            "did": "did:test:z3v8AuajACm5xGgd9Kwryy4TCmM1xewqPv4a5jXUva1b4SjR1J7",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 40780,
+            "index": 8,
+            "time": "2024-08-22T21:16:05.000Z",
+            "txid": "02e19a9f94fc56334169696c722afd8f9e1e107bcea61f6bf3217fe31964c06f",
+            "did": "did:test:z3v8AuagUsoegwEAzzj1baNCstEgxQY8SZRCwRAed27Mqx6yEYK",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41388,
+            "index": 13,
+            "time": "2024-08-27T19:39:58.000Z",
+            "txid": "278a952c969457cc3de3f9af0535a72bf01e80694131c49f3722cbb29a2bb57d",
+            "did": "did:test:z3v8AuafXfG3oBHJKLFyzsaPEAZ61oTQumTjnrYhMx2vthKjB6c",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41721,
+            "index": 1,
+            "time": "2024-08-29T19:06:06.000Z",
+            "txid": "63899cd9aa2a232d8dfbb2477cf4fde0ff431110ed34c0cfe49b89238c2bbb65",
+            "did": "did:test:z3v8AuaXW6De2QRCZVKmviEQsw8VEdWxvHtdhjeiZrzTM4bMLpF",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41741,
+            "index": 1,
+            "time": "2024-08-29T22:24:09.000Z",
+            "txid": "339db4461cfe12cbe9c9ec3bf0c8d7da74b4806a5213e8b55cb426cfdb2d1a6e",
+            "did": "did:test:z3v8AuaX7LoE48jcyJ2qWd5xbedszHmdvUzGGupajQgAeX7TLtK",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41742,
+            "index": 1,
+            "time": "2024-08-29T22:44:10.000Z",
+            "txid": "fa55cd5703077d2249230747c8b5a40f823b61f1e54bd5bc2c046281cfb80597",
+            "did": "did:test:z3v8AuajmNxRJozcqmwJCMeL5UwczhNqwKDv2nx3PvjU1XLT6p7",
+            "imported": {
+                "queued": 9,
+                "processed": 0,
+                "rejected": 0,
+                "total": 9
+            },
+            "processed": {
+                "added": 0,
+                "merged": 9,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41744,
+            "index": 1,
+            "time": "2024-08-29T21:24:05.000Z",
+            "txid": "3723dbbb96f7b75355de8aec30c479cc848f1ac4ed17bbfbffe45135ccf9f6f8",
+            "did": "did:test:z3v8AuaZFgbDuUdz321JWB7AbX8HyST2jD4QVwFCvfRoftzWYKw",
+            "imported": {
+                "queued": 7,
+                "processed": 0,
+                "rejected": 0,
+                "total": 7
+            },
+            "processed": {
+                "added": 0,
+                "merged": 7,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41746,
+            "index": 2,
+            "time": "2024-08-29T22:04:11.000Z",
+            "txid": "d0097e4b57edf9acadfa73bb127a733ac45483671dc7ee3819ba29d651b258fe",
+            "did": "did:test:z3v8AuaVXfRVqzB38aNtMeNCGvE9DksaHD53GQWTSczGXrJhU1v",
+            "imported": {
+                "queued": 19,
+                "processed": 0,
+                "rejected": 0,
+                "total": 19
+            },
+            "processed": {
+                "added": 0,
+                "merged": 19,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41748,
+            "index": 5,
+            "time": "2024-08-29T22:44:13.000Z",
+            "txid": "79a186a635957a54cd52991065bd893e5ae86e2c66ca25be3fd52a0c5a1bc5b8",
+            "did": "did:test:z3v8Auae1PWzfyem5wr7AjoKCXDnV69AfKyQ4F19kGxTUYYmzfJ",
+            "imported": {
+                "queued": 22,
+                "processed": 0,
+                "rejected": 0,
+                "total": 22
+            },
+            "processed": {
+                "added": 0,
+                "merged": 22,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41750,
+            "index": 1,
+            "time": "2024-08-29T23:24:17.000Z",
+            "txid": "e110aa3d04c9dc642614caf2c9ecaf33a6f4216b56415e228028983b175ecc12",
+            "did": "did:test:z3v8Auah1di5Nk6fLQCvjThkY2MDA3rxaRWVPbdavYrVNmfc3YG",
+            "imported": {
+                "queued": 11,
+                "processed": 0,
+                "rejected": 0,
+                "total": 11
+            },
+            "processed": {
+                "added": 0,
+                "merged": 11,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41751,
+            "index": 3,
+            "time": "2024-08-29T22:24:35.000Z",
+            "txid": "241736eafb2d3318b08150bd426206545a5039ac27815fd44700f4bbd742c04e",
+            "did": "did:test:z3v8AuaeuLN1VGyHUjpR9tkWCRmQTeAvEJNHXA1LoNs7ySiBtgf",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41758,
+            "index": 1,
+            "time": "2024-08-30T00:25:13.000Z",
+            "txid": "cc8fc2b8f2dc04b58eec0d84f4b26013f66c066e4f4398518cb62c84cb3e6963",
+            "did": "did:test:z3v8AuaUZgGrJ9NVFKi3cFtMd9vGU9kUz1h8PRMsjzskEoeufFt",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 41759,
+            "index": 3,
+            "time": "2024-08-29T23:33:32.000Z",
+            "txid": "d4e7959d37a064ee49a8ab8bbb5c6685de9602a9a4c81d048f0bb04413f8857f",
+            "did": "did:test:z3v8AuacEtmtmVz7XyQWGRUCh98b1JrZ49r1HfLbiJ8wccWut5t",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 42715,
+            "index": 2,
+            "time": "2024-09-05T18:12:56.000Z",
+            "txid": "18f0711b3250fbd51ae8a5f2626b1770dc0a93f58b38bc593cb5155f51b1e0bb",
+            "did": "did:test:z3v8AuaeDbzz3kihf1FKKYyHaVroGFvDWQpzJEJJWHWBeS3sWHY",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 42850,
+            "index": 1,
+            "time": "2024-09-06T13:40:51.000Z",
+            "txid": "e550ce3841ca625b35a696a4c680d8e191f529f8e056b6a03cecc7988fe244cd",
+            "did": "did:test:z3v8AuakDmWGpjLcSpe16kfPMKMrJJHNvQk6knw4tU4kn9FRbch",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 42852,
+            "index": 4,
+            "time": "2024-09-06T14:20:53.000Z",
+            "txid": "0d2798c9c8c32c31f088040dfe576adc835b6e67a17bd0e540023d775d294b23",
+            "did": "did:test:z3v8AuaTFbPb2tGgoNjALiYFhAhUBTdf83iNd2x55y9R13LJrbg",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 42853,
+            "index": 1,
+            "time": "2024-09-06T14:40:54.000Z",
+            "txid": "d8f373120b7b181241cd456b896ae7693c740cde32f0535a2c70e332c2ea176b",
+            "did": "did:test:z3v8AuabHm6kKpXKugu8QFDr28HyxEcHDuMC8TKe86sRbUxK5gW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 42860,
+            "index": 3,
+            "time": "2024-09-06T15:54:31.000Z",
+            "txid": "8bd875422e11717b1707072c350fd2c4896102c05d9e24e3d1cf687da9c3699b",
+            "did": "did:test:z3v8AuadAkfGV4vWTw8iTR6cw5fcfEwUCXuXGNDdLuw9Kz6LaDo",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 43276,
+            "index": 1,
+            "time": "2024-09-07T19:55:45.000Z",
+            "txid": "1e80a882a9b2191d63a103e6e878fcf6db858ecc042f9e385320480830f903ea",
+            "did": "did:test:z3v8AuaXeXH9azstmLiv2PS31HjHizRMmKCrQH8wE3rKk4jET3N",
+            "imported": {
+                "queued": 15,
+                "processed": 0,
+                "rejected": 0,
+                "total": 15
+            },
+            "processed": {
+                "added": 0,
+                "merged": 15,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 43952,
+            "index": 1,
+            "time": "2024-09-09T16:04:49.000Z",
+            "txid": "ba951c4068be6ff9042422ba6b9cdfc82f72b5dce29aa91707917aa5f5b00440",
+            "did": "did:test:z3v8AuaisfTzssRrJu18kBb3sqtWtzPGw4qULv2JxkhSfjrHK3s",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 43957,
+            "index": 1,
+            "time": "2024-09-09T16:24:42.000Z",
+            "txid": "e9274a4360861bef9392076fc7019e8458fa4fd1cc578464aca7e6ed2e8ff14c",
+            "did": "did:test:z3v8AuabjMwHjF4fuLeZ27oghq2G59HzVRGFic6GSymsE3Br9EW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 43986,
+            "index": 1,
+            "time": "2024-09-09T18:58:52.000Z",
+            "txid": "6943faf72c9be51a04530ebfd5332b601ef93df2a17096d16d9f0ca17a61ccf1",
+            "did": "did:test:z3v8AuaXAaevTkztyXBv6ZnX1HeaK7xq238rJYeJQkhoxKchEtY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44034,
+            "index": 4,
+            "time": "2024-09-09T21:30:42.000Z",
+            "txid": "bac65c616655f2f4e32f34fbc02a6b496378d999ba3451888f85e38e6241413c",
+            "did": "did:test:z3v8Auacgs9zfwbjPsZCW1g1V564cG6QgqwrZhzMDQ6dKaHzLW2",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44352,
+            "index": 8,
+            "time": "2024-09-10T20:20:39.000Z",
+            "txid": "5ef2ea5c5753ec82eeec64756aa95fdc941057469ea9cb6ee164c8d9c958ceb8",
+            "did": "did:test:z3v8Auab5sJVM3bZEaprDMBqcTscY2JRw3V5oYzoxUsMWUhj9rU",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44355,
+            "index": 10,
+            "time": "2024-09-10T21:00:19.000Z",
+            "txid": "0321de958d05a9c020eaa2866b17b829e9f52ee693713c1167ff115cba192320",
+            "did": "did:test:z3v8AuaVnRohHvevo1uZ7QEqQs6oLyPoGFySS8EpWRAXd6CDsmz",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44362,
+            "index": 27,
+            "time": "2024-09-10T23:20:30.000Z",
+            "txid": "c8a3b22e6b6dc38d009fd9f218c0a9a06f5f5783622cd1d07992e13bdd890863",
+            "did": "did:test:z3v8AuadiBSU9sKYX4BrmdwWQ988dWL2V96bTSoA9BrgbjkJUeU",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44387,
+            "index": 1,
+            "time": "2024-09-11T01:40:41.000Z",
+            "txid": "7d906b3da1c501f9ee5053a6da2890e615aaae84c49c17b47b13f5d99ba5cfdb",
+            "did": "did:test:z3v8AuabT5osqoQ53YANNHfW5NwKFPmRDzrCVhRia9uAweLMxtW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44951,
+            "index": 8,
+            "time": "2024-09-14T16:23:49.000Z",
+            "txid": "45afffc74d2ee5255d32a9f9ae2030a20c1ea75b524e1b691d44d5eff26072bb",
+            "did": "did:test:z3v8AuaWU1sUgZNmrTfsmea3hrHj6yqna1pNWHDA4ssWssAyY8y",
+            "imported": {
+                "queued": 13,
+                "processed": 0,
+                "rejected": 0,
+                "total": 13
+            },
+            "processed": {
+                "added": 0,
+                "merged": 13,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44953,
+            "index": 6,
+            "time": "2024-09-14T17:03:55.000Z",
+            "txid": "c948155adb87326e575cd699de62249688fdeed53c8912d9e589ffe8074d2c62",
+            "did": "did:test:z3v8AuaYFJSJFUHCDSEqAeJWan4rLTC7nJDDBSycjiy8q4oesjE",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44954,
+            "index": 8,
+            "time": "2024-09-14T17:23:58.000Z",
+            "txid": "6afe745683852c5e1eb7b826f24d2cfd0c5de71166583ea89e284607ba83d1c8",
+            "did": "did:test:z3v8AuadFYfzzqGPFbMJafEnHEXLtDGQTS4nCaMk6WCBrYfSECm",
+            "imported": {
+                "queued": 9,
+                "processed": 0,
+                "rejected": 0,
+                "total": 9
+            },
+            "processed": {
+                "added": 0,
+                "merged": 9,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44955,
+            "index": 2,
+            "time": "2024-09-14T17:43:59.000Z",
+            "txid": "d1fea6b3d509717ac87f251ed3cafe0be7fcdeebbc2076a568297f48ae522dfb",
+            "did": "did:test:z3v8Auadjndk23hydpyP8tx9d3HvDpRwMNfsKan2duRatRzPD85",
+            "imported": {
+                "queued": 6,
+                "processed": 0,
+                "rejected": 0,
+                "total": 6
+            },
+            "processed": {
+                "added": 0,
+                "merged": 6,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44967,
+            "index": 3,
+            "time": "2024-09-14T19:44:51.000Z",
+            "txid": "98df5839a41a6cc7aac88334a13c08c67499374e1048ee4a2e6007e1bdc3adaf",
+            "did": "did:test:z3v8AuaYbkkWMeJedamSwhViZCGPifUU8LdAxGPcDGVPQmz5kNh",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44969,
+            "index": 1,
+            "time": "2024-09-14T20:24:55.000Z",
+            "txid": "d1072df89008e31e4431d0f29f76d1d5557c1df3d05bb897ff178d8bcaed9b1e",
+            "did": "did:test:z3v8Auafuh92dLHhdETtWqTyVkPxWpmpE8VBANvY2wGHFgjoHdF",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44978,
+            "index": 2,
+            "time": "2024-09-14T21:45:13.000Z",
+            "txid": "756bd9009c97e5dc5329f68764968f3e973800c9f3d1ba272d61b963ab27bc87",
+            "did": "did:test:z3v8AuadaJ7qbFsC8pSo1bvf4tWvg5et5zJoYEyxHSiz7vsMrvg",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 0,
+                "merged": 3,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44979,
+            "index": 1,
+            "time": "2024-09-14T22:05:16.000Z",
+            "txid": "774536e9cb3aec423502907dbbb7f5a64e48290101bb86800ffcd78be82d66f5",
+            "did": "did:test:z3v8AuaTaS2oPPG1SXyU9HkiCwbqNfXYapDLnNUPTcenj7MvK2B",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44987,
+            "index": 1,
+            "time": "2024-09-14T22:51:40.000Z",
+            "txid": "050b0d9fc2bf605b374834fd93d45617f4c2fdd28d150c9533f5bc02d2d5b110",
+            "did": "did:test:z3v8AuaZ4kYsXaHjXPu9tEhRqXaisASEbkg1neaDbfV62kVQwZt",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44988,
+            "index": 1,
+            "time": "2024-09-14T23:11:41.000Z",
+            "txid": "f6ec7f07edec1c96c4568f3ee84e3c2285b5053f5e98974bb5ae84cf2a575202",
+            "did": "did:test:z3v8Auajn3ouA1fj5ESBvaiLa7Wu8vzqLiMJp9Zwq6pEYAEnYq9",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44989,
+            "index": 1,
+            "time": "2024-09-14T23:31:42.000Z",
+            "txid": "0d3a0b0672afa7dd6e7072d825df3480fcae8f7f2dcb4990130245c858a96245",
+            "did": "did:test:z3v8AuaX89PjcsAL2JdSUQd5jVwSs3gcR6H9sPWUjJvNgH8Zg1e",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44991,
+            "index": 5,
+            "time": "2024-09-15T00:11:46.000Z",
+            "txid": "faabfdf69b515b83be256ece6ccc29efd1640ad273bc27bf510e421492e079a0",
+            "did": "did:test:z3v8AuaebrvnjfMphCSjp78FW52qLzSKDdQjcZZqae1By97SAb5",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 44992,
+            "index": 2,
+            "time": "2024-09-15T00:31:47.000Z",
+            "txid": "b554abc726839ff8df54ea34a4e087614760cae7f36f10f3b0a32fce59553fc0",
+            "did": "did:test:z3v8AuaYbmLX353PqigZdNcqsrGpxsCsFJXcESVkuk6K3Hgi3gg",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 0,
+                "merged": 3,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45026,
+            "index": 3,
+            "time": "2024-09-15T02:43:22.000Z",
+            "txid": "21eeb20c3e6abe23968c3743ecf709eaa4a86371a7c32874d4c856678e285e67",
+            "did": "did:test:z3v8AuaidNsNZ3drR6jYfbBBMcuLSteM8hB1rDsKvjpJSgPRUJG",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45027,
+            "index": 1,
+            "time": "2024-09-15T03:03:23.000Z",
+            "txid": "458aedb69e9d5ba406714dce1cf2e26ddd1dc4892471e605a18fa9dacd6ee755",
+            "did": "did:test:z3v8AuaW46SSb4nssKwuBtb4zM7v3upbHGtHc6vLpCD3U1CUYJd",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45374,
+            "index": 20,
+            "time": "2024-09-16T22:14:24.000Z",
+            "txid": "e6d00b7620389c5aebb61e33b486adeb21a5e046368a009c4f4c6bf0e74a6a7e",
+            "did": "did:test:z3v8AuaXwJkdTcU8SzuotDiLyJy1F72sULxQzgvs4wyNo3GLWTy",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45375,
+            "index": 21,
+            "time": "2024-09-16T22:34:25.000Z",
+            "txid": "e1117ade44456f99001d6f18f4400df1c4c04137a9c55b30016895a8f433d4a8",
+            "did": "did:test:z3v8AuaZ1SnE6FVjmgiEeS9isX3eA73aN2Vyca85HAVZ4mRSfk9",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45537,
+            "index": 3,
+            "time": "2024-09-17T20:27:45.000Z",
+            "txid": "b99adc9138569558bde952acdde7f51a527ef085ddde6f00c075bbfd59d21434",
+            "did": "did:test:z3v8AuaixJz47KdDY5fKbN3j1Bi4QyiFccu5gxYv7pq8Lh9eBJK",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45567,
+            "index": 6,
+            "time": "2024-09-17T22:30:18.000Z",
+            "txid": "e0651540699c876a28a08ccf5e213c5a9a564d2c617fd2814e761037027b0272",
+            "did": "did:test:z3v8Auag5r7ny3BKhnM6ehkUtv3ttfC7A4cjvtj2WCRkcQPNNkY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45568,
+            "index": 3,
+            "time": "2024-09-17T22:50:19.000Z",
+            "txid": "ba3983f24e1d3316d46dabf8930f108218df9400e5c40349a19cfa2761217b7d",
+            "did": "did:test:z3v8AuafciG1KYFvXaFGVJL1MikY49WZT3c2D5gFRvDiVacqx4B",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45598,
+            "index": 4,
+            "time": "2024-09-18T02:32:52.000Z",
+            "txid": "9fdb36973c3b2a26b2917d5aa08648c07f18d8029d4ffb9607e21b9b214a2ba1",
+            "did": "did:test:z3v8AuaYFkfH1GMj9YYzrGZnbXfGczTbuPMWdfazSUQ7Cfugrw6",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45728,
+            "index": 6,
+            "time": "2024-09-18T16:36:01.000Z",
+            "txid": "dd6fc4b930f13647f59270aadc071cd83db745aed741223ebabf07c8043eeb0f",
+            "did": "did:test:z3v8AuaTmnc1jUhHgjRoAbzwzLjyHaFDBCNwawme1cZ71khymP1",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45805,
+            "index": 9,
+            "time": "2024-09-18T22:16:38.000Z",
+            "txid": "e59182bc215fb91aac126f5b508258b6b0c749a82b3bef28b37794097b6e93ba",
+            "did": "did:test:z3v8AuaV8B413EitrWJUMAAU4wSuesXSzj2W4SKn6CTamh5Djeb",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45811,
+            "index": 5,
+            "time": "2024-09-18T22:56:19.000Z",
+            "txid": "ea4881bca05bc33f4ecf44220fccd625679e2a4d6ed458c4c1a476e6760add99",
+            "did": "did:test:z3v8AuaYzgFsGLyYvwtdLk4ANoVCYyF9m9hru7PLrkMPZ4d3ZWW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45816,
+            "index": 3,
+            "time": "2024-09-19T00:36:25.000Z",
+            "txid": "1931bda3c3b96dbb27b8ac44ac75d607431e75ff08cf5c3aa041f71bc3c083fa",
+            "did": "did:test:z3v8AuafqtgBTQr4dEHnBhhnrdBp1yCsqkzpgUReDbG28nHUq3c",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 45958,
+            "index": 4,
+            "time": "2024-09-19T16:08:25.000Z",
+            "txid": "5f9566a147fd5033c781ebeaa121f320827197bd96ea61381bf34edce6a42cf7",
+            "did": "did:test:z3v8AuaTQ2TxZcKkiq56cgPKRXEyBvJ5qzwmr3Z31eXz953eH4P",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 48341,
+            "index": 10,
+            "time": "2024-10-02T15:03:23.000Z",
+            "txid": "8f30962625bd6b5f2f61632c1582bb404988984243778fcdc7d584b4b584bccc",
+            "did": "did:test:z3v8AuaTjgoh3zjzB1VqBuHZxFK11RrQzUJczeVbJjbEsNKG3Vn",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 49330,
+            "index": 5,
+            "time": "2024-10-09T17:41:30.000Z",
+            "txid": "9c7f52973d7bc7e6e65e02bedb03ee4b8bd6fd349802aef984a7b62d4466c9f1",
+            "did": "did:test:z3v8AuadAqUiTBX8cZqPPw1D51MfFDs38UX8B5DGTKpcY1LEFPA",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 51936,
+            "index": 6,
+            "time": "2024-10-24T20:06:18.000Z",
+            "txid": "726a498fe3871b429595cb82fa252ae6285023d35ccbdf3c3151dac9cad16336",
+            "did": "did:test:z3v8AuaiuVoVPeEYBhdQ4UHar5v7jxhffQUeJDQKLUkJKuCC5YN",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 51941,
+            "index": 12,
+            "time": "2024-10-24T21:46:23.000Z",
+            "txid": "bbda47488832bca93f5d51340b51faf23ae942df64ba039f66806c3703208f4e",
+            "did": "did:test:z3v8AuaYhoGkGwCW7GjbQWcTq8V21wrjLmjV2RwXwj7mvbLrQwQ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 51942,
+            "index": 15,
+            "time": "2024-10-24T22:06:24.000Z",
+            "txid": "7a4744e2619dec6858153c8d8dffc2187a816ffcc4573b4167b58115daf23a9d",
+            "did": "did:test:z3v8AuaXUg5xviJP8eQetMVKEsZUHwi3zViazeXXKkrGxsJYUcB",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52582,
+            "index": 8,
+            "time": "2024-10-28T21:52:52.000Z",
+            "txid": "4b52dfa95d7b9472147b2821a33c59cdd52bf1444b6c0feed4e7c8c0d9a6f798",
+            "did": "did:test:z3v8AuabXBmNMPxLDTYnFUrLQsfx5RjADy43HPj5WXfo8NuFvJW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52725,
+            "index": 8,
+            "time": "2024-10-29T16:56:26.000Z",
+            "txid": "4f7a5e92ee6ee68dc023210f21bf8493f6781428e031193c94968d037560a0ab",
+            "did": "did:test:z3v8Auabg3mDScGPxHjdnFhsmXS5yBrkjYnwXwZucKmU5ERp5LG",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52726,
+            "index": 3,
+            "time": "2024-10-29T17:16:27.000Z",
+            "txid": "ee87c341e78813229ca914ef72bb77fd6a836c30dffe2d4b6adabeea7da2a2a9",
+            "did": "did:test:z3v8AuacziZn8PhkurF7hnTXoJXGZKE8Q92rutf7CUdm5V7s74N",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52728,
+            "index": 4,
+            "time": "2024-10-29T17:56:29.000Z",
+            "txid": "bb45ce0fe9ae4b1ba21c03030ad0229c0007b5c3e75bd45a674c47c019250dab",
+            "did": "did:test:z3v8Auaidq5tE2r1q5uHgKoetgqmVbHt9918sHi1heRAxV8pXwQ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52738,
+            "index": 5,
+            "time": "2024-10-29T19:16:34.000Z",
+            "txid": "f7ee9e3e0c049dca4346bb77d53790d8bf8a2071dc163dd6071d6efe0dd50add",
+            "did": "did:test:z3v8AuaeJD1bSKqnvJe4byHmvZUp6qwBcw8maSU6AdvxCoASoo9",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52739,
+            "index": 2,
+            "time": "2024-10-29T19:36:35.000Z",
+            "txid": "1597005bffc73fab595abe39858817f18e4aa994c8d28c3e9d1435277b3d6f53",
+            "did": "did:test:z3v8AuaiV5anLFE2EijeuK44VxuAFYT4cnzP9wAMXY9xsQPRvsk",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52952,
+            "index": 4,
+            "time": "2024-10-31T01:18:22.000Z",
+            "txid": "f2c72316f7c88940f8af8a4c18a2bf994a144f486027bfd28bc6c07c32e1fde1",
+            "did": "did:test:z3v8AuaTds7cKecM7cWnYh9iVuonL46fCjHA78U737ZQunY56M1",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52953,
+            "index": 1,
+            "time": "2024-10-31T01:38:23.000Z",
+            "txid": "bf309810280e90d5e4c9fdfe8b892cb273fed0fe6b91850de7348f390fe722a0",
+            "did": "did:test:z3v8Auags2ggHqv1uCqYrVWiyt7E3sdtGcpMDoZeBaS5gcswm11",
+            "imported": {
+                "queued": 5,
+                "processed": 0,
+                "rejected": 0,
+                "total": 5
+            },
+            "processed": {
+                "added": 0,
+                "merged": 5,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52954,
+            "index": 4,
+            "time": "2024-10-31T01:58:24.000Z",
+            "txid": "2f3e25fb8ce53d97ec5c1e3380daacce98cd1ee9eb7a3e3fa934111f5a05489b",
+            "did": "did:test:z3v8AuafWexaTbjEu82f5RoAWuNpwynwrddAnHGDQoLzeuNvx2e",
+            "imported": {
+                "queued": 7,
+                "processed": 0,
+                "rejected": 0,
+                "total": 7
+            },
+            "processed": {
+                "added": 0,
+                "merged": 7,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52955,
+            "index": 3,
+            "time": "2024-10-31T02:18:25.000Z",
+            "txid": "d041e089af7f84864752cd1f11c28337f4072fe85d19476acd94946910796364",
+            "did": "did:test:z3v8AuagkfH7wehvKM4hM735q9mvGRDmFVryv4JzMxDGRxhqY6J",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 52956,
+            "index": 3,
+            "time": "2024-10-31T02:38:26.000Z",
+            "txid": "006bee9fc28eb27cd883e4ff7129bb77c4c4cc55e2dd95da1b0cf3bcfebd4cc3",
+            "did": "did:test:z3v8AuaimnKtGCedfCJNy3KPfmMHwtvEVqxKsB6rVUMJHLUjNRz",
+            "imported": {
+                "queued": 13,
+                "processed": 0,
+                "rejected": 0,
+                "total": 13
+            },
+            "processed": {
+                "added": 0,
+                "merged": 13,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 53074,
+            "index": 4,
+            "time": "2024-10-31T19:59:28.000Z",
+            "txid": "e7969f2f99d328f9d82f7454ea3594a0a181859358b3edbc79217f0979f47a0a",
+            "did": "did:test:z3v8AuabnAoQsadPcQG1qo3CFe74gvsk5pVJ3cg8NXTuN6NMKNS",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 53663,
+            "index": 11,
+            "time": "2024-11-04T18:05:57.000Z",
+            "txid": "7d2664e2f7a9d401643ee97d08d047c7f41dc30533cd3267b7bd3c24f188c6f6",
+            "did": "did:test:z3v8AuaUEToiCgLppD2R1EPxY4xp3M2ekbrHRTdrByLyXomAvpJ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 53664,
+            "index": 11,
+            "time": "2024-11-04T18:25:58.000Z",
+            "txid": "b56334d8bc77f7a1bc055d6b474cfb75586d02cd789ae3ba2e6efcd8e55a000c",
+            "did": "did:test:z3v8AuaVBYi3rz3ThbHvSGtSg22i13Fy6WkkNmJLK2Qvu6KQhqH",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 53665,
+            "index": 9,
+            "time": "2024-11-04T18:45:59.000Z",
+            "txid": "2c11dbaa85a7c5d02168b28e276fee91d1d268e56ca401164576141b832305e5",
+            "did": "did:test:z3v8AuaT9ZL3xdGpMeUaafxc3Am1VF5z1rmJPcAdLzCRtkSmCCh",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 0,
+                "merged": 3,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 53837,
+            "index": 58,
+            "time": "2024-11-06T17:28:24.000Z",
+            "txid": "e4f47906749b4da139b2b5a73ffa22627e60050fc447d37d09a199f90d6000d8",
+            "did": "did:test:z3v8AuaXJ9vVNQsjNt3uY5SFcsu9qWMcSAchQY3XZgciHPfSCLS",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54023,
+            "index": 4,
+            "time": "2024-11-08T23:40:02.000Z",
+            "txid": "6abc1bb08b22d4851297875184203c5df01e8df7be08a4e4c40c47252a924eb4",
+            "did": "did:test:z3v8AuaXTFzq8CNU1YjNtB5bGuoWqpKRvfNJwVh9CjgVth6rcmk",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54024,
+            "index": 3,
+            "time": "2024-11-09T00:00:03.000Z",
+            "txid": "75c1ddb2a851a52402ba5b359076719ab9d474e63e1ad6ec95be4a255dbc3954",
+            "did": "did:test:z3v8AuaaK9qGzPaogQAuX6mWRfu6xuBfiC9hUH6cdi9bJSMqLri",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54314,
+            "index": 5,
+            "time": "2024-11-12T17:45:46.000Z",
+            "txid": "375163544eb4a948a470618072dcf8dba69f1aa78ac3ad103e937e1980132ac4",
+            "did": "did:test:z3v8AuafXJ36UWGb9wuLUPFN6kjKnLYkzxqNBtnHEQeZntYHYeD",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54390,
+            "index": 14,
+            "time": "2024-11-13T19:07:02.000Z",
+            "txid": "536c2600fe68d961c389ea0effe9bb495379e22bb29a849f6b65e1b9a5150006",
+            "did": "did:test:z3v8AuajUWizUanPawca8fWBGgvjaYGcZ6TSoSZc63di7ZoYrgE",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54391,
+            "index": 3,
+            "time": "2024-11-13T19:27:03.000Z",
+            "txid": "edd4d7cc1e506b58cd8476b4f376632f142a1222844deac0df0a2a3a4be86916",
+            "did": "did:test:z3v8AuadqSPL2iLdHZBiLC436Z5iTEiPEzJbqfFFk5kZDFH375s",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54392,
+            "index": 12,
+            "time": "2024-11-13T19:47:04.000Z",
+            "txid": "bce8f91406148f2dc07519b171673074340bf0de21f2094e48436c2fc413bc75",
+            "did": "did:test:z3v8AuajE5gPB48ymqEzedieXDgvWGKp9hKEPuVRk73jKNZnT5T",
+            "imported": {
+                "queued": 9,
+                "processed": 0,
+                "rejected": 0,
+                "total": 9
+            },
+            "processed": {
+                "added": 0,
+                "merged": 9,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54393,
+            "index": 7,
+            "time": "2024-11-13T20:07:05.000Z",
+            "txid": "049b65ffebb1e7ff1d6190ff27a5f179ebb85d948f55b93ea6a87372c53c1ec7",
+            "did": "did:test:z3v8AuaTQFYu6nZzUocKgLsSFcKc1UCYHbEh59cqaa7912d4Htq",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54394,
+            "index": 44,
+            "time": "2024-11-13T20:27:06.000Z",
+            "txid": "f47939b7f8e2ecbf87f7841be17ddfe01760d56b782550db1c3fb44ecadcc3aa",
+            "did": "did:test:z3v8Auae4p1ABN9Mmxe3HZbPNnSda7GzyttgtopdGyDcEPAARnt",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 0,
+                "merged": 3,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54400,
+            "index": 11,
+            "time": "2024-11-13T22:27:12.000Z",
+            "txid": "2424012b21125e24ef92c531c76a1fe065554254d773462d152a150f63f12d3f",
+            "did": "did:test:z3v8AuajjNsPLQzqV7dRvuoV5waEbhshYrBbRJ9NVTGVZBnkXGF",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54526,
+            "index": 4,
+            "time": "2024-11-15T21:28:28.000Z",
+            "txid": "6b7b932dcb8c995c552560f912b5776744ef0ae598b9dc40d7e7ec8bb00a6d15",
+            "did": "did:test:z3v8Auaivv1FF4QqWRzVhzHmyFMxmvj8WJr4M4p86sp32dKdXbi",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54527,
+            "index": 4,
+            "time": "2024-11-15T21:48:29.000Z",
+            "txid": "9230919dff67f454ddb3cff37bbba4e52dec7aacf4d687ab8c9394d084399cf4",
+            "did": "did:test:z3v8AuaXR574BJZQB9fKwMxL6dNwpxxLceW1QR3JyRjcXWuXMKH",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54528,
+            "index": 12,
+            "time": "2024-11-15T22:08:30.000Z",
+            "txid": "131ddda95c578bbf65b18ae1208aa2449798c90123d56563e03d9e4bcf135c51",
+            "did": "did:test:z3v8AuadMVhaXqVSXyi4jcLHeuvK8Ny127BXqZVCBx2zGohDzU5",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54529,
+            "index": 6,
+            "time": "2024-11-15T22:28:31.000Z",
+            "txid": "0de0f7d5cc975b1f249f818afda1dfa2f4fa9114b6b0db16bb59cbf0d8ed888d",
+            "did": "did:test:z3v8Auab36UorJdewdtD2SJU6JsQYFyF5eQqshdhyYg1dTzzx6h",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54530,
+            "index": 3,
+            "time": "2024-11-15T22:48:32.000Z",
+            "txid": "4fda6cbac10ebe01f7892550a4f70ea66de557a247fdfff75a1b3978060df7b9",
+            "did": "did:test:z3v8AuaV54rcnWF6XpqyYmxgXZqYnpmjuV4hCHwZfK3fXGFtMTG",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 54917,
+            "index": 3,
+            "time": "2024-11-20T23:54:39.000Z",
+            "txid": "cb0f7b1a47697c80cbde0a166955f9843e1bd9ab269b79597c8df9bc66c527bf",
+            "did": "did:test:z3v8Auaa5U9xP6TRzobvzZE7j6N8nkatxW1UuWiay5xrbAR5D9e",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 55396,
+            "index": 114,
+            "time": "2024-11-26T22:22:17.000Z",
+            "txid": "01121da29d64090374abb396cb3727696b639c96c12e87f318e2161c4912ef97",
+            "did": "did:test:z3v8AuaanzegcUV64LPaL3nMgjrRCzagp8W7nuEEpqpRkwWHwxG",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 55397,
+            "index": 139,
+            "time": "2024-11-26T22:42:18.000Z",
+            "txid": "8c97b0ae7dc6a932cfd9ffa21ab29fbab96bf3252eeac0ceac661670355bff1f",
+            "did": "did:test:z3v8AuafowsYQ8WSoq4db42guuBhP5JZ1feS8Wn7Tbx1Bo8LuhE",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 4
+            },
+            "processed": {
+                "added": 0,
+                "merged": 4,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 55398,
+            "index": 140,
+            "time": "2024-11-26T23:02:19.000Z",
+            "txid": "81395c24e6e6c0c00668962d89e5d84feda05856efb33e662201ecc8edfc9710",
+            "did": "did:test:z3v8AuaWLbUPpU31mCazznLYy6JtTWmgx9QFsDVveDPDU8Na1sJ",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 62864,
+            "index": 190,
+            "time": "2025-01-07T00:58:57.000Z",
+            "txid": "ebdd0c8d31cd008bc548c94ca3a8de9ea23b8a2deec3e6a61ac205d694320191",
+            "did": "did:test:z3v8AuaZdencfhnrBiJbcW7kVKcMkk6Eg5PYwVxTcMGxaDeFJn8",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 62874,
+            "index": 12,
+            "time": "2025-01-07T01:39:00.000Z",
+            "txid": "7fe5b642830119d03e68303f3900a2867a64792b8f77be68149298cd5c5c4c4c",
+            "did": "did:test:z3v8AuaeVVA7HP4rwUqEQdaKz6s7ugSmKDdKRtXLxmoWyUAV7Zp",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 62890,
+            "index": 130,
+            "time": "2025-01-07T03:39:03.000Z",
+            "txid": "cebb7c9863b4bce09c874c5201f8c2f41e6985cb1f16be407f23cf812304b57d",
+            "did": "did:test:z3v8AuaTgBsgYGdSLsH3febJN97XJ6LYcupm7x3vFMDb7SrxzRq",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 62891,
+            "index": 175,
+            "time": "2025-01-07T02:19:00.000Z",
+            "txid": "6bd360838e60ed11f88e25e2b29fef097bbb87b24eb16ccca7131e92e3f5bc24",
+            "did": "did:test:z3v8Auabie6j2j7pyDRVYDmeGARsTy27ZqqR9rGuWFpbfxEB6TT",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63076,
+            "index": 42,
+            "time": "2025-01-07T19:43:48.000Z",
+            "txid": "6fa3492c1b77543f7cf759848b84c7195c548c9a530f7243ad1d53d0b4b1fa34",
+            "did": "did:test:z3v8AuaUt9xkBvjz29cJnyS76cEeDpNWjYfXt7R4kxxPySq9DZp",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63105,
+            "index": 178,
+            "time": "2025-01-07T21:41:45.000Z",
+            "txid": "7e156a9a121bf56dfb783fbb5526c7a457bf1870db3af87aa47d22ff66772d86",
+            "did": "did:test:z3v8AuajNocYyFF9HsbeY2Zs2cj2rikVHZYh88WkXaGWp2MTW5W",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63109,
+            "index": 57,
+            "time": "2025-01-07T23:01:49.000Z",
+            "txid": "bc16b02c6b2ded671503efe9b7946bd5038a0c4c319d1cdd4ccfc9a3e26f7628",
+            "did": "did:test:z3v8AuaYbdzLkjsB4kyNMD35aM5zTTTuNfh78NPsvz2NT2Ek4H2",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63110,
+            "index": 106,
+            "time": "2025-01-07T22:21:47.000Z",
+            "txid": "778c3d7ad4c49644d504eecb8d062d93cd0cd5103075be85722cd900634598f0",
+            "did": "did:test:z3v8AuaWYgyqKRgnrKPe96YyPoSQi7zpx1CnukiqNTAtAQJtAxb",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63126,
+            "index": 44,
+            "time": "2025-01-07T23:41:53.000Z",
+            "txid": "7463d2d9638dcbee41cf5285935abaad2adcc20203681fff98127208634a038f",
+            "did": "did:test:z3v8AuacD4JGf7E4YXqnMJpFZWM6Yis24omnu6kgFf47Bcm3q4j",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 0,
+                "merged": 2,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63134,
+            "index": 163,
+            "time": "2025-01-08T01:21:59.000Z",
+            "txid": "d2c878162fb9c2d7acf9b3e1837686d801f12b81a88832ca2ba48c638e329653",
+            "did": "did:test:z3v8AuaTehPoNsdtsD9hyT1NsZrJ4hHjQb8krgMPAhAXvPKAisB",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63145,
+            "index": 46,
+            "time": "2025-01-08T02:22:03.000Z",
+            "txid": "285702b960d3ae620f144da3bf23915f16b49366e067f5e79f69542ef33fa035",
+            "did": "did:test:z3v8AuaYsCYHUag7ZUYK5koL4izbjHPKXbDigLcJon5KiJYfL3a",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63146,
+            "index": 677,
+            "time": "2025-01-08T02:42:04.000Z",
+            "txid": "2db5db5915833f3029d17ef6024caee402bba720c19d11c5250a88a30aab1d72",
+            "did": "did:test:z3v8Auaei22Z8F1ohoezqbDpFjmyDgWWCNVTLFQY6r2EECByxsg",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63347,
+            "index": 43,
+            "time": "2025-01-08T18:24:31.000Z",
+            "txid": "494b5502aca8afb7b0cade0338b819b7dcb1efab494dfb3f6976ec55839e5b52",
+            "did": "did:test:z3v8AuahLiER4G5F8NkRnQcKdEnXbBBUvMQ8NxPssig1Sz7B21V",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63405,
+            "index": 404,
+            "time": "2025-01-08T22:24:56.000Z",
+            "txid": "1e030517deacfe2102c417a99ba992fc386c5b0de1ba1625c946dd31d96f92b3",
+            "did": "did:test:z3v8AuahTRWmz2XmjsrAq4MRr6wvvXxzGiFveALqGr7cB3LJ6KE",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63415,
+            "index": 147,
+            "time": "2025-01-09T00:05:02.000Z",
+            "txid": "5c155cfb2006c3ff8d375588c6b9eaae230207d71efd751700f98d3cba42455f",
+            "did": "did:test:z3v8AuajCzsR9uBnnA55mE2LfvktJ8Nd1Wx8tsWeLJg6yqFHVry",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63419,
+            "index": 67,
+            "time": "2025-01-09T01:25:06.000Z",
+            "txid": "941f65b8e570dd6f8bfd6dc830e219e3c09f901b63279beeab7d9fcd2c97ee4c",
+            "did": "did:test:z3v8Auae3z2HovAnfjUs7LP6HGhZGz2qqqUAvnYAt2uad8nAkG6",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63603,
+            "index": 424,
+            "time": "2025-01-09T17:09:21.000Z",
+            "txid": "218ad7b3c6dd89dbbe9ba320226a01b9e6da86512b27c44f5decac813e9610e3",
+            "did": "did:test:z3v8Auahme2EtzDuSNrcBFAdm5f8ceYcaSvkHGeyzLJ3Y77hPb1",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63643,
+            "index": 275,
+            "time": "2025-01-09T21:31:10.000Z",
+            "txid": "4dd1ada59f37a1e7b81ae50d6e4f8d86241ed365dbcf89f831595591a8cc3850",
+            "did": "did:test:z3v8AuaVn474McoiaTrkogoHqfMirpU87ndHrXAi8gqgQnoFPnY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63644,
+            "index": 343,
+            "time": "2025-01-09T21:51:11.000Z",
+            "txid": "20ca6d1bc6e35d9994cf25f73c7b72e69d398d2c2fa193a321d1b3a3a3b58e11",
+            "did": "did:test:z3v8AuaWXchWCMAkatN2xXeR116dJAWdSEsmvUvnqaE3YRLejkr",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 0,
+                "merged": 3,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63646,
+            "index": 219,
+            "time": "2025-01-09T22:31:13.000Z",
+            "txid": "d999617ba1ff1b87173390c4c5f3d17b265ede0dfd2945aca03b7483b54186a7",
+            "did": "did:test:z3v8AuaYeLGSeYibKJkpPSePXAVe5RXxr753xBXSX1gWD4oMJRq",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 63665,
+            "index": 420,
+            "time": "2025-01-09T23:51:20.000Z",
+            "txid": "00612d16cc6207d2649356fe4902e929fef1835925616fd014f3bb8d5e139821",
+            "did": "did:test:z3v8AuadsRWWYCg5KgdprWLnxACjR6f9QpWBp3kFWS9W38HbWi3",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 64560,
+            "index": 1320,
+            "time": "2025-01-13T19:15:53.000Z",
+            "txid": "e70d600d53bdd82e512c2a1761085e3f75bee809c0b084656f4d6f07c7d26407",
+            "did": "did:test:z3v8AuahM7VbGQCRBeR3HYQ67fra3gr1dy1BHyVZwmAuhvQboat",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "added": 0,
+                "merged": 1,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 64731,
+            "index": 250,
+            "time": "2025-01-14T21:07:11.000Z",
+            "txid": "8c7bbfeb4f4768eff310212cb27144604261e8eabb0ede6857d5c0a0a67c2c0d",
+            "did": "did:test:z3v8AuaUdo2cHRFBWgf9t9uUiJxmbXVPiWfWwJ98mLY7iHEVR9N",
+            "imported": {
+                "queued": 12,
+                "processed": 0,
+                "rejected": 0,
+                "total": 12
+            },
+            "processed": {
+                "added": 0,
+                "merged": 12,
+                "rejected": 0,
+                "pending": 0
+            }
+        }
+    ],
+    "lastExport": "2025-02-21T03:10:44.189Z"
+}
