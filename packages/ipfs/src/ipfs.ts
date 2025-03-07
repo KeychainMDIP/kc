@@ -6,7 +6,16 @@ import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
 
+interface IPFSConfig {
+    minimal?: boolean;
+    datadir?: string;
+}
+
 class IPFS {
+    private config: IPFSConfig;
+    private helia: any;
+    private ipfs: any;
+
     constructor(config = {}) {
         this.config = config;
         this.helia = null;
@@ -37,7 +46,7 @@ class IPFS {
         }
     }
 
-    async add(data) {
+    async add(data: any) {
         let cid;
 
         if (this.ipfs) {
@@ -52,7 +61,7 @@ class IPFS {
         return cid.toString(base58btc);
     }
 
-    async get(b58cid) {
+    async get(b58cid: any) {
         if (this.ipfs) {
             const cid = CID.parse(b58cid);
             return this.ipfs.get(cid);
@@ -63,13 +72,13 @@ class IPFS {
     }
 
     // Factory method
-    static async create(config) {
+    static async create(config: any) {
         const instance = new IPFS(config);
         await instance.start();
         return instance;
     }
 
-    static isValidCID(cid) {
+    static isValidCID(cid: any) {
         try {
             CID.parse(cid);
             return true;
