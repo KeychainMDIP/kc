@@ -1,16 +1,12 @@
 services:
   mongodb:
     image: mongo:latest
-    ports:
-      - 27017:27017
     volumes:
       - ./data/mongodb:/data/db
 
   redis:
     image: redis:latest
     command: redis-server /usr/local/etc/redis/redis.conf
-    ports:
-      - 6379:6379
     volumes:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - ./data/redis:/data
@@ -76,10 +72,7 @@ services:
       - gatekeeper
 
   tftc-node:
-    build:
-      context: .
-      dockerfile: Dockerfile.ftc
-    image: keychainmdip/ftc-node
+    image: keychainmdip/feathercoin:v0.19.1
     volumes:
       - ./data/tftc:/root/.feathercoin
 
@@ -118,7 +111,7 @@ services:
       - keymaster
 
   tbtc-node:
-    image: keychainmdip/bitcoin-core:v28.0
+    image: keychainmdip/bitcoin-core:v28.0-multiarch
     volumes:
       - ./data/tbtc:/root/.bitcoin
 
