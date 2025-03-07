@@ -131,6 +131,7 @@ declare module '@mdip/keymaster' {
         publishPoll(pollId: string, options?: { reveal?: boolean }): Promise<boolean>;
         recoverId(did: string): Promise<string>;
         recoverWallet(did?: string): Promise<any>;
+        renameId(id: string, name: string): Promise<any>;
         removeCredential(id: string): Promise<any>;
         removeGroupMember(groupId: string, memberId: string): Promise<boolean>;
         removeFromHeld(did: string): Promise<boolean>;
@@ -147,7 +148,7 @@ declare module '@mdip/keymaster' {
         setCurrentId(name: string): Promise<any>;
         setSchema(id: string, schema: any): Promise<boolean>;
         testAgent(id: string): Promise<boolean>;
-        testGroup(groupId: string, memberId: string): Promise<boolean>;
+        testGroup(groupId: string, memberId?: string): Promise<boolean>;
         testSchema(id: string): Promise<boolean>;
         unpublishCredential(did: string): Promise<string>;
         unpublishPoll(pollId: string): Promise<boolean>;

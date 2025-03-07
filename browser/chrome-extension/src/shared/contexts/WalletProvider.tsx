@@ -47,7 +47,6 @@ interface WalletContextValue {
     setManifest: Dispatch<SetStateAction<any>>;
     resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
-    handleCopyDID: (did: string) => void;
     storeState: (key: string, value: string | boolean) => Promise<void>;
     refreshWalletStored: (state: any) => Promise<void>;
     resetWalletState: () => void;
@@ -279,12 +278,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
-    function handleCopyDID(did: string) {
-        navigator.clipboard.writeText(did).catch((err) => {
-            setError(err.message || String(err));
-        });
-    }
-
     const value: WalletContextValue = {
         currentId,
         setCurrentId,
@@ -305,7 +298,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         setSuccess,
         resolveDID,
         initialiseWallet,
-        handleCopyDID,
         storeState,
         resetWalletState,
         refreshWalletStored,

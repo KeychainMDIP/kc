@@ -3,14 +3,15 @@ import {
     Box,
     Button,
     TextField,
-    Typography,
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
 import WarningModal from "../../shared/WarningModal";
+import JsonViewer from "./JsonViewer";
+import DisplayDID from "../../shared/DisplayDID";
 
 function IssuedTab() {
-    const FONT_FAMILY = "Courier, monospace";
     const {
         keymaster,
         setError,
@@ -27,17 +28,21 @@ function IssuedTab() {
         setIssuedStringOriginal,
         setSelectedIssued,
     } = useCredentialsContext();
+    const {
+        setOpenBrowser
+    } = useUIContext();
     const [open, setOpen] = useState(false);
     const [revokeDID, setRevokeDID] = useState("");
 
     async function resolveIssued(did: string) {
-        try {
-            const doc = await keymaster.resolveDID(did);
-            setSelectedIssued(did);
-            setIssuedString(JSON.stringify(doc, null, 4));
-        } catch (error) {
-            setError(error.error || error.message || String(error));
-        }
+        setOpenBrowser({
+            title: "",
+            did,
+            tab: "credentials",
+            subTab: "issued",
+        });
+        setSelectedIssued(did);
+        setIssuedEdit(false);
     }
 
     async function decryptIssued(did: string) {
@@ -73,6 +78,12 @@ function IssuedTab() {
                 setIssuedEdit(false);
                 setIssuedString("");
                 setIssuedStringOriginal("");
+                setOpenBrowser({
+                    title: "",
+                    did: "",
+                    tab: "credentials",
+                    subTab: "issued",
+                });
             }
         } catch (error) {
             setError(error.error || error.message || String(error));
@@ -111,9 +122,7 @@ function IssuedTab() {
                             alignItems: "center",
                         }}
                     >
-                        <Typography style={{ fontSize: '1.5em', fontFamily: FONT_FAMILY }}>
-                            {did}
-                        </Typography>
+                        <DisplayDID did={did} />
                         <Box className="flex-row" sx={{ width: '80%'}}>
                             <Button
                                 variant="contained"
@@ -155,11 +164,9 @@ function IssuedTab() {
                     </Box>
                 ))}
             </Box>
-            {selectedIssued && issuedString && <>
-                <Typography style={{ fontSize: '1.5em', fontFamily: FONT_FAMILY }}>
-                    {selectedIssued}
-                </Typography>
-                {issuedEdit ? (
+            {selectedIssued && <>
+                <DisplayDID did={selectedIssued} />
+                {(issuedEdit && issuedString) ? (
                     <TextField
                         value={issuedString}
                         onChange={(e) => setIssuedString(e.target.value)}
@@ -171,29 +178,13 @@ function IssuedTab() {
                             input: {
                                 style: {
                                     fontSize: "1em",
-                                    fontFamily: FONT_FAMILY,
+                                    fontFamily: "Courier, monospace",
                                 },
                             }
                         }}
                     />
-
                 ) : (
-                    <TextField
-                        value={issuedString}
-                        multiline
-                        rows={20}
-                        fullWidth
-                        variant="outlined"
-                        slotProps={{
-                            input: {
-                                readOnly: true,
-                                style: {
-                                    fontSize: "1em",
-                                    fontFamily: FONT_FAMILY,
-                                },
-                            }
-                        }}
-                    />
+                    <JsonViewer browserTab="credentials" browserSubTab="issued" />
                 )}
             </>
             }

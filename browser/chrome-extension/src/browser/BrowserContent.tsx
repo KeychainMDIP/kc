@@ -4,6 +4,7 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
     AccountBalanceWallet,
     Badge,
+    Groups,
     ManageSearch,
     PermIdentity,
     Schema,
@@ -13,6 +14,7 @@ import CredentialsTab from "./components/CredentialsTab";
 import WalletTab from "./components/WalletTab";
 import SettingsTab from "./components/SettingsTab";
 import IdentitiesTab from "../shared/IdentitiesTab";
+import GroupsTab from "./components/GroupsTab";
 import BrowserHeader from "./components/BrowserHeader";
 import JsonViewer from "./components/JsonViewer";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
@@ -26,7 +28,7 @@ function BrowserContent() {
     const [didRun, setDidRun] = useState<boolean>(false);
     const [refresh, setRefresh] = useState<number>(0);
     const { currentId, isBrowser } = useWalletContext();
-    const { jsonViewerOptions, setJsonViewerOptions } = useUIContext();
+    const { openBrowser, setOpenBrowser } = useUIContext();
     const { darkMode } = useThemeContext();
 
     const theme = createTheme({
@@ -36,10 +38,7 @@ function BrowserContent() {
     });
 
     const [paramTab, setParamTab] = useState<string>("");
-    const [viewerTitle, setViewerTitle] = useState<string>("");
-    const [viewerDID, setViewerDID] = useState<string>("");
-    const [viewerContents, setViewerContents] = useState<any>("");
-    const [activeSubTab, setSubActiveTab] = useState<string>("");
+    const [activeSubTab, setActiveSubTab] = useState<string>("");
     const [activeTab, setActiveTab] = useState<string>("identities");
 
     useEffect(() => {
@@ -50,74 +49,61 @@ function BrowserContent() {
         const urlDid = urlParams.get("did") || "";
         const urlDoc = urlParams.get("doc");
 
-        const initialTab =
-            urlTab === "credentials" && !currentId
-                ? "identities"
-                : urlTab || "identities";
+        let initialTab = urlTab || "identities";
+        if (!currentId && (urlTab === "credentials" || urlTab === "groups" || urlTab === "schemas")) {
+            initialTab = "identities";
+            setParamTab(urlTab);
+        }
 
         setActiveTab(initialTab);
-        setSubActiveTab(urlSubTab);
-        setParamTab(urlTab);
+        setActiveSubTab(urlSubTab);
 
         if (!urlDid && !urlDoc) {
             return;
         }
 
-        if (!urlTab || urlTab === "viewer") {
-            setViewerTitle(urlTitle);
-            setViewerDID(urlDid);
-            setViewerContents(urlDoc);
-        } else {
-            setJsonViewerOptions({
-                title: urlTitle,
-                did: urlDid,
-                tab: urlTab,
-                subTab: urlSubTab,
-                contents: urlDoc,
-            });
+        let parsedContents = null;
+        if (urlDoc) {
+            try {
+                parsedContents = typeof urlDoc === "string" ? JSON.parse(urlDoc) : urlDoc;
+            } catch (error) {
+                return;
+            }
         }
+
+        setOpenBrowser({
+            title: urlTitle,
+            did: urlDid,
+            tab: urlTab,
+            subTab: urlSubTab,
+            contents: parsedContents,
+        });
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     useEffect(() => {
-        if (!isBrowser || !jsonViewerOptions) {
+        if (!isBrowser || !openBrowser) {
             return;
         }
 
-        const {title, did, tab, subTab, contents} = jsonViewerOptions;
+        const { tab, subTab } = openBrowser;
         const useTab = tab === "credentials" && !currentId ? "identities" : tab || "viewer";
         setActiveTab(useTab);
         if (subTab) {
-            setSubActiveTab(subTab);
+            setActiveSubTab(subTab);
+            setRefresh(r => r + 1);
         }
-
-        if (useTab !== "viewer") {
-            return;
-        }
-
-        setViewerTitle(title);
-        setViewerDID(did);
-
-        if (contents) {
-            setViewerContents(contents);
-        } else {
-            setViewerContents("");
-        }
-
-        setRefresh(r => r + 1);
-
-        setJsonViewerOptions(null);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonViewerOptions])
+    }, [openBrowser])
 
-    // Set active tab once current ID is loaded as credentials tab
+    // Set active tab once current ID is loaded as the paramTab value
     // is only available after the current ID is present.
     useEffect(() => {
         if (!didRun && currentId) {
-            if (paramTab === "credentials") {
-                setActiveTab("credentials");
+            if (paramTab) {
+                setActiveTab(paramTab);
             }
             setDidRun(true);
         }
@@ -167,6 +153,16 @@ function BrowserContent() {
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
+                                {currentId && (
+                                    <Tab
+                                        icon={<Groups />}
+                                        label={menuOpen ? "Groups" : ""}
+                                        value="groups"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
                                 <Tab
                                     icon={<AccountBalanceWallet />}
                                     label={menuOpen ? "Wallet" : ""}
@@ -203,7 +199,7 @@ function BrowserContent() {
                             </TabPanel>
                             {currentId && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
-                                    <CredentialsTab subTab={activeSubTab} />
+                                    <CredentialsTab subTab={activeSubTab} refresh={refresh} />
                                 </TabPanel>
                             )}
                             {currentId && (
@@ -215,8 +211,13 @@ function BrowserContent() {
                                 <WalletTab />
                             </TabPanel>
                             <TabPanel value="viewer" sx={{ p: 0 }}>
-                                <JsonViewer title={viewerTitle} tab="viewer" did={viewerDID} rawJson={viewerContents} showResolveField={true} refresh={refresh} />
+                                <JsonViewer browserTab="viewer" showResolveField={true} />
                             </TabPanel>
+                            {currentId && (
+                                <TabPanel value="groups" sx={{ p: 0 }}>
+                                    <GroupsTab />
+                                </TabPanel>
+                            )}
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />
                             </TabPanel>

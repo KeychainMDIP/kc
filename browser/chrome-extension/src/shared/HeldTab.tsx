@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Box, Button, TextField, Typography } from "@mui/material";
+import React, { useState } from "react";
+import { Box, Button, TextField } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 import { useWalletContext } from "./contexts/WalletProvider";
@@ -7,15 +7,12 @@ import { useCredentialsContext } from "./contexts/CredentialsProvider";
 import { useUIContext } from "./contexts/UIContext";
 import JsonViewer from "../browser/components/JsonViewer";
 import { requestBrowserRefresh } from "./sharedScripts";
+import DisplayDID from "./DisplayDID";
 
 function HeldTab() {
     const [open, setOpen] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [removeDID, setRemoveDID] = useState<string>("");
-    const [title, setTitle] = useState<string>("");
-    const [refresh, setRefresh] = useState<number>(0);
-    const [selectedDID, setSelectedDID] = useState<string>("");
-    const [selectedDoc, setSelectedDoc] = useState<any>(null);
     const {
         isBrowser,
         manifest,
@@ -30,35 +27,10 @@ function HeldTab() {
         setHeldDID,
     } = useCredentialsContext();
     const {
-        jsonViewerOptions,
-        setJsonViewerOptions,
-        openJSONViewer,
+        setOpenBrowser,
+        openBrowserWindow,
         refreshHeld,
     } = useUIContext();
-
-    useEffect(() => {
-        if (!isBrowser || !jsonViewerOptions) {
-            return;
-        }
-
-        const {title, did, tab, subTab, contents} = jsonViewerOptions;
-
-        if (tab !== "credentials" || subTab !== "held") {
-            return;
-        }
-
-        setTitle(title);
-        setSelectedDID(did);
-        if (contents) {
-            setSelectedDoc(contents);
-        } else {
-            setSelectedDoc("");
-        }
-
-        setJsonViewerOptions(null);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonViewerOptions])
 
     async function acceptCredential() {
         try {
@@ -176,21 +148,20 @@ function HeldTab() {
     }
 
     function openIssueTab(subTab: string) {
-        chrome.tabs.create({ url: "browser.html?tab=credentials&subTab=" + subTab });
+        openBrowserWindow({ tab: "credentials", subTab });
     }
 
     function displayJson(title: string, did: string, contents?: any) {
         if (isBrowser) {
-            setTitle(title);
-            setSelectedDID(did);
-            if (contents) {
-                setSelectedDoc(JSON.stringify(contents, null, 4));
-            } else {
-                setSelectedDoc("");
-            }
-            setRefresh(r => r + 1);
+            setOpenBrowser({
+                title,
+                did,
+                contents,
+                tab: "credentials",
+                subTab: "held",
+            });
         } else {
-            openJSONViewer({title, did, contents, tab: "credentials", subTab: "held"});
+            openBrowserWindow({title, did, contents, tab: "credentials", subTab: "held"});
         }
     }
 
@@ -282,7 +253,7 @@ function HeldTab() {
             <Box className="overflow-box" sx={{ mb: 2 }}>
                 {heldList.map((did) => (
                     <Box key={did} className="margin-bottom">
-                        <Typography className="did-mono">{did}</Typography>
+                        <DisplayDID did={did} />
 
                         <Box className="flex-box">
                             <Button
@@ -346,9 +317,7 @@ function HeldTab() {
                     </Box>
                 ))}
             </Box>
-            {selectedDID &&
-                <JsonViewer title={title} tab="credentials" subTab="held" did={selectedDID} rawJson={selectedDoc} refresh={refresh} />
-            }
+            <JsonViewer browserTab="credentials" browserSubTab="held" />
         </Box>
     );
 }

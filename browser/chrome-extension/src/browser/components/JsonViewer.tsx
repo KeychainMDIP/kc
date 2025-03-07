@@ -10,7 +10,10 @@ import {
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 
-function JsonViewer({title, tab, subTab = "", rawJson, did, refresh, showResolveField = false}: {tab: string, subTab?: string, title: string, rawJson?: string, did: string, refresh?: number, showResolveField?: boolean}) {
+function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {browserTab: string, browserSubTab?: string, showResolveField?: boolean}) {
+    const subTabKey = browserSubTab ?? 'noSubTab';
+    const storageKey = `jsonViewerState-${browserTab}-${subTabKey}`;
+
     const [aliasDocs, setAliasDocs] = useState<any>(null);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
@@ -19,18 +22,74 @@ function JsonViewer({title, tab, subTab = "", rawJson, did, refresh, showResolve
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
     const { keymaster, setError } = useWalletContext();
-    const { setJsonViewerOptions } = useUIContext();
+    const { openBrowser, setOpenBrowser } = useUIContext();
 
     useEffect(() => {
-        if (!did && !rawJson) {
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                setAliasDocs(parsed.aliasDocs);
+                setAliasDocsVersion(parsed.aliasDocsVersion ?? 1);
+                setAliasDocsVersionMax(parsed.aliasDocsVersionMax ?? 1);
+                setAliasDocsVersions(parsed.aliasDocsVersions ?? null);
+                setFormDid(parsed.formDid ?? "");
+                setCurrentDid(parsed.currentDid ?? "");
+                setCurrentTitle(parsed.currentTitle ?? "");
+            } catch (e) {}
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!aliasDocs) {
+            return;
+        }
+        const stateToStore = {
+            aliasDocs,
+            aliasDocsVersion,
+            aliasDocsVersionMax,
+            aliasDocsVersions,
+            formDid,
+            currentDid,
+            currentTitle
+        };
+        sessionStorage.setItem(storageKey, JSON.stringify(stateToStore));
+    }, [
+        aliasDocs,
+        aliasDocsVersion,
+        aliasDocsVersionMax,
+        aliasDocsVersions,
+        formDid,
+        currentDid,
+        currentTitle,
+        storageKey
+    ]);
+
+    useEffect(() => {
+        if (!openBrowser) {
+            return;
+        }
+
+        const {title, did, tab, subTab, contents} = openBrowser;
+
+        if (tab !== browserTab || (subTab && subTab !== browserSubTab)) {
+            return;
+        }
+
+        setAliasDocsVersions(null);
+        setAliasDocs(null);
+        setCurrentTitle("");
+
+        if (!did && !contents) {
+            sessionStorage.removeItem(storageKey);
             return;
         }
 
         const populateData = async () => {
             try {
-                if (rawJson) {
-                    const parsed = JSON.parse(rawJson);
-                    setAliasDocs(parsed);
+                if (contents) {
+                    setAliasDocs(contents);
                 } else {
                     await resolveDID(did);
                 }
@@ -39,21 +98,21 @@ function JsonViewer({title, tab, subTab = "", rawJson, did, refresh, showResolve
             }
         };
 
-        setAliasDocsVersions(null);
-        setAliasDocs(null);
         populateData();
+
         setFormDid(did);
         setCurrentTitle(title);
+        setOpenBrowser(null);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rawJson, title, did, refresh]);
+    }, [openBrowser]);
 
     async function handleResolveDID(did?: string) {
-        setJsonViewerOptions({
+        setOpenBrowser({
             title: "",
             did: did || formDid,
-            tab,
-            subTab,
+            tab: browserTab === "wallet" ? "viewer" : browserTab,
+            subTab: browserSubTab,
         });
     }
 

@@ -87,7 +87,6 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
       - KC_NODE_ID=${KC_NODE_ID}
-      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_START_BLOCK=0
@@ -127,7 +126,6 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
       - KC_NODE_ID=${KC_NODE_ID}
-      - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=tbtc-node
