@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-docker compose exec -it cli ./admin "$@"
+docker compose exec -it cli node scripts/admin-cli.js "$@"
