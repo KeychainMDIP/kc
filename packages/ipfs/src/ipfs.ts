@@ -1,5 +1,5 @@
-import { createHelia } from 'helia';
-import { json } from '@helia/json';
+import { createHelia, Helia } from 'helia';
+import { json, JSON } from '@helia/json';
 import { FsBlockstore } from 'blockstore-fs';
 import { CID } from 'multiformats';
 import { base58btc } from 'multiformats/bases/base58';
@@ -13,8 +13,8 @@ interface IPFSConfig {
 
 class IPFS {
     private config: IPFSConfig;
-    private helia: any;
-    private ipfs: any;
+    private helia: Helia | null;
+    private ipfs: JSON | null;
 
     constructor(config = {}) {
         this.config = config;
@@ -22,7 +22,7 @@ class IPFS {
         this.ipfs = null;
     }
 
-    async start() {
+    async start(): Promise<void> {
         if (this.helia || this.config.minimal) {
             return;
         }
@@ -38,7 +38,7 @@ class IPFS {
         this.ipfs = json(this.helia);
     }
 
-    async stop() {
+    async stop(): Promise<void> {
         if (this.helia) {
             await this.helia.stop();
             this.helia = null;
@@ -46,7 +46,7 @@ class IPFS {
         }
     }
 
-    async add(data: any) {
+    public async add<T>(data: T): Promise<string> {
         let cid;
 
         if (this.ipfs) {
@@ -61,7 +61,7 @@ class IPFS {
         return cid.toString(base58btc);
     }
 
-    async get(b58cid: any) {
+    public async get<T>(b58cid: string): Promise<T | null> {
         if (this.ipfs) {
             const cid = CID.parse(b58cid);
             return this.ipfs.get(cid);
@@ -72,13 +72,13 @@ class IPFS {
     }
 
     // Factory method
-    static async create(config: any) {
+    static async create(config: IPFSConfig = {}): Promise<IPFS> {
         const instance = new IPFS(config);
         await instance.start();
         return instance;
     }
 
-    static isValidCID(cid: any) {
+    static isValidCID(cid: any): boolean {
         try {
             CID.parse(cid);
             return true;

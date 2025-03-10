@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose --coverage",
     "generate-openapi": "node swaggerConf.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build": "npm run build -w @mdip/ipfs"
   },
   "author": "",
   "license": "ISC",
@@ -20,6 +21,8 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@types/jest": "^29.5.14",
+    "@types/mock-fs": "^4.13.4",
     "@types/node": "^22.13.9",
     "eslint": "^8.57.0",
     "eslint-config-react-app": "^7.0.1",
@@ -29,6 +32,7 @@
     "mock-fs": "^5.2.0",
     "nock": "^14.0.0",
     "swagger-jsdoc": "^6.2.8",
+    "ts-jest": "^29.2.6",
     "typescript": "^5.8.2"
   }
 }

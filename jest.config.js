@@ -1,7 +1,15 @@
 const config = {
-    transform: {},
+    transform: {
+        '^.+\\.ts$': [
+            'ts-jest',
+            {
+                useESM: true
+            }
+        ]
+    },
+    extensionsToTreatAsEsm: ['.ts'],
     testEnvironment: 'node',
-    moduleFileExtensions: ['js', 'mjs'],
+    moduleFileExtensions: ['ts', 'js', 'mjs'],
     testPathIgnorePatterns: [
         "/node_modules/",
         "/kc-app/",
