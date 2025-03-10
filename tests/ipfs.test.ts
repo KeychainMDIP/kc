@@ -23,7 +23,7 @@ describe('add', () => {
 
     it('should create CID from data', async () => {
         const ipfs = await IPFS.create();
-        const cid = await ipfs.add('mock');
+        const cid = await ipfs.add(data);
         await ipfs.stop();
 
         expect(cid).toBe(hash);
