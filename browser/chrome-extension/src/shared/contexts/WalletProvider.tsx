@@ -13,6 +13,7 @@ import GatekeeperClient from "@mdip/gatekeeper/client";
 import Keymaster from "@mdip/keymaster";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
+import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards'
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { Alert, AlertColor, Snackbar } from "@mui/material";
@@ -163,7 +164,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             }
         }
 
-        if (walletData && walletData.salt && walletData.iv && walletData.data) {
+        if (isEncryptedWallet(walletData)) {
             setModalAction("decrypt");
         } else {
             keymasterRef.current = new Keymaster({

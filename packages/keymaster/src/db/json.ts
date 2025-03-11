@@ -1,12 +1,16 @@
 import fs from 'fs';
+import { StoredWallet, WalletBase } from '../types.js';
 
-export default class WalletJson {
+export default class WalletJson implements WalletBase {
+    private readonly dataFolder: string;
+    walletName: string;
+
     constructor(walletFileName = 'wallet.json', dataFolder = 'data') {
         this.dataFolder = dataFolder;
         this.walletName = `${dataFolder}/${walletFileName}`;
     }
 
-    async saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (fs.existsSync(this.walletName) && !overwrite) {
             return false;
         }
@@ -19,12 +23,12 @@ export default class WalletJson {
         return true;
     }
 
-    async loadWallet() {
+    async loadWallet(): Promise<StoredWallet> {
         if (!fs.existsSync(this.walletName)) {
             return null;
         }
 
-        const walletJson = fs.readFileSync(this.walletName);
+        const walletJson = fs.readFileSync(this.walletName, 'utf-8');
         return JSON.parse(walletJson);
     }
 }

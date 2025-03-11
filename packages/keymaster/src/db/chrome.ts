@@ -1,9 +1,13 @@
-export default class WalletChrome {
-    constructor(walletName = 'mdip-keymaster') {
+import { StoredWallet, WalletBase } from '../types.js';
+
+export default class WalletChrome implements WalletBase {
+    walletName: string;
+
+    constructor(walletName: string = 'mdip-keymaster') {
         this.walletName = walletName;
     }
 
-    async saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!overwrite) {
             const res = await chrome.storage.local.get([this.walletName]);
             if (res[this.walletName]) {
@@ -15,7 +19,7 @@ export default class WalletChrome {
         return true;
     }
 
-    async loadWallet() {
+    async loadWallet(): Promise<StoredWallet> {
         const res = await chrome.storage.local.get([this.walletName]);
 
         if (res[this.walletName]) {

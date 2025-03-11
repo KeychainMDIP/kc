@@ -20,10 +20,8 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Build IPFS package
-      run: |
-        cd packages/ipfs
-        npm run build
+    - name: Compile TypeScript
+      run: npm run build
 
     - name: Run ESLint
       run: npm run lint

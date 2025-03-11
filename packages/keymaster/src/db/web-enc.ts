@@ -1,3 +1,6 @@
+import { StoredWallet, WalletBase} from '../types.js'
+import { isEncryptedWallet } from './typeGuards.js';
+
 const algorithm = 'AES-GCM';
 const kdf = 'PBKDF2';
 const hash = 'SHA-512';
@@ -9,7 +12,7 @@ const iterations = 100000;            // PBKDF2 iterations
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-function bufferToBase64(buffer) {
+function bufferToBase64(buffer: ArrayBuffer): string {
     let binary = '';
     const bytes = new Uint8Array(buffer);
     for (let i = 0; i < bytes.length; i++) {
@@ -18,7 +21,7 @@ function bufferToBase64(buffer) {
     return btoa(binary);
 }
 
-function base64ToBuffer(b64) {
+function base64ToBuffer(b64: string): ArrayBuffer {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
@@ -27,7 +30,7 @@ function base64ToBuffer(b64) {
     return bytes.buffer;
 }
 
-async function deriveKey(pass, salt) {
+async function deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
     const passKey = await crypto.subtle.importKey(
         "raw",
         textEncoder.encode(pass),
@@ -50,13 +53,16 @@ async function deriveKey(pass, salt) {
     );
 }
 
-export default class WalletWebEncrypted {
-    constructor(baseWallet, passphrase) {
+export default class WalletWebEncrypted implements WalletBase {
+    private baseWallet: WalletBase;
+    private readonly passphrase: string;
+
+    constructor(baseWallet: WalletBase, passphrase: string) {
         this.baseWallet = baseWallet;
         this.passphrase = passphrase;
     }
 
-    async saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!this.passphrase) {
             throw new Error('Passphrase not set');
         }
@@ -82,7 +88,7 @@ export default class WalletWebEncrypted {
         return await this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    async loadWallet() {
+    async loadWallet(): Promise<StoredWallet> {
         if (!this.passphrase) {
             throw new Error('Passphrase not set');
         }
@@ -92,7 +98,7 @@ export default class WalletWebEncrypted {
             return null;
         }
 
-        if (!encryptedData.salt || !encryptedData.iv || !encryptedData.data) {
+        if (!isEncryptedWallet(encryptedData)) {
             throw new Error('Wallet not encrypted');
         }
 

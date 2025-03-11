@@ -6,18 +6,50 @@
   "exports": {
     ".": "./src/keymaster-lib.js",
     "./client": "./src/keymaster-sdk.js",
-    "./wallet/json": "./src/db/json.js",
-    "./wallet/json-enc": "./src/db/json-enc.js",
-    "./wallet/redis": "./src/db/redis.js",
-    "./wallet/mongo": "./src/db/mongo.js",
-    "./wallet/sqlite": "./src/db/sqlite.js",
-    "./wallet/cache": "./src/db/cache.js",
-    "./wallet/web": "./src/db/web.js",
-    "./wallet/web-enc": "./src/db/web-enc.js",
-    "./wallet/chrome": "./src/db/chrome.js"
+    "./wallet/json": {
+      "import": "./dist/db/json.js",
+      "types": "./dist/types/db/json.d.ts"
+    },
+    "./wallet/json-enc": {
+      "import": "./dist/db/json-enc.js",
+      "types": "./dist/types/db/json-enc.d.ts"
+    },
+    "./wallet/redis": {
+      "import": "./dist/db/redis.js",
+      "types": "./dist/types/db/redis.d.ts"
+    },
+    "./wallet/mongo": {
+      "import": "./dist/db/mongo.js",
+      "types": "./dist/types/db/mongo.d.ts"
+    },
+    "./wallet/sqlite": {
+      "import": "./dist/db/sqlite.js",
+      "types": "./dist/types/db/sqlite.d.ts"
+    },
+    "./wallet/cache": {
+      "import": "./dist/db/cache.js",
+      "types": "./dist/types/db/cache.d.ts"
+    },
+    "./wallet/web": {
+      "import": "./dist/db/web.js",
+      "types": "./dist/types/db/web.d.ts"
+    },
+    "./wallet/web-enc": {
+      "import": "./dist/db/web-enc.js",
+      "types": "./dist/types/db/web-enc.d.ts"
+    },
+    "./wallet/chrome": {
+      "import": "./dist/db/chrome.js",
+      "types": "./dist/types/db/chrome.d.ts"
+    },
+    "./wallet/typeGuards": {
+      "import": "./dist/db/typeGuards.js",
+      "types": "./dist/types/db/typeGuards.d.ts"
+    }
   },
   "types": "./types/index.d.ts",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -26,13 +58,16 @@
   "dependencies": {
     "@mdip/common": "*",
     "axios": "^1.7.7",
-    "mongodb": "^6.5.0",
     "ioredis": "^5.4.1",
+    "mongodb": "^6.5.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.308"
   }
 }

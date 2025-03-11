@@ -1,9 +1,13 @@
-export default class WalletWeb {
-    constructor(walletName = 'mdip-keymaster') {
+import { StoredWallet, WalletBase } from '../types.js';
+
+export default class WalletWeb implements WalletBase {
+    walletName: string;
+
+    constructor(walletName: string = 'mdip-keymaster') {
         this.walletName = walletName;
     }
 
-    async saveWallet(wallet, overwrite = false) {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!overwrite && window.localStorage.getItem(this.walletName)) {
             return false;
         }
@@ -12,7 +16,7 @@ export default class WalletWeb {
         return true;
     }
 
-    async loadWallet() {
+    async loadWallet(): Promise<StoredWallet> {
         const walletJson = window.localStorage.getItem(this.walletName);
 
         if (walletJson) {
