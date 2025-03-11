@@ -11,7 +11,7 @@
     "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose --coverage",
     "generate-openapi": "node swaggerConf.js",
     "lint": "eslint .",
-    "build": "npm run build -w @mdip/ipfs"
+    "build": "npm run build -w @mdip/ipfs -w @mdip/keymaster"
   },
   "author": "",
   "license": "ISC",

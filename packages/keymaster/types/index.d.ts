@@ -1,10 +1,3 @@
-declare module '@mdip/keymaster/wallet/cache';
-declare module '@mdip/keymaster/wallet/chrome';
-declare module '@mdip/keymaster/wallet/json';
-declare module '@mdip/keymaster/wallet/json-enc';
-declare module '@mdip/keymaster/wallet/web';
-declare module '@mdip/keymaster/wallet/web-enc';
-
 export type CreateChallengeOptions = {
     controller?: string;
     registry?: string;

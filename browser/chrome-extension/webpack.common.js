@@ -56,9 +56,10 @@ module.exports = {
         alias: {
             "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/src/cipher-web.js"),
             "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/src/gatekeeper-client.js"),
-            "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/src/db/chrome.js"),
-            "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/src/db/web-enc.js"),
-            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/src/db/cache.js"),
+            "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/dist/db/chrome.js"),
+            "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/dist/db/web-enc.js"),
+            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/db/cache.js"),
+            "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/db/typeGuards.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster-lib.js"),
         },
         fallback: {
