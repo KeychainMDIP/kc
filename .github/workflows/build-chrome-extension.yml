@@ -19,10 +19,8 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
-      - name: Build IPFS package
-        run: |
-          cd packages/ipfs
-          npm run build
+      - name: Compile TypeScript
+        run: npm run build
 
       - name: Install extension dependencies
         run: |
