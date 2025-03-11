@@ -3,8 +3,8 @@ import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 
 export default class WalletSQLite implements WalletBase {
-    private walletName: string;
-    private db: Database<sqlite3.Database, sqlite3.Statement> | null;
+    private readonly walletName: string;
+    private db: Database | null;
 
     static async create(walletFileName: string = 'wallet.db', dataFolder: string = 'data'): Promise<WalletSQLite> {
         const wallet = new WalletSQLite(walletFileName, dataFolder);

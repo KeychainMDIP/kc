@@ -2,7 +2,7 @@ import fs from 'fs';
 import { StoredWallet, WalletBase } from '../types.js';
 
 export default class WalletJson implements WalletBase {
-    private dataFolder: string;
+    private readonly dataFolder: string;
     walletName: string;
 
     constructor(walletFileName = 'wallet.json', dataFolder = 'data') {

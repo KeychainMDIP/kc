@@ -6,7 +6,7 @@ export default class WalletMongo implements WalletBase {
     private db?: Db;
     private collection?: Collection;
     private dbName = 'keymaster'
-    private collectionName: string;
+    private readonly collectionName: string;
 
     public static async create(): Promise<WalletMongo> {
         const wallet = new WalletMongo();
