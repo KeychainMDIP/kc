@@ -29,7 +29,7 @@ services:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - 4224:4224
+      - ${KC_GATEKEEPER_PORT}:4224
     depends_on:
       - mongodb
       - redis
@@ -45,13 +45,14 @@ services:
       - KC_KEYMASTER_DB=${KC_KEYMASTER_DB}
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_WALLET_CACHE=${KC_WALLET_CACHE}
+      - KC_DEFAULT_REGISTRY=${KC_DEFAULT_REGISTRY}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - 4226:4226
+      - ${KC_KEYMASTER_PORT}:4226
     depends_on:
       - gatekeeper
 
@@ -72,7 +73,7 @@ services:
       - gatekeeper
 
   tftc-node:
-    image: keychainmdip/feathercoin:v0.19.1
+    image: keychainmdip/feathercoin:v0.19.2
     volumes:
       - ./data/tftc:/root/.feathercoin
 
