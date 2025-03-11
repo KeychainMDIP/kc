@@ -10,6 +10,7 @@ COPY packages/ ./packages/
 
 # Install dependencies
 RUN npm ci
+RUN npm run build
 
 COPY scripts ./scripts/
 COPY kc ./
