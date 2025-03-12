@@ -107,7 +107,7 @@ class IPFSClient {
     public async add<T>(data: T): Promise<string | null> {
         try {
             const response = await axios.post(`${this.API}/ipfs`, data);
-            return response.data;
+            return response.data.cid;
         }
         catch (error) {
             throwError(error);
