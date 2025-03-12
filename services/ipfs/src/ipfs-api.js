@@ -10,7 +10,7 @@ const app = express();
 const v1router = express.Router();
 
 app.use(morgan('dev'));
-app.use(express.json({ limit: '1mb' })); // Sets the JSON payload limit to 1MB
+app.use(express.json({ limit: '16mb' })); // Sets the JSON payload limit to 16MB
 
 let serverReady = false;
 

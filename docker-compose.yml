@@ -150,6 +150,19 @@ services:
       - gatekeeper
       - keymaster
 
+  ipfs-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.ipfs-node
+    image: keychainmdip/ipfs-node
+    environment:
+      - KC_IPFS_PORT=4228
+    volumes:
+      - ./data:/app/ipfs/data
+    user: "${KC_UID}:${KC_GID}"
+    ports:
+      - ${KC_IPFS_PORT}:4228
+
   ipfs-mediator:
     build:
       context: .
