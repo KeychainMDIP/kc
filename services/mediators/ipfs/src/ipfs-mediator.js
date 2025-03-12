@@ -1,6 +1,7 @@
 import canonicalize from 'canonicalize';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import IPFS from '@mdip/ipfs';
+//import IPFS from '@mdip/ipfs';
+import IPFSClient from '@mdip/ipfs/client';
 import config from './config.js';
 
 const gatekeeper = await GatekeeperClient.create({
@@ -10,7 +11,13 @@ const gatekeeper = await GatekeeperClient.create({
     chatty: true,
 });
 
-const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
+//const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
+const ipfs = await IPFSClient.create({
+    url: config.ipfsURL,
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
 
 async function addOperationToIPFS(operation, n, k) {
     const data = JSON.parse(canonicalize(operation));

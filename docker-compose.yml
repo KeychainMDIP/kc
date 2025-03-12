@@ -170,6 +170,7 @@ services:
     image: keychainmdip/ipfs-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_IPFS_URL=http://ipfs-node:4228
       - KC_IPFS_INTERVAL=${KC_IPFS_INTERVAL}
       - KC_IPFS_BATCH_SIZE=${KC_IPFS_BATCH_SIZE}
       - KC_IPFS_CONCURRENCY=${KC_IPFS_CONCURRENCY}
@@ -178,6 +179,7 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
+      - ipfs-node
 
   cli:
     build:
