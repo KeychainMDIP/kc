@@ -8,6 +8,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
+import IPFSClient from '@mdip/ipfs/client';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -22,7 +23,8 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
                     : null;
 await db.start();
 
-const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries });
+const ipfs = await IPFSClient.create({ url: config.ipfsURL });
+const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries, cas: ipfs });
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
@@ -1405,6 +1407,26 @@ v1router.get('/db/verify', async (req, res) => {
 v1router.post('/events/process', async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/ipfs', async (req, res) => {
+    try {
+        const content = req.body;
+        const response = await gatekeeper.addContent(content);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/ipfs/:cid', async (req, res) => {
+    try {
+        const cid = req.params.cid;
+        const response = await gatekeeper.getContent(cid);
         res.json(response);
     } catch (error) {
         res.status(500).send(error.toString());

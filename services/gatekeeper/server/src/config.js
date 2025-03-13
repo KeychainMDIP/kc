@@ -9,6 +9,7 @@ const config = {
     registries: process.env.KC_GATEKEEPER_REGISTRIES ? process.env.KC_GATEKEEPER_REGISTRIES.split(',') : undefined,
     gcInterval: process.env.KC_GATEKEEPER_GC_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_GC_INTERVAL) : 15,
     statusInterval: process.env.KC_GATEKEEPER_STATUS_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_STATUS_INTERVAL) : 5,
+    ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:4228',
 };
 
 export default config;

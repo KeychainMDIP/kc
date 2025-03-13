@@ -11,6 +11,19 @@ services:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - ./data/redis:/data
 
+  ipfs-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.ipfs-node
+    image: keychainmdip/ipfs-node
+    environment:
+      - KC_IPFS_PORT=4228
+    volumes:
+      - ./data:/app/ipfs/data
+    user: "${KC_UID}:${KC_GID}"
+    ports:
+      - ${KC_IPFS_PORT}:4228
+      
   gatekeeper:
     build:
       context: .
@@ -25,6 +38,7 @@ services:
       - KC_GATEKEEPER_STATUS_INTERVAL=${KC_GATEKEEPER_STATUS_INTERVAL}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_IPFS_URL=http://ipfs-node:4228
     volumes:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
@@ -33,6 +47,7 @@ services:
     depends_on:
       - mongodb
       - redis
+      - ipfs-node
 
   keymaster:
     build:
@@ -149,19 +164,6 @@ services:
       - tbtc-node
       - gatekeeper
       - keymaster
-
-  ipfs-node:
-    build:
-      context: .
-      dockerfile: Dockerfile.ipfs-node
-    image: keychainmdip/ipfs-node
-    environment:
-      - KC_IPFS_PORT=4228
-    volumes:
-      - ./data:/app/ipfs/data
-    user: "${KC_UID}:${KC_GID}"
-    ports:
-      - ${KC_IPFS_PORT}:4228
 
   ipfs-mediator:
     build:
