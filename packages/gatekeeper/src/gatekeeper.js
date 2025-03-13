@@ -41,7 +41,6 @@ export default class Gatekeeper {
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
         this.ipfs = new IPFS({ minimal: true });
-        this.cas = options.cas;
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
@@ -1060,13 +1059,5 @@ export default class Gatekeeper {
         }
 
         return this.db.clearQueue(registry, events);
-    }
-
-    async addContent(content) {
-        return this.cas.add(content);
-    }
-
-    async getContent(cid) {
-        return this.cas.get(cid);
     }
 }

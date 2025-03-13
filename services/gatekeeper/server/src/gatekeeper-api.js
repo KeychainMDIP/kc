@@ -24,7 +24,7 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
 await db.start();
 
 const ipfs = await IPFSClient.create({ url: config.ipfsURL });
-const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries, cas: ipfs });
+const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries });
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
@@ -1415,8 +1415,7 @@ v1router.post('/events/process', async (req, res) => {
 
 v1router.post('/ipfs', async (req, res) => {
     try {
-        const content = req.body;
-        const response = await gatekeeper.addContent(content);
+        const response = await ipfs.add(req.body);
         res.json(response);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -1425,11 +1424,10 @@ v1router.post('/ipfs', async (req, res) => {
 
 v1router.get('/ipfs/:cid', async (req, res) => {
     try {
-        const cid = req.params.cid;
-        const response = await gatekeeper.getContent(cid);
+        const response = await ipfs.get(req.params.cid);
         res.json(response);
     } catch (error) {
-        res.status(500).send(error.toString());
+        return res.status(404).send({ error: 'CID not found' });
     }
 });
 
