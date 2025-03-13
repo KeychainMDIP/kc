@@ -1,4 +1,4 @@
-import { StoredWallet, WalletBase} from '../types.js'
+import { WalletWrapper, WalletBase, WrappedWallet} from '../types.js'
 import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'AES-GCM';
@@ -53,7 +53,7 @@ async function deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
     );
 }
 
-export default class WalletWebEncrypted implements WalletBase {
+export default class WalletWebEncrypted implements WalletWrapper {
     private baseWallet: WalletBase;
     private readonly passphrase: string;
 
@@ -62,7 +62,7 @@ export default class WalletWebEncrypted implements WalletBase {
         this.passphrase = passphrase;
     }
 
-    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
+    async saveWallet(wallet: WrappedWallet, overwrite: boolean = false): Promise<boolean> {
         if (!this.passphrase) {
             throw new Error('Passphrase not set');
         }
@@ -88,7 +88,7 @@ export default class WalletWebEncrypted implements WalletBase {
         return await this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<WrappedWallet> {
         if (!this.passphrase) {
             throw new Error('Passphrase not set');
         }

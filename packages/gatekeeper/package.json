@@ -6,14 +6,30 @@
   "exports": {
     ".": "./src/gatekeeper.js",
     "./client": "./src/gatekeeper-client.js",
-    "./db/json": "./src/db/json.js",
-    "./db/json-cache": "./src/db/json-cache.js",
-    "./db/sqlite": "./src/db/sqlite.js",
-    "./db/redis": "./src/db/redis.js",
-    "./db/mongo": "./src/db/mongo.js"
+    "./db/json": {
+      "import": "./dist/db/json.js",
+      "types": "./dist/types/db/json.d.ts"
+    },
+    "./db/json-cache": {
+      "import": "./dist/db/json-cache.js",
+      "types": "./dist/types/db/json-cache.d.ts"
+    },
+    "./db/sqlite": {
+      "import": "./dist/db/sqlite.js",
+      "types": "./dist/types/db/sqlite.d.ts"
+    },
+    "./db/redis": {
+      "import": "./dist/db/redis.js",
+      "types": "./dist/types/db/redis.d.ts"
+    },
+    "./db/mongo": {
+      "import": "./dist/db/mongo.js",
+      "types": "./dist/types/db/mongo.d.ts"
+    }
   },
   "types": "./types/index.d.ts",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -26,13 +42,16 @@
     "axios": "^1.7.7",
     "canonicalize": "^2.0.0",
     "dotenv": "^16.4.5",
-    "mongodb": "^6.5.0",
     "ioredis": "^5.4.1",
+    "mongodb": "^6.5.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10"
   }
 }

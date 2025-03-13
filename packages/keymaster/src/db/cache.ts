@@ -1,20 +1,20 @@
-import { StoredWallet, WalletBase } from '../types.js'
+import {WalletWrapper, WrappedWallet} from '../types.js'
 
-export default class WalletCache implements WalletBase {
-    private baseWallet: WalletBase;
-    private cachedWallet: StoredWallet | null;
+export default class WalletCache implements WalletWrapper {
+    private baseWallet: WalletWrapper;
+    private cachedWallet: WrappedWallet;
 
-    constructor(baseWallet: WalletBase) {
+    constructor(baseWallet: WalletWrapper) {
         this.baseWallet = baseWallet;
         this.cachedWallet = null;
     }
 
-    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
+    async saveWallet(wallet: WrappedWallet, overwrite: boolean = false): Promise<boolean> {
         this.cachedWallet = wallet;
         return this.baseWallet.saveWallet(wallet, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<WrappedWallet> {
         if (!this.cachedWallet) {
             this.cachedWallet = await this.baseWallet.loadWallet();
         }

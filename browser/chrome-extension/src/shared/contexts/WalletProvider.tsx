@@ -14,6 +14,7 @@ import Keymaster from "@mdip/keymaster";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards'
+import type { WalletFile } from '@mdip/keymaster/types'
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { Alert, AlertColor, Snackbar } from "@mui/material";
@@ -225,7 +226,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
 
         if (modal && modalAction === "encrypt") {
             const walletData = await wallet_chrome.loadWallet();
-            await wallet_enc.saveWallet(walletData, true);
+            await wallet_enc.saveWallet(walletData as WalletFile, true);
         } else {
             try {
                 await wallet_enc.loadWallet();
