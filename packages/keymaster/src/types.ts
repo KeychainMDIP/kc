@@ -29,9 +29,15 @@ export interface WalletFile {
     names?: Record<string, string>
 }
 
-export type StoredWallet = WalletFile | EncryptedWallet | null
+export type WrappedWallet = WalletFile | null;
+export type StoredWallet = WrappedWallet | EncryptedWallet;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
     loadWallet(): Promise<StoredWallet>
+}
+
+export interface WalletWrapper {
+    saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
+    loadWallet(): Promise<WrappedWallet>
 }

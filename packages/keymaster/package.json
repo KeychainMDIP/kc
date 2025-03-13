@@ -45,6 +45,10 @@
     "./wallet/typeGuards": {
       "import": "./dist/db/typeGuards.js",
       "types": "./dist/types/db/typeGuards.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types/types.d.ts",
+      "types": "./dist/types/types.d.ts"
     }
   },
   "types": "./types/index.d.ts",

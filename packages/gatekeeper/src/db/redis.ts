@@ -1,21 +1,35 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
+import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
 
-export default class DbRedis {
-    constructor(dbName) {
+const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
+
+export default class DbRedis implements GatekeeperDb {
+    private readonly dbName: string
+    private redis: Redis | null
+
+    constructor(dbName: string) {
         this.dbName = dbName;
+        this.redis = null;
     }
 
-    async start() {
+    async start(): Promise<void> {
         const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.redis = new Redis(url);
     }
 
-    async stop() {
-        await this.redis.quit();
+    async stop(): Promise<void> {
+        if (this.redis) {
+            await this.redis.quit()
+            this.redis = null
+        }
     }
 
-    async resetDb() {
+    async resetDb(): Promise<number> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         let cursor = '0';
         let totalDeleted = 0;
         do {
@@ -33,7 +47,11 @@ export default class DbRedis {
         return totalDeleted;
     }
 
-    async addEvent(did, event) {
+    addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -44,7 +62,11 @@ export default class DbRedis {
         return this.redis.rpush(key, val);
     }
 
-    async setEvents(did, events) {
+    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         await this.deleteEvents(did);
 
         // Add new events
@@ -53,17 +75,25 @@ export default class DbRedis {
         }
     }
 
-    didKey(did) {
-        const id = did.split(':').pop();
+    private didKey(did: string): string {
+        const id = did.split(':').pop() || '';
         return `${this.dbName}/dids/${id}`;
     }
 
-    async getEvents(did) {
+    async getEvents(did: string): Promise<GatekeeperEvent[]> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         const events = await this.redis.lrange(this.didKey(did), 0, -1);
         return events.map(event => JSON.parse(event));
     }
 
-    async deleteEvents(did) {
+    async deleteEvents(did: string): Promise<number> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -71,16 +101,29 @@ export default class DbRedis {
         return this.redis.del(this.didKey(did));
     }
 
-    async getAllKeys() {
+    async getAllKeys(): Promise<string[]> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         const keys = await this.redis.keys(`${this.dbName}/dids/*`);
-        return keys.map(key => key.split('/').pop()); // Extract the id part from the key
+        // Extract the id part from the key
+        return keys.map(key => key.split('/').pop() || '');
     }
 
-    async queueOperation(registry, op) {
+    async queueOperation(registry: string, op: Operation): Promise<number> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         return this.redis.rpush(`${this.dbName}/queue/${registry}`, JSON.stringify(op));
     }
 
-    async getQueue(registry) {
+    async getQueue(registry: string): Promise<Operation[]> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         try {
             const ops = await this.redis.lrange(`${this.dbName}/queue/${registry}`, 0, -1);
             return ops.map(op => JSON.parse(op));
@@ -89,10 +132,14 @@ export default class DbRedis {
         }
     }
 
-    async clearQueue(registry, batch) {
+    async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+        
         try {
             const ops = await this.getQueue(registry);
-            const newOps = ops.filter(op => !batch.some(b => b.signature.value === op.signature.value));
+            const newOps = ops.filter(op => !batch.some(b => b.signature?.value === op.signature?.value));
 
             // Clear the current queue and add back the filtered operations
             await this.redis.del(`${this.dbName}/queue/${registry}`);

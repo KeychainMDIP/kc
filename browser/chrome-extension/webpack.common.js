@@ -60,6 +60,7 @@ module.exports = {
             "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/dist/db/web-enc.js"),
             "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/db/cache.js"),
             "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/db/typeGuards.js"),
+            "@mdip/keymaster/types": path.resolve(__dirname, "../../packages/keymaster/dist/types/types.d.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/src/keymaster-lib.js"),
         },
         fallback: {
