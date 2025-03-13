@@ -1,9 +1,3 @@
-declare module '@mdip/gatekeeper/db/json';
-declare module '@mdip/gatekeeper/db/json-cache';
-declare module '@mdip/gatekeeper/db/mongo';
-declare module '@mdip/gatekeeper/db/redis';
-declare module '@mdip/gatekeeper/db/sqlite';
-
 export type WaitUntilReadyOptions = {
     intervalSeconds?: number;
     chatty?: boolean;
