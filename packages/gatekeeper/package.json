@@ -50,8 +50,5 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.10"
   }
 }

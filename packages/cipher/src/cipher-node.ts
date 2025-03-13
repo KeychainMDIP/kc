@@ -6,31 +6,38 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
-import canonicalize from 'canonicalize';
+import HDKeyNode from 'hdkey';
+import { webcrypto } from 'node:crypto';
+import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
+import canonicalizeModule from 'canonicalize';
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string | undefined;
 
-// vv Browser specific modifications
-import HDKey from '@mdip/browser-hdkey';
-// ^^ Browser specific modifications
+// node.js 18 and older, requires polyfilling globalThis.crypto
+if (!globalThis.crypto) {
+    // @ts-expect-error: globalThis may not be declared
+    globalThis.crypto = webcrypto
+}
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
-secp.etc.hmacSha256Sync = (k, ...m) => hmac(sha256, k, secp.etc.concatBytes(...m));
+secp.etc.hmacSha256Sync = (k: Uint8Array, ...m: Uint8Array[]): Uint8Array => hmac(sha256, k, secp.etc.concatBytes(...m));
 
-export default class CipherWeb {
-    generateMnemonic() {
+export default class CipherNode implements Cipher {
+
+    generateMnemonic(): string {
         return bip39.generateMnemonic();
     }
 
-    generateHDKey(mnemonic) {
+    generateHDKey(mnemonic: string): HDKeyNode {
         const seed = bip39.mnemonicToSeedSync(mnemonic);
-        return HDKey.fromMasterSeed(seed);
+        return HDKeyNode.fromMasterSeed(seed);
     }
 
-    generateHDKeyJSON(json) {
-        return HDKey.fromJSON(json);
+    generateHDKeyJSON(json: HDKeyJSON): HDKeyNode {
+        return HDKeyNode.fromJSON(json);
     }
 
-    generateJwk(privateKeyBytes) {
+    generateJwk(privateKeyBytes: Uint8Array): EcdsaJwkPair {
         const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
         const compressedPublicKeyHex = secp.etc.bytesToHex(compressedPublicKeyBytes);
         const curvePoints = secp.ProjectivePoint.fromHex(compressedPublicKeyHex);
@@ -44,7 +51,7 @@ export default class CipherWeb {
         const x = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(1, 33));
         const y = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(33, 65));
 
-        const publicJwk = {
+        const publicJwk: EcdsaJwkPublic = {
             // alg: 'ES256K',
             kty: 'EC',
             crv: 'secp256k1',
@@ -52,17 +59,17 @@ export default class CipherWeb {
             y
         };
 
-        const privateJwk = { ...publicJwk, d };
+        const privateJwk: EcdsaJwkPrivate = { ...publicJwk, d };
 
-        return { publicJwk: publicJwk, privateJwk: privateJwk };
+        return { publicJwk, privateJwk };
     }
 
-    generateRandomJwk() {
+    generateRandomJwk(): EcdsaJwkPair {
         const privKey = secp.utils.randomPrivateKey();
         return this.generateJwk(privKey);
     }
 
-    convertJwkToCompressedBytes(jwk) {
+    convertJwkToCompressedBytes(jwk: EcdsaJwkPublic): Uint8Array {
         const xBytes = base64url.baseDecode(jwk.x);
         const yBytes = base64url.baseDecode(jwk.y);
 
@@ -73,30 +80,31 @@ export default class CipherWeb {
         return new Uint8Array([prefix, ...xBytes]);
     }
 
-    hashMessage(msg) {
+    hashMessage(msg: string): string {
         const hash = sha256(msg);
         return Buffer.from(hash).toString('hex');
     }
 
-    hashJSON(json) {
-        return this.hashMessage(canonicalize(json));
+    hashJSON(json: unknown): string {
+        const canonical = canonicalize(json) ?? '';
+        return this.hashMessage(canonical);
     }
 
-    signHash(msgHash, privateJwk) {
+    signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
         const privKey = base64url.baseDecode(privateJwk.d);
         const signature = secp.sign(msgHash, privKey);
 
         return signature.toCompactHex();
     }
 
-    verifySig(msgHash, sigHex, publicJwk) {
+    verifySig(msgHash: string, sigHex: string, publicJwk: EcdsaJwkPublic): boolean {
         const compressedPublicKeyBytes = this.convertJwkToCompressedBytes(publicJwk);
         const signature = secp.Signature.fromCompact(sigHex);
 
         return secp.verify(signature, msgHash, compressedPublicKeyBytes);
     }
 
-    encryptMessage(pubKey, privKey, message) {
+    encryptMessage(pubKey: EcdsaJwkPublic, privKey: EcdsaJwkPrivate, message: string): string {
         const priv = base64url.baseDecode(privKey.d);
         const pub = this.convertJwkToCompressedBytes(pubKey);
         const ss = secp.getSharedSecret(priv, pub);
@@ -108,7 +116,7 @@ export default class CipherWeb {
         return base64url.baseEncode(ciphertext);
     }
 
-    decryptMessage(pubKey, privKey, ciphertext) {
+    decryptMessage(pubKey: EcdsaJwkPublic, privKey: EcdsaJwkPrivate, ciphertext: string): string {
         const priv = base64url.baseDecode(privKey.d);
         const pub = this.convertJwkToCompressedBytes(pubKey);
         const ss = secp.getSharedSecret(priv, pub);

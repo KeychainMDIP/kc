@@ -9,7 +9,7 @@
     "allowJs": true,
     "baseUrl": "./",
     "paths": {
-      "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.js"],
+      "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.ts"],
       "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.js"],
       "@mdip/keymaster/types": ["../../packages/keymaster/src/types.ts"],
       "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"],

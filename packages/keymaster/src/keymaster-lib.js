@@ -618,6 +618,10 @@ export default class Keymaster {
     }
 
     async addSignature(obj, controller = null) {
+        if (obj == null) {
+            throw new InvalidParameterError('obj');
+        }
+
         // Fetches current ID if name is missing
         const id = await this.fetchIdInfo(controller);
         const keypair = await this.fetchKeyPair(controller);

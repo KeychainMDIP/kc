@@ -11,7 +11,7 @@
     "test": "node --experimental-vm-modules node_modules/.bin/jest --runInBand --verbose --coverage",
     "generate-openapi": "node swaggerConf.js",
     "lint": "eslint .",
-    "build": "npm run build -w @mdip/ipfs -w @mdip/keymaster -w @mdip/gatekeeper"
+    "build": "npm run build -w @mdip/ipfs -w @mdip/cipher -w @mdip/common -w @mdip/keymaster -w @mdip/gatekeeper -w @mdip/common"
   },
   "author": "",
   "license": "ISC",
@@ -21,9 +21,11 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@types/chrome": "^0.0.309",
+    "@types/hdkey": "^2.1.0",
     "@types/jest": "^29.5.14",
     "@types/mock-fs": "^4.13.4",
-    "@types/node": "^22.13.9",
+    "@types/node": "^22.13.10",
     "eslint": "^8.57.0",
     "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-only-warn": "^1.1.0",

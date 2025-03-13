@@ -1,10 +1,10 @@
 import IPFS from '@mdip/ipfs';
 
-export function copyJSON(json) {
-    return JSON.parse(JSON.stringify(json));
+export function copyJSON<T>(json: T): T {
+    return JSON.parse(JSON.stringify(json)) as T;
 }
 
-export function isValidDID(did) {
+export function isValidDID(did?: string): boolean {
     if (typeof did !== 'string') {
         return false;
     }
@@ -23,7 +23,7 @@ export function isValidDID(did) {
     return IPFS.isValidCID(suffix);
 }
 
-export function compareOrdinals(a, b) {
+export function compareOrdinals(a: number[], b: number[]): -1 | 0 | 1 {
     // An ordinal is a list of integers
     // Return -1 if a < b, 0 if a == b, 1 if a > b
 

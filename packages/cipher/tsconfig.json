@@ -2,18 +2,23 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "Node16",
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationDir": "dist/types",
+    "sourceMap": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
     "strict": true,
     "moduleResolution": "Node16",
     "isolatedModules": true,
     "skipLibCheck": true
   },
   "include": [
-    "tests/**/*.ts"
+    "src/**/*"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "dist"
   ]
 }
 

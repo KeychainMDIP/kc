@@ -70,8 +70,5 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
-  },
-  "devDependencies": {
-    "@types/chrome": "^0.0.308"
   }
 }
