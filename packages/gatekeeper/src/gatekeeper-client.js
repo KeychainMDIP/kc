@@ -264,4 +264,24 @@ export default class GatekeeperClient {
             throwError(error);
         }
     }
+
+    async addContent(content) {
+        try {
+            const response = await axios.post(`${this.API}/ipfs`, content);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getContent(cid) {
+        try {
+            const response = await axios.get(`${this.API}/ipfs/${cid}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
 }

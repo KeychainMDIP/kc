@@ -367,6 +367,33 @@ program
         }
     });
 
+program
+    .command('add-content <file>')
+    .description('Report gatekeeper status')
+    .action(async (file) => {
+        try {
+            const content = fs.readFileSync(file);
+            const response = await gatekeeper.addContent(content);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('get-content <cid>')
+    .description('Report gatekeeper status')
+    .action(async (cid) => {
+        try {
+            const response = await gatekeeper.getContent(cid);
+            console.log(response);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.connect({ url: gatekeeperURL });
     program.parse(process.argv);

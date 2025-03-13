@@ -8,6 +8,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
+import IPFSClient from '@mdip/ipfs/client';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -22,6 +23,7 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
                     : null;
 await db.start();
 
+const ipfs = await IPFSClient.create({ url: config.ipfsURL });
 const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries });
 const startTime = new Date();
 const app = express();
@@ -1408,6 +1410,24 @@ v1router.post('/events/process', async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/ipfs', async (req, res) => {
+    try {
+        const response = await ipfs.add(req.body);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/ipfs/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.get(req.params.cid);
+        res.json(response);
+    } catch (error) {
+        return res.status(404).send({ error: 'CID not found' });
     }
 });
 
