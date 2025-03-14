@@ -4,12 +4,16 @@ import dotenv from 'dotenv';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import CipherNode from '@mdip/cipher/node';
+import IPFSClient from '@mdip/ipfs/client';
 
 dotenv.config();
 
 const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherNode();
+
+const ipfsURL = process.env.KC_IPFS_URL || 'http://localhost:4228';
+const ipfs = new IPFSClient();
 
 program
     .version('1.0.0')
@@ -373,7 +377,7 @@ program
     .action(async (file) => {
         try {
             const content = fs.readFileSync(file);
-            const response = await gatekeeper.addContent(content);
+            const response = await ipfs.add(content);
             console.log(response);
         }
         catch (error) {
@@ -386,7 +390,7 @@ program
     .description('Report gatekeeper status')
     .action(async (cid) => {
         try {
-            const response = await gatekeeper.getContent(cid);
+            const response = await ipfs.get(cid);
             console.log(response);
         }
         catch (error) {
@@ -395,7 +399,8 @@ program
     });
 
 async function run() {
-    gatekeeper.connect({ url: gatekeeperURL });
+    await gatekeeper.connect({ url: gatekeeperURL });
+    await ipfs.connect({ url: ipfsURL });
     program.parse(process.argv);
 }
 

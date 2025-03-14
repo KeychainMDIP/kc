@@ -32,8 +32,10 @@ v1router.get('/version', async (req, res) => {
 
 v1router.post('/ipfs', async (req, res) => {
     try {
-        const cid = await ipfs.add(req.body);
-        res.json({ cid });
+        const data = req.body;
+        const response = await ipfs.add(data);
+        console.log(`${response} - ${JSON.stringify(req.body)}`);
+        res.send(response);
     } catch (error) {
         console.error(error);
         res.status(500).send(error.toString());
@@ -42,11 +44,12 @@ v1router.post('/ipfs', async (req, res) => {
 
 v1router.get('/ipfs/:cid', async (req, res) => {
     try {
-        const data = await ipfs.get(req.params.cid);
-        res.json(data);
+        const response = await ipfs.get(req.params.cid);
+        console.log(`${req.params.cid} - ${JSON.stringify(response)}`);
+        res.send(response);
     } catch (error) {
         console.error(error);
-        res.status(500).send(error.toString());
+        res.status(404).send(error.toString());
     }
 });
 

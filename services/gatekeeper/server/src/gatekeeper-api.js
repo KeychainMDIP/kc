@@ -1416,7 +1416,7 @@ v1router.post('/events/process', async (req, res) => {
 v1router.post('/ipfs', async (req, res) => {
     try {
         const response = await ipfs.add(req.body);
-        res.json(response);
+        res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
     }
@@ -1425,7 +1425,7 @@ v1router.post('/ipfs', async (req, res) => {
 v1router.get('/ipfs/:cid', async (req, res) => {
     try {
         const response = await ipfs.get(req.params.cid);
-        res.json(response);
+        res.send(response);
     } catch (error) {
         return res.status(404).send({ error: 'CID not found' });
     }

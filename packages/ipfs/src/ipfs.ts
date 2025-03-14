@@ -1,5 +1,6 @@
 import { createHelia, Helia } from 'helia';
 import { json, JSON } from '@helia/json';
+import { unixfs, UnixFS } from '@helia/unixfs';
 import { FsBlockstore } from 'blockstore-fs';
 import { CID } from 'multiformats';
 import { base58btc } from 'multiformats/bases/base58';
@@ -15,11 +16,13 @@ class IPFS {
     private config: IPFSConfig;
     private helia: Helia | null;
     private ipfs: JSON | null;
+    private unixfs: UnixFS | null;
 
     constructor(config = {}) {
         this.config = config;
         this.helia = null;
         this.ipfs = null;
+        this.unixfs = null;
     }
 
     async start(): Promise<void> {
@@ -36,6 +39,7 @@ class IPFS {
         }
 
         this.ipfs = json(this.helia);
+        this.unixfs = unixfs(this.helia);
     }
 
     async stop(): Promise<void> {
@@ -43,6 +47,7 @@ class IPFS {
             await this.helia.stop();
             this.helia = null;
             this.ipfs = null;
+            this.unixfs = null;
         }
     }
 
@@ -65,6 +70,35 @@ class IPFS {
         if (this.ipfs) {
             const cid = CID.parse(b58cid);
             return this.ipfs.get(cid);
+        }
+        else {
+            return null;
+        }
+    }
+
+    public async addBytes(data: any): Promise<string> {
+        let cid;
+
+        if (this.unixfs) {
+            cid = await this.unixfs.addBytes(data);
+        }
+        else {
+            const buf = jsonCodec.encode(data)
+            const hash = await sha256.sha256.digest(buf)
+            cid = CID.createV1(jsonCodec.code, hash)
+        }
+
+        return cid.toString(base58btc);
+    }
+
+    public async getBytes(b58cid: string): Promise<any> {
+        if (this.unixfs) {
+            const cid = CID.parse(b58cid);
+            const retrievedChunks = [];
+            for await (const chunk of this.unixfs.cat(cid)) {
+                retrievedChunks.push(chunk);
+            }
+            return Buffer.concat(retrievedChunks);
         }
         else {
             return null;

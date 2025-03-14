@@ -24,12 +24,14 @@ class IPFSClient {
     private config: IPFSClientConfig;
     private API: string;
 
-    constructor(config = {}) {
-        this.config = config;
+    constructor() {
+        this.config = {};
         this.API = VERSION;
     }
 
-    public async connect(): Promise<void> {
+    public async connect(config = {}): Promise<void> {
+        this.config = config;
+
         if (this.config.url) {
             this.API = `${this.config.url}${VERSION}`;
         }
@@ -106,8 +108,9 @@ class IPFSClient {
 
     public async add<T>(data: T): Promise<string | null> {
         try {
+            console.log('Sending data to IPFS:', data); // Log the data being sent
             const response = await axios.post(`${this.API}/ipfs`, data);
-            return response.data.cid;
+            return response.data;
         }
         catch (error) {
             throwError(error);
@@ -128,8 +131,8 @@ class IPFSClient {
 
     // Factory method
     static async create(config: IPFSClientConfig = {}): Promise<IPFSClient> {
-        const instance = new IPFSClient(config);
-        await instance.connect();
+        const instance = new IPFSClient();
+        await instance.connect(config);
         return instance;
     }
 }
