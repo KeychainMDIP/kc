@@ -11,6 +11,16 @@ services:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - ./data/redis:/data
 
+  ipfs:
+    image: ipfs/kubo:v0.33.2
+    ports:
+      - "4001:4001"
+      - "8080:8080"
+      - "5001:5001"
+    volumes:
+      - ./data:/export/data
+      - ./data/ipfs:/data/ipfs
+
   gatekeeper:
     build:
       context: .

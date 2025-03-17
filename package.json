@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "commander": "^11.1.0",
+    "kubo-rpc-client": "^5.1.0",
     "uuid": "^11.0.2"
   },
   "devDependencies": {
