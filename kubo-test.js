@@ -1,5 +1,6 @@
 import { program } from 'commander';
 import fs from 'fs';
+import dotenv from 'dotenv';
 import { create } from 'kubo-rpc-client'
 import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
@@ -58,8 +59,9 @@ class KuboClient {
     }
 }
 
+dotenv.config();
 const ipfs = new KuboClient();
-await ipfs.connect();
+await ipfs.connect({ url: process.env.KC_KUBO_URL || undefined });
 
 program
     .version('1.0.0')
