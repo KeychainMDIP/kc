@@ -6,7 +6,60 @@ import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
 
-const ipfs = new create();
+class KuboClient {
+    async connect(options = {}) {
+        this.ipfs = new create();
+    }
+
+    async addText(text) {
+        const { cid } = await this.ipfs.add(text, { cidVersion: 1 });
+        return cid.toString(base58btc);
+    }
+
+    async getText(cid) {
+        const chunks = [];
+        for await (const chunk of this.ipfs.cat(cid)) {
+            chunks.push(chunk);
+        }
+        const data = Buffer.concat(chunks);
+        return data.toString();
+    }
+
+    async addData(data) {
+        const { cid } = await this.ipfs.add(data, { cidVersion: 1 });
+        return cid.toString(base58btc);
+    }
+
+    async getData(cid) {
+        const chunks = [];
+        for await (const chunk of this.ipfs.cat(cid)) {
+            chunks.push(chunk);
+        }
+        return Buffer.concat(chunks);
+    }
+
+    async addJSON(json) {
+        // Encode the JSON data using jsonCodec
+        const buf = jsonCodec.encode(json);
+        const hash = await sha256.sha256.digest(buf);
+        const cid = CID.createV1(jsonCodec.code, hash);
+
+        // Add the encoded data to IPFS
+        await this.ipfs.block.put(buf, { cid });
+
+        return cid.toString(base58btc);
+    }
+
+    async getJSON(cid) {
+        // Retrieve the data using ipfs.block.get instead of ipfs.cat
+        const block = await this.ipfs.block.get(cid);
+        const json = jsonCodec.decode(block);
+        return json;
+    }
+}
+
+const ipfs = new KuboClient();
+await ipfs.connect();
 
 program
     .version('1.0.0')
@@ -14,12 +67,12 @@ program
     .configureHelp({ sortSubcommands: true });
 
 program
-    .command('add-string <data>')
-    .description('Add string to IPFS')
-    .action(async (data) => {
+    .command('add-text <text>')
+    .description('Add text to IPFS')
+    .action(async (text) => {
         try {
-            const { cid } = await ipfs.add(data);
-            console.log(cid.toString(base58btc));
+            const cid = await ipfs.addText(text);
+            console.log(cid);
         }
         catch (error) {
             console.error(error);
@@ -27,16 +80,12 @@ program
     });
 
 program
-    .command('get-string <cid>')
-    .description('Get content from IPFS')
+    .command('get-text <cid>')
+    .description('Get text from IPFS')
     .action(async (cid) => {
         try {
-            const chunks = [];
-            for await (const chunk of ipfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            const data = Buffer.concat(chunks);
-            console.log(data.toString());
+            const text = await ipfs.getText(cid);
+            console.log(text);
         }
         catch (error) {
             console.error(error);
@@ -49,8 +98,8 @@ program
     .action(async (file) => {
         try {
             const data = fs.readFileSync(file);
-            const { cid } = await ipfs.add(data);
-            console.log(cid.toString(base58btc));
+            const cid = await ipfs.addData(data);
+            console.log(cid);
         }
         catch (error) {
             console.error(error);
@@ -62,11 +111,7 @@ program
     .description('Get content from IPFS')
     .action(async (cid, file) => {
         try {
-            const chunks = [];
-            for await (const chunk of ipfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            const data = Buffer.concat(chunks);
+            const data = await ipfs.getData(cid);
             fs.writeFileSync(file, data);
             console.log(`Data written to ${file}`);
         }
@@ -82,18 +127,8 @@ program
         try {
             const contents = fs.readFileSync(file);
             const json = JSON.parse(contents.toString());
-            console.log(json);
-
-            // Encode the JSON data using jsonCodec
-            const buf = jsonCodec.encode(json);
-            const hash = await sha256.sha256.digest(buf);
-            const cid = CID.createV1(jsonCodec.code, hash);
-
-            // Add the encoded data to IPFS
-            await ipfs.block.put(buf, { cid });
-
-            const b58cid = cid.toString(base58btc);
-            console.log(b58cid);
+            const cid = await ipfs.addJSON(json);
+            console.log(cid);
         }
         catch (error) {
             console.error(error);
@@ -105,9 +140,7 @@ program
     .description('Get JSON from IPFS')
     .action(async (cid) => {
         try {
-            // Retrieve the data using ipfs.block.get instead of ipfs.cat
-            const block = await ipfs.block.get(cid);
-            const json = jsonCodec.decode(block);
+            const json = await ipfs.getJSON(cid);
             console.log(JSON.stringify(json, null, 2));
         } catch (error) {
             console.error(error);
