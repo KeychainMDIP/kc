@@ -184,6 +184,8 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_KUBO_URL=http://ipfs:5001/api/v0
     depends_on:
       - gatekeeper
       - keymaster
+      - ipfs

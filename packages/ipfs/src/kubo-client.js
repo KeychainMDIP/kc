@@ -52,8 +52,7 @@ class KuboClient {
     async getJSON(cid) {
         // Retrieve the data using ipfs.block.get instead of ipfs.cat
         const block = await this.ipfs.block.get(cid);
-        const json = jsonCodec.decode(block);
-        return json;
+        return jsonCodec.decode(block);
     }
 }
 
