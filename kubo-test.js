@@ -1,6 +1,10 @@
 import { program } from 'commander';
 import fs from 'fs';
 import { create } from 'kubo-rpc-client'
+import { CID } from 'multiformats/cid';
+import { base58btc } from 'multiformats/bases/base58';
+import * as jsonCodec from 'multiformats/codecs/json';
+import * as sha256 from 'multiformats/hashes/sha2';
 
 const ipfs = new create();
 
@@ -15,7 +19,7 @@ program
     .action(async (data) => {
         try {
             const { cid } = await ipfs.add(data);
-            console.log(cid);
+            console.log(cid.toString(base58btc));
         }
         catch (error) {
             console.error(error);
@@ -46,7 +50,7 @@ program
         try {
             const data = fs.readFileSync(file);
             const { cid } = await ipfs.add(data);
-            console.log(cid);
+            console.log(cid.toString(base58btc));
         }
         catch (error) {
             console.error(error);
@@ -79,8 +83,17 @@ program
             const contents = fs.readFileSync(file);
             const json = JSON.parse(contents.toString());
             console.log(json);
-            const { cid } = await ipfs.add(JSON.stringify(json));
-            console.log(cid);
+
+            // Encode the JSON data using jsonCodec
+            const buf = jsonCodec.encode(json);
+            const hash = await sha256.sha256.digest(buf);
+            const cid = CID.createV1(jsonCodec.code, hash);
+
+            // Add the encoded data to IPFS
+            await ipfs.block.put(buf, { cid });
+
+            const b58cid = cid.toString(base58btc);
+            console.log(b58cid);
         }
         catch (error) {
             console.error(error);
@@ -92,15 +105,11 @@ program
     .description('Get JSON from IPFS')
     .action(async (cid) => {
         try {
-            const chunks = [];
-            for await (const chunk of ipfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            const data = Buffer.concat(chunks);
-            const json = JSON.parse(data.toString());
-            console.log(JSON.stringify(json, null, 4));
-        }
-        catch (error) {
+            // Retrieve the data using ipfs.block.get instead of ipfs.cat
+            const block = await ipfs.block.get(cid);
+            const json = jsonCodec.decode(block);
+            console.log(JSON.stringify(json, null, 2));
+        } catch (error) {
             console.error(error);
         }
     });
