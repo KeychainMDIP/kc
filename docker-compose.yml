@@ -167,6 +167,7 @@ services:
     image: keychainmdip/ipfs-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KUBO_URL=http://ipfs:5001/api/v0
       - KC_IPFS_INTERVAL=${KC_IPFS_INTERVAL}
       - KC_IPFS_BATCH_SIZE=${KC_IPFS_BATCH_SIZE}
       - KC_IPFS_CONCURRENCY=${KC_IPFS_CONCURRENCY}
@@ -185,6 +186,8 @@ services:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_KUBO_URL=http://ipfs:5001/api/v0
+    volumes:
+      - ./data:/app/data
     depends_on:
       - gatekeeper
       - keymaster

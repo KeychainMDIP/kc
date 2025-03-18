@@ -6,8 +6,66 @@ import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
 
 class KuboClient {
+    // Factory method
+    static async create(options) {
+        const ipfs = new KuboClient();
+        await ipfs.connect(options);
+        return ipfs;
+    }
+
     async connect(options = {}) {
-        this.ipfs = new create();
+        this.ipfs = new create(options);
+
+        if (options.waitUntilReady) {
+            await this.waitUntilReady(options);
+        }
+    }
+
+    async waitUntilReady(options = {}) {
+        let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
+        let ready = false;
+        let retries = 0;
+
+        if (chatty) {
+            console.log(`Connecting to IPFS at ${options.url}`);
+        }
+
+        while (!ready) {
+            ready = await this.isReady();
+
+            if (!ready) {
+                if (chatty) {
+                    console.log('Waiting for IPFS to be ready...');
+                }
+                // wait for 1 second before checking again
+                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+            }
+
+            retries += 1;
+
+            if (maxRetries > 0 && retries > maxRetries) {
+                return;
+            }
+
+            if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
+                console.log(`Connecting to IPFS at ${options.url}`);
+                chatty = true;
+            }
+        }
+
+        if (chatty) {
+            console.log('IPFS service is ready!');
+        }
+    }
+
+    async isReady() {
+        try {
+            await this.ipfs.id();
+            return true;
+        }
+        catch (error) {
+            return false;
+        }
     }
 
     async addText(text) {

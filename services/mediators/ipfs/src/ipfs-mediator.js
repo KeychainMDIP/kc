@@ -1,5 +1,6 @@
 import canonicalize from 'canonicalize';
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import KuboClient from '@mdip/ipfs/client';
 import IPFS from '@mdip/ipfs';
 import config from './config.js';
 
@@ -10,12 +11,21 @@ const gatekeeper = await GatekeeperClient.create({
     chatty: true,
 });
 
-const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
+const ipfs = await KuboClient.create({
+    url: config.kuboURL,
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
+
+const mini = await IPFS.create({ minimal: true });
 
 async function addOperationToIPFS(operation, n, k) {
     const data = JSON.parse(canonicalize(operation));
-    const cid = await ipfs.add(data);
+    const cid = await ipfs.addJSON(data);
+    const cid2 = await mini.add(data);
     console.log(`DID:${n} op:${k} ${cid}`);
+    console.log(`MIN:${n} op:${k} ${cid2}`);
 }
 
 async function importOperations() {
@@ -23,43 +33,28 @@ async function importOperations() {
 
     console.log(`DIDs count: ${dids.length}`);
 
-    const batchSize = config.batchSize;
-    let n = 0;
-    let promises = [];
-    for (let i = 0; i < dids.length; i += batchSize) {
+    for (let i = 0; i < dids.length; i++) {
+        console.log(`DID ${i} ${dids[i]}`);
 
-        const didBatch = dids.slice(i, i + batchSize);
-        const exports = await gatekeeper.exportDIDs(didBatch);
+        const exports = await gatekeeper.exportDIDs([dids[i]]);
+        const didEvents = exports[0];
+        const mdip = didEvents[0].operation.mdip;
 
-        for (const didEvents of exports) {
-            console.log(`DID ${n} ${dids[n]}`);
+        if (mdip.registry === 'local') {
+            console.log("skipping local");
+            continue;
+        }
 
-            const mdip = didEvents[0].operation.mdip;
+        if (mdip.validUntil) {
+            console.log("skipping ephemeral");
+            continue;
+        }
 
-            if (mdip.registry === 'local') {
-                console.log("skipping local");
-                continue;
-            }
-
-            if (mdip.validUntil) {
-                console.log("skipping ephemeral");
-                continue;
-            }
-
-            for (let k in didEvents) {
-                const event = didEvents[k];
-                promises.push(addOperationToIPFS(event.operation, n, k));
-
-                if (promises.length >= config.concurrency) {
-                    await Promise.all(promises);
-                    promises = [];
-                }
-            }
-
-            n += 1;
+        for (let k in didEvents) {
+            const event = didEvents[k];
+            await addOperationToIPFS(event.operation, i, k);
         }
     }
-    await Promise.all(promises);
 }
 
 async function importLoop() {

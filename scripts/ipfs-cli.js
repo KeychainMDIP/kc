@@ -5,7 +5,7 @@ import KuboClient from '@mdip/ipfs/client';
 
 dotenv.config();
 const ipfs = new KuboClient();
-await ipfs.connect({ url: process.env.KC_KUBO_URL || undefined });
+await ipfs.connect({ url: process.env.KC_KUBO_URL });
 
 program
     .version('1.0.0')
