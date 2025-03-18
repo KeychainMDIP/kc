@@ -205,8 +205,21 @@ export default class Gatekeeper {
         this.verifiedDIDs = {};
     }
 
-    async generateCID(operation) {
-        return this.ipfs.generateCID(JSON.parse(canonicalize(operation)));
+    async generateCID(operation, options = {}) {
+        const { save = false } = options;
+        const data =JSON.parse(canonicalize(operation));
+
+        if (save) {
+            if (this.ipfs.addJSON) {
+                return this.ipfs.addJSON(data);
+            }
+
+            if (this.ipfs.add) {
+                return this.ipfs.add(data);
+            }
+        }
+
+        return this.ipfs.generateCID(data);
     }
 
     async generateDID(operation) {
@@ -746,12 +759,16 @@ export default class Gatekeeper {
 
             for (const e of currentEvents) {
                 if (!e.opid) {
-                    e.opid = await this.generateCID(e.operation);
+                    console.time('generateCID');
+                    e.opid = await this.generateCID(e.operation, { save: true });
+                    console.timeEnd('generateCID');
                 }
             }
 
             if (!event.opid) {
-                event.opid = await this.generateCID(event.operation);
+                console.time('generateCID');
+                event.opid = await this.generateCID(event.operation, { save: true });
+                console.timeEnd('generateCID');
             }
 
             const opMatch = currentEvents.find(item => item.operation.signature.value === event.operation.signature.value);
