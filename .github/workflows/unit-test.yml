@@ -23,9 +23,6 @@ jobs:
     - name: Compile TypeScript
       run: npm run build
 
-    - name: Verify IPFS build
-      run: ls -l packages/ipfs/dist
-
     - name: Run ESLint
       run: npm run lint
 
