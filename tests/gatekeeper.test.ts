@@ -3,7 +3,7 @@ import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper, {
     Operation,
-    MdipDocument, Mdip,
+    MdipDocument,
 } from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
