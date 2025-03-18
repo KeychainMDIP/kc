@@ -10,9 +10,6 @@ const config = {
     extensionsToTreatAsEsm: ['.ts'],
     testEnvironment: 'node',
     moduleFileExtensions: ['ts', 'js', 'mjs'],
-    moduleNameMapper: {
-        "^@mdip/(.*)$": "<rootDir>/packages/$1/dist/$1.js"
-    },
     testPathIgnorePatterns: [
         "/node_modules/",
         "/kc-app/",

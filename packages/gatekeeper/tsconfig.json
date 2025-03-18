@@ -12,11 +12,7 @@
     "moduleResolution": "Node16",
     "isolatedModules": true,
     "skipLibCheck": true,
-    "allowJs": true,
-    "baseUrl": "./",
-    "paths": {
-      "@mdip/common/*": ["../../packages/common/src/*"],
-    }
+    "allowJs": true
   },
   "include": [
     "src/**/*"
