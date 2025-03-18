@@ -4,7 +4,7 @@ export function copyJSON<T>(json: T): T {
     return JSON.parse(JSON.stringify(json)) as T;
 }
 
-export function isValidDID(did?: string): boolean {
+export function isValidDID(did: string): boolean {
     if (typeof did !== 'string') {
         return false;
     }

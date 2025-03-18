@@ -817,8 +817,13 @@ v1router.post('/dids/remove', async (req, res) => {
  *                       format: date-time
  *                       description: Timestamp indicating when this event occurred.
  *                     ordinal:
- *                       type: integer
- *                       description: An index or sequence number for ordering events.
+ *                       oneOf:
+ *                         - type: integer
+ *                           description: A single integer ordinal (often 0 if unused)
+ *                         - type: array
+ *                           description: A tuple of integers for multi-part ordinal keys
+ *                           items:
+ *                             type: integer
  *                     operation:
  *                       type: object
  *                       description: The DID operation that defines changes.
@@ -900,8 +905,13 @@ v1router.post('/dids/export', async (req, res) => {
  *                     format: date-time
  *                     description: Timestamp when this event was recorded.
  *                   ordinal:
- *                     type: integer
- *                     description: Sequence number for ordering events if needed.
+ *                     oneOf:
+ *                       - type: integer
+ *                         description: A single integer ordinal (often 0 if unused)
+ *                       - type: array
+ *                         description: A tuple of integers for multi-part ordinal keys
+ *                         items:
+ *                           type: integer
  *
  *     responses:
  *       200:
@@ -979,9 +989,14 @@ v1router.post('/dids/import', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: When this event was recorded in the database.
- *                   ordinal:
- *                     type: integer
- *                     description: Sequence number for the event if relevant (often 0 if unused).
+ *                  ordinal:
+ *                     oneOf:
+ *                       - type: integer
+ *                         description: A single integer ordinal (often 0 if unused)
+ *                       - type: array
+ *                         description: A tuple of integers for multi-part ordinal keys
+ *                         items:
+ *                           type: integer
  *                   operation:
  *                     type: object
  *                     description: Details of the DID operation.
@@ -1067,8 +1082,13 @@ v1router.post('/batch/export', async (req, res) => {
  *                   format: date-time
  *                   description: Timestamp when the event was recorded.
  *                 ordinal:
- *                   type: integer
- *                   description: Numeric index for ordering events, if relevant.
+ *                   oneOf:
+ *                     - type: integer
+ *                       description: A single integer ordinal (often 0 if unused)
+ *                     - type: array
+ *                       description: A tuple of integers for multi-part ordinal keys
+ *                       items:
+ *                         type: integer
  *
  *     responses:
  *       200:
@@ -1143,9 +1163,14 @@ v1router.post('/batch/import', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: Timestamp when this event was added to the queue.
- *                   ordinal:
- *                     type: integer
- *                     description: Sequence or ordering number for the event if relevant.
+ *                  ordinal:
+ *                     oneOf:
+ *                       - type: integer
+ *                         description: A single integer ordinal (often 0 if unused)
+ *                       - type: array
+ *                         description: A tuple of integers for multi-part ordinal keys
+ *                         items:
+ *                           type: integer
  *                   operation:
  *                     type: object
  *                     description: Details of the DID operation.

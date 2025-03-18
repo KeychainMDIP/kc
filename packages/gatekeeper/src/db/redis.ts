@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation } from '../gatekeeper.js'
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../gatekeeper.js'
 
 export default class DbJsonCache implements GatekeeperDb {
     private readonly dataFolder: string
@@ -143,7 +143,7 @@ export default class DbJsonCache implements GatekeeperDb {
         }
     }
 
-    async queueOperation(registry: string, op: Operation): Promise<void> {
+    async queueOperation(registry: string, op: Operation): Promise<number> {
         const db = this.loadDb();
 
         if (!db.queue) {
@@ -158,6 +158,8 @@ export default class DbJsonCache implements GatekeeperDb {
         }
 
         this.writeDb(db);
+
+        return db.queue[registry].length;
     }
 
     async getQueue(registry: string): Promise<Operation[]> {
