@@ -2251,21 +2251,21 @@ describe('processEvents', () => {
         ops.push({
             registry: 'local',
             operation: updateOp1,
-            ordinal: 0,
+            ordinal: [0],
             time: new Date().toISOString(),
         });
 
         ops.push({
             registry: 'local',
             operation: updateOp2,
-            ordinal: 1,
+            ordinal: [1],
             time: new Date().toISOString(),
         });
 
         ops.push({
             registry: 'local',
             operation: updateOp3,
-            ordinal: 2,
+            ordinal: [2],
             time: new Date().toISOString(),
         });
 
@@ -2577,7 +2577,7 @@ describe('clearQueue', () => {
         await gatekeeper.clearQueue(registry, queue);
         await gatekeeper.getQueue(registry);
 
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing invalid queue
         const ok = await gatekeeper.clearQueue(registry, 'mock');
 
         expect(ok).toStrictEqual(true);
@@ -3051,7 +3051,7 @@ describe('checkDIDs', () => {
 
 describe('gatekeeper.db', () => {
     it('getEvents should return empty list on invalid did', async () => {
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing invalid DID
         const events = await gatekeeper.db.getEvents(null);
 
         expect(events).toStrictEqual([]);
@@ -3059,7 +3059,7 @@ describe('gatekeeper.db', () => {
 
     it('addEvent should throw exception on invalid did', async () => {
         try {
-            // @ts-expect-error Testing private state
+            // @ts-expect-error Testing invalid DID
             await gatekeeper.db.addEvent(null);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -3069,7 +3069,7 @@ describe('gatekeeper.db', () => {
 
     it('setEvents should throw exception on invalid did', async () => {
         try {
-            // @ts-expect-error Testing private state
+            // @ts-expect-error Testing invalid DID
             await gatekeeper.db.setEvents(null);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -3078,21 +3078,21 @@ describe('gatekeeper.db', () => {
     });
 
     it('getQueue should return empty list invalid registry', async () => {
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing invalid registry
         const queue1 = await gatekeeper.db.getQueue('mock');
         expect(queue1).toStrictEqual([]);
 
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing invalid registry
         await gatekeeper.db.queueOperation('hyperswarm', {});
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing invalid registry
         const queue2 = await gatekeeper.db.getQueue('mock');
         expect(queue2).toStrictEqual([]);
     });
 
     it('clearQueue should return true on unknown registry', async () => {
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing unknown registry
         await gatekeeper.db.queueOperation('hyperswarm', {});
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing unknown registry
         const ok = await gatekeeper.db.clearQueue('mock');
         expect(ok).toBe(true);
     });
@@ -3169,15 +3169,15 @@ describe('isValidDID', () => {
     });
 
     it('should return false for wrong type', async () => {
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing wrong type
         expect(isValidDID()).toBe(false);
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing wrong type
         expect(isValidDID(null)).toBe(false);
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing wrong type
         expect(isValidDID(123)).toBe(false);
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing wrong type
         expect(isValidDID([1, 2, 3])).toBe(false);
-        // @ts-expect-error Testing private state
+        // @ts-expect-error Testing wrong type
         expect(isValidDID({ mock: 123 })).toBe(false);
     });
 

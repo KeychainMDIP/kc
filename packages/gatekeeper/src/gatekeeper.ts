@@ -168,7 +168,7 @@ export interface Operation {
 export interface GatekeeperEvent {
     registry: string;
     time: string;
-    ordinal?: number | number[];
+    ordinal?: number[];
     operation: Operation;
     did?: string;
     opid?: string;
@@ -178,6 +178,25 @@ export interface GatekeeperEvent {
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
     queue?: Record<string, Operation[]>
+}
+
+export interface GatekeeperInterface {
+    listRegistries(): Promise<string[]>;
+    resetDb(): Promise<boolean>;
+    verifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult>;
+    createDID(operation: Operation): Promise<string>;
+    resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument>;
+    updateDID(operation: Operation): Promise<boolean>;
+    deleteDID(operation: Operation): Promise<boolean>;
+    getDIDs(options?: GetDIDOptions): Promise<string[] | MdipDocument[]>;
+    exportDIDs(dids?: string[]): Promise<GatekeeperEvent[][]>;
+    importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult>;
+    removeDIDs(dids: string[]): Promise<boolean>;
+    exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
+    importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
+    processEvents(): Promise<ProcessEventsResult>;
+    getQueue(registry: string): Promise<Operation[]>;
+    clearQueue(registry: string, events: Operation[]): Promise<boolean>;
 }
 
 export interface GatekeeperDb {
@@ -192,7 +211,7 @@ export interface GatekeeperDb {
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
 }
 
-export default class Gatekeeper {
+export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb
     private eventsQueue: GatekeeperEvent[]
     private readonly eventsSeen: Record<string, boolean>
@@ -386,9 +405,10 @@ export default class Gatekeeper {
     }
 
     // For testing purposes
-    async resetDb(): Promise<void> {
+    async resetDb(): Promise<boolean> {
         await this.db.resetDb();
         this.verifiedDIDs = {};
+        return true;
     }
 
     async generateCID(operation: unknown): Promise<string> {
@@ -606,7 +626,7 @@ export default class Gatekeeper {
             await this.db.addEvent(did, {
                 registry: 'local',
                 time: operation.created!,
-                ordinal: 0,
+                ordinal: [0],
                 operation,
                 did
             });
@@ -855,7 +875,7 @@ export default class Gatekeeper {
         await this.db.addEvent(operation.did, {
             registry: 'local',
             time: operation.signature?.signed || '',
-            ordinal: 0,
+            ordinal: [0],
             operation,
             did: operation.did
         });
@@ -1045,10 +1065,7 @@ export default class Gatekeeper {
                     const nextEvent = currentEvents[index + 1];
 
                     if (nextEvent.registry !== event.registry ||
-                        compareOrdinals(
-                            Array.isArray(event.ordinal) ? event.ordinal : [event.ordinal ?? 0],
-                            Array.isArray(nextEvent.ordinal) ? nextEvent.ordinal : [nextEvent.ordinal ?? 0]
-                        ) < 0) {
+                        (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                         // reorg event, discard the rest of the operation sequence and replace with this event
                         const newSequence = [...currentEvents.slice(0, index + 1), event];
                         await this.db.setEvents(did, newSequence);
@@ -1262,7 +1279,7 @@ export default class Gatekeeper {
         };
     }
 
-    async exportBatch(dids?: string[]) {
+    async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
         const allDIDs = await this.exportDIDs(dids);
         const nonlocalDIDs = allDIDs.filter(events => {
             if (events.length > 0) {
