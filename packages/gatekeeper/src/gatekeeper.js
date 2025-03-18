@@ -40,7 +40,7 @@ export default class Gatekeeper {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-        this.ipfs = new IPFS({ minimal: true });
+        this.ipfs = options.ipfs || new IPFS({ minimal: true });
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
@@ -206,7 +206,7 @@ export default class Gatekeeper {
     }
 
     async generateCID(operation) {
-        return this.ipfs.add(JSON.parse(canonicalize(operation)));
+        return this.ipfs.generateCID(JSON.parse(canonicalize(operation)));
     }
 
     async generateDID(operation) {

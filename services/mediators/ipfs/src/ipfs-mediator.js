@@ -12,7 +12,7 @@ const gatekeeper = await GatekeeperClient.create({
 });
 
 const ipfs = await KuboClient.create({
-    url: config.kuboURL,
+    url: config.ipfsURL,
     waitUntilReady: true,
     intervalSeconds: 5,
     chatty: true,

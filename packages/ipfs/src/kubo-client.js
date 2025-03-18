@@ -101,7 +101,7 @@ class KuboClient {
         const hash = await sha256.sha256.digest(buf);
         const cid = CID.createV1(jsonCodec.code, hash);
 
-        // Add the encoded data to IPFS
+        // !!! No need to await since we pre-generated the cid?
         await this.ipfs.block.put(buf, { cid });
 
         return cid.toString(base58btc);
@@ -111,6 +111,16 @@ class KuboClient {
         // Retrieve the data using ipfs.block.get instead of ipfs.cat
         const block = await this.ipfs.block.get(cid);
         return jsonCodec.decode(block);
+    }
+
+    // Gatekeeper expects this method to be named add
+    async generateCID(json) {
+        // Encode the JSON data using jsonCodec
+        const buf = jsonCodec.encode(json);
+        const hash = await sha256.sha256.digest(buf);
+        const cid = CID.createV1(jsonCodec.code, hash);
+
+        return cid.toString(base58btc);
     }
 }
 

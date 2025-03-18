@@ -51,14 +51,10 @@ class IPFS {
 
         if (this.ipfs) {
             cid = await this.ipfs.add(data);
-        }
-        else {
-            const buf = jsonCodec.encode(data)
-            const hash = await sha256.sha256.digest(buf)
-            cid = CID.createV1(jsonCodec.code, hash)
+            return cid.toString(base58btc);
         }
 
-        return cid.toString(base58btc);
+        return this.generateCID(data);
     }
 
     public async get<T>(b58cid: string): Promise<T | null> {
@@ -69,6 +65,14 @@ class IPFS {
         else {
             return null;
         }
+    }
+
+    public async generateCID<T>(data: T): Promise<string> {
+        const buf = jsonCodec.encode(data)
+        const hash = await sha256.sha256.digest(buf)
+        const cid = CID.createV1(jsonCodec.code, hash)
+
+        return cid.toString(base58btc);
     }
 
     // Factory method
