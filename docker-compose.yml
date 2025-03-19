@@ -18,7 +18,7 @@ services:
       - "8080:8080"
       - "5001:5001"
     volumes:
-      - ./data:/export/data
+      - ./share:/export/data
       - ./data/ipfs:/data/ipfs
 
   gatekeeper:
@@ -189,7 +189,8 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_IPFS_URL=http://ipfs:5001/api/v0
     volumes:
-      - ./data:/app/data
+      - ./share:/app/share
+    user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
       - keymaster
