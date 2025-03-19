@@ -1419,6 +1419,62 @@ v1router.post('/events/process', async (req, res) => {
     }
 });
 
+v1router.post('/ipfs/json', async (req, res) => {
+    try {
+        const response = await ipfs.addJSON(req.body);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/ipfs/json/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getJSON(req.params.cid);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/ipfs/text', async (req, res) => {
+    try {
+        const response = await ipfs.addText(req.body);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/ipfs/text/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getText(req.params.cid);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/ipfs/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const response = await ipfs.addData(data);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/ipfs/data/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getData(req.params.cid);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

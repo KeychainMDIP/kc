@@ -264,4 +264,69 @@ export default class GatekeeperClient {
             throwError(error);
         }
     }
+
+    async addJSON(data) {
+        try {
+            const response = await axios.post(`${this.API}/ipfs/json`, data);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getJSON(cid) {
+        try {
+            const response = await axios.get(`${this.API}/ipfs/json/${cid}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addText(data) {
+        try {
+            const response = await axios.post(`${this.API}/ipfs/text`, data);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getText(cid) {
+        try {
+            const response = await axios.get(`${this.API}/ipfs/text/${cid}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addData(data) {
+        try {
+            const response = await axios.post(`${this.API}/ipfs/data`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getData(cid) {
+        try {
+            const response = await axios.get(`${this.API}/ipfs/data/${cid}`, {
+                responseType: 'arraybuffer'
+            });
+            return Buffer.from(response.data);
+        } catch (error) {
+            throwError(error);
+        }
+    }
 }
