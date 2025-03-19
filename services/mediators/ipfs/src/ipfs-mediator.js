@@ -23,7 +23,7 @@ const mini = await IPFS.create({ minimal: true });
 async function addOperationToIPFS(operation, n, k) {
     const data = JSON.parse(canonicalize(operation));
     const cid = await ipfs.addJSON(data);
-    const cid2 = await mini.add(data);
+    const cid2 = await mini.addJSON(data);
     console.log(`DID:${n} op:${k} ${cid}`);
     console.log(`MIN:${n} op:${k} ${cid2}`);
 }

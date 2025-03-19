@@ -46,7 +46,7 @@ class IPFS {
         }
     }
 
-    public async add<T>(data: T): Promise<string> {
+    public async addJSON<T>(data: T): Promise<string> {
         let cid;
 
         if (this.ipfs) {
@@ -57,7 +57,7 @@ class IPFS {
         return this.generateCID(data);
     }
 
-    public async get<T>(b58cid: string): Promise<T | null> {
+    public async getJSON<T>(b58cid: string): Promise<T | null> {
         if (this.ipfs) {
             const cid = CID.parse(b58cid);
             return this.ipfs.get(cid);

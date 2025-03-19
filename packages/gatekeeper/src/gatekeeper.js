@@ -217,10 +217,6 @@ export default class Gatekeeper {
             return this.ipfs.addJSON(data);
         }
 
-        if (this.ipfs.add) {
-            return this.ipfs.add(data);
-        }
-
         return this.generateCID(operation);
     }
 
