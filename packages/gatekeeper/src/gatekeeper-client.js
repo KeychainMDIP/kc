@@ -287,14 +287,17 @@ export default class GatekeeperClient {
 
     async addText(data) {
         try {
-            const response = await axios.post(`${this.API}/ipfs/text`, data);
+            const response = await axios.post(`${this.API}/ipfs/text`, data, {
+                headers: {
+                    'Content-Type': 'text/plain'
+                }
+            });
             return response.data;
-        }
-        catch (error) {
+        } catch (error) {
             throwError(error);
         }
     }
-
+    
     async getText(cid) {
         try {
             const response = await axios.get(`${this.API}/ipfs/text/${cid}`);

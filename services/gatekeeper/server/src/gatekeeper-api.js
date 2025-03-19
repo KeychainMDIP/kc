@@ -1437,7 +1437,7 @@ v1router.get('/ipfs/json/:cid', async (req, res) => {
     }
 });
 
-v1router.post('/ipfs/text', async (req, res) => {
+v1router.post('/ipfs/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
     try {
         const response = await ipfs.addText(req.body);
         res.send(response);
