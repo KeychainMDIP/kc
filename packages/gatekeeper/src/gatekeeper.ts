@@ -157,7 +157,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
             }
             else {
-                debugger
                 if (chatty) {
                     console.log(`verifying ${n}/${total} ${did} OK`);
                 }
