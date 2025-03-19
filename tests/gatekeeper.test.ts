@@ -1,17 +1,19 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
+import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import type { EcdsaJwkPair } from '@mdip/cipher/types';
 
 const mockConsole = {
-    log: () => { },
-    error: () => { },
-    time: () => { },
-    timeEnd: () => { },
-}
+    log: (): void => { },
+    error: (): void => { },
+    time: (): void => { },
+    timeEnd: (): void => { },
+} as unknown as typeof console;
 
 const cipher = new CipherNode();
 const db_json = new DbJson('test');
@@ -21,9 +23,16 @@ beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
-async function createAgentOp(keypair, options = {}) {
+async function createAgentOp(
+    keypair: EcdsaJwkPair,
+    options: {
+        version?: number;
+        registry?: string;
+        prefix?: string;
+    } = {}
+): Promise<Operation> {
     const { version = 1, registry = 'local', prefix } = options;
-    const operation = {
+    const operation: Operation = {
         type: "create",
         created: new Date().toISOString(),
         mdip: {
@@ -35,7 +44,7 @@ async function createAgentOp(keypair, options = {}) {
     };
 
     if (prefix) {
-        operation.mdip.prefix = prefix;
+        operation.mdip!.prefix = prefix;
     }
 
     const msgHash = cipher.hashJSON(operation);
@@ -51,12 +60,20 @@ async function createAgentOp(keypair, options = {}) {
     };
 }
 
-async function createUpdateOp(keypair, did, doc, options = {}) {
+async function createUpdateOp(
+    keypair: EcdsaJwkPair,
+    did: string,
+    doc: MdipDocument,
+    options: {
+        excludePrevid?: boolean;
+        mockPrevid?: string;
+    } = {}
+): Promise<Operation> {
     const { excludePrevid = false, mockPrevid } = options;
     const current = await gatekeeper.resolveDID(did);
-    const previd = excludePrevid ? null : mockPrevid ? mockPrevid : current.didDocumentMetadata.versionId;
+    const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
 
-    const operation = {
+    const operation: Operation = {
         type: "update",
         did,
         previd,
@@ -77,11 +94,14 @@ async function createUpdateOp(keypair, did, doc, options = {}) {
     };
 }
 
-async function createDeleteOp(keypair, did) {
+async function createDeleteOp(
+    keypair: EcdsaJwkPair,
+    did: string
+): Promise<Operation> {
     const current = await gatekeeper.resolveDID(did);
-    const previd = current.didDocumentMetadata.versionId;
+    const previd = current.didDocumentMetadata?.versionId;
 
-    const operation = {
+    const operation: Operation = {
         type: "delete",
         did,
         previd,
@@ -101,16 +121,23 @@ async function createDeleteOp(keypair, did) {
     };
 }
 
-async function createAssetOp(agent, keypair, options = {}) {
+async function createAssetOp(
+    agent: string,
+    keypair: EcdsaJwkPair,
+    options: {
+        registry?: string;
+        validUntil?: string | null;
+    } = {}
+): Promise<Operation> {
     const { registry = 'local', validUntil = null } = options;
-    const dataAnchor = {
+    const dataAnchor: Operation = {
         type: "create",
         created: new Date().toISOString(),
         mdip: {
             version: 1,
             type: "asset",
             registry,
-            validUntil
+            validUntil: validUntil || undefined
         },
         controller: agent,
         data: "mockData",
@@ -140,18 +167,19 @@ describe('constructor', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage
             new Gatekeeper();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: missing options.db');
         }
-
+        
         try {
             new Gatekeeper({ db: db_json, registries: ['hyperswarm', 'bogus_reg'] });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: registry=bogus_reg');
         }
     });
@@ -166,11 +194,13 @@ describe('generateDID', () => {
     it('should create DID from operation', async () => {
         mockFs({});
 
-        const mockTxn = {
+        const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
-                registry: "mockRegistry"
+                registry: "mockRegistry",
+                type: 'agent',
+                version: 1,
             }
         };
         const did = await gatekeeper.generateDID(mockTxn);
@@ -181,10 +211,12 @@ describe('generateDID', () => {
     it('should create DID from operation with configured prefix', async () => {
         mockFs({});
 
-        const mockTxn = {
+        const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
+                version: 1,
+                type: "asset",
                 registry: "mockRegistry"
             }
         };
@@ -198,10 +230,12 @@ describe('generateDID', () => {
     it('should create DID from operation with custom prefix', async () => {
         mockFs({});
 
-        const mockTxn = {
+        const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
+                version: 1,
+                type: "asset",
                 registry: "mockRegistry",
                 prefix: "did:custom"
             }
@@ -215,10 +249,12 @@ describe('generateDID', () => {
     it('should create same DID from same operation with date included', async () => {
         mockFs({});
 
-        const mockTxn = {
+        const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
+                version: 1,
+                type: "asset",
                 registry: "mockRegistry"
             }
         };
@@ -367,7 +403,8 @@ describe('generateDoc', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
-        agentOp.mdip.type = 'mock';
+        // @ts-expect-error Testing invalid usage
+        agentOp.mdip!.type = 'mock';
         const doc = await gatekeeper.generateDoc(agentOp);
 
         expect(doc).toStrictEqual({});
@@ -420,7 +457,7 @@ describe('createDID', () => {
         try {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.version=2');
         }
     });
@@ -434,7 +471,7 @@ describe('createDID', () => {
         try {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.registry=mockRegistry');
         }
     });
@@ -450,7 +487,7 @@ describe('createDID', () => {
         try {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.registry=TFTC');
         }
     });
@@ -460,12 +497,13 @@ describe('createDID', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
-        agentOp.mdip.type = 'mock';
+        // @ts-expect-error Testing invalid usage
+        agentOp.mdip!.type = 'mock';
 
         try {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.type=mock');
         }
     });
@@ -474,9 +512,10 @@ describe('createDID', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.createDID();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: missing');
         }
 
@@ -484,10 +523,11 @@ describe('createDID', () => {
 
         try {
             const agentOp = await createAgentOp(keypair);
+            // @ts-expect-error Testing invalid usage
             agentOp.type = 'mock';
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: type=mock');
         }
 
@@ -496,44 +536,44 @@ describe('createDID', () => {
             agentOp.created = 'mock';
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: created=mock');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
-            agentOp.mdip = null;
+            agentOp.mdip = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
-            agentOp.created = null;
+            agentOp.created = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid operation: created=undefined');
+        }
+
+        try {
+            const agentOp = await createAgentOp(keypair);
+            agentOp.signature = undefined;
+            await gatekeeper.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid operation: signature');
         }
 
         try {
             const agentOp = await createAgentOp(keypair);
-            agentOp.signature = null;
+            agentOp.publicJwk = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
-            expect(error.message).toBe('Invalid operation: signature');
-        }
-
-        try {
-            const agentOp = await createAgentOp(keypair);
-            agentOp.publicJwk = null;
-            await gatekeeper.createDID(agentOp);
-            throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: publicJwk');
         }
     });
@@ -548,7 +588,7 @@ describe('createDID', () => {
         try {
             await gk.createDID(agentOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: size');
         }
     });
@@ -578,7 +618,7 @@ describe('createDID', () => {
             const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // Can't let local IDs create assets on other registries
             expect(error.message).toBe('Invalid operation: non-local registry=hyperswarm');
         }
@@ -589,17 +629,17 @@ describe('createDID', () => {
             assetOp.controller = 'mock';
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signer is not controller');
         }
 
         try {
             // invalid signature
             const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
-            assetOp.signature = null;
+            assetOp.signature = undefined;
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
         }
 
@@ -608,7 +648,7 @@ describe('createDID', () => {
             const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm', validUntil: 'mock' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.validUntil=mock');
         }
     });
@@ -625,7 +665,7 @@ describe('createDID', () => {
                 await gk.createDID(agentOp);
             }
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: hyperswarm not supported');
         }
     });
@@ -864,7 +904,7 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atTime: expected.didDocumentMetadata.updated });
+        const doc = await gatekeeper.resolveDID(did, { atTime: expected!.didDocumentMetadata!.updated });
         expect(doc).toStrictEqual(expected);
     });
 
@@ -891,7 +931,7 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atVersion: expected.didDocumentMetadata.version });
+        const doc = await gatekeeper.resolveDID(did, { atVersion: expected!.didDocumentMetadata!.version });
         expect(doc).toStrictEqual(expected);
     });
 
@@ -913,7 +953,7 @@ describe('resolveDID', () => {
 
         for (let i = 0; i < 10; i++) {
             const doc = await gatekeeper.resolveDID(did, { atVersion: i + 1 });
-            expect(doc.didDocumentMetadata.version).toBe(i + 1);
+            expect(doc.didDocumentMetadata!.version).toBe(i + 1);
         }
     });
 
@@ -924,6 +964,7 @@ describe('resolveDID', () => {
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
         const assetOp = await createAssetOp(agent, keypair);
+        delete assetOp.mdip!.validUntil;
         const opid = await gatekeeper.generateCID(assetOp);
         const did = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(did);
@@ -957,7 +998,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
@@ -965,7 +1006,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID('');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
@@ -973,39 +1014,43 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.resolveDID([]);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.resolveDID([1, 2, 3]);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.resolveDID({});
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.resolveDID({ mock: 1 });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
@@ -1013,7 +1058,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID('did:test:xxx');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe(BadFormat);
         }
@@ -1021,7 +1066,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe('unknown');
         }
@@ -1042,7 +1087,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID(did, { verify: true });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
         }
     });
@@ -1066,7 +1111,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID(did, { verify: true });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
         }
     });
@@ -1094,7 +1139,7 @@ describe('resolveDID', () => {
         try {
             await gatekeeper.resolveDID(did, { verify: true });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: previd');
         }
     });
@@ -1118,9 +1163,9 @@ describe('updateDID', () => {
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
-        doc.didDocumentMetadata.updated = expect.any(String);
-        doc.didDocumentMetadata.version = 2;
-        doc.didDocumentMetadata.versionId = opid;
+        doc.didDocumentMetadata!.updated = expect.any(String);
+        doc.didDocumentMetadata!.version = 2;
+        doc.didDocumentMetadata!.versionId = opid;
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
@@ -1141,7 +1186,7 @@ describe('updateDID', () => {
             const updatedDoc = await gatekeeper.resolveDID(did);
 
             expect(ok).toBe(true);
-            expect(updatedDoc.didDocumentMetadata.version).toBe(i + 2);
+            expect(updatedDoc.didDocumentMetadata!.version).toBe(i + 2);
         }
     });
 
@@ -1153,7 +1198,7 @@ describe('updateDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const updateOp = await createUpdateOp(keypair, did, doc);
-        updateOp.doc.didDocumentData = 'mock';
+        updateOp.doc!.didDocumentData = 'mock';
         const ok = await gatekeeper.updateDID(updateOp);
 
         expect(ok).toBe(false);
@@ -1171,7 +1216,7 @@ describe('updateDID', () => {
             delete updateOp.signature;
             await gatekeeper.updateDID(updateOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
         }
     });
@@ -1189,7 +1234,7 @@ describe('updateDID', () => {
             const updateOp = await createUpdateOp(keypair, did, doc);
             await gk.updateDID(updateOp);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: size');
         }
     });
@@ -1209,7 +1254,7 @@ describe('updateDID', () => {
         }
 
         const doc2 = await gatekeeper.resolveDID(did, { verify: true });
-        expect(doc2.didDocumentMetadata.version).toBe(11);
+        expect(doc2.didDocumentMetadata!.version).toBe(11);
     });
 
     it('should throw exception when registry queue exceeds limit', async () => {
@@ -1230,7 +1275,7 @@ describe('updateDID', () => {
                 await gk.updateDID(updateOp);
             }
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid operation: TFTC not supported');
         }
     });
@@ -1323,9 +1368,11 @@ describe('exportDIDs', () => {
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
+        delete agentOp.mdip!.validUntil;
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const assetOp = await createAssetOp(agentDID, keypair);
+        delete assetOp.mdip!.validUntil;
         const assetDID = await gatekeeper.createDID(assetOp);
 
         const exports = await gatekeeper.exportDIDs([assetDID, agentDID]);
@@ -1404,7 +1451,7 @@ describe('removeDIDs', () => {
         try {
             await gatekeeper.resolveDID(did);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
             expect(error.detail).toBe('unknown');
         }
@@ -1414,9 +1461,10 @@ describe('removeDIDs', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.removeDIDs();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: dids');
         }
     });
@@ -1538,9 +1586,10 @@ describe('importBatch', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.importBatch();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: batch');
         }
@@ -1550,9 +1599,10 @@ describe('importBatch', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage
             await gatekeeper.importBatch('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: batch');
         }
     });
@@ -1563,7 +1613,7 @@ describe('importBatch', () => {
         try {
             await gatekeeper.importBatch([]);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: batch');
         }
     });
@@ -1571,6 +1621,7 @@ describe('importBatch', () => {
     it('should report an error on non-transactions', async () => {
         mockFs({});
 
+        // @ts-expect-error Testing invalid usage
         const response = await gatekeeper.importBatch([1, 2, 3]);
 
         expect(response.rejected).toBe(3);
@@ -1599,6 +1650,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
+        // @ts-expect-error Testing invalid usage
         ops[0].operation = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
@@ -1614,7 +1666,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.type = 'mock';
+        (ops[0].operation.type as any) = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1659,7 +1711,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.mdip.version = -1;
+        ops[0].operation.mdip!.version = -1;
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1674,7 +1726,8 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.mdip.type = 'mock';
+        // @ts-expect-error Testing invalid usage
+        ops[0].operation.mdip!.type = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1689,7 +1742,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.mdip.registry = 'mock';
+        ops[0].operation.mdip!.registry = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1719,7 +1772,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature.signed = 'mock';
+        ops[0].operation.signature!.signed = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1734,7 +1787,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature.hash = 'mock';
+        ops[0].operation.signature!.hash = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1749,7 +1802,7 @@ describe('importBatch', () => {
         const did = await gatekeeper.createDID(agentOp);
         const ops = await gatekeeper.exportDID(did);
 
-        ops[0].operation.signature.signer = 'mock';
+        ops[0].operation.signature!.signer = 'mock';
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -1981,7 +2034,7 @@ describe('processEvents', () => {
 
         // Also check that blockchain info is added to document metadata for resolveDID coverage...
         const doc2 = await gatekeeper.resolveDID(did);
-        expect(doc2.mdip.registration).toStrictEqual(ops[2].blockchain);
+        expect(doc2.mdip!.registration).toStrictEqual(ops[2].blockchain);
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
@@ -2002,8 +2055,8 @@ describe('processEvents', () => {
 
         const doc2 = await gatekeeper.resolveDID(did);
 
-        expect(doc2.didDocumentMetadata.version).toBe(2);
-        expect(doc2.didDocumentMetadata.confirmed).toBe(true);
+        expect(doc2.didDocumentMetadata!.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.confirmed).toBe(true);
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
@@ -2093,7 +2146,7 @@ describe('processEvents', () => {
         await gatekeeper.processEvents();
         const doc = await gatekeeper.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument!.id).toBe(did);
     });
 
     it('should handle processing events in any order', async () => {
@@ -2196,21 +2249,21 @@ describe('processEvents', () => {
         ops.push({
             registry: 'local',
             operation: updateOp1,
-            ordinal: 0,
+            ordinal: [0],
             time: new Date().toISOString(),
         });
 
         ops.push({
             registry: 'local',
             operation: updateOp2,
-            ordinal: 1,
+            ordinal: [1],
             time: new Date().toISOString(),
         });
 
         ops.push({
             registry: 'local',
             operation: updateOp3,
-            ordinal: 2,
+            ordinal: [2],
             time: new Date().toISOString(),
         });
 
@@ -2258,6 +2311,7 @@ describe('processEvents', () => {
         expect(response.rejected).toBe(1);
 
         const agentDoc2 = await gatekeeper.resolveDID(agentDID);
+        // @ts-expect-error Testing invalid usage
         expect(agentDoc2.didDocumentData.mock).toBe(2);
 
         const event3 = {
@@ -2281,6 +2335,7 @@ describe('processEvents', () => {
         expect(response2.rejected).toBe(1);
 
         const agentDoc3 = await gatekeeper.resolveDID(agentDID, { confirm: true });
+        // @ts-expect-error Testing invalid usage
         expect(agentDoc3.didDocumentData.mock).toBe(1);
     });
 
@@ -2300,12 +2355,12 @@ describe('processEvents', () => {
         const assetDoc1 = await gatekeeper.resolveDID(assetDID);
 
         // agent1 transfers ownership of asset to agent2
-        assetDoc1.didDocument.controller = agentDID2;
+        assetDoc1.didDocument!.controller = agentDID2;
         const updateOp1 = await createUpdateOp(keypair1, assetDID, assetDoc1);
         await gatekeeper.updateDID(updateOp1);
 
         // agent2 transfers ownership of asset back to agent1
-        assetDoc1.didDocument.controller = agentDID1;
+        assetDoc1.didDocument!.controller = agentDID1;
         const updateOp2 = await createUpdateOp(keypair2, assetDID, assetDoc1);
         await gatekeeper.updateDID(updateOp2);
 
@@ -2318,8 +2373,8 @@ describe('processEvents', () => {
         expect(response1.added).toBe(events.length);
 
         const assetDoc2 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc2.didDocumentMetadata.version).toBe(3);
-        expect(assetDoc2.didDocumentMetadata.confirmed).toBe(false);
+        expect(assetDoc2.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc2.didDocumentMetadata!.confirmed).toBe(false);
 
         for (const event of events) {
             event.registry = 'TFTC';
@@ -2331,8 +2386,8 @@ describe('processEvents', () => {
         expect(response2.added).toBe(events.length);
 
         const assetDoc3 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc3.didDocumentMetadata.version).toBe(3);
-        expect(assetDoc3.didDocumentMetadata.confirmed).toBe(true);
+        expect(assetDoc3.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
     });
 
     it('should reject events with bad signatures', async () => {
@@ -2356,11 +2411,11 @@ describe('processEvents', () => {
         const ops = dids.flat();
         await gatekeeper.resetDb();
 
-        const sigVal1 = ops[1].operation.signature.value;
-        const sigVal3 = ops[3].operation.signature.value;
+        const sigVal1 = ops[1].operation.signature!.value;
+        const sigVal3 = ops[3].operation.signature!.value;
 
-        ops[1].operation.signature.value = sigVal3;
-        ops[3].operation.signature.value = sigVal1;
+        ops[1].operation.signature!.value = sigVal3;
+        ops[3].operation.signature!.value = sigVal1;
 
         await gatekeeper.importBatch(ops);
 
@@ -2373,6 +2428,7 @@ describe('processEvents', () => {
         mockFs({});
 
         const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        // @ts-expect-error Testing private state
         gk.isProcessingEvents = true;
         const response = await gk.processEvents();
 
@@ -2383,6 +2439,7 @@ describe('processEvents', () => {
         mockFs({});
 
         const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        // @ts-expect-error Testing private state
         gk.eventsQueue = null;
         const response = await gk.processEvents();
 
@@ -2431,7 +2488,7 @@ describe('getQueue', () => {
         try {
             await gatekeeper.getQueue('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: registry=mock');
         }
@@ -2518,6 +2575,7 @@ describe('clearQueue', () => {
         await gatekeeper.clearQueue(registry, queue);
         await gatekeeper.getQueue(registry);
 
+        // @ts-expect-error Testing invalid queue
         const ok = await gatekeeper.clearQueue(registry, 'mock');
 
         expect(ok).toStrictEqual(true);
@@ -2529,7 +2587,7 @@ describe('clearQueue', () => {
         try {
             await gatekeeper.clearQueue('mock', []);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: registry=mock');
         }
     });
@@ -2639,7 +2697,7 @@ describe('getDids', () => {
         }
 
         const doc = await gatekeeper.resolveDID(dids[4]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata!.created });
 
         expect(recentDIDs.length).toBe(5);
         expect(recentDIDs.includes(dids[5])).toBe(true);
@@ -2664,7 +2722,7 @@ describe('getDids', () => {
         }
 
         const doc = await gatekeeper.resolveDID(dids[5]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata!.created });
 
         expect(recentDIDs.length).toBe(6);
         expect(recentDIDs.includes(agentDID)).toBe(true);
@@ -2692,8 +2750,8 @@ describe('getDids', () => {
         const doc3 = await gatekeeper.resolveDID(dids[3]);
         const doc8 = await gatekeeper.resolveDID(dids[8]);
         const recentDIDs = await gatekeeper.getDIDs({
-            updatedAfter: doc3.didDocumentMetadata.created,
-            updatedBefore: doc8.didDocumentMetadata.created
+            updatedAfter: doc3.didDocumentMetadata!.created,
+            updatedBefore: doc8.didDocumentMetadata!.created
         });
 
         expect(recentDIDs.length).toBe(4);
@@ -2762,9 +2820,9 @@ describe('listRegistries', () => {
         mockFs({});
 
         const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
-        gatekeeper.getQueue('hyperswarm');
-        gatekeeper.getQueue('TFTC');
-        gatekeeper.getQueue('TBTC');
+        await gatekeeper.getQueue('hyperswarm');
+        await gatekeeper.getQueue('TFTC');
+        await gatekeeper.getQueue('TBTC');
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(4);
@@ -2778,13 +2836,13 @@ describe('listRegistries', () => {
         mockFs({});
 
         const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
-        gatekeeper.getQueue('hyperswarm');
-        gatekeeper.getQueue('hyperswarm');
-        gatekeeper.getQueue('TFTC');
-        gatekeeper.getQueue('TFTC');
-        gatekeeper.getQueue('TBTC');
-        gatekeeper.getQueue('TBTC');
-        gatekeeper.getQueue('TBTC');
+        await gatekeeper.getQueue('hyperswarm');
+        await gatekeeper.getQueue('hyperswarm');
+        await gatekeeper.getQueue('TFTC');
+        await gatekeeper.getQueue('TFTC');
+        await gatekeeper.getQueue('TBTC');
+        await gatekeeper.getQueue('TBTC');
+        await gatekeeper.getQueue('TBTC');
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(4);
@@ -2964,6 +3022,7 @@ describe('checkDIDs', () => {
         const dids = await gatekeeper.getDIDs();
         dids.push('mock');
 
+        // @ts-expect-error Testing invalid usage
         const check = await gatekeeper.checkDIDs({ chatty: true, dids });
 
         expect(check.total).toBe(3);
@@ -2990,6 +3049,7 @@ describe('checkDIDs', () => {
 
 describe('gatekeeper.db', () => {
     it('getEvents should return empty list on invalid did', async () => {
+        // @ts-expect-error Testing invalid DID
         const events = await gatekeeper.db.getEvents(null);
 
         expect(events).toStrictEqual([]);
@@ -2997,33 +3057,40 @@ describe('gatekeeper.db', () => {
 
     it('addEvent should throw exception on invalid did', async () => {
         try {
+            // @ts-expect-error Testing invalid DID
             await gatekeeper.db.addEvent(null);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid DID');
         }
     });
 
     it('setEvents should throw exception on invalid did', async () => {
         try {
+            // @ts-expect-error Testing invalid DID
             await gatekeeper.db.setEvents(null);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid DID');
         }
     });
 
     it('getQueue should return empty list invalid registry', async () => {
+        // @ts-expect-error Testing invalid registry
         const queue1 = await gatekeeper.db.getQueue('mock');
         expect(queue1).toStrictEqual([]);
 
+        // @ts-expect-error Testing invalid registry
         await gatekeeper.db.queueOperation('hyperswarm', {});
+        // @ts-expect-error Testing invalid registry
         const queue2 = await gatekeeper.db.getQueue('mock');
         expect(queue2).toStrictEqual([]);
     });
 
     it('clearQueue should return true on unknown registry', async () => {
+        // @ts-expect-error Testing unknown registry
         await gatekeeper.db.queueOperation('hyperswarm', {});
+        // @ts-expect-error Testing unknown registry
         const ok = await gatekeeper.db.clearQueue('mock');
         expect(ok).toBe(true);
     });
@@ -3100,10 +3167,15 @@ describe('isValidDID', () => {
     });
 
     it('should return false for wrong type', async () => {
+        // @ts-expect-error Testing wrong type
         expect(isValidDID()).toBe(false);
+        // @ts-expect-error Testing wrong type
         expect(isValidDID(null)).toBe(false);
+        // @ts-expect-error Testing wrong type
         expect(isValidDID(123)).toBe(false);
+        // @ts-expect-error Testing wrong type
         expect(isValidDID([1, 2, 3])).toBe(false);
+        // @ts-expect-error Testing wrong type
         expect(isValidDID({ mock: 123 })).toBe(false);
     });
 

@@ -4,7 +4,10 @@
   "description": "MDIP Gatekeeper",
   "type": "module",
   "exports": {
-    ".": "./src/gatekeeper.js",
+    ".": {
+      "import": "./dist/gatekeeper.js",
+      "types": "./dist/types/gatekeeper.d.ts"
+    },
     "./client": "./src/gatekeeper-client.js",
     "./db/json": {
       "import": "./dist/db/json.js",
@@ -25,9 +28,12 @@
     "./db/mongo": {
       "import": "./dist/db/mongo.js",
       "types": "./dist/types/db/mongo.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types/types.d.js",
+      "types": "./dist/types/types.d.ts"
     }
   },
-  "types": "./types/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"

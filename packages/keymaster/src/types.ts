@@ -3,6 +3,7 @@ export interface EncryptedWallet {
     iv: string
     data: string
 }
+
 export interface HDKey {
     xpriv?: string
     xpub?: string

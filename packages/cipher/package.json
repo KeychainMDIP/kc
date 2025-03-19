@@ -11,6 +11,10 @@
     "./web": {
       "import": "./dist/cipher-web.js",
       "types": "./dist/types/cipher-web.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types/types.d.ts",
+      "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {

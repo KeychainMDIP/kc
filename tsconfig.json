@@ -1,13 +1,32 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "Node16",
+    "module": "nodenext",
+    "sourceMap": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
     "strict": true,
-    "moduleResolution": "Node16",
+    "moduleResolution": "nodenext",
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowJs": true,
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "inlineSourceMap": false,
+    "inlineSources": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mdip/cipher/node": ["packages/cipher/src/cipher-node.ts"],
+      "@mdip/cipher/web": ["packages/cipher/src/cipher-web.ts"],
+      "@mdip/cipher/types": ["packages/cipher/src/types.ts"],
+      "@mdip/common/errors": ["packages/common/src/errors.ts"],
+      "@mdip/common/utils": ["packages/common/src/utils.ts"],
+      "@mdip/gatekeeper": ["packages/gatekeeper/src/gatekeeper.ts"],
+      "@mdip/gatekeeper/types": ["packages/gatekeeper/src/types.ts"],
+      "@mdip/gatekeeper/client": ["packages/gatekeeper/src/gatekeeper-client.js"],
+      "@mdip/gatekeeper/db/*": ["packages/gatekeeper/src/db/*"],
+      "@mdip/ipfs": ["packages/ipfs/src/ipfs.ts"],
+      "@mdip/keymaster/wallet/*": ["packages/keymaster/src/db/*"]
+    }
   },
   "include": [
     "tests/**/*.ts"
