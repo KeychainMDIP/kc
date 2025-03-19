@@ -1,7 +1,7 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../gatekeeper.js'
+import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
 
 interface DidsRow {
     id: string

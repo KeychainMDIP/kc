@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../gatekeeper.js'
+import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
 
 export default class DbJson implements GatekeeperDb {
     private readonly dataFolder: string;

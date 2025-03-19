@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "jsx": "react",
-    "module": "es6",
-    "target": "es6",
+    "target": "ES6",
+    "module": "ES6",
     "moduleResolution": "node",
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -10,6 +10,7 @@
     "baseUrl": "./",
     "paths": {
       "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.ts"],
+      "@mdip/cipher/types": ["../../packages/cipher/dist/types/types.d.ts"],
       "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.js"],
       "@mdip/keymaster/types": ["../../packages/keymaster/src/types.ts"],
       "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"],

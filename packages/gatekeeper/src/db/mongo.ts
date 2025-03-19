@@ -1,6 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../gatekeeper.js'
+import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
 
 interface DidsDoc {
     id: string
