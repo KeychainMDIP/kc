@@ -1,10 +1,8 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
-import Gatekeeper, {
-    Operation,
-    MdipDocument,
-} from '@mdip/gatekeeper';
+import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
+import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
