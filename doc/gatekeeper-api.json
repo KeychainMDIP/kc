@@ -948,19 +948,8 @@
                           "description": "Timestamp indicating when this event occurred."
                         },
                         "ordinal": {
-                          "oneOf": [
-                            {
-                              "type": "integer",
-                              "description": "A single integer ordinal (often 0 if unused)"
-                            },
-                            {
-                              "type": "array",
-                              "description": "A tuple of integers for multi-part ordinal keys",
-                              "items": {
-                                "type": "integer"
-                              }
-                            }
-                          ]
+                          "type": "integer",
+                          "description": "An index or sequence number for ordering events."
                         },
                         "operation": {
                           "type": "object",
@@ -1057,19 +1046,8 @@
                         "description": "Timestamp when this event was recorded."
                       },
                       "ordinal": {
-                        "oneOf": [
-                          {
-                            "type": "integer",
-                            "description": "A single integer ordinal (often 0 if unused)"
-                          },
-                          {
-                            "type": "array",
-                            "description": "A tuple of integers for multi-part ordinal keys",
-                            "items": {
-                              "type": "integer"
-                            }
-                          }
-                        ]
+                        "type": "integer",
+                        "description": "Sequence number for ordering events if needed."
                       }
                     }
                   }
@@ -1164,19 +1142,8 @@
                         "description": "When this event was recorded in the database."
                       },
                       "ordinal": {
-                        "oneOf": [
-                          {
-                            "type": "integer",
-                            "description": "A single integer ordinal (often 0 if unused)"
-                          },
-                          {
-                            "type": "array",
-                            "description": "A tuple of integers for multi-part ordinal keys",
-                            "items": {
-                              "type": "integer"
-                            }
-                          }
-                        ]
+                        "type": "integer",
+                        "description": "Sequence number for the event if relevant (often 0 if unused)."
                       },
                       "operation": {
                         "type": "object",
@@ -1281,19 +1248,8 @@
                       "description": "Timestamp when the event was recorded."
                     },
                     "ordinal": {
-                      "oneOf": [
-                        {
-                          "type": "integer",
-                          "description": "A single integer ordinal (often 0 if unused)"
-                        },
-                        {
-                          "type": "array",
-                          "description": "A tuple of integers for multi-part ordinal keys",
-                          "items": {
-                            "type": "integer"
-                          }
-                        }
-                      ]
+                      "type": "integer",
+                      "description": "Numeric index for ordering events, if relevant."
                     }
                   }
                 }
@@ -1378,19 +1334,8 @@
                         "description": "Timestamp when this event was added to the queue."
                       },
                       "ordinal": {
-                        "oneOf": [
-                          {
-                            "type": "integer",
-                            "description": "A single integer ordinal (often 0 if unused)"
-                          },
-                          {
-                            "type": "array",
-                            "description": "A tuple of integers for multi-part ordinal keys",
-                            "items": {
-                              "type": "integer"
-                            }
-                          }
-                        ]
+                        "type": "integer",
+                        "description": "Sequence or ordering number for the event if relevant."
                       },
                       "operation": {
                         "type": "object",
