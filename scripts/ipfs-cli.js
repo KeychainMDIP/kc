@@ -87,7 +87,31 @@ program
     .action(async (cid) => {
         try {
             const json = await ipfs.getJSON(cid);
-            console.log(JSON.stringify(json, null, 2));
+            console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('get-id')
+    .description('Get node ID')
+    .action(async () => {
+        try {
+            const json = await ipfs.getID();
+            console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('add-peer <peer>')
+    .description('Add peer to swarm')
+    .action(async (peer) => {
+        try {
+            const json = await ipfs.addPeer(peer);
+            console.log(JSON.stringify(json, null, 4));
         } catch (error) {
             console.error(error);
         }

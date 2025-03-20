@@ -113,7 +113,6 @@ class KuboClient {
         return jsonCodec.decode(block);
     }
 
-    // Gatekeeper expects this method to be named add
     async generateCID(json) {
         // Encode the JSON data using jsonCodec
         const buf = jsonCodec.encode(json);
@@ -121,6 +120,14 @@ class KuboClient {
         const cid = CID.createV1(jsonCodec.code, hash);
 
         return cid.toString(base58btc);
+    }
+
+    async getID() {
+        return this.ipfs.id();
+    }
+
+    async addPeer(peer) {
+        return this.ipfs.swarm.connect(peer);
     }
 }
 
