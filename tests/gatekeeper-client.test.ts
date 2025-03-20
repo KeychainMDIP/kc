@@ -11,14 +11,14 @@ const mockConsole = {
     error: () => { },
     time: () => { },
     timeEnd: () => { },
-}
+} as unknown as typeof console;
 
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
             // eslint-disable-next-line
             .get('/api/v1/ready')
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const isReady = await gatekeeper.isReady();
@@ -40,7 +40,7 @@ describe('isReady', () => {
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
             .get('/api/v1/ready')
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({
             url: GatekeeperURL,
@@ -55,14 +55,13 @@ describe('isReady', () => {
     it('should timeout if not ready', async () => {
         nock(GatekeeperURL)
             .get('/api/v1/ready')
-            .reply(200, false);
+            .reply(200, 'false');
 
         const gatekeeper = await GatekeeperClient.create({
             url: GatekeeperURL,
             waitUntilReady: true,
             intervalSeconds: 0.1,
             maxRetries: 2,
-            chatty: false,
             becomeChattyAfter: 1,
             console: mockConsole
         });
@@ -75,7 +74,7 @@ describe('getVersion', () => {
     it('should return version', async () => {
         nock(GatekeeperURL)
             .get('/api/v1/version')
-            .reply(200, 1);
+            .reply(200, '1');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const version = await gatekeeper.getVersion();
@@ -94,7 +93,7 @@ describe('getVersion', () => {
             await gatekeeper.getVersion();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -104,7 +103,7 @@ describe('resetDb', () => {
     it('should return reset status', async () => {
         nock(GatekeeperURL)
             .get('/api/v1/db/reset')
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const ok = await gatekeeper.resetDb();
@@ -123,7 +122,7 @@ describe('resetDb', () => {
             await gatekeeper.resetDb();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -133,7 +132,7 @@ describe('verifyDb', () => {
     it('should return verify status', async () => {
         nock(GatekeeperURL)
             .get('/api/v1/db/verify')
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const ok = await gatekeeper.verifyDb();
@@ -152,7 +151,7 @@ describe('verifyDb', () => {
             await gatekeeper.verifyDb();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -181,7 +180,7 @@ describe('getStatus', () => {
             await gatekeeper.getStatus();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -210,7 +209,7 @@ describe('listRegistries', () => {
             await gatekeeper.listRegistries();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -223,7 +222,7 @@ describe('createDID', () => {
             .reply(200, 'did:mock:4321');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const did = await gatekeeper.createDID({});
+        const did = await gatekeeper.createDID({type: 'create'});
 
         expect(did).toBe('did:mock:4321');
     });
@@ -236,11 +235,27 @@ describe('createDID', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
-            await gatekeeper.createDID({});
+            await gatekeeper.createDID({type: 'create'});
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
+        }
+    });
+
+    it('create DID with wrong type set', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/did`)
+            .reply(200, 'true');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.createDID({ type: 'update', did: MockDID });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe("Expected string from createDID, got boolean");
         }
     });
 });
@@ -265,7 +280,7 @@ describe('resolveDID', () => {
             .reply(200, mockDocs);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const docs = await gatekeeper.resolveDID(MockDID, { version: 1, confirm: true });
+        const docs = await gatekeeper.resolveDID(MockDID, { version: 1, confirm: true } as any);
 
         expect(docs).toStrictEqual(mockDocs);
     });
@@ -281,7 +296,7 @@ describe('resolveDID', () => {
             await gatekeeper.resolveDID(MockDID);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('DID not found');
         }
     });
@@ -291,10 +306,10 @@ describe('updateDID', () => {
     it('should return update status', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/did`)
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const ok = await gatekeeper.updateDID({ did: MockDID });
+        const ok = await gatekeeper.updateDID({ type: 'update', did: MockDID });
 
         expect(ok).toBe(true);
     });
@@ -307,11 +322,27 @@ describe('updateDID', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
-            await gatekeeper.updateDID({ did: MockDID });
+            await gatekeeper.updateDID({ type: 'update', did: MockDID });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
+        }
+    });
+
+    it('update DID with wrong type set', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/did`)
+            .reply(200, 'did::mock:4321');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.updateDID({ type: 'create', did: MockDID });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe("Expected boolean from updateDID, got string");
         }
     });
 });
@@ -320,10 +351,10 @@ describe('deleteDID', () => {
     it('should return delete status', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/did`)
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const ok = await gatekeeper.deleteDID({ did: MockDID });
+        const ok = await gatekeeper.deleteDID({ type: 'delete', did: MockDID });
 
         expect(ok).toBe(true);
     });
@@ -336,11 +367,27 @@ describe('deleteDID', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
-            await gatekeeper.deleteDID({ did: MockDID });
+            await gatekeeper.deleteDID({ type: 'delete', did: MockDID });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
+        }
+    });
+
+    it('delete DID with wrong type set', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/did`)
+            .reply(200, 'did::mock:4321');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.deleteDID({ type: 'create', did: MockDID });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe("Expected boolean from deleteDID, got string");
         }
     });
 });
@@ -368,7 +415,7 @@ describe('getDIDs', () => {
             await gatekeeper.getDIDs();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -378,9 +425,10 @@ describe('removeDIDs', () => {
     it('should return remove status', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/dids/remove`)
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        // @ts-expect-error Testing without arguments
         const ok = await gatekeeper.removeDIDs();
 
         expect(ok).toStrictEqual(true);
@@ -394,10 +442,11 @@ describe('removeDIDs', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
+            // @ts-expect-error Testing without arguments
             await gatekeeper.removeDIDs();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -426,7 +475,7 @@ describe('exportDIDs', () => {
             await gatekeeper.exportDIDs();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -439,6 +488,7 @@ describe('importDIDs', () => {
             .reply(200, { queued: 0, processed: 0 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        // @ts-expect-error Testing without arguments
         const results = await gatekeeper.importDIDs();
 
         expect(results).toStrictEqual({ queued: 0, processed: 0 });
@@ -452,10 +502,11 @@ describe('importDIDs', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
+            // @ts-expect-error Testing without arguments
             await gatekeeper.importDIDs();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -484,7 +535,7 @@ describe('exportBatch', () => {
             await gatekeeper.exportBatch();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -497,6 +548,7 @@ describe('importBatch', () => {
             .reply(200, { queued: 0, processed: 0 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        // @ts-expect-error Testing without arguments
         const results = await gatekeeper.importBatch();
 
         expect(results).toStrictEqual({ queued: 0, processed: 0 });
@@ -510,10 +562,11 @@ describe('importBatch', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
+            // @ts-expect-error Testing without arguments
             await gatekeeper.importBatch();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -546,7 +599,7 @@ describe('getQueue', () => {
             await gatekeeper.getQueue(mockRegistry);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -558,9 +611,10 @@ describe('clearQueue', () => {
     it('should return clear status', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/queue/${mockRegistry}/clear`)
-            .reply(200, true);
+            .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        // @ts-expect-error Testing missing argument
         const ok = await gatekeeper.clearQueue(mockRegistry);
 
         expect(ok).toStrictEqual(true);
@@ -576,10 +630,11 @@ describe('clearQueue', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
+            // @ts-expect-error Testing missing argument
             await gatekeeper.clearQueue(mockRegistry);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -608,7 +663,7 @@ describe('processEvents', () => {
             await gatekeeper.processEvents();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });

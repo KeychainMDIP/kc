@@ -10,7 +10,7 @@ import HDKeyNode from 'hdkey';
 import { webcrypto } from 'node:crypto';
 import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
 import canonicalizeModule from 'canonicalize';
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string | undefined;
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 // node.js 18 and older, requires polyfilling globalThis.crypto
 if (!globalThis.crypto) {
@@ -86,7 +86,7 @@ export default class CipherNode implements Cipher {
     }
 
     hashJSON(json: unknown): string {
-        const canonical = canonicalize(json) ?? '';
+        const canonical = canonicalize(json);
         return this.hashMessage(canonical);
     }
 

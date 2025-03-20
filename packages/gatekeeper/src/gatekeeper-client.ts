@@ -1,18 +1,47 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
+import {
+    GatekeeperInterface,
+    GatekeeperEvent,
+    Operation,
+    MdipDocument,
+    ResolveDIDOptions,
+    GetDIDOptions,
+    CheckDIDsResult,
+    ImportBatchResult,
+    ProcessEventsResult,
+    VerifyDbResult,
+} from './types.js';
 
 const VERSION = '/api/v1';
 
-function throwError(error) {
+function throwError(error: AxiosError | any): never {
     if (error.response) {
         throw error.response.data;
     }
-
     throw error.message;
 }
 
-export default class GatekeeperClient {
+export interface GatekeeperClientOptions {
+    url?: string;
+    console?: typeof console;
+    waitUntilReady?: boolean;
+    intervalSeconds?: number;
+    chatty?: boolean;
+    becomeChattyAfter?: number;
+    maxRetries?: number;
+}
+
+export interface GetStatusResult {
+    uptimeSeconds: number;
+    dids: CheckDIDsResult;
+    memoryUsage: NodeJS.MemoryUsage;
+}
+
+export default class GatekeeperClient implements GatekeeperInterface {
+    private API: string;
+
     // Factory method
-    static async create(options) {
+    static async create(options: GatekeeperClientOptions): Promise<GatekeeperClient> {
         const gatekeeper = new GatekeeperClient();
         await gatekeeper.connect(options);
         return gatekeeper;
@@ -22,24 +51,24 @@ export default class GatekeeperClient {
         this.API = VERSION;
     }
 
-    async connect(options = {}) {
-        if (options.url) {
+    async connect(options?: GatekeeperClientOptions) {
+        if (options?.url) {
             this.API = `${options.url}${VERSION}`;
         }
 
         // Only used for unit testing
         // TBD replace console with a real logging package
-        if (options.console) {
+        if (options?.console) {
             // eslint-disable-next-line
             console = options.console;
         }
 
-        if (options.waitUntilReady) {
+        if (options?.waitUntilReady) {
             await this.waitUntilReady(options);
         }
     }
 
-    async waitUntilReady(options = {}) {
+    async waitUntilReady(options: GatekeeperClientOptions) {
         let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
@@ -76,7 +105,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async listRegistries() {
+    async listRegistries(): Promise<string[]> {
         try {
             const response = await axios.get(`${this.API}/registries`);
             return response.data;
@@ -86,7 +115,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async resetDb() {
+    async resetDb(): Promise<boolean> {
         try {
             const response = await axios.get(`${this.API}/db/reset`);
             return response.data;
@@ -96,7 +125,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async verifyDb() {
+    async verifyDb(): Promise<VerifyDbResult> {
         try {
             const response = await axios.get(`${this.API}/db/verify`);
             return response.data;
@@ -106,7 +135,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async isReady() {
+    async isReady(): Promise<boolean> {
         try {
             const response = await axios.get(`${this.API}/ready`);
             return response.data;
@@ -116,7 +145,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async getVersion() {
+    async getVersion(): Promise<number> {
         try {
             const response = await axios.get(`${this.API}/version`);
             return response.data;
@@ -126,7 +155,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async getStatus() {
+    async getStatus(): Promise<GetStatusResult> {
         try {
             const response = await axios.get(`${this.API}/status`);
             return response.data;
@@ -136,7 +165,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async handleDIDOperation(operation) {
+    async handleDIDOperation(operation: Operation): Promise<boolean | string> {
         try {
             const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
@@ -146,14 +175,18 @@ export default class GatekeeperClient {
         }
     }
 
-    createDID(operation) {
-        return this.handleDIDOperation(operation);
+    async createDID(operation: Operation): Promise<string> {
+        const result = await this.handleDIDOperation(operation);
+        if (typeof result !== 'string') {
+            throw new Error(`Expected string from createDID, got ${typeof result}`);
+        }
+        return result;
     }
 
-    async resolveDID(did, options) {
+    async resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument> {
         try {
             if (options) {
-                const queryParams = new URLSearchParams(options);
+                const queryParams = new URLSearchParams(options as Record<string, string>);
                 const response = await axios.get(`${this.API}/did/${did}?${queryParams.toString()}`);
                 return response.data;
             }
@@ -167,15 +200,23 @@ export default class GatekeeperClient {
         }
     }
 
-    updateDID(operation) {
-        return this.handleDIDOperation(operation);
+    async updateDID(operation: Operation): Promise<boolean> {
+        const result = await this.handleDIDOperation(operation);
+        if (typeof result !== 'boolean') {
+            throw new Error(`Expected boolean from updateDID, got ${typeof result}`);
+        }
+        return result;
     }
 
-    deleteDID(operation) {
-        return this.handleDIDOperation(operation);
+    async deleteDID(operation: Operation): Promise<boolean> {
+        const result = await this.handleDIDOperation(operation);
+        if (typeof result !== 'boolean') {
+            throw new Error(`Expected boolean from deleteDID, got ${typeof result}`);
+        }
+        return result;
     }
 
-    async getDIDs(options = {}) {
+    async getDIDs(options?: GetDIDOptions): Promise<string[] | MdipDocument[]> {
         try {
             const response = await axios.post(`${this.API}/dids`, options);
             return response.data;
@@ -185,7 +226,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async exportDIDs(dids) {
+    async exportDIDs(dids?: string[]): Promise<GatekeeperEvent[][]> {
         try {
             const response = await axios.post(`${this.API}/dids/export`, { dids });
             return response.data;
@@ -195,7 +236,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async importDIDs(dids) {
+    async importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult> {
         try {
             const response = await axios.post(`${this.API}/dids/import`, dids);
             return response.data;
@@ -205,7 +246,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async exportBatch(dids) {
+    async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
         try {
             const response = await axios.post(`${this.API}/batch/export`, { dids });
             return response.data;
@@ -215,7 +256,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async importBatch(batch) {
+    async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
         try {
             const response = await axios.post(`${this.API}/batch/import`, batch);
             return response.data;
@@ -225,7 +266,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async removeDIDs(dids) {
+    async removeDIDs(dids: string[]): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/dids/remove`, dids);
             return response.data;
@@ -235,7 +276,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async getQueue(registry) {
+    async getQueue(registry: string): Promise<Operation[]> {
         try {
             const response = await axios.get(`${this.API}/queue/${registry}`);
             return response.data;
@@ -245,7 +286,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async clearQueue(registry, events) {
+    async clearQueue(registry: string, events: Operation[]): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/queue/${registry}/clear`, events);
             return response.data;
@@ -255,7 +296,7 @@ export default class GatekeeperClient {
         }
     }
 
-    async processEvents() {
+    async processEvents(): Promise<ProcessEventsResult> {
         try {
             const response = await axios.post(`${this.API}/events/process`);
             return response.data;

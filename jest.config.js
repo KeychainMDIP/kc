@@ -19,7 +19,7 @@ const config = {
         '^@mdip/cipher$': '<rootDir>/packages/cipher/src/cipher.ts',
         '^@mdip/gatekeeper$': '<rootDir>/packages/gatekeeper/src/gatekeeper.ts',
         '^@mdip/gatekeeper/types$': '<rootDir>/packages/gatekeeper/src/types.ts',
-        '^@mdip/gatekeeper/client$': '<rootDir>/packages/gatekeeper/src/gatekeeper-client.js',
+        '^@mdip/gatekeeper/client$': '<rootDir>/packages/gatekeeper/src/gatekeeper-client.ts',
         '^@mdip/gatekeeper/db/(.*)$': '<rootDir>/packages/gatekeeper/src/db/$1',
         '^@mdip/ipfs$': '<rootDir>/packages/ipfs/src/ipfs.ts',
         '^@mdip/keymaster$': '<rootDir>/packages/keymaster/src/keymaster-lib.js',
