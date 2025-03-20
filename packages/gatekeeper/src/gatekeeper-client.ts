@@ -165,7 +165,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async handleDIDOperation(operation: Operation): Promise<boolean | string> {
+    private async handleDIDOperation(operation: Operation): Promise<boolean | string> {
         try {
             const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
