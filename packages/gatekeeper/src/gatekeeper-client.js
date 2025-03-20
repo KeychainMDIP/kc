@@ -267,7 +267,7 @@ export default class GatekeeperClient {
 
     async addJSON(data) {
         try {
-            const response = await axios.post(`${this.API}/ipfs/json`, data);
+            const response = await axios.post(`${this.API}/cas/json`, data);
             return response.data;
         }
         catch (error) {
@@ -277,7 +277,7 @@ export default class GatekeeperClient {
 
     async getJSON(cid) {
         try {
-            const response = await axios.get(`${this.API}/ipfs/json/${cid}`);
+            const response = await axios.get(`${this.API}/cas/json/${cid}`);
             return response.data;
         }
         catch (error) {
@@ -287,7 +287,7 @@ export default class GatekeeperClient {
 
     async addText(data) {
         try {
-            const response = await axios.post(`${this.API}/ipfs/text`, data, {
+            const response = await axios.post(`${this.API}/cas/text`, data, {
                 headers: {
                     'Content-Type': 'text/plain'
                 }
@@ -297,10 +297,10 @@ export default class GatekeeperClient {
             throwError(error);
         }
     }
-    
+
     async getText(cid) {
         try {
-            const response = await axios.get(`${this.API}/ipfs/text/${cid}`);
+            const response = await axios.get(`${this.API}/cas/text/${cid}`);
             return response.data;
         }
         catch (error) {
@@ -310,7 +310,7 @@ export default class GatekeeperClient {
 
     async addData(data) {
         try {
-            const response = await axios.post(`${this.API}/ipfs/data`, data, {
+            const response = await axios.post(`${this.API}/cas/data`, data, {
                 headers: {
                     'Content-Type': 'application/octet-stream'
                 }
@@ -324,7 +324,7 @@ export default class GatekeeperClient {
 
     async getData(cid) {
         try {
-            const response = await axios.get(`${this.API}/ipfs/data/${cid}`, {
+            const response = await axios.get(`${this.API}/cas/data/${cid}`, {
                 responseType: 'arraybuffer'
             });
             return Buffer.from(response.data);
