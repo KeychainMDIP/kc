@@ -367,6 +367,88 @@ program
         }
     });
 
+
+program
+    .command('cas-add-text <text>')
+    .description('Add text to the CAS')
+    .action(async (text) => {
+        try {
+            const cid = await gatekeeper.addText(text);
+            console.log(cid);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('cas-get-text <cid>')
+    .description('Get text from the CAS')
+    .action(async (cid) => {
+        try {
+            const text = await gatekeeper.getText(cid);
+            console.log(text);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('cas-add-file <file>')
+    .description('Add a file to the CAS')
+    .action(async (file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const cid = await gatekeeper.addData(data);
+            console.log(cid);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('cas-get-file <cid> <file>')
+    .description('Get a file from the CAS')
+    .action(async (cid, file) => {
+        try {
+            const data = await gatekeeper.getData(cid);
+            fs.writeFileSync(file, data);
+            console.log(`Data written to ${file}`);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('cas-add-json <file>')
+    .description('Add JSON file to the CAS')
+    .action(async (file) => {
+        try {
+            const contents = fs.readFileSync(file);
+            const json = JSON.parse(contents.toString());
+            const cid = await gatekeeper.addJSON(json);
+            console.log(cid);
+        }
+        catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('cas-get-json <cid>')
+    .description('Get JSON from the CAS')
+    .action(async (cid) => {
+        try {
+            const json = await gatekeeper.getJSON(cid);
+            console.log(JSON.stringify(json, null, 2));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.connect({ url: gatekeeperURL });
     program.parse(process.argv);

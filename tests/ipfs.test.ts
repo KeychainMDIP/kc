@@ -23,7 +23,7 @@ describe('add', () => {
 
     it('should create CID from data', async () => {
         const ipfs = await IPFS.create();
-        const cid = await ipfs.add(data);
+        const cid = await ipfs.addJSON(data);
         await ipfs.stop();
 
         expect(cid).toBe(hash);
@@ -31,7 +31,7 @@ describe('add', () => {
 
     it('should create CID from data without using helia', async () => {
         const ipfs = await IPFS.create({ minimal: true });
-        const cid = await ipfs.add(data);
+        const cid = await ipfs.addJSON(data);
 
         expect(cid).toBe(hash);
     });
@@ -39,7 +39,7 @@ describe('add', () => {
     it('should create CID from data with fs blockstore', async () => {
         mockFs({});
         const ipfs = await IPFS.create({ datadir: 'ipfs' });
-        const cid = await ipfs.add(data);
+        const cid = await ipfs.addJSON(data);
         await ipfs.stop();
         mockFs.restore();
 
@@ -50,8 +50,8 @@ describe('add', () => {
 describe('get', () => {
     it('should return data from CID', async () => {
         const ipfs = await IPFS.create();
-        const cid = await ipfs.add('mock');
-        const data = await ipfs.get(cid);
+        const cid = await ipfs.addJSON('mock');
+        const data = await ipfs.getJSON(cid);
         await ipfs.stop();
 
         expect(data).toBe('mock');
@@ -61,8 +61,8 @@ describe('get', () => {
         mockFs({});
 
         const ipfs = await IPFS.create({ datadir: 'ipfs' });
-        const cid = await ipfs.add('mock');
-        const data = await ipfs.get(cid);
+        const cid = await ipfs.addJSON('mock');
+        const data = await ipfs.getJSON(cid);
         await ipfs.stop();
         mockFs.restore();
 

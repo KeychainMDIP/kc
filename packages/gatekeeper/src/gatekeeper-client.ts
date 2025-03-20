@@ -303,4 +303,72 @@ export default class GatekeeperClient implements GatekeeperInterface {
             throwError(error);
         }
     }
+
+    async addJSON(data: object): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/cas/json`, data);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getJSON(cid: string): Promise<object> {
+        try {
+            const response = await axios.get(`${this.API}/cas/json/${cid}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addText(data: string): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/cas/text`, data, {
+                headers: {
+                    'Content-Type': 'text/plain'
+                }
+            });
+            return response.data;
+        } catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getText(cid: string): Promise<string> {
+        try {
+            const response = await axios.get(`${this.API}/cas/text/${cid}`);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addData(data: Buffer): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/cas/data`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getData(cid: string): Promise<Buffer> {
+        try {
+            const response = await axios.get(`${this.API}/cas/data/${cid}`, {
+                responseType: 'arraybuffer'
+            });
+            return Buffer.from(response.data);
+        } catch (error) {
+            throwError(error);
+        }
+    }
 }
