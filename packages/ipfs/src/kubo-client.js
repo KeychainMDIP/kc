@@ -129,6 +129,10 @@ class KuboClient {
     async addPeer(peer) {
         return this.ipfs.swarm.connect(peer);
     }
+
+    async getPeers() {
+        return this.ipfs.swarm.peers();
+    }
 }
 
 export default KuboClient

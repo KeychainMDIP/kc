@@ -117,4 +117,16 @@ program
         }
     });
 
+program
+    .command('get-peers')
+    .description('Get swarm peers')
+    .action(async () => {
+        try {
+            const json = await ipfs.getPeers();
+            console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
 program.parse(process.argv);
