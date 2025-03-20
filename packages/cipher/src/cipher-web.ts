@@ -13,7 +13,7 @@ import HDKeyBrowser from '@mdip/browser-hdkey';
 // ^^ Browser specific modifications
 
 import canonicalizeModule from 'canonicalize';
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string | undefined;
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
@@ -82,7 +82,7 @@ export default class CipherWeb implements Cipher {
     }
 
     hashJSON(json: unknown): string {
-        const canonical = canonicalize(json) ?? '';
+        const canonical = canonicalize(json);
         return this.hashMessage(canonical);
     }
 

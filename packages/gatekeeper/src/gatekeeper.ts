@@ -21,7 +21,7 @@ import {
     Signature,
 } from './types.js';
 import canonicalizeModule from 'canonicalize';
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string | undefined;
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
@@ -256,7 +256,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async generateCID(operation: unknown): Promise<string> {
-        const canonical = canonicalize(operation) ?? '';
+        const canonical = canonicalize(operation);
         return this.ipfs.add(JSON.parse(canonical));
     }
 
@@ -439,9 +439,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return false;
         }
 
-        if (!doc.didDocument ||
-            !doc.didDocument.verificationMethod ||
-            doc.didDocument.verificationMethod.length === 0 ||
+        if (doc.didDocument.verificationMethod.length === 0 ||
             !doc.didDocument.verificationMethod[0].publicKeyJwk) {
             throw new InvalidOperationError('didDocument missing verificationMethod');
         }

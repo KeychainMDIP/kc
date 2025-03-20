@@ -989,7 +989,7 @@ v1router.post('/dids/import', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: When this event was recorded in the database.
- *                  ordinal:
+ *                   ordinal:
  *                     oneOf:
  *                       - type: integer
  *                         description: A single integer ordinal (often 0 if unused)
@@ -1163,7 +1163,7 @@ v1router.post('/batch/import', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: Timestamp when this event was added to the queue.
- *                  ordinal:
+ *                   ordinal:
  *                     oneOf:
  *                       - type: integer
  *                         description: A single integer ordinal (often 0 if unused)

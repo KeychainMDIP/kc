@@ -1,7 +1,7 @@
 name: Generate OpenAPI Docs
 
 on:
-  push:
+  pull_request:
 
 jobs:
   build-openapi-docs:
@@ -10,7 +10,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
       - name: Use Node 18.18.2
@@ -28,8 +29,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git config pull.rebase false
-          git pull origin main || true
           git add doc/gatekeeper-api.json
           git add doc/keymaster-api.json
           if git diff-index --quiet HEAD --; then

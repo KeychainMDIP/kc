@@ -8,7 +8,10 @@
       "import": "./dist/gatekeeper.js",
       "types": "./dist/types/gatekeeper.d.ts"
     },
-    "./client": "./src/gatekeeper-client.js",
+    "./client": {
+      "import": "./dist/gatekeeper-client.js",
+      "types": "./dist/types/gatekeeper-client.d.ts"
+    },
     "./db/json": {
       "import": "./dist/db/json.js",
       "types": "./dist/types/db/json.d.ts"

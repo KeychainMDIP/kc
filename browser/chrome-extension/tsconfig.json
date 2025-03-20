@@ -11,7 +11,7 @@
     "paths": {
       "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.ts"],
       "@mdip/cipher/types": ["../../packages/cipher/dist/types/types.d.ts"],
-      "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.js"],
+      "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.ts"],
       "@mdip/keymaster/types": ["../../packages/keymaster/src/types.ts"],
       "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"],
     }

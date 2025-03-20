@@ -1886,6 +1886,7 @@ describe('importBatch', () => {
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const deleteOp = await createDeleteOp(keypair, did);
+        const verifyResult = await gatekeeper.verifyOperation(deleteOp);
         await gatekeeper.deleteDID(deleteOp);
         const ops = await gatekeeper.exportDID(did);
 
@@ -1895,6 +1896,7 @@ describe('importBatch', () => {
 
         expect(response.queued).toBe(1);
         expect(response.rejected).toBe(1);
+        expect(verifyResult).toBe(true);
     });
 });
 
@@ -3214,3 +3216,153 @@ describe('isValidDID', () => {
     });
 });
 
+describe('Test operation validation errors', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return false if operation is invalid', async () => {
+        mockFs({});
+
+        // @ts-expect-error Testing invalid value
+        const result = await gatekeeper.verifyOperation({ type: 'dummy' });
+        expect(result).toBe(false);
+    });
+
+    it('update error with missing didDocument', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        let doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+
+        delete doc.didDocument;
+
+        try {
+            await gatekeeper.verifyUpdateOperation(updateOp, doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: doc.didDocument');
+        }
+    });
+
+    it('update error with missing didDocument', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        let doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+
+        delete doc.didDocument;
+
+        try {
+            await gatekeeper.verifyUpdateOperation(updateOp, doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: doc.didDocument');
+        }
+    });
+
+    it('update error with deactivated didDocumentMetadata', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        let doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+
+        doc.didDocumentMetadata!.deactivated = true;
+
+        try {
+            await gatekeeper.verifyUpdateOperation(updateOp, doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: DID deactivated');
+        }
+    });
+
+    it('update error without verificationMethod', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        let doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+
+        delete doc.didDocument!.verificationMethod;
+
+        try {
+            await gatekeeper.verifyUpdateOperation(updateOp, doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: doc.didDocument.verificationMethod');
+        }
+    });
+
+    it('update error with empty verificationMethod', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        let doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc);
+        doc = await gatekeeper.resolveDID(did);
+
+        delete doc.didDocument!.verificationMethod![0].publicKeyJwk;
+
+        try {
+            await gatekeeper.verifyUpdateOperation(updateOp, doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: didDocument missing verificationMethod');
+        }
+    });
+
+    it('create error with invalid type', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const agent = await gatekeeper.createDID(agentOp);
+        let assetOp = await createAssetOp(agent, keypair);
+
+        // @ts-expect-error Testing invalid value
+        assetOp.mdip!.type = "dummy";
+
+        try {
+            await gatekeeper.verifyCreateOperation(assetOp);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: mdip.type=dummy');
+        }
+    });
+
+    it('create error with invalid signature', async () => {
+        mockFs({});
+
+        const keypair = cipher.generateRandomJwk();
+        let agentOp = await createAgentOp(keypair);
+        agentOp.mdip!.prefix = "dummy";
+
+        try {
+            await gatekeeper.createDID(agentOp);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid operation: signature');
+        }
+    });
+});
