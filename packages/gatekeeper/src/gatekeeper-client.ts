@@ -165,7 +165,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    private async handleDIDOperation(operation: Operation): Promise<boolean | string> {
+    async createDID(operation: Operation): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/did`, operation);
             return response.data;
@@ -173,14 +173,6 @@ export default class GatekeeperClient implements GatekeeperInterface {
         catch (error) {
             throwError(error);
         }
-    }
-
-    async createDID(operation: Operation): Promise<string> {
-        const result = await this.handleDIDOperation(operation);
-        if (typeof result !== 'string') {
-            throw new Error(`Expected string from createDID, got ${typeof result}`);
-        }
-        return result;
     }
 
     async resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument> {
@@ -200,20 +192,26 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
+    // eslint-disable-next-line sonarjs/no-identical-functions
     async updateDID(operation: Operation): Promise<boolean> {
-        const result = await this.handleDIDOperation(operation);
-        if (typeof result !== 'boolean') {
-            throw new Error(`Expected boolean from updateDID, got ${typeof result}`);
+        try {
+            const response = await axios.post(`${this.API}/did`, operation);
+            return response.data;
         }
-        return result;
+        catch (error) {
+            throwError(error);
+        }
     }
 
+    // eslint-disable-next-line sonarjs/no-identical-functions
     async deleteDID(operation: Operation): Promise<boolean> {
-        const result = await this.handleDIDOperation(operation);
-        if (typeof result !== 'boolean') {
-            throw new Error(`Expected boolean from deleteDID, got ${typeof result}`);
+        try {
+            const response = await axios.post(`${this.API}/did`, operation);
+            return response.data;
         }
-        return result;
+        catch (error) {
+            throwError(error);
+        }
     }
 
     async getDIDs(options?: GetDIDOptions): Promise<string[] | MdipDocument[]> {

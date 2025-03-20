@@ -242,22 +242,6 @@ describe('createDID', () => {
             expect(error.message).toBe(ServerError.message);
         }
     });
-
-    it('create DID with wrong type set', async () => {
-        nock(GatekeeperURL)
-            .post(`/api/v1/did`)
-            .reply(200, 'true');
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-
-        try {
-            await gatekeeper.createDID({ type: 'update', did: MockDID });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe("Expected string from createDID, got boolean");
-        }
-    });
 });
 
 describe('resolveDID', () => {
@@ -329,22 +313,6 @@ describe('updateDID', () => {
             expect(error.message).toBe(ServerError.message);
         }
     });
-
-    it('update DID with wrong type set', async () => {
-        nock(GatekeeperURL)
-            .post(`/api/v1/did`)
-            .reply(200, 'did::mock:4321');
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-
-        try {
-            await gatekeeper.updateDID({ type: 'create', did: MockDID });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe("Expected boolean from updateDID, got string");
-        }
-    });
 });
 
 describe('deleteDID', () => {
@@ -372,22 +340,6 @@ describe('deleteDID', () => {
         }
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
-        }
-    });
-
-    it('delete DID with wrong type set', async () => {
-        nock(GatekeeperURL)
-            .post(`/api/v1/did`)
-            .reply(200, 'did::mock:4321');
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-
-        try {
-            await gatekeeper.deleteDID({ type: 'create', did: MockDID });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe("Expected boolean from deleteDID, got string");
         }
     });
 });
