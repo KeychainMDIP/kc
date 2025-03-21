@@ -368,7 +368,13 @@ export default class GatekeeperClient implements GatekeeperInterface {
             });
             return Buffer.from(response.data);
         } catch (error) {
-            throwError(error);
+            const axiosError = error as AxiosError;
+            if (axiosError.response && axiosError.response.data instanceof Uint8Array) {
+                const textDecoder = new TextDecoder();
+                const errorMessage = textDecoder.decode(axiosError.response.data);
+                axiosError.response.data = JSON.parse(errorMessage);
+            }
+            throwError(axiosError);
         }
     }
 }
