@@ -166,24 +166,30 @@ Options:
   -h, --help                                                   display help for command
 
 Commands:
-  clear-queue <registry> <batch>                               Clear a registry queue
-  create-batch <registry>                                      Create a batch for a registry
+  cas-add-file <file>                                          Add a file to the CAS
+  cas-add-json <file>                                          Add JSON file to the CAS
+  cas-add-text <text>                                          Add text to the CAS
+  cas-get-file <cid> <file>                                    Get a file from the CAS
+  cas-get-json <cid>                                           Get JSON from the CAS
+  cas-get-text <cid>                                           Get text from the CAS
   export-batch                                                 Export all events in a batch
   export-did <did>                                             Export DID to file
   export-dids                                                  Export all DIDs
   get-dids [updatedAfter] [updatedBefore] [confirm] [resolve]  Fetch all DIDs
+  get-status                                                   Report gatekeeper status
   hash-dids <file>                                             Compute hash of batch
   help [command]                                               display help for command
-  import-batch <file>                                          Import batch of events
-  import-batch <did> [registry]                                Import a batch
+  import-batch-file <file> [registry]                          Import batch of events
   import-did <file>                                            Import DID from file
   import-dids <file>                                           Import DIDs from file
   list-registries                                              List supported registries
   perf-test [full]                                             DID resolution performance test
+  process-events                                               Process events queue
   reset-db                                                     Reset the database to empty
   resolve-did <did> [confirm]                                  Return document associated with DID
-  resolve-seed-bank                                            Resolves the seed bank ID
   show-queue <registry>                                        Show queue for a registry
+  verify-db                                                    Verify all the DIDs in the db
+  verify-did <did>                                             Return verified document associated with DID
 ```
 
 ## Upgrade
