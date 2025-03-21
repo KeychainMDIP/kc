@@ -315,15 +315,17 @@ v1router.get('/status', async (req, res) => {
  *       200:
  *         description: >
  *           - If `type = "create"`, returns the newly created DID as a string.
- *           - Otherwise (for update or delete), returns a value indicating success.
+ *           - Otherwise (for update or delete), returns a boolean value indicating success.
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
  *               oneOf:
  *                 - type: string
  *                   description: A DID string (when a create operation succeeds).
+ *                   example: did:mdip:z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A
  *                 - type: boolean
  *                   description: A success indicator for update/delete operations.
+ *                   example: true
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1444,6 +1446,36 @@ v1router.post('/events/process', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /cas/json:
+ *   post:
+ *     summary: Adds a JSON object to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *       description: The JSON object to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added JSON object in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.post('/cas/json', async (req, res) => {
     try {
         const response = await ipfs.addJSON(req.body);
@@ -1453,6 +1485,39 @@ v1router.post('/cas/json', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /cas/json/{cid}:
+ *   get:
+ *     summary: Retrieve a JSON object from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the JSON object to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the JSON object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       404:
+ *         description: JSON object not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.get('/cas/json/:cid', async (req, res) => {
     try {
         const response = await ipfs.getJSON(req.params.cid);
@@ -1462,6 +1527,37 @@ v1router.get('/cas/json/:cid', async (req, res) => {
     }
 });
 
+
+/**
+ * @swagger
+ * /cas/text:
+ *   post:
+ *     summary: Adds text to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         text/plain:
+ *           schema:
+ *             type: string
+ *       description: The text to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added text in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: zb2rhoVn27TzH1yQD1Bux7XKxaUBp3Rwzvd8Re9Shp4bEGokf
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
     try {
         const response = await ipfs.addText(req.body);
@@ -1471,6 +1567,39 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
     }
 });
 
+/**
+ * @swagger
+ * /cas/text/{cid}:
+ *   get:
+ *     summary: Retrieve text from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the text to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the text
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *       404:
+ *         description: Text not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.get('/cas/text/:cid', async (req, res) => {
     try {
         const response = await ipfs.getText(req.params.cid);
@@ -1480,6 +1609,37 @@ v1router.get('/cas/text/:cid', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /cas/data:
+ *   post:
+ *     summary: Adds an octet-stream to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The data to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added data in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: zdj7WnZAJEYaTTvvDRXCfDpN8raDkX63VrrZBTpV5fw4cVciw
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
@@ -1490,6 +1650,40 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
     }
 });
 
+/**
+ * @swagger
+ * /cas/data/{cid}:
+ *   get:
+ *     summary: Retrieve data from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the data to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the data
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Data not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.get('/cas/data/:cid', async (req, res) => {
     try {
         const response = await ipfs.getData(req.params.cid);
