@@ -1,8 +1,6 @@
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import mock from 'mock-fs';
-import { Server } from 'http';
 
 const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
@@ -627,7 +625,7 @@ describe('addJSON', () => {
     const mockJSON = { mockData: 'mockData' };
     const mockCID = 'mockCID';
 
-    it('should return a CID', async () => {
+    it('should return a CID for JSON', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/cas/json`)
             .reply(200, mockCID);
@@ -691,7 +689,7 @@ describe('addText', () => {
     const mockText = 'mockText';
     const mockCID = 'mockCID';
 
-    it('should return a CID', async () => {
+    it('should return a CID for text', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/cas/text`)
             .reply(200, mockCID);
@@ -755,7 +753,7 @@ describe('addData', () => {
     const mockData = Buffer.from('mockData');
     const mockCID = 'mockCID';
 
-    it('should return a CID', async () => {
+    it('should return a CID for data', async () => {
         nock(GatekeeperURL)
             .post(`/api/v1/cas/data`)
             .reply(200, mockCID);
