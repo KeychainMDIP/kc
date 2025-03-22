@@ -222,7 +222,7 @@ describe('createDID', () => {
             .reply(200, 'did:mock:4321');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const did = await gatekeeper.createDID({type: 'create'});
+        const did = await gatekeeper.createDID({ type: 'create' });
 
         expect(did).toBe('did:mock:4321');
     });
@@ -235,7 +235,7 @@ describe('createDID', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
-            await gatekeeper.createDID({type: 'create'});
+            await gatekeeper.createDID({ type: 'create' });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -613,6 +613,198 @@ describe('processEvents', () => {
 
         try {
             await gatekeeper.processEvents();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('addJSON', () => {
+    const mockJSON = { mockData: 'mockData' };
+    const mockCID = 'mockCID';
+
+    it('should return a CID for JSON', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/json`)
+            .reply(200, mockCID);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const cid = await gatekeeper.addJSON(mockJSON);
+
+        expect(cid).toStrictEqual(mockCID);
+    });
+
+    it('should throw exception on addJSON server error', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/json`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.addJSON(mockJSON);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getJSON', () => {
+    const mockJSON = { mockData: 'mockData' };
+    const mockCID = 'mockCID';
+
+    it('should return JSON', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/json/${mockCID}`)
+            .reply(200, mockJSON);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const json = await gatekeeper.getJSON(mockCID);
+
+        expect(json).toStrictEqual(mockJSON);
+    });
+
+    it('should throw exception on getJSON server error', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/json/${mockCID}`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.getJSON(mockCID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('addText', () => {
+    const mockText = 'mockText';
+    const mockCID = 'mockCID';
+
+    it('should return a CID for text', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/text`)
+            .reply(200, mockCID);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const cid = await gatekeeper.addText(mockText);
+
+        expect(cid).toStrictEqual(mockCID);
+    });
+
+    it('should throw exception on addText server error', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/text`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.addText(mockText);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getText', () => {
+    const mockText = 'mockText';
+    const mockCID = 'mockCID';
+
+    it('should return text', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/text/${mockCID}`)
+            .reply(200, mockText);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const json = await gatekeeper.getText(mockCID);
+
+        expect(json).toStrictEqual(mockText);
+    });
+
+    it('should throw exception on getText server error', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/text/${mockCID}`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.getText(mockCID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('addData', () => {
+    const mockData = Buffer.from('mockData');
+    const mockCID = 'mockCID';
+
+    it('should return a CID for data', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/data`)
+            .reply(200, mockCID);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const cid = await gatekeeper.addData(mockData);
+
+        expect(cid).toStrictEqual(mockCID);
+    });
+
+    it('should throw exception on addData server error', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/cas/data`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.addData(mockData);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getData', () => {
+    const mockData = Buffer.from('mockData');
+    const mockCID = 'mockCID';
+
+    it('should return text', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/data/${mockCID}`)
+            .reply(200, mockData);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const json = await gatekeeper.getData(mockCID);
+
+        expect(json).toStrictEqual(mockData);
+    });
+
+    it('should throw exception on getData server error', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/cas/data/${mockCID}`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.getData(mockCID);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

@@ -8,6 +8,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
+import KuboClient from '@mdip/ipfs/client';
 import config from './config.js';
 
 import { EventEmitter } from 'events';
@@ -22,7 +23,14 @@ const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
                     : null;
 await db.start();
 
-const gatekeeper = new Gatekeeper({ db, didPrefix: config.didPrefix, registries: config.registries });
+const ipfs = await KuboClient.create({
+    url: config.ipfsURL,
+    waitUntilReady: true,
+    intervalSeconds: 5,
+    chatty: true,
+});
+
+const gatekeeper = new Gatekeeper({ db, ipfs, didPrefix: config.didPrefix, registries: config.registries });
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
@@ -307,15 +315,17 @@ v1router.get('/status', async (req, res) => {
  *       200:
  *         description: >
  *           - If `type = "create"`, returns the newly created DID as a string.
- *           - Otherwise (for update or delete), returns a value indicating success.
+ *           - Otherwise (for update or delete), returns a boolean value indicating success.
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
  *               oneOf:
  *                 - type: string
  *                   description: A DID string (when a create operation succeeds).
+ *                   example: did:mdip:z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A
  *                 - type: boolean
  *                   description: A success indicator for update/delete operations.
+ *                   example: true
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1431,6 +1441,254 @@ v1router.post('/events/process', async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();
         res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /cas/json:
+ *   post:
+ *     summary: Adds a JSON object to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *       description: The JSON object to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added JSON object in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.post('/cas/json', async (req, res) => {
+    try {
+        const response = await ipfs.addJSON(req.body);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /cas/json/{cid}:
+ *   get:
+ *     summary: Retrieve a JSON object from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the JSON object to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the JSON object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       404:
+ *         description: JSON object not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/cas/json/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getJSON(req.params.cid);
+        res.json(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+
+/**
+ * @swagger
+ * /cas/text:
+ *   post:
+ *     summary: Adds text to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         text/plain:
+ *           schema:
+ *             type: string
+ *       description: The text to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added text in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: zb2rhoVn27TzH1yQD1Bux7XKxaUBp3Rwzvd8Re9Shp4bEGokf
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
+    try {
+        const response = await ipfs.addText(req.body);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /cas/text/{cid}:
+ *   get:
+ *     summary: Retrieve text from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the text to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the text
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *       404:
+ *         description: Text not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/cas/text/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getText(req.params.cid);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /cas/data:
+ *   post:
+ *     summary: Adds an octet-stream to the CAS (Content Addressable Storage)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The data to store in the CAS
+ *
+ *     responses:
+ *       200:
+ *         description: >
+ *           A CID (Content Identifier) for the added data in base58btc format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: zdj7WnZAJEYaTTvvDRXCfDpN8raDkX63VrrZBTpV5fw4cVciw
+ *
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const response = await ipfs.addData(data);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /cas/data/{cid}:
+ *   get:
+ *     summary: Retrieve data from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the data to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the data
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Data not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/cas/data/:cid', async (req, res) => {
+    try {
+        const response = await ipfs.getData(req.params.cid);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
     }

@@ -13,8 +13,6 @@ RUN npm ci
 RUN npm run build
 
 COPY scripts ./scripts/
-COPY kc ./
-COPY admin ./
 
 # Run idle
 CMD ["tail", "-f", "/dev/null"]

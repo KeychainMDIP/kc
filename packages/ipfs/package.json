@@ -10,7 +10,8 @@
     ".": {
       "import": "./dist/ipfs.js",
       "types": "./dist/types/ipfs.d.ts"
-    }
+    },
+    "./client": "./src/kubo-client.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -24,6 +25,7 @@
     "axios": "^1.7.7",
     "blockstore-fs": "^2.0.2",
     "helia": "^3.0.0",
+    "kubo-rpc-client": "^5.1.0",
     "multiformats": "^13.0.0"
   },
   "repository": {

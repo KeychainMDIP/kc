@@ -363,18 +363,20 @@
         },
         "responses": {
           "200": {
-            "description": "- If `type = \"create\"`, returns the newly created DID as a string. - Otherwise (for update or delete), returns a value indicating success.\n",
+            "description": "- If `type = \"create\"`, returns the newly created DID as a string. - Otherwise (for update or delete), returns a boolean value indicating success.\n",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
                   "oneOf": [
                     {
                       "type": "string",
-                      "description": "A DID string (when a create operation succeeds)."
+                      "description": "A DID string (when a create operation succeeds).",
+                      "example": "did:mdip:z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A"
                     },
                     {
                       "type": "boolean",
-                      "description": "A success indicator for update/delete operations."
+                      "description": "A success indicator for update/delete operations.",
+                      "example": true
                     }
                   ]
                 }
@@ -1667,6 +1669,272 @@
           },
           "500": {
             "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/json": {
+      "post": {
+        "summary": "Adds a JSON object to the CAS (Content Addressable Storage)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "The JSON object to store in the CAS"
+        },
+        "responses": {
+          "200": {
+            "description": "A CID (Content Identifier) for the added JSON object in base58btc format\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/json/{cid}": {
+      "get": {
+        "summary": "Retrieve a JSON object from the CAS (Content Addressable Storage)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CID (Content Identifier) of the JSON object to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the JSON object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "JSON object not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "example": "Not Found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/text": {
+      "post": {
+        "summary": "Adds text to the CAS (Content Addressable Storage)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "The text to store in the CAS"
+        },
+        "responses": {
+          "200": {
+            "description": "A CID (Content Identifier) for the added text in base58btc format\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "zb2rhoVn27TzH1yQD1Bux7XKxaUBp3Rwzvd8Re9Shp4bEGokf"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/text/{cid}": {
+      "get": {
+        "summary": "Retrieve text from the CAS (Content Addressable Storage)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CID (Content Identifier) of the text to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the text",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Text not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "example": "Not Found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/data": {
+      "post": {
+        "summary": "Adds an octet-stream to the CAS (Content Addressable Storage)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "description": "The data to store in the CAS"
+        },
+        "responses": {
+          "200": {
+            "description": "A CID (Content Identifier) for the added data in base58btc format\n",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "zdj7WnZAJEYaTTvvDRXCfDpN8raDkX63VrrZBTpV5fw4cVciw"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cas/data/{cid}": {
+      "get": {
+        "summary": "Retrieve data from the CAS (Content Addressable Storage)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The CID (Content Identifier) of the data to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved the data",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Data not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "example": "Not Found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
             "content": {
               "application/json": {
                 "schema": {

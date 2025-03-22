@@ -20,8 +20,8 @@ const ipfs = new IPFS();
 await ipfs.start();
 
 const data = { data: 'whatever' };
-const cid = await ipfs.add(data);
-const retrieve = await ipfs.get(cid); // retrieve == data
+const cid = await ipfs.addJSON(data);
+const retrieve = await ipfs.getJSON(cid); // retrieve == data
 
 await ipfs.stop();
 ```

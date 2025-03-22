@@ -25,6 +25,7 @@ const canonicalize = canonicalizeModule as unknown as (input: unknown) => string
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
+    ipfs?: IPFS,
     console?: typeof console,
     didPrefix?: string,
     maxOpBytes?: number,
@@ -85,7 +86,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-        this.ipfs = new IPFS({ minimal: true });
+        this.ipfs = options.ipfs || new IPFS({ minimal: true });
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
@@ -255,9 +256,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return true;
     }
 
-    async generateCID(operation: unknown): Promise<string> {
+    async generateCID(operation: unknown, save: boolean = false): Promise<string> {
         const canonical = canonicalize(operation);
-        return this.ipfs.add(JSON.parse(canonical));
+
+        if (save) {
+            return this.ipfs.addJSON(JSON.parse(canonical));
+        }
+
+        return this.ipfs.generateCID(JSON.parse(canonical));
     }
 
     async generateDID(operation: Operation): Promise<string> {
@@ -840,12 +846,12 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             for (const e of currentEvents) {
                 if (!e.opid) {
-                    e.opid = await this.generateCID(e.operation);
+                    e.opid = await this.generateCID(e.operation, true);
                 }
             }
 
             if (!event.opid) {
-                event.opid = await this.generateCID(event.operation);
+                event.opid = await this.generateCID(event.operation, true);
             }
 
             const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);
