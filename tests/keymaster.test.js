@@ -1,6 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import canonicalize from 'canonicalize';
+import sharp from 'sharp';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
@@ -4914,15 +4915,42 @@ describe('createImage', () => {
     it('should create DID from image data', async () => {
         mockFs({});
 
-        const ownerDid = await keymaster.createId('Bob');
-        const mockImage = Buffer.from('mock image data');
+        // Create a small image buffer using sharp
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
         const ipfs = new IPFS({ minimal: true });
         const cid = await ipfs.generateCID(mockImage);
+
+        const ownerDid = await keymaster.createId('Bob');
         const dataDid = await keymaster.createImage(mockImage);
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(doc.didDocument.id).toBe(dataDid);
         expect(doc.didDocument.controller).toBe(ownerDid);
-        expect(doc.didDocumentData).toStrictEqual({ image: { cid } });
+
+        const expected = {
+            image: {
+                cid,
+                metadata: {
+                    width: 100,
+                    height: 100,
+                    channels: 3,
+                    depth: "uchar",
+                    format: "png",
+                    hasAlpha: false,
+                    hasProfile: false,
+                    isProgressive: false,
+                    size: 392,
+                    space: "srgb",
+                }
+            }
+        }
+        expect(doc.didDocumentData).toStrictEqual(expected);
     });
 });
