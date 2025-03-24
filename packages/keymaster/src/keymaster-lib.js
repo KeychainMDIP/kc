@@ -547,6 +547,52 @@ export default class Keymaster {
         return did;
     }
 
+    async createImage(data, options = {}) {
+        let { registry = this.defaultRegistry, controller, validUntil } = options;
+
+        if (validUntil) {
+            const validate = new Date(validUntil);
+
+            if (isNaN(validate.getTime())) {
+                throw new InvalidParameterError('options.validUntil');
+            }
+        }
+
+        if (!data) {
+            throw new InvalidParameterError('data');
+        }
+
+        const id = await this.fetchIdInfo(controller);
+        const cid = await this.gatekeeper.addData(data);
+
+        const operation = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                version: 1,
+                type: "asset",
+                registry,
+                validUntil
+            },
+            controller: id.did,
+            data: {
+                image: {
+                    cid,
+                }
+            },
+        };
+
+        const signed = await this.addSignature(operation, controller);
+        const did = await this.gatekeeper.createDID(signed);
+
+        // Keep assets that will be garbage-collected out of the owned list
+        if (!validUntil) {
+            await this.addToOwned(did);
+        }
+
+        return did;
+    }
+
     async encryptMessage(msg, receiver, options = {}) {
         const { encryptForSender = true, includeHash = false } = options;
 

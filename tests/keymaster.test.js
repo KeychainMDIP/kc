@@ -10,6 +10,7 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
+import IPFS from '@mdip/ipfs';
 
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
@@ -278,7 +279,7 @@ describe('saveWallet', () => {
         mockFs({});
 
         for (let i = 0; i < 10; i++) {
-            const mockWallet = { seed: i+1 };
+            const mockWallet = { seed: i + 1 };
 
             const ok = await keymaster.saveWallet(mockWallet);
             const wallet = await keymaster.loadWallet();
@@ -4901,5 +4902,27 @@ describe('setCurrentId', () => {
         } catch (error) {
             expect(error.type).toBe(UnknownIDError.type);
         }
+    });
+});
+
+describe('createImage', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create DID from image data', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockImage = Buffer.from('mock image data');
+        const ipfs = new IPFS({ minimal: true });
+        const cid = await ipfs.generateCID(mockImage);
+        const dataDid = await keymaster.createImage(mockImage);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument.id).toBe(dataDid);
+        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocumentData).toStrictEqual({ image: { cid } });
     });
 });

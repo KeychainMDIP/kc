@@ -1478,7 +1478,7 @@ v1router.post('/events/process', async (req, res) => {
  */
 v1router.post('/cas/json', async (req, res) => {
     try {
-        const response = await ipfs.addJSON(req.body);
+        const response = await gatekeeper.addJSON(req.body);
         res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -1520,13 +1520,12 @@ v1router.post('/cas/json', async (req, res) => {
  */
 v1router.get('/cas/json/:cid', async (req, res) => {
     try {
-        const response = await ipfs.getJSON(req.params.cid);
+        const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
     } catch (error) {
         res.status(500).send(error.toString());
     }
 });
-
 
 /**
  * @swagger
@@ -1560,7 +1559,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
  */
 v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
     try {
-        const response = await ipfs.addText(req.body);
+        const response = await gatekeeper.addText(req.body);
         res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -1602,7 +1601,7 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
  */
 v1router.get('/cas/text/:cid', async (req, res) => {
     try {
-        const response = await ipfs.getText(req.params.cid);
+        const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -1643,7 +1642,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
 v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
-        const response = await ipfs.addData(data);
+        const response = await gatekeeper.addData(data);
         res.send(response);
     } catch (error) {
         res.status(500).send(error.toString());
@@ -1686,7 +1685,7 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
  */
 v1router.get('/cas/data/:cid', async (req, res) => {
     try {
-        const response = await ipfs.getData(req.params.cid);
+        const response = await gatekeeper.getData(req.params.cid);
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
     } catch (error) {
