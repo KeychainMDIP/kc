@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import { imageSize } from 'image-size';
 import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 const DefaultSchema = {
@@ -565,7 +565,7 @@ export default class Keymaster {
 
         const id = await this.fetchIdInfo(controller);
         const cid = await this.gatekeeper.addData(data);
-        const metadata = await sharp(data).metadata();
+        const metadata = await imageSize(data);
 
         const operation = {
             type: "create",
@@ -580,7 +580,8 @@ export default class Keymaster {
             data: {
                 image: {
                     cid,
-                    metadata
+                    bytes: data.length,
+                    ...metadata
                 }
             },
         };

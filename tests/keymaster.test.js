@@ -4937,18 +4937,10 @@ describe('createImage', () => {
         const expected = {
             image: {
                 cid,
-                metadata: {
-                    width: 100,
-                    height: 100,
-                    channels: 3,
-                    depth: "uchar",
-                    format: "png",
-                    hasAlpha: false,
-                    hasProfile: false,
-                    isProgressive: false,
-                    size: 392,
-                    space: "srgb",
-                }
+                bytes: 392,
+                type: 'png',
+                width: 100,
+                height: 100,
             }
         }
         expect(doc.didDocumentData).toStrictEqual(expected);
