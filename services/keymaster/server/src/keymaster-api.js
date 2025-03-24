@@ -4054,6 +4054,16 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
     }
 });
 
+v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const response = await keymaster.createImage(data);
+        res.send(response);
+    } catch (error) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
