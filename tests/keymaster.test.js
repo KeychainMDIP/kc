@@ -4945,4 +4945,15 @@ describe('createImage', () => {
         }
         expect(doc.didDocumentData).toStrictEqual(expected);
     });
+
+    it('should throw an exception on invalid image buffer', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createImage(Buffer.from('mock'));
+            throw new ExpectedExceptionError();
+        } catch (error) {
+            expect(error.message).toBe('Invalid parameter: buffer');
+        }
+    });
 });

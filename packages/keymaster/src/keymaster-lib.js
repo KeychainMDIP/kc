@@ -548,53 +548,26 @@ export default class Keymaster {
         return did;
     }
 
-    async createImage(data, options = {}) {
-        let { registry = this.defaultRegistry, controller, validUntil } = options;
+    async createImage(buffer, options = {}) {
+        let metadata;
 
-        if (validUntil) {
-            const validate = new Date(validUntil);
+        try {
+            metadata = imageSize(buffer);
+        }
+        catch (error) {
+            throw new InvalidParameterError('buffer');
+        }
 
-            if (isNaN(validate.getTime())) {
-                throw new InvalidParameterError('options.validUntil');
+        const cid = await this.gatekeeper.addData(buffer);
+        const data = {
+            image: {
+                cid,
+                bytes: buffer.length,
+                ...metadata
             }
-        }
-
-        if (!data) {
-            throw new InvalidParameterError('data');
-        }
-
-        const id = await this.fetchIdInfo(controller);
-        const cid = await this.gatekeeper.addData(data);
-        const metadata = await imageSize(data);
-
-        const operation = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
-                version: 1,
-                type: "asset",
-                registry,
-                validUntil
-            },
-            controller: id.did,
-            data: {
-                image: {
-                    cid,
-                    bytes: data.length,
-                    ...metadata
-                }
-            },
         };
 
-        const signed = await this.addSignature(operation, controller);
-        const did = await this.gatekeeper.createDID(signed);
-
-        // Keep assets that will be garbage-collected out of the owned list
-        if (!validUntil) {
-            await this.addToOwned(did);
-        }
-
-        return did;
+        return this.createAsset(data, options);
     }
 
     async encryptMessage(msg, receiver, options = {}) {
