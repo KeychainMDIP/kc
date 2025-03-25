@@ -306,7 +306,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return hex64Regex.test(hash);
     }
 
-    verifySignatureFormat(signature? : Signature): boolean {
+    verifySignatureFormat(signature?: Signature): boolean {
         if (!signature) {
             return false;
         }
@@ -1160,5 +1160,29 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         return this.db.clearQueue(registry, events);
+    }
+
+    async addText(text: string): Promise<string> {
+        return this.ipfs.addText(text);
+    }
+
+    async getText(cid: string): Promise<string | null> {
+        return this.ipfs.getText(cid);
+    }
+
+    async addData(data: Buffer): Promise<string> {
+        return this.ipfs.addData(data);
+    }
+
+    async getData(cid: string): Promise<Buffer | null> {
+        return this.ipfs.getData(cid);
+    }
+
+    async addJSON(json: object): Promise<string> {
+        return this.ipfs.addJSON(json);
+    }
+
+    async getJSON(cid: string): Promise<object | null> {
+        return this.ipfs.getJSON(cid);
     }
 }

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+docker compose down hypr-mediator
+docker compose up hypr-mediator -d

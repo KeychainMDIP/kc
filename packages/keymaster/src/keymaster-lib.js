@@ -1,3 +1,4 @@
+import { imageSize } from 'image-size';
 import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
 
 const DefaultSchema = {
@@ -545,6 +546,28 @@ export default class Keymaster {
         }
 
         return did;
+    }
+
+    async createImage(buffer, options = {}) {
+        let metadata;
+
+        try {
+            metadata = imageSize(buffer);
+        }
+        catch (error) {
+            throw new InvalidParameterError('buffer');
+        }
+
+        const cid = await this.gatekeeper.addData(buffer);
+        const data = {
+            image: {
+                cid,
+                bytes: buffer.length,
+                ...metadata
+            }
+        };
+
+        return this.createAsset(data, options);
     }
 
     async encryptMessage(msg, receiver, options = {}) {

@@ -62,6 +62,7 @@
   "dependencies": {
     "@mdip/common": "*",
     "axios": "^1.7.7",
+    "image-size": "^2.0.1",
     "ioredis": "^5.4.1",
     "mongodb": "^6.5.0",
     "sqlite": "^5.1.1",

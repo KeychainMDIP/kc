@@ -827,12 +827,26 @@ program
     });
 
 program
-    .command('create-asset [file]')
+    .command('create-asset-json [file]')
     .description('Create an asset from a JSON file')
     .action(async (file) => {
         try {
             const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
             const did = await keymaster.createAsset(data);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('create-asset-image [file]')
+    .description('Create an asset from an image file')
+    .action(async (file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const did = await keymaster.createImage(data);
             console.log(did);
         }
         catch (error) {

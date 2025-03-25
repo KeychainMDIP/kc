@@ -745,4 +745,18 @@ export default class KeymasterClient {
             throwError(error);
         }
     }
+
+    async createImage(data) {
+        try {
+            const response = await axios.post(`${this.API}/images`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
 }

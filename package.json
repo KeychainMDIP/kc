@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "commander": "^11.1.0",
+    "sharp": "^0.33.5",
     "uuid": "^11.0.2"
   },
   "devDependencies": {
