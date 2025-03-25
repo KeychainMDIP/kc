@@ -92,7 +92,8 @@ Commands:
   backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  create-asset [file]                        Create an asset from a JSON file
+  create-asset-image [file]                  Create an asset from an image file
+  create-asset-json [file]                   Create an asset from a JSON file
   create-challenge [file] [name]             Create challenge (optionally from a file)
   create-challenge-cc <did> [name]           Create challenge from a credential DID
   create-group <name>                        Create a new group
