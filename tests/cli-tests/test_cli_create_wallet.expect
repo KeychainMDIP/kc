@@ -1,0 +1,95 @@
+#!/usr/bin/expect
+
+# Wallet Creation Validation
+
+# Set timeout for commands
+set timeout 30
+
+# Enable Expect's debugging output
+log_user 1
+
+# Start the CLI program for wallet creation
+spawn bash kc create-wallet
+
+# Wait for and capture the full output
+expect {
+    -re "{.*}" {
+        set output $expect_out(0,string)
+    }
+    timeout {
+        puts "Test failed: Timeout waiting for output."
+        exit 1
+    }
+}
+
+# Validation procedure
+proc validate_wallet_output {output} {
+    # Initialize validation tracking
+    set validation_passed 1
+    set validation_details {}
+
+    # Define exact required keys
+    set required_keys [list \
+        "seed" \
+        "mnemonic" \
+        "hdkey" \
+        "xpriv" \
+        "xpub" \
+        "counter" \
+        "ids" \
+        "did" \
+        "account" \
+        "index" \
+    ]
+
+    # Detailed validation results for all keys
+    set validated_keys {}
+
+    # Check for presence of each required key
+    foreach key $required_keys {
+        if {[string first "\"$key\":" $output] != -1} {
+            # Check if the key has a non-null value
+            if {![regexp "\"$key\"\\s*:\\s*null" $output]} {
+                lappend validated_keys "\n✅ Key present and not null: $key"
+            } else {
+                lappend validation_details "\n❌ Null value for key: $key"
+                set validation_passed 0
+            }
+        } else {
+            lappend validation_details "\n❌ Missing key: $key"
+            set validation_passed 0
+        }
+    }
+
+    # Print out all validation details
+    puts "\nValidation Details:"
+    
+    # Print validated keys first
+    foreach detail $validated_keys {
+        puts $detail
+    }
+
+    # Then print any failure details
+    foreach detail $validation_details {
+        puts $detail
+    }
+
+    # Final validation summary
+    if {$validation_passed} {
+        puts "\n✅ Validation Passed: All required keys present, no null values"
+        return 1
+    } else {
+        puts "\n🔴 Validation Failed: Missing or null values found"
+        return 0
+    }
+}
+
+# Validate wallet output
+set validation_result [validate_wallet_output $output]
+
+# Exit with appropriate status
+if {$validation_result} {
+    exit 0
+} else {
+    exit 1
+}

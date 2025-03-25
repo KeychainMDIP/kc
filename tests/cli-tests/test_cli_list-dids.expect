@@ -1,0 +1,20 @@
+#!/usr/bin/expect
+
+# Start the command you want to test
+spawn kc list-ids
+
+# Wait for the output and check if '<<< current' is present
+expect {
+    "<<< current" {
+        send_user "\n✅ Test Passed: '<<< current' found in output.\n"
+        exit 0
+    }
+    timeout {
+        send_user "\n❌ Test Failed: '<<< current' not found in output.\n"
+        exit 1
+    }
+    eof {
+        send_user "\n❌ Test Failed: Unexpected end of output, '<<< current' not found.\n"
+        exit 1
+    }
+}
