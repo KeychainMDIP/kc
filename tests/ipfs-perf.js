@@ -1,9 +1,8 @@
 
-import IPFS from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs';
 import * as uuid from 'uuid';
 
-//const ipfs = new IPFS({ datadir: 'data/ipfs' });
-const ipfs = new IPFS();
+const ipfs = new HeliaClient();
 
 console.time('start');
 await ipfs.start();

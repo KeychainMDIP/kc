@@ -8,13 +8,13 @@ import * as jsonCodec from 'multiformats/codecs/json';
 import * as rawCodec from 'multiformats/codecs/raw';
 import * as sha256 from 'multiformats/hashes/sha2';
 
-interface IPFSConfig {
+interface HeliaConfig {
     minimal?: boolean;
     datadir?: string;
 }
 
 class HeliaClient {
-    private config: IPFSConfig;
+    private config: HeliaConfig;
     private helia: Helia | null;
     private ipfs: JSON | null;
     private unixfs: UnixFS | null;
@@ -144,7 +144,7 @@ class HeliaClient {
     }
 
     // Factory method
-    static async create(config: IPFSConfig = {}): Promise<HeliaClient> {
+    static async create(config: HeliaConfig = {}): Promise<HeliaClient> {
         const instance = new HeliaClient(config);
         await instance.start();
         return instance;

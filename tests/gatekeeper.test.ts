@@ -3410,12 +3410,8 @@ describe('getJSON', () => {
     const mockData = { key: 'mock' };
 
     it('should return JSON data from CID', async () => {
-        // const ipfs = new IPFS();
-        // await ipfs.start();
-        // const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
         const cid = await gatekeeper.addJSON(mockData);
         const data = await gatekeeper.getJSON(cid);
-        //await ipfs.stop()
 
         expect(data).toStrictEqual(mockData);
     });
