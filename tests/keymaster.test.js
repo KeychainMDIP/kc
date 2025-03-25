@@ -11,7 +11,7 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
-import IPFS from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
@@ -4924,7 +4924,7 @@ describe('createImage', () => {
                 background: { r: 255, g: 0, b: 0 }
             }
         }).png().toBuffer();
-        const ipfs = new IPFS({ minimal: true });
+        const ipfs = new HeliaClient({ minimal: true });
         const cid = await ipfs.generateCID(mockImage);
 
         const ownerDid = await keymaster.createId('Bob');

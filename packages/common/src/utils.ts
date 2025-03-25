@@ -1,4 +1,4 @@
-import IPFS from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 export function copyJSON<T>(json: T): T {
     return JSON.parse(JSON.stringify(json)) as T;
@@ -20,7 +20,7 @@ export function isValidDID(did: string): boolean {
     }
 
     const suffix = parts.pop();
-    return IPFS.isValidCID(suffix);
+    return HeliaClient.isValidCID(suffix);
 }
 
 export function compareOrdinals(a: number[], b: number[]): -1 | 0 | 1 {

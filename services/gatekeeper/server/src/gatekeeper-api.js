@@ -8,7 +8,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
-import KuboClient from '@mdip/ipfs/client';
+import KuboClient from '@mdip/ipfs/kubo';
 import config from './config.js';
 
 import { EventEmitter } from 'events';

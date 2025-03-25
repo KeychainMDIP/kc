@@ -13,9 +13,9 @@ npm install @mdip/ipfs
 ### basic use
 
 ```js
-import IPFS from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
-const ipfs = new IPFS();
+const ipfs = new HeliaClient();
 
 await ipfs.start();
 
@@ -31,7 +31,7 @@ await ipfs.stop();
 The static factory method `create` can be used to create and start an IPFS instance:
 
 ```js
-const ipfs = await IPFS.create();
+const ipfs = await HeliaClient.create();
 ```
 
 ### FS blockstore mode
@@ -39,7 +39,7 @@ const ipfs = await IPFS.create();
 Passing `datadir` in options to `start` or `create` will persist the data to the specified folder.
 
 ```js
-const ipfs = await IPFS.create({ datadir: 'data/ipfs' });
+const ipfs = await HeliaClient.create({ datadir: 'data/ipfs' });
 ```
 
 ### minimal mode
@@ -48,5 +48,5 @@ Starting IPFS in `minimal` mode avoids starting a Helia IPFS server.
 Only `add` works to generate CIDs. Nothing is persisted so `get` always returns null.
 
 ```js
-const ipfs = await IPFS.create({ minimal: true });
+const ipfs = await HeliaClient.create({ minimal: true });
 ```

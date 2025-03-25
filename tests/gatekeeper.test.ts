@@ -7,7 +7,7 @@ import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 import type { EcdsaJwkPair } from '@mdip/cipher/types';
-import IPFS from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 const mockConsole = {
     log: (): void => { },
@@ -18,7 +18,7 @@ const mockConsole = {
 
 const cipher = new CipherNode();
 const db_json = new DbJson('test');
-const ipfs = new IPFS();
+const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db: db_json, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 
 beforeAll(async () => {
@@ -3387,10 +3387,10 @@ describe('addJSON', () => {
     });
 
     const data = { key: 'mock' };
-    const hash ='z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
+    const hash = 'z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
 
     it('should create CID from data', async () => {
-        const ipfs = new IPFS();
+        const ipfs = new HeliaClient();
         const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
         const cid = await gatekeeper.addJSON(data);
 
@@ -3410,12 +3410,8 @@ describe('getJSON', () => {
     const mockData = { key: 'mock' };
 
     it('should return JSON data from CID', async () => {
-        // const ipfs = new IPFS();
-        // await ipfs.start();
-        // const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
         const cid = await gatekeeper.addJSON(mockData);
         const data = await gatekeeper.getJSON(cid);
-        //await ipfs.stop()
 
         expect(data).toStrictEqual(mockData);
     });
@@ -3431,7 +3427,7 @@ describe('addText', () => {
     });
 
     const mockData = 'mock text data';
-    const hash ='zb2rhgNGdyFtViUWRk4oYLGrwdkgbt4GnF2s15k3ZujX6w3QW';
+    const hash = 'zb2rhgNGdyFtViUWRk4oYLGrwdkgbt4GnF2s15k3ZujX6w3QW';
 
     it('should create CID from text data', async () => {
         const cid = await gatekeeper.addText(mockData);
@@ -3469,7 +3465,7 @@ describe('addData', () => {
     });
 
     const mockData = Buffer.from('mock data');
-    const hash ='zb2rhYuMKCR7pY51Tzv52NmTW9zYU2P53XFUJitvDwtSpCDhd';
+    const hash = 'zb2rhYuMKCR7pY51Tzv52NmTW9zYU2P53XFUJitvDwtSpCDhd';
 
     it('should create CID from text data', async () => {
         const cid = await gatekeeper.addData(mockData);
