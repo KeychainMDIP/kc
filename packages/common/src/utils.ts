@@ -1,4 +1,4 @@
-import HeliaClient from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 export function copyJSON<T>(json: T): T {
     return JSON.parse(JSON.stringify(json)) as T;

@@ -11,7 +11,7 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
-import HeliaClient from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 const db = new DbJson('test');
 const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });

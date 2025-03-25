@@ -1,7 +1,7 @@
 import { program } from 'commander';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import KuboClient from '@mdip/ipfs/client';
+import KuboClient from '@mdip/ipfs/kubo';
 
 dotenv.config();
 const ipfs = new KuboClient();

@@ -7,7 +7,7 @@ import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 import type { EcdsaJwkPair } from '@mdip/cipher/types';
-import HeliaClient from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 const mockConsole = {
     log: (): void => { },

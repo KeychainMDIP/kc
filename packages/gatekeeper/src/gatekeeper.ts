@@ -5,7 +5,7 @@ import {
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
-import HeliaClient from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 import {
     GatekeeperDb,
     GatekeeperInterface,

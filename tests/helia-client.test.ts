@@ -1,5 +1,5 @@
 import mockFs from 'mock-fs';
-import HeliaClient from '@mdip/ipfs';
+import HeliaClient from '@mdip/ipfs/helia';
 
 describe('start', () => {
     it('should ignore a second call to start', async () => {
