@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "description": "MDIP IPFS lib",
   "type": "module",
-  "main": "./dist/ipfs.js",
-  "module": "./dist/ipfs.js",
-  "types": "./dist/types/ipfs.d.ts",
+  "main": "./dist/helia-client.js",
+  "module": "./dist/helia-client.js",
+  "types": "./dist/types/helia-client.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/ipfs.js",
-      "types": "./dist/types/ipfs.d.ts"
+      "import": "./dist/helia-client.js",
+      "types": "./dist/types/helia-client.d.ts"
     },
     "./client": "./src/kubo-client.js"
   },
