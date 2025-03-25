@@ -13,7 +13,7 @@ interface IPFSConfig {
     datadir?: string;
 }
 
-class IPFS {
+class HeliaClient {
     private config: IPFSConfig;
     private helia: Helia | null;
     private ipfs: JSON | null;
@@ -144,8 +144,8 @@ class IPFS {
     }
 
     // Factory method
-    static async create(config: IPFSConfig = {}): Promise<IPFS> {
-        const instance = new IPFS(config);
+    static async create(config: IPFSConfig = {}): Promise<HeliaClient> {
+        const instance = new HeliaClient(config);
         await instance.start();
         return instance;
     }
@@ -160,4 +160,4 @@ class IPFS {
     }
 }
 
-export default IPFS;
+export default HeliaClient;
