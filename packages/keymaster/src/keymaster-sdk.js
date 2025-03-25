@@ -753,7 +753,7 @@ export default class KeymasterClient {
                     'Content-Type': 'application/octet-stream'
                 }
             });
-            return response.data;
+            return response.data.did;
         }
         catch (error) {
             throwError(error);

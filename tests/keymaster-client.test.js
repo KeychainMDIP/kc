@@ -38,6 +38,7 @@ const Endpoints = {
     polls: '/api/v1/polls',
     polls_vote: '/api/v1/polls/vote',
     polls_update: '/api/v1/polls/update',
+    images: '/api/v1/images',
 };
 
 const mockConsole = {
@@ -2145,6 +2146,38 @@ describe('unpublishPoll', () => {
 
         try {
             await keymaster.unpublishPoll(mockPollId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('createImage', () => {
+    const mockImage = Buffer.from('image data');
+    const mockDID = 'did:example:123456789abcd';
+
+    it('should create an image asset', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.images)
+            .reply(200, { did: mockDID });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.createImage(mockImage);
+
+        expect(did).toBe(mockDID);
+    });
+
+    it('should throw exception on createAsset server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.images)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createImage(mockImage);
             throw new ExpectedExceptionError();
         }
         catch (error) {

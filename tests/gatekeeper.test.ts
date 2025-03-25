@@ -7,6 +7,7 @@ import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 import type { EcdsaJwkPair } from '@mdip/cipher/types';
+import IPFS from '@mdip/ipfs';
 
 const mockConsole = {
     log: (): void => { },
@@ -17,7 +18,16 @@ const mockConsole = {
 
 const cipher = new CipherNode();
 const db_json = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+const ipfs = new IPFS();
+const gatekeeper = new Gatekeeper({ db: db_json, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+
+beforeAll(async () => {
+    await ipfs.start();
+});
+
+afterAll(async () => {
+    await ipfs.stop();
+});
 
 beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
@@ -174,7 +184,7 @@ describe('constructor', () => {
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: missing options.db');
         }
-        
+
         try {
             new Gatekeeper({ db: db_json, registries: ['hyperswarm', 'bogus_reg'] });
             throw new ExpectedExceptionError();
@@ -3364,5 +3374,125 @@ describe('Test operation validation errors', () => {
         catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
         }
+    });
+});
+
+describe('addJSON', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const data = { key: 'mock' };
+    const hash ='z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
+
+    it('should create CID from data', async () => {
+        const ipfs = new IPFS();
+        const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
+        const cid = await gatekeeper.addJSON(data);
+
+        expect(cid).toBe(hash);
+    });
+});
+
+describe('getJSON', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData = { key: 'mock' };
+
+    it('should return JSON data from CID', async () => {
+        // const ipfs = new IPFS();
+        // await ipfs.start();
+        // const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
+        const cid = await gatekeeper.addJSON(mockData);
+        const data = await gatekeeper.getJSON(cid);
+        //await ipfs.stop()
+
+        expect(data).toStrictEqual(mockData);
+    });
+});
+
+describe('addText', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData = 'mock text data';
+    const hash ='zb2rhgNGdyFtViUWRk4oYLGrwdkgbt4GnF2s15k3ZujX6w3QW';
+
+    it('should create CID from text data', async () => {
+        const cid = await gatekeeper.addText(mockData);
+
+        expect(cid).toBe(hash);
+    });
+});
+
+describe('getText', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData = 'mock text data';
+
+    it('should return text data from CID', async () => {
+        const cid = await gatekeeper.addText(mockData);
+        const data = await gatekeeper.getText(cid);
+
+        expect(data).toBe(mockData);
+    });
+});
+
+describe('addData', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData = Buffer.from('mock data');
+    const hash ='zb2rhYuMKCR7pY51Tzv52NmTW9zYU2P53XFUJitvDwtSpCDhd';
+
+    it('should create CID from text data', async () => {
+        const cid = await gatekeeper.addData(mockData);
+
+        expect(cid).toBe(hash);
+    });
+});
+
+describe('getData', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData = Buffer.from('mock data');
+
+    it('should return text data from CID', async () => {
+        const cid = await gatekeeper.addData(mockData);
+        const data = await gatekeeper.getData(cid);
+
+        expect(data).toStrictEqual(mockData);
     });
 });
