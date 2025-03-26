@@ -6,6 +6,7 @@ import {
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
+import IPFSClient from '@mdip/ipfs/helia';
 import HeliaClient from '@mdip/ipfs/helia';
 import {
     GatekeeperDb,
@@ -26,7 +27,7 @@ const canonicalize = canonicalizeModule as unknown as (input: unknown) => string
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
-    ipfs?: HeliaClient,
+    ipfs?: IPFSClient,
     console?: typeof console,
     didPrefix?: string,
     maxOpBytes?: number,
@@ -63,7 +64,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly eventsSeen: Record<string, boolean>
     private verifiedDIDs: Record<string, boolean>
     private isProcessingEvents: boolean
-    private ipfs: HeliaClient
+    private ipfs: IPFSClient
     private cipher: CipherNode
     private readonly didPrefix: string
     private readonly maxOpBytes: number
@@ -87,7 +88,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-        this.ipfs = options.ipfs || new HeliaClient({ minimal: true });
+        this.ipfs = options.ipfs || new HeliaClient();
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
