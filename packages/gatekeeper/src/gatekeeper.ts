@@ -1,5 +1,6 @@
 import CipherNode from '@mdip/cipher/node';
-import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
+import { copyJSON, compareOrdinals } from '@mdip/common/utils';
+import { isValidDID } from '@mdip/ipfs/utils';
 import {
     InvalidDIDError,
     InvalidParameterError,

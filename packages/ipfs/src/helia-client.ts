@@ -150,15 +150,6 @@ class HeliaClient implements IPFSClient {
         await instance.start();
         return instance;
     }
-
-    static isValidCID(cid: any): boolean {
-        try {
-            CID.parse(cid);
-            return true;
-        } catch (error) {
-            return false;
-        }
-    }
 }
 
 export default HeliaClient;

@@ -4,10 +4,11 @@ import CipherNode from '@mdip/cipher/node';
 import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
-import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
+import { copyJSON, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 import type { EcdsaJwkPair } from '@mdip/cipher/types';
 import HeliaClient from '@mdip/ipfs/helia';
+import { isValidDID } from '@mdip/ipfs/utils';
 
 const mockConsole = {
     log: (): void => { },
