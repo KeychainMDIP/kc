@@ -7,8 +7,9 @@ import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as rawCodec from 'multiformats/codecs/raw';
 import * as sha256 from 'multiformats/hashes/sha2';
-import { IPFSClient } from './types.js';
 import { MDIPError } from '@mdip/common/errors';
+import { IPFSClient } from './types.js';
+// import { generateCID } from './utils.js';
 
 interface HeliaConfig {
     minimal?: boolean;
@@ -21,6 +22,30 @@ export class NotConnectedError extends MDIPError {
     constructor() {
         super(NotConnectedError.type);
     }
+}
+
+// TBD !!! figure out how to import generateCID from utils.ts
+async function generateCID(data: any): Promise<string> {
+    let buf;
+    let code;
+
+    if (typeof data === 'string') {
+        buf = new TextEncoder().encode(data);
+        code = rawCodec.code;
+    }
+    else if (data instanceof Buffer) {
+        buf = data;
+        code = rawCodec.code;
+    }
+    else {
+        buf = jsonCodec.encode(data);
+        code = jsonCodec.code;
+    }
+
+    const hash = await sha256.sha256.digest(buf);
+    const cid = CID.createV1(code, hash);
+
+    return cid.toString(base58btc);
 }
 
 class HeliaClient implements IPFSClient {
@@ -67,7 +92,7 @@ class HeliaClient implements IPFSClient {
             return cid.toString(base58btc);
         }
 
-        return this.generateCID(data);
+        return generateCID(data);
     }
 
     public async getJSON(b58cid: string): Promise<any> {
@@ -86,7 +111,7 @@ class HeliaClient implements IPFSClient {
             return cid.toString(base58btc);
         }
 
-        return this.generateCID(data);
+        return generateCID(data);
     }
 
     public async getText(b58cid: string): Promise<string> {
@@ -109,7 +134,7 @@ class HeliaClient implements IPFSClient {
             return cid.toString(base58btc);
         }
 
-        return this.generateCID(data);
+        return generateCID(data);
     }
 
     public async getData(b58cid: string): Promise<Buffer> {
@@ -123,25 +148,6 @@ class HeliaClient implements IPFSClient {
             chunks.push(chunk);
         }
         return Buffer.concat(chunks);
-    }
-
-    public async generateCID<T>(data: T): Promise<string> {
-        if (typeof data === 'string') {
-            const buf = new TextEncoder().encode(data);
-            const hash = await sha256.sha256.digest(buf);
-            const cid = CID.createV1(rawCodec.code, hash);
-            return cid.toString(base58btc);
-        } else if (data instanceof Buffer) {
-            const buf = data;
-            const hash = await sha256.sha256.digest(buf);
-            const cid = CID.createV1(rawCodec.code, hash);
-            return cid.toString(base58btc);
-        } else {
-            const buf = jsonCodec.encode(data);
-            const hash = await sha256.sha256.digest(buf);
-            const cid = CID.createV1(jsonCodec.code, hash);
-            return cid.toString(base58btc);
-        }
     }
 
     // Factory method

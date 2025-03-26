@@ -1,6 +1,6 @@
 import CipherNode from '@mdip/cipher/node';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
-import { isValidDID } from '@mdip/ipfs/utils';
+import { isValidDID, generateCID } from '@mdip/ipfs/utils';
 import {
     InvalidDIDError,
     InvalidParameterError,
@@ -264,7 +264,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return this.ipfs.addJSON(JSON.parse(canonical));
         }
 
-        return this.ipfs.generateCID(JSON.parse(canonical));
+        return generateCID(JSON.parse(canonical));
     }
 
     async generateDID(operation: Operation): Promise<string> {

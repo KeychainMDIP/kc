@@ -5,5 +5,4 @@ export interface IPFSClient {
     getData(cid: string): Promise<Buffer>;
     addJSON(json: any): Promise<string>;
     getJSON(cid: string): Promise<any>;
-    generateCID(json: any): Promise<string>;
 }

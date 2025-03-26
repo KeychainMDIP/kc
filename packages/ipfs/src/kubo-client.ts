@@ -125,15 +125,6 @@ class KuboClient implements IPFSClient {
         return jsonCodec.decode(block);
     }
 
-    async generateCID(json: any): Promise<string> {
-        // Encode the JSON data using jsonCodec
-        const buf = jsonCodec.encode(json);
-        const hash = await sha256.sha256.digest(buf);
-        const cid = CID.createV1(jsonCodec.code, hash);
-
-        return cid.toString(base58btc);
-    }
-
     async getID(): Promise<any> {
         return this.ipfs.id();
     }
