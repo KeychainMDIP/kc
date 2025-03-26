@@ -219,7 +219,7 @@ program
     .description('Deletes named ID')
     .action(async (name) => {
         try {
-            keymaster.removeId(name);
+            await keymaster.removeId(name);
             console.log(`ID ${name} removed`);
         }
         catch (error) {
@@ -404,7 +404,7 @@ program
             const did = await keymaster.createSchema(schema);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -423,7 +423,7 @@ program
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -442,7 +442,7 @@ program
             const did = await keymaster.createChallenge(challenge);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -474,7 +474,7 @@ program
             const did = await keymaster.issueCredential(vc, { registry });
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -527,7 +527,7 @@ program
                 console.log(UPDATE_OK);
 
                 if (name) {
-                    keymaster.addName(name, did);
+                    await keymaster.addName(name, did);
                 }
             }
             else {
@@ -635,7 +635,7 @@ program
     .description('Adds a name for a DID')
     .action(async (name, did) => {
         try {
-            keymaster.addName(name, did);
+            await keymaster.addName(name, did);
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -661,7 +661,7 @@ program
     .description('Removes a name for a DID')
     .action(async (name) => {
         try {
-            keymaster.removeName(name);
+            await keymaster.removeName(name);
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -695,7 +695,7 @@ program
         try {
             const did = await keymaster.createGroup(name);
             console.log(did);
-            keymaster.addName(name, did);
+            await keymaster.addName(name, did);
         }
         catch (error) {
             console.error(error.error || error);
@@ -776,7 +776,7 @@ program
             const did = await keymaster.createSchema(schema);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
@@ -943,7 +943,7 @@ program
             const did = await keymaster.createPoll(poll);
 
             if (name) {
-                keymaster.addName(name, did);
+                await keymaster.addName(name, did);
             }
 
             console.log(did);
