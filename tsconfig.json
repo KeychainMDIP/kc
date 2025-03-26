@@ -24,7 +24,8 @@
       "@mdip/gatekeeper/types": ["packages/gatekeeper/src/types.ts"],
       "@mdip/gatekeeper/client": ["packages/gatekeeper/src/gatekeeper-client.ts"],
       "@mdip/gatekeeper/db/*": ["packages/gatekeeper/src/db/*"],
-      "@mdip/ipfs": ["packages/ipfs/src/helia-client.ts"],
+      "@mdip/ipfs/helia": ["packages/ipfs/src/helia-client.ts"],
+      "@mdip/ipfs/utils": ["packages/ipfs/src/utils.ts"],
       "@mdip/keymaster/wallet/*": ["packages/keymaster/src/db/*"]
     }
   },
