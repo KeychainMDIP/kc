@@ -18,9 +18,9 @@ const mockConsole = {
 } as unknown as typeof console;
 
 const cipher = new CipherNode();
-const db_json = new DbJson('test');
+const db = new DbJson('test');
 const ipfs = new HeliaClient();
-const gatekeeper = new Gatekeeper({ db: db_json, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 
 beforeAll(async () => {
     await ipfs.start();
@@ -187,7 +187,7 @@ describe('constructor', () => {
         }
 
         try {
-            new Gatekeeper({ db: db_json, registries: ['hyperswarm', 'bogus_reg'] });
+            new Gatekeeper({ db, ipfs, registries: ['hyperswarm', 'bogus_reg'] });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -232,7 +232,7 @@ describe('generateDID', () => {
             }
         };
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, didPrefix: 'did:mock' });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, didPrefix: 'did:mock' });
         const did = await gatekeeper.generateDID(mockTxn);
 
         expect(did.startsWith('did:mock:')).toBe(true);
@@ -493,7 +493,7 @@ describe('createDID', () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['hyperswarm'] });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['hyperswarm'] });
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -592,7 +592,7 @@ describe('createDID', () => {
     it('should throw exception on create op size exceeding limit', async () => {
         mockFs({});
 
-        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxOpBytes: 100 });
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
 
@@ -667,7 +667,7 @@ describe('createDID', () => {
     it('should throw exception when registry queue exceeds limit', async () => {
         mockFs({});
 
-        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
 
         try {
             for (let i = 0; i < 10; i++) {
@@ -1090,10 +1090,10 @@ describe('resolveDID', () => {
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
 
-        const events = await db_json.getEvents(did);
+        const events = await db.getEvents(did);
         // changing anything in the op will invalidate the signature
         events[0].operation.did = 'mock';
-        await db_json.setEvents(did, events);
+        await db.setEvents(did, events);
 
         try {
             await gatekeeper.resolveDID(did, { verify: true });
@@ -1114,10 +1114,10 @@ describe('resolveDID', () => {
         const updateOp = await createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
 
-        const events = await db_json.getEvents(did);
+        const events = await db.getEvents(did);
         // changing anything in the op will invalidate the signature
         events[1].operation.did = 'mock';
-        await db_json.setEvents(did, events);
+        await db.setEvents(did, events);
 
         try {
             await gatekeeper.resolveDID(did, { verify: true });
@@ -1142,10 +1142,10 @@ describe('resolveDID', () => {
         const updateOp2 = await createUpdateOp(keypair, did, doc2);
         await gatekeeper.updateDID(updateOp2);
 
-        const events = await db_json.getEvents(did);
+        const events = await db.getEvents(did);
         // if we swap update events the sigs will be valid but the previd will be invalid
         [events[1], events[2]] = [events[2], events[1]];
-        await db_json.setEvents(did, events);
+        await db.setEvents(did, events);
 
         try {
             await gatekeeper.resolveDID(did, { verify: true });
@@ -1241,7 +1241,7 @@ describe('updateDID', () => {
         const doc = await gatekeeper.resolveDID(did);
 
         try {
-            const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxOpBytes: 100 });
+            const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
             const updateOp = await createUpdateOp(keypair, did, doc);
             await gk.updateDID(updateOp);
             throw new ExpectedExceptionError();
@@ -1271,7 +1271,7 @@ describe('updateDID', () => {
     it('should throw exception when registry queue exceeds limit', async () => {
         mockFs({});
 
-        const gk = new Gatekeeper({ db: db_json, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
@@ -2440,7 +2440,7 @@ describe('processEvents', () => {
     it('should return busy when already proccessing events', async () => {
         mockFs({});
 
-        const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
         gk.isProcessingEvents = true;
         const response = await gk.processEvents();
@@ -2451,7 +2451,7 @@ describe('processEvents', () => {
     it('should gracefully handle expections', async () => {
         mockFs({});
 
-        const gk = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
         gk.eventsQueue = null;
         const response = await gk.processEvents();
@@ -2811,7 +2811,7 @@ describe('listRegistries', () => {
     it('should return list of default valid registries', async () => {
         mockFs({});
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(1);
@@ -2821,7 +2821,7 @@ describe('listRegistries', () => {
     it('should return list of configured registries', async () => {
         mockFs({});
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole, registries: ['hyperswarm', 'TFTC'] });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['hyperswarm', 'TFTC'] });
         const registries = await gatekeeper.listRegistries();
 
         expect(registries.length).toBe(2);
@@ -2832,7 +2832,7 @@ describe('listRegistries', () => {
     it('should return list of inferred registries', async () => {
         mockFs({});
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         await gatekeeper.getQueue('hyperswarm');
         await gatekeeper.getQueue('TFTC');
         await gatekeeper.getQueue('TBTC');
@@ -2848,7 +2848,7 @@ describe('listRegistries', () => {
     it('should return non-redundant list of inferred registries', async () => {
         mockFs({});
 
-        const gatekeeper = new Gatekeeper({ db: db_json, console: mockConsole });
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         await gatekeeper.getQueue('hyperswarm');
         await gatekeeper.getQueue('hyperswarm');
         await gatekeeper.getQueue('TFTC');
@@ -3391,8 +3391,6 @@ describe('addJSON', () => {
     const hash = 'z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
 
     it('should create CID from data', async () => {
-        const ipfs = new HeliaClient();
-        const gatekeeper = new Gatekeeper({ ipfs, db: db_json, console: mockConsole });
         const cid = await gatekeeper.addJSON(data);
 
         expect(cid).toBe(hash);

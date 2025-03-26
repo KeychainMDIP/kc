@@ -11,10 +11,12 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
+import HeliaClient from '@mdip/ipfs/helia';
 import { generateCID } from '@mdip/ipfs/utils';
 
 const db = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
+const ipfs = new HeliaClient();
+const gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
 const wallet = new WalletJson();
 const cipher = new CipherNode();
 const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
