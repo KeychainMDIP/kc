@@ -298,10 +298,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return !isNaN(date.getTime());
     }
 
-    verifyHashFormat(hash?: string): boolean {
-        if (!hash) {
-            return false;
-        }
+    verifyHashFormat(hash: string): boolean {
         // Check if hash is a hexadecimal string of length 64
         const hex64Regex = /^[a-f0-9]{64}$/i;
         return hex64Regex.test(hash);
