@@ -7,13 +7,14 @@ import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as rawCodec from 'multiformats/codecs/raw';
 import * as sha256 from 'multiformats/hashes/sha2';
+import { IPFSClient } from './types.js';
 
 interface HeliaConfig {
     minimal?: boolean;
     datadir?: string;
 }
 
-class HeliaClient {
+class HeliaClient implements IPFSClient {
     private config: HeliaConfig;
     private helia: Helia | null;
     private ipfs: JSON | null;
@@ -51,77 +52,68 @@ class HeliaClient {
         }
     }
 
-    public async addJSON<T>(data: T): Promise<string> {
-        let cid;
-
+    public async addJSON(data: any): Promise<string> {
         if (this.ipfs) {
-            cid = await this.ipfs.add(data);
+            const cid = await this.ipfs.add(data);
             return cid.toString(base58btc);
         }
 
         return this.generateCID(data);
     }
 
-    public async getJSON<T>(b58cid: string): Promise<T | null> {
-        if (this.ipfs) {
-            const cid = CID.parse(b58cid);
-            return this.ipfs.get(cid);
+    public async getJSON(b58cid: string): Promise<any> {
+        if (!this.ipfs) {
+            throw "Not connected";
         }
-        else {
-            return null;
-        }
+
+        const cid = CID.parse(b58cid);
+        return this.ipfs.get(cid);
     }
 
     public async addText(data: string): Promise<string> {
-        let cid;
-
         if (this.unixfs) {
             const buf = new TextEncoder().encode(data);
-            cid = await this.unixfs.addBytes(buf);
+            const cid = await this.unixfs.addBytes(buf);
             return cid.toString(base58btc);
         }
 
         return this.generateCID(data);
     }
 
-    public async getText(b58cid: string): Promise<string | null> {
-        if (this.unixfs) {
-            const cid = CID.parse(b58cid);
-            const chunks = [];
-            for await (const chunk of this.unixfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            const data = Buffer.concat(chunks);
-            return data.toString();
+    public async getText(b58cid: string): Promise<string> {
+        if (!this.unixfs) {
+            throw "Not connected";
         }
-        else {
-            return null;
+
+        const cid = CID.parse(b58cid);
+        const chunks = [];
+        for await (const chunk of this.unixfs.cat(cid)) {
+            chunks.push(chunk);
         }
+        const data = Buffer.concat(chunks);
+        return data.toString();
     }
 
     public async addData(data: Buffer): Promise<string> {
-        let cid;
-
         if (this.unixfs) {
-            cid = await this.unixfs.addBytes(data);
+            const cid = await this.unixfs.addBytes(data);
             return cid.toString(base58btc);
         }
 
         return this.generateCID(data);
     }
 
-    public async getData(b58cid: string): Promise<Buffer | null> {
-        if (this.unixfs) {
-            const cid = CID.parse(b58cid);
-            const chunks = [];
-            for await (const chunk of this.unixfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            return Buffer.concat(chunks);
+    public async getData(b58cid: string): Promise<Buffer> {
+        if (!this.unixfs) {
+            throw "Not connected";
         }
-        else {
-            return null;
+
+        const cid = CID.parse(b58cid);
+        const chunks = [];
+        for await (const chunk of this.unixfs.cat(cid)) {
+            chunks.push(chunk);
         }
+        return Buffer.concat(chunks);
     }
 
     public async generateCID<T>(data: T): Promise<string> {

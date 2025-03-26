@@ -4,9 +4,10 @@ import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
+import { IPFSClient } from './types.js';
 
 interface KuboClientConfig {
-    url?: string;
+    url: string;
     waitUntilReady?: boolean;
     intervalSeconds?: number;
     chatty?: boolean;
@@ -14,7 +15,7 @@ interface KuboClientConfig {
     maxRetries?: number;
 }
 
-class KuboClient {
+class KuboClient implements IPFSClient {
     private ipfs: KuboRPCClient | any;
 
     // Factory method
@@ -24,7 +25,7 @@ class KuboClient {
         return ipfs;
     }
 
-    async connect(options: KuboClientConfig = {}): Promise<void> {
+    async connect(options: KuboClientConfig): Promise<void> {
         this.ipfs = create(options);
 
         if (options.waitUntilReady) {
@@ -32,7 +33,7 @@ class KuboClient {
         }
     }
 
-    async waitUntilReady(options: KuboClientConfig = {}): Promise<void> {
+    async waitUntilReady(options: KuboClientConfig): Promise<void> {
         let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;

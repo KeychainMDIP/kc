@@ -1,5 +1,6 @@
 import mockFs from 'mock-fs';
 import HeliaClient from '@mdip/ipfs/helia';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 
 describe('start', () => {
     it('should ignore a second call to start', async () => {
@@ -71,12 +72,17 @@ describe('getJSON', () => {
         expect(data).toStrictEqual(mockData);
     });
 
-    it('should return null JSON if minimal', async () => {
-        const ipfs = await HeliaClient.create({ minimal: true });
+    it('should return throw exception if not connected', async () => {
+        const ipfs = new HeliaClient();
         const cid = await ipfs.addJSON(mockData);
-        const data = await ipfs.getJSON(cid);
 
-        expect(data).toStrictEqual(null);
+        try {
+            await ipfs.getJSON(cid);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error).toBe('Not connected');
+        }
     });
 });
 
@@ -134,12 +140,17 @@ describe('getText', () => {
         expect(data).toStrictEqual(mockData);
     });
 
-    it('should return null text if minimal', async () => {
-        const ipfs = await HeliaClient.create({ minimal: true });
+    it('should return throw exception if not connected', async () => {
+        const ipfs = new HeliaClient();
         const cid = await ipfs.addText(mockData);
-        const data = await ipfs.getText(cid);
 
-        expect(data).toStrictEqual(null);
+        try {
+            await ipfs.getText(cid);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error).toBe('Not connected');
+        }
     });
 });
 
@@ -198,11 +209,16 @@ describe('getData', () => {
         expect(data).toStrictEqual(mockData);
     });
 
-    it('should return null data if minimal', async () => {
-        const ipfs = await HeliaClient.create({ minimal: true });
+    it('should return throw exception if not connected', async () => {
+        const ipfs = new HeliaClient();
         const cid = await ipfs.addData(mockData);
-        const data = await ipfs.getData(cid);
 
-        expect(data).toStrictEqual(null);
+        try {
+            await ipfs.getData(cid);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error).toBe('Not connected');
+        }
     });
 });
