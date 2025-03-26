@@ -72,6 +72,7 @@ describe('getJSON', () => {
         expect(data).toStrictEqual(mockData);
     });
 
+    // eslint-disable-next-line
     it('should return throw exception if not connected', async () => {
         const ipfs = new HeliaClient();
         const cid = await ipfs.addJSON(mockData);
@@ -81,7 +82,8 @@ describe('getJSON', () => {
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error).toBe('Not connected');
+            // eslint-disable-next-line
+            expect(error.message).toBe('Not connected');
         }
     });
 });
@@ -149,7 +151,7 @@ describe('getText', () => {
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error).toBe('Not connected');
+            expect(error.message).toBe('Not connected');
         }
     });
 });
@@ -218,7 +220,7 @@ describe('getData', () => {
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error).toBe('Not connected');
+            expect(error.message).toBe('Not connected');
         }
     });
 });

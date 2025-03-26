@@ -8,10 +8,19 @@ import * as jsonCodec from 'multiformats/codecs/json';
 import * as rawCodec from 'multiformats/codecs/raw';
 import * as sha256 from 'multiformats/hashes/sha2';
 import { IPFSClient } from './types.js';
+import { MDIPError } from '@mdip/common/errors';
 
 interface HeliaConfig {
     minimal?: boolean;
     datadir?: string;
+}
+
+export class NotConnectedError extends MDIPError {
+    static type = 'Not connected';
+
+    constructor() {
+        super(NotConnectedError.type);
+    }
 }
 
 class HeliaClient implements IPFSClient {
@@ -63,7 +72,7 @@ class HeliaClient implements IPFSClient {
 
     public async getJSON(b58cid: string): Promise<any> {
         if (!this.ipfs) {
-            throw "Not connected";
+            throw new NotConnectedError();
         }
 
         const cid = CID.parse(b58cid);
@@ -82,7 +91,7 @@ class HeliaClient implements IPFSClient {
 
     public async getText(b58cid: string): Promise<string> {
         if (!this.unixfs) {
-            throw "Not connected";
+            throw new NotConnectedError();
         }
 
         const cid = CID.parse(b58cid);
@@ -105,7 +114,7 @@ class HeliaClient implements IPFSClient {
 
     public async getData(b58cid: string): Promise<Buffer> {
         if (!this.unixfs) {
-            throw "Not connected";
+            throw new NotConnectedError();
         }
 
         const cid = CID.parse(b58cid);
