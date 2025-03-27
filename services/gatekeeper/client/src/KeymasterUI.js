@@ -123,6 +123,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 refreshIssued();
 
                 setTab('identity');
+                setAssetsTab('schemas');
                 setCredentialTab('held');
                 setMessagesTab('receive');
             }
@@ -986,12 +987,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <Tab key="names" value="names" label={'DIDs'} />
                         }
                         {currentId && !widget &&
-                            <Tab key="groups" value="groups" label={'Groups'} />
-                        }
-                        {currentId && !widget &&
-                            <Tab key="schemas" value="schemas" label={'Schemas'} />
-                        }
-                        {currentId && !widget &&
                             <Tab key="assets" value="assets" label={'Assets'} />
                         }
                         {currentId && !widget &&
@@ -1216,211 +1211,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             />
                         </Box>
                     }
-                    {tab === 'groups' &&
-                        <Box>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <TextField
-                                        label="Group Name"
-                                        style={{ width: '300px' }}
-                                        value={groupName}
-                                        onChange={(e) => setGroupName(e.target.value.trim())}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 30 }}
-                                    />
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName}>
-                                        Create Group
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Select
-                                        style={{ width: '300px' }}
-                                        value={registry}
-                                        fullWidth
-                                        onChange={(event) => setRegistry(event.target.value)}
-                                    >
-                                        {registries.map((registry, index) => (
-                                            <MenuItem value={registry} key={index}>
-                                                {registry}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </Grid>
-                            </Grid>
-                            {groupList &&
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Select
-                                            style={{ width: '300px' }}
-                                            value={selectedGroupName}
-                                            fullWidth
-                                            displayEmpty
-                                            onChange={(event) => setSelectedGroupName(event.target.value)}
-                                        >
-                                            <MenuItem value="" disabled>
-                                                Select group
-                                            </MenuItem>
-                                            {groupList.map((name, index) => (
-                                                <MenuItem value={name} key={index}>
-                                                    {name}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
-                                            Edit Group
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        {selectedGroup && `Editing: ${selectedGroup.name}`}
-                                    </Grid>
-                                </Grid>
-                            }
-                            {selectedGroup &&
-                                <Box>
-                                    <Table style={{ width: '800px' }}>
-                                        <TableBody>
-                                            <TableRow>
-                                                <TableCell style={{ width: '100%' }}>
-                                                    <TextField
-                                                        label="DID"
-                                                        style={{ width: '500px' }}
-                                                        value={memberDID}
-                                                        onChange={(e) => setMemberDID(e.target.value.trim())}
-                                                        fullWidth
-                                                        margin="normal"
-                                                        inputProps={{ maxLength: 80 }}
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
-                                                        Resolve
-                                                    </Button>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID}>
-                                                        Add
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                            {selectedGroup.members.map((did, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell>
-                                                        <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
-                                                            {did}
-                                                        </Typography>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
-                                                            Resolve
-                                                        </Button>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)}>
-                                                            Remove
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                    <textarea
-                                        value={memberDocs}
-                                        readOnly
-                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                    />
-                                </Box>
-                            }
-                        </Box>
-                    }
-                    {tab === 'schemas' &&
-                        <Box>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <TextField
-                                        label="Schema Name"
-                                        style={{ width: '300px' }}
-                                        value={schemaName}
-                                        onChange={(e) => setSchemaName(e.target.value.trim())}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 30 }}
-                                    />
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
-                                        Create Schema
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Select
-                                        style={{ width: '300px' }}
-                                        value={registry}
-                                        fullWidth
-                                        onChange={(event) => setRegistry(event.target.value)}
-                                    >
-                                        {registries.map((registry, index) => (
-                                            <MenuItem value={registry} key={index}>
-                                                {registry}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </Grid>
-                            </Grid>
-                            {schemaList &&
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Select
-                                            style={{ width: '300px' }}
-                                            value={selectedSchemaName}
-                                            fullWidth
-                                            displayEmpty
-                                            onChange={(event) => setSelectedSchemaName(event.target.value)}
-                                        >
-                                            <MenuItem value="" disabled>
-                                                Select schema
-                                            </MenuItem>
-                                            {schemaList.map((name, index) => (
-                                                <MenuItem value={name} key={index}>
-                                                    {name}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
-                                            Edit Schema
-                                        </Button>
-                                    </Grid>
-                                </Grid>
-                            }
-                            {selectedSchema &&
-                                <Box>
-                                    <Grid container direction="column" spacing={1}>
-                                        <Grid item>
-                                            <p>{`Editing: "${editedSchemaName}"`}</p>
-                                        </Grid>
-                                        <Grid item>
-                                            <textarea
-                                                value={schemaString}
-                                                onChange={(e) => setSchemaString(e.target.value)}
-                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                            />
-                                        </Grid>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
-                                                Save Schema
-                                            </Button>
-                                        </Grid>
-                                    </Grid>
-                                </Box>
-                            }
-                        </Box>
-                    }
                     {tab === 'assets' &&
                         <Box>
                             <Box>
@@ -1439,12 +1229,207 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             </Box>
                             {assetsTab === 'schemas' &&
                                 <Box>
-                                    Schemas
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <TextField
+                                                label="Schema Name"
+                                                style={{ width: '300px' }}
+                                                value={schemaName}
+                                                onChange={(e) => setSchemaName(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 30 }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
+                                                Create Schema
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={registry}
+                                                fullWidth
+                                                onChange={(event) => setRegistry(event.target.value)}
+                                            >
+                                                {registries.map((registry, index) => (
+                                                    <MenuItem value={registry} key={index}>
+                                                        {registry}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                    </Grid>
+                                    {schemaList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedSchemaName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => setSelectedSchemaName(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select schema
+                                                    </MenuItem>
+                                                    {schemaList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
+                                                    Edit Schema
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+                                    }
+                                    {selectedSchema &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <p>{`Editing: "${editedSchemaName}"`}</p>
+                                                </Grid>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={schemaString}
+                                                        onChange={(e) => setSchemaString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
+                                                        Save Schema
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    }
                                 </Box>
                             }
                             {assetsTab === 'groups' &&
                                 <Box>
-                                    Groups
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <TextField
+                                                label="Group Name"
+                                                style={{ width: '300px' }}
+                                                value={groupName}
+                                                onChange={(e) => setGroupName(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 30 }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName}>
+                                                Create Group
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={registry}
+                                                fullWidth
+                                                onChange={(event) => setRegistry(event.target.value)}
+                                            >
+                                                {registries.map((registry, index) => (
+                                                    <MenuItem value={registry} key={index}>
+                                                        {registry}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                    </Grid>
+                                    {groupList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedGroupName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => setSelectedGroupName(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select group
+                                                    </MenuItem>
+                                                    {groupList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
+                                                    Edit Group
+                                                </Button>
+                                            </Grid>
+                                            <Grid item>
+                                                {selectedGroup && `Editing: ${selectedGroup.name}`}
+                                            </Grid>
+                                        </Grid>
+                                    }
+                                    {selectedGroup &&
+                                        <Box>
+                                            <Table style={{ width: '800px' }}>
+                                                <TableBody>
+                                                    <TableRow>
+                                                        <TableCell style={{ width: '100%' }}>
+                                                            <TextField
+                                                                label="DID"
+                                                                style={{ width: '500px' }}
+                                                                value={memberDID}
+                                                                onChange={(e) => setMemberDID(e.target.value.trim())}
+                                                                fullWidth
+                                                                margin="normal"
+                                                                inputProps={{ maxLength: 80 }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
+                                                                Resolve
+                                                            </Button>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID}>
+                                                                Add
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                    {selectedGroup.members.map((did, index) => (
+                                                        <TableRow key={index}>
+                                                            <TableCell>
+                                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                                    {did}
+                                                                </Typography>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
+                                                                    Resolve
+                                                                </Button>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button variant="contained" color="primary" onClick={() => removeMember(did)}>
+                                                                    Remove
+                                                                </Button>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                            <textarea
+                                                value={memberDocs}
+                                                readOnly
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
+                                        </Box>
+                                    }
                                 </Box>
                             }
                             {assetsTab === 'images' &&
