@@ -1,5 +1,25 @@
 import { imageSize } from 'image-size';
-import { InvalidDIDError, InvalidParameterError, KeymasterError, UnknownIDError } from '@mdip/common/errors';
+import {
+    InvalidDIDError,
+    InvalidParameterError,
+    KeymasterError,
+    UnknownIDError
+} from '@mdip/common/errors';
+import {
+    GatekeeperInterface,
+    MdipDocument,
+    ResolveDIDOptions,
+    Operation,
+} from '@mdip/gatekeeper/types';
+import {
+    WalletBase,
+    WalletFile,
+    IDInfo, StoredWallet
+} from './types.js';
+import {
+    Cipher,
+    EcdsaJwkPair
+} from '@mdip/cipher/types';
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -14,58 +34,196 @@ const DefaultSchema = {
     ]
 };
 
+export interface Signature {
+    signer?: string;
+    signed: string;
+    hash: string;
+    value: string;
+}
+
+export interface KeymasterOptions {
+    gatekeeper: GatekeeperInterface;
+    wallet: WalletBase;
+    cipher: Cipher;
+    defaultRegistry?: string;
+    maxNameLength?: number;
+}
+
+export interface CheckWalletResult {
+    checked: number;
+    invalid: number;
+    deleted: number;
+}
+
+export interface FixWalletResult {
+    idsRemoved: number;
+    ownedRemoved: number;
+    heldRemoved: number;
+    namesRemoved: number;
+}
+
+export interface CreateAssetOptions {
+    registry?: string;
+    controller?: string;
+    validUntil?: string
+}
+
+export interface EncryptOptions {
+    encryptForSender?: boolean;
+    includeHash?: boolean;
+    registry?: string;
+    validUntil?: string;
+}
+
+export interface CreateResponseOptions {
+    registry?: string;
+    validUntil?: string;
+    retries?: number;
+    delay?: number;
+}
+
+export interface VerifiableCredential {
+    "@context": string[];
+    type: string[];
+    issuer: string;
+    validFrom: string;
+    validUntil?: string;
+    credentialSubject?: {
+        id: string;
+    };
+    credential?: Record<string, unknown> | null;
+    signature?: Signature;
+}
+
+export interface IssueCredentialsOptions {
+    schema?: string;
+    subject?: string;
+    registry?: string;
+    validFrom?: string;
+    validUntil?: string;
+    credential?: Record<string, unknown>;
+}
+
+export interface Challenge {
+    credentials?: {
+        schema: string;
+        issuers?: string[];
+    }[];
+}
+
+export interface ChallengeResponse {
+    challenge: string;
+    credentials: {
+        vc: string;
+        vp: string;
+    }[];
+    requested: number;
+    fulfilled: number;
+    match: boolean;
+    vps?: unknown[];
+    responder?: string;
+}
+
+export interface EncryptedMessage {
+    sender: string;
+    created: string;
+    cipher_hash?: string | null;
+    cipher_sender?: string | null;
+    cipher_receiver?: string | null;
+}
+
+interface PossiblySigned {
+    signature?: Signature;
+}
+
+export interface Group {
+    name: string;
+    members: string[];
+}
+
+export interface PollResults {
+    tally: Array<{
+        vote: number;
+        option: string;
+        count: number;
+    }>;
+    ballots?: Array<{
+        ballot: string;
+        received: string;
+        voter: string;
+        vote: number;
+        option: string;
+    }>;
+    votes?: {
+        eligible: number;
+        received: number;
+        pending: number;
+    };
+    final?: boolean;
+}
+
+export interface Poll {
+    type: string;
+    version: number;
+    description: string;
+    roster: string;
+    options: string[];
+    deadline: string;
+    ballots?: Record<string, { ballot: string; received: string }>;
+    results?: PollResults;
+}
+
+export interface ViewPollResult {
+    description: string;
+    options: string[];
+    deadline: string;
+    isOwner: boolean;
+    isEligible: boolean;
+    voteExpired: boolean;
+    hasVoted: boolean;
+    results?: PollResults;
+}
+
 export default class Keymaster {
+    private gatekeeper: GatekeeperInterface;
+    private db: WalletBase;
+    private cipher: Cipher;
+    private readonly defaultRegistry: string;
+    private readonly ephemeralRegistry: string;
+    private readonly maxNameLength: number;
 
-    constructor(options = {}) {
-        if (options.gatekeeper) {
-            this.gatekeeper = options.gatekeeper;
-
-            if (!this.gatekeeper.createDID) {
-                throw new InvalidParameterError('options.gatekeeper');
-            }
-        }
-        else {
+    constructor(options: KeymasterOptions) {
+        if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
             throw new InvalidParameterError('options.gatekeeper');
         }
-
-        if (options.wallet) {
-            this.db = options.wallet;
-
-            if (!this.db.loadWallet || !this.db.saveWallet) {
-                throw new InvalidParameterError('options.wallet');
-            }
-        } else {
+        if (!options.wallet || !options.wallet.loadWallet || !options.wallet.saveWallet) {
             throw new InvalidParameterError('options.wallet');
         }
-
-        if (options.cipher) {
-            this.cipher = options.cipher;
-
-            if (!this.cipher.verifySig) {
-                throw new InvalidParameterError('options.cipher');
-            }
-        }
-        else {
+        if (!options.cipher || !options.cipher.verifySig) {
             throw new InvalidParameterError('options.cipher');
         }
+
+        this.gatekeeper = options.gatekeeper;
+        this.db = options.wallet;
+        this.cipher = options.cipher;
 
         this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
         this.maxNameLength = options.maxNameLength || 32;
     }
 
-    async listRegistries() {
+    async listRegistries(): Promise<string[]> {
         return this.gatekeeper.listRegistries();
     }
 
-    async loadWallet() {
+    async loadWallet(): Promise<WalletFile> {
         let wallet = await this.db.loadWallet();
 
         if (!wallet) {
             wallet = await this.newWallet();
         }
 
-        if (wallet.salt) {
+        if ('salt' in wallet) {
             throw new KeymasterError("Wallet is encrypted");
         }
 
@@ -76,26 +234,34 @@ export default class Keymaster {
         return wallet;
     }
 
-    async saveWallet(wallet, overwrite = true) {
+    async saveWallet(wallet: StoredWallet, overwrite = true): Promise<boolean> {
         // TBD validate wallet before saving
         return this.db.saveWallet(wallet, overwrite);
     }
 
-    async newWallet(mnemonic, overwrite = false) {
-        let wallet;
+    async newWallet(mnemonic?: string, overwrite = false): Promise<WalletFile> {
+        let wallet: WalletFile;
 
         try {
             if (!mnemonic) {
                 mnemonic = this.cipher.generateMnemonic();
             }
             const hdkey = this.cipher.generateHDKey(mnemonic);
-            const keypair = this.cipher.generateJwk(hdkey.privateKey);
+            const keypair = this.cipher.generateJwk(hdkey.privateKey!);
             const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
+
+            const keys = hdkey.toJSON();
+            if (!keys.xpub || !keys.xpriv) {
+                throw new KeymasterError('No xpub or xpriv found');
+            }
 
             wallet = {
                 seed: {
                     mnemonic: backup,
-                    hdkey: hdkey.toJSON(),
+                    hdkey: {
+                        xpriv: keys.xpriv,
+                        xpub: keys.xpub
+                    },
                 },
                 counter: 0,
                 ids: {},
@@ -113,14 +279,14 @@ export default class Keymaster {
         return wallet;
     }
 
-    async decryptMnemonic() {
+    async decryptMnemonic(): Promise<string> {
         const wallet = await this.loadWallet();
         const keypair = await this.hdKeyPair();
 
-        return this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic);
+        return this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed!.mnemonic);
     }
 
-    async checkWallet() {
+    async checkWallet(): Promise<CheckWalletResult>  {
         const wallet = await this.loadWallet();
 
         let checked = 0;
@@ -134,7 +300,7 @@ export default class Keymaster {
             try {
                 const doc = await this.resolveDID(wallet.ids[name].did);
 
-                if (doc.didDocumentMetadata.deactivated) {
+                if (doc.didDocumentMetadata?.deactivated) {
                     deleted += 1;
                 }
             }
@@ -151,7 +317,7 @@ export default class Keymaster {
                     try {
                         const doc = await this.resolveDID(did);
 
-                        if (doc.didDocumentMetadata.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             deleted += 1;
                         }
                     }
@@ -168,7 +334,7 @@ export default class Keymaster {
                     try {
                         const doc = await this.resolveDID(did);
 
-                        if (doc.didDocumentMetadata.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             deleted += 1;
                         }
                     }
@@ -186,7 +352,7 @@ export default class Keymaster {
                 try {
                     const doc = await this.resolveDID(wallet.names[name]);
 
-                    if (doc.didDocumentMetadata.deactivated) {
+                    if (doc.didDocumentMetadata?.deactivated) {
                         deleted += 1;
                     }
                 }
@@ -201,7 +367,7 @@ export default class Keymaster {
         return { checked, invalid, deleted };
     }
 
-    async fixWallet() {
+    async fixWallet(): Promise<FixWalletResult> {
         const wallet = await this.loadWallet();
         let idsRemoved = 0;
         let ownedRemoved = 0;
@@ -214,7 +380,7 @@ export default class Keymaster {
             try {
                 const doc = await this.resolveDID(wallet.ids[name].did);
 
-                if (doc.didDocumentMetadata.deactivated) {
+                if (doc.didDocumentMetadata?.deactivated) {
                     remove = true;
                 }
             }
@@ -236,7 +402,7 @@ export default class Keymaster {
                     try {
                         const doc = await this.resolveDID(id.owned[i]);
 
-                        if (doc.didDocumentMetadata.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
                     }
@@ -259,7 +425,7 @@ export default class Keymaster {
                     try {
                         const doc = await this.resolveDID(id.held[i]);
 
-                        if (doc.didDocumentMetadata.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
                     }
@@ -283,7 +449,7 @@ export default class Keymaster {
                 try {
                     const doc = await this.resolveDID(wallet.names[name]);
 
-                    if (doc.didDocumentMetadata.deactivated) {
+                    if (doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
                 }
@@ -303,10 +469,10 @@ export default class Keymaster {
         return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
     }
 
-    async resolveSeedBank() {
+    async resolveSeedBank(): Promise<MdipDocument> {
         const keypair = await this.hdKeyPair();
 
-        const operation = {
+        const operation: Operation = {
             type: "create",
             created: new Date(0).toISOString(),
             mdip: {
@@ -319,7 +485,7 @@ export default class Keymaster {
 
         const msgHash = this.cipher.hashJSON(operation);
         const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-        const signed = {
+        const signed: Operation = {
             ...operation,
             signature: {
                 signed: new Date(0).toISOString(),
@@ -331,13 +497,16 @@ export default class Keymaster {
         return this.gatekeeper.resolveDID(did);
     }
 
-    async updateSeedBank(doc) {
+    async updateSeedBank(doc: MdipDocument): Promise<boolean> {
         const keypair = await this.hdKeyPair();
-        const did = doc.didDocument.id;
+        const did = doc.didDocument?.id;
+        if (!did) {
+            throw new InvalidParameterError('seed bank missing DID');
+        }
         const current = await this.gatekeeper.resolveDID(did);
-        const previd = current.didDocumentMetadata.versionId;
+        const previd = current.didDocumentMetadata?.versionId;
 
-        const operation = {
+        const operation: Operation = {
             type: "update",
             did,
             previd,
@@ -359,13 +528,14 @@ export default class Keymaster {
         return await this.gatekeeper.updateDID(signed);
     }
 
-    async backupWallet(registry = this.defaultRegistry) {
+    async backupWallet(registry = this.defaultRegistry): Promise<string> {
         const wallet = await this.loadWallet();
         const keypair = await this.hdKeyPair();
         const seedBank = await this.resolveSeedBank();
         const msg = JSON.stringify(wallet);
         const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-        const operation = {
+
+        const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
@@ -373,38 +543,60 @@ export default class Keymaster {
                 type: "asset",
                 registry: registry,
             },
-            controller: seedBank.didDocument.id,
+            controller: seedBank.didDocument?.id,
             data: { backup: backup },
         };
+
         const msgHash = this.cipher.hashJSON(operation);
         const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-        const signed = {
+
+        const signed: Operation = {
             ...operation,
             signature: {
-                signer: seedBank.didDocument.id,
+                signer: seedBank.didDocument?.id,
                 signed: new Date().toISOString(),
                 hash: msgHash,
                 value: signature,
             }
         };
+
         const backupDID = await this.gatekeeper.createDID(signed);
 
-        seedBank.didDocumentData.wallet = backupDID;
-        await this.updateSeedBank(seedBank);
+        if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
+            const data = seedBank.didDocumentData as { wallet?: string };
+            data.wallet = backupDID;
+            await this.updateSeedBank(seedBank);
+        }
 
         return backupDID;
     }
 
-    async recoverWallet(did) {
+    async recoverWallet(did?: string): Promise<WalletFile> {
         try {
             if (!did) {
                 const seedBank = await this.resolveSeedBank();
-                did = seedBank.didDocumentData.wallet;
+                if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
+                    const data = seedBank.didDocumentData as { wallet?: string };
+                    did = data.wallet;
+                }
+                if (!did) {
+                    throw new InvalidParameterError('No backup DID found');
+                }
             }
 
             const keypair = await this.hdKeyPair();
             const data = await this.resolveAsset(did);
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, data.backup);
+            if (!data) {
+                throw new InvalidParameterError('No asset data found');
+            }
+
+            const castData = data as { backup?: string };
+
+            if (typeof castData.backup !== 'string') {
+                throw new InvalidParameterError('Asset "backup" is missing or not a string');
+            }
+
+            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
             const wallet = JSON.parse(backup);
 
             await this.saveWallet(wallet);
@@ -416,17 +608,17 @@ export default class Keymaster {
         }
     }
 
-    async listIds() {
+    async listIds(): Promise<string[]> {
         const wallet = await this.loadWallet();
         return Object.keys(wallet.ids);
     }
 
-    async getCurrentId() {
+    async getCurrentId(): Promise<string | undefined> {
         const wallet = await this.loadWallet();
         return wallet.current;
     }
 
-    async setCurrentId(name) {
+    async setCurrentId(name: string) {
         const wallet = await this.loadWallet();
         if (name in wallet.ids) {
             wallet.current = name;
@@ -437,14 +629,14 @@ export default class Keymaster {
         }
     }
 
-    didMatch(did1, did2) {
+    didMatch(did1: string, did2: string): boolean {
         const suffix1 = did1.split(':').pop();
         const suffix2 = did2.split(':').pop();
 
         return (suffix1 === suffix2);
     }
 
-    async fetchIdInfo(id) {
+    async fetchIdInfo(id?: string): Promise<IDInfo> {
         const wallet = await this.loadWallet();
         let idInfo = null;
 
@@ -464,11 +656,11 @@ export default class Keymaster {
             }
         }
         else {
-            idInfo = wallet.ids[wallet.current];
-
-            if (!idInfo) {
+            if (!wallet.current) {
                 throw new KeymasterError('No current ID');
             }
+
+            idInfo = wallet.ids[wallet.current];
         }
 
         if (!idInfo) {
@@ -478,24 +670,28 @@ export default class Keymaster {
         return idInfo;
     }
 
-    async hdKeyPair() {
+    async hdKeyPair(): Promise<EcdsaJwkPair> {
         const wallet = await this.loadWallet();
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey);
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
 
-        return this.cipher.generateJwk(hdkey.privateKey);
+        return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
-    async fetchKeyPair(name = null) {
+    async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey);
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const doc = await this.resolveDID(id.did, { confirm: true });
-        const confirmedPublicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const verificationMethod = doc.didDocument?.verificationMethod;
+        if (!verificationMethod || verificationMethod.length === 0) {
+            return null;
+        }
+        const confirmedPublicKeyJwk = verificationMethod[0].publicKeyJwk!;
 
         for (let i = id.index; i >= 0; i--) {
             const path = `m/44'/0'/${id.account}'/0/${i}`;
             const didkey = hdkey.derive(path);
-            const keypair = this.cipher.generateJwk(didkey.privateKey);
+            const keypair = this.cipher.generateJwk(didkey.privateKey!);
 
             if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
                 keypair.publicJwk.y === confirmedPublicKeyJwk.y
@@ -507,7 +703,7 @@ export default class Keymaster {
         return null;
     }
 
-    async createAsset(data = {}, options = {}) {
+    async createAsset(data: unknown, options: CreateAssetOptions = {}): Promise<string> {
         let { registry = this.defaultRegistry, controller, validUntil } = options;
 
         if (validUntil) {
@@ -524,7 +720,7 @@ export default class Keymaster {
 
         const id = await this.fetchIdInfo(controller);
 
-        const operation = {
+        const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
@@ -548,7 +744,7 @@ export default class Keymaster {
         return did;
     }
 
-    async createImage(buffer, options = {}) {
+    async createImage(buffer: Buffer, options: CreateAssetOptions = {}): Promise<string> {
         let metadata;
 
         try {
@@ -570,41 +766,66 @@ export default class Keymaster {
         return this.createAsset(data, options);
     }
 
-    async encryptMessage(msg, receiver, options = {}) {
-        const { encryptForSender = true, includeHash = false } = options;
+    async encryptMessage(
+        msg: string,
+        receiver: string,
+        options: EncryptOptions = {}
+    ): Promise<string> {
+        const {
+            encryptForSender = true,
+            includeHash = false,
+        } = options;
 
         const id = await this.fetchIdInfo();
         const senderKeypair = await this.fetchKeyPair();
+        if (!senderKeypair) {
+            throw new KeymasterError('No valid sender keypair');
+        }
+
         const doc = await this.resolveDID(receiver, { confirm: true });
-        const receivePublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const receivePublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!receivePublicJwk) {
+            throw new InvalidParameterError('receiver has no public key');
+        }
+
         const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
         const cipher_hash = includeHash ? this.cipher.hashMessage(msg) : null;
 
-        return await this.createAsset({
-            encrypted: {
-                sender: id.did,
-                created: new Date().toISOString(),
-                cipher_hash,
-                cipher_sender,
-                cipher_receiver,
-            }
-        }, options);
+        const encrypted: EncryptedMessage = {
+            sender: id.did,
+            created: new Date().toISOString(),
+            cipher_hash,
+            cipher_sender,
+            cipher_receiver,
+        }
+
+        return await this.createAsset({encrypted}, options);
     }
 
-    async decryptMessage(did) {
+    async decryptMessage(did: string): Promise<string> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
         const asset = await this.resolveAsset(did);
 
-        if (!asset || (!asset.encrypted && !asset.cipher_hash)) {
+        if (!asset) {
             throw new InvalidParameterError('did not encrypted');
         }
 
-        const crypt = asset.encrypted ? asset.encrypted : asset;
+        const castAsset = asset as { encrypted?: EncryptedMessage, cipher_hash?: string };
+        if (!castAsset.encrypted && !castAsset.cipher_hash) {
+            throw new InvalidParameterError('did not encrypted');
+        }
+
+        const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
+
         const doc = await this.resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
-        const senderPublicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey);
+        const senderPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!senderPublicJwk) {
+            throw new KeymasterError('sender key not found');
+        }
+
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
 
         // Try all private keys for this ID, starting with the most recent and working backward
@@ -612,9 +833,9 @@ export default class Keymaster {
         while (index >= 0) {
             const path = `m/44'/0'/${id.account}'/0/${index}`;
             const didkey = hdkey.derive(path);
-            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey);
+            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
             try {
-                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
+                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext!);
             }
             catch (error) {
                 index -= 1;
@@ -624,12 +845,16 @@ export default class Keymaster {
         throw new KeymasterError('cannot decrypt');
     }
 
-    async encryptJSON(json, did, options = {}) {
+    async encryptJSON(
+        json: unknown,
+        did: string,
+        options: EncryptOptions = {}
+    ): Promise<string> {
         const plaintext = JSON.stringify(json);
         return this.encryptMessage(plaintext, did, options);
     }
 
-    async decryptJSON(did) {
+    async decryptJSON(did: string): Promise<unknown> {
         const plaintext = await this.decryptMessage(did);
 
         try {
@@ -640,7 +865,7 @@ export default class Keymaster {
         }
     }
 
-    async addSignature(obj, controller = null) {
+    async addSignature<T extends object>(obj: T, controller?: string): Promise<T & { signature: Signature }> {
         if (obj == null) {
             throw new InvalidParameterError('obj');
         }
@@ -648,6 +873,10 @@ export default class Keymaster {
         // Fetches current ID if name is missing
         const id = await this.fetchIdInfo(controller);
         const keypair = await this.fetchKeyPair(controller);
+
+        if (!keypair) {
+            throw new KeymasterError('addSignature: no keypair');
+        }
 
         try {
             const msgHash = this.cipher.hashJSON(obj);
@@ -668,13 +897,17 @@ export default class Keymaster {
         }
     }
 
-    async verifySignature(obj) {
+    async verifySignature<T extends PossiblySigned>(obj: T): Promise<boolean> {
         if (!obj?.signature) {
             return false;
         }
 
+        const { signature } = obj;
+        if (!signature.signer) {
+            return false;
+        }
+
         const jsonCopy = JSON.parse(JSON.stringify(obj));
-        const signature = jsonCopy.signature;
         delete jsonCopy.signature;
         const msgHash = this.cipher.hashJSON(jsonCopy);
 
@@ -685,7 +918,10 @@ export default class Keymaster {
         const doc = await this.resolveDID(signature.signer, { atTime: signature.signed });
 
         // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
+        const publicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!publicJwk) {
+            return false;
+        }
 
         try {
             return this.cipher.verifySig(msgHash, signature.value, publicJwk);
@@ -695,48 +931,51 @@ export default class Keymaster {
         }
     }
 
-    async updateDID(doc) {
-        const did = doc.didDocument.id;
+    async updateDID(doc: MdipDocument): Promise<boolean> {
+        const did = doc.didDocument?.id;
+        if (!did) {
+            throw new InvalidParameterError('doc.didDocument.id');
+        }
         const current = await this.resolveDID(did);
-        const previd = current.didDocumentMetadata.versionId;
+        const previd = current.didDocumentMetadata?.versionId;
 
-        const operation = {
+        const operation: Operation = {
             type: "update",
             did,
             previd,
             doc,
         };
 
-        const controller = current.didDocument.controller || current.didDocument.id;
+        const controller = current.didDocument?.controller || current.didDocument?.id;
         const signed = await this.addSignature(operation, controller);
         return this.gatekeeper.updateDID(signed);
     }
 
-    async revokeDID(did) {
+    async revokeDID(did: string): Promise<boolean> {
         const current = await this.resolveDID(did);
-        const previd = current.didDocumentMetadata.versionId;
+        const previd = current.didDocumentMetadata?.versionId;
 
-        const operation = {
+        const operation: Operation = {
             type: "delete",
             did,
             previd,
         };
 
-        const controller = current.didDocument.controller || current.didDocument.id;
+        const controller = current.didDocument?.controller || current.didDocument?.id;
         const signed = await this.addSignature(operation, controller);
 
-        const ok = this.gatekeeper.deleteDID(signed);
+        const ok = await this.gatekeeper.deleteDID(signed);
 
-        if (ok && current.didDocument.controller) {
+        if (ok && current.didDocument?.controller) {
             await this.removeFromOwned(did, current.didDocument.controller);
         }
 
         return ok;
     }
 
-    async addToOwned(did) {
+    async addToOwned(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current];
+        const id = wallet.ids[wallet.current!];
         const owned = new Set(id.owned);
 
         owned.add(did);
@@ -745,18 +984,21 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async removeFromOwned(did, owner) {
+    async removeFromOwned(did: string, owner: string): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner);
+        if (!id.owned) {
+            return false;
+        }
 
         id.owned = id.owned.filter(item => item !== did);
 
         return this.saveWallet(wallet);
     }
 
-    async addToHeld(did) {
+    async addToHeld(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current];
+        const id = wallet.ids[wallet.current!];
         const held = new Set(id.held);
 
         held.add(did);
@@ -765,9 +1007,9 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async removeFromHeld(did) {
+    async removeFromHeld(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current];
+        const id = wallet.ids[wallet.current!];
         const held = new Set(id.held);
 
         if (held.delete(did)) {
@@ -778,7 +1020,7 @@ export default class Keymaster {
         return false;
     }
 
-    async lookupDID(name) {
+    async lookupDID(name: string): Promise<string> {
         try {
             if (name.startsWith('did:')) {
                 return name;
@@ -801,22 +1043,22 @@ export default class Keymaster {
         throw new UnknownIDError();
     }
 
-    async resolveDID(did, options = {}) {
-        did = await this.lookupDID(did);
-        return await this.gatekeeper.resolveDID(did, options);
+    async resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument> {
+        const actualDid = await this.lookupDID(did);
+        return this.gatekeeper.resolveDID(actualDid, options);
     }
 
-    async resolveAsset(did) {
+    async resolveAsset(did: string): Promise<unknown | null> {
         const doc = await this.resolveDID(did);
 
-        if (doc?.didDocumentData && !doc.didDocumentMetadata.deactivated) {
+        if (doc.didDocumentData && !doc.didDocumentMetadata?.deactivated) {
             return doc.didDocumentData;
         }
 
         return null;
     }
 
-    async updateAsset(did, data) {
+    async updateAsset(did: string, data: Record<string, unknown>): Promise<boolean> {
         const doc = await this.resolveDID(did);
 
         doc.didDocumentData = data;
@@ -824,12 +1066,12 @@ export default class Keymaster {
         return this.updateDID(doc);
     }
 
-    async listAssets(owner) {
+    async listAssets(owner?: string) {
         const id = await this.fetchIdInfo(owner);
         return id.owned || [];
     }
 
-    validateName(name, wallet) {
+    validateName(name: string, wallet?: WalletFile) {
         if (typeof name !== 'string' || !name.trim()) {
             throw new InvalidParameterError('name must be a non-empty string');
         }
@@ -857,7 +1099,7 @@ export default class Keymaster {
         return name;
     }
 
-    async createId(name, options = {}) {
+    async createId(name: string, options: { registry?: string } = {}): Promise<string> {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
@@ -865,12 +1107,12 @@ export default class Keymaster {
 
         const account = wallet.counter;
         const index = 0;
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey);
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const path = `m/44'/0'/${account}'/0/${index}`;
         const didkey = hdkey.derive(path);
-        const keypair = this.cipher.generateJwk(didkey.privateKey);
+        const keypair = this.cipher.generateJwk(didkey.privateKey!);
 
-        const operation = {
+        const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
             mdip: {
@@ -883,7 +1125,7 @@ export default class Keymaster {
 
         const msgHash = this.cipher.hashJSON(operation);
         const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-        const signed = {
+        const signed: Operation = {
             ...operation,
             signature: {
                 signed: new Date().toISOString(),
@@ -893,13 +1135,11 @@ export default class Keymaster {
         }
         const did = await this.gatekeeper.createDID(signed);
 
-        const newId = {
+        wallet.ids[name] = {
             did: did,
             account: account,
             index: index,
         };
-
-        wallet.ids[name] = newId;
         wallet.counter += 1;
         wallet.current = name;
         await this.saveWallet(wallet);
@@ -907,7 +1147,7 @@ export default class Keymaster {
         return did;
     }
 
-    async removeId(name) {
+    async removeId(name: string): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         if (!(name in wallet.ids)) {
@@ -923,7 +1163,7 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async renameId(id, name) {
+    async renameId(id: string, name: string): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         name = this.validateName(name);
@@ -946,7 +1186,7 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async backupId(controller = null) {
+    async backupId(controller?: string): Promise<boolean> {
         // Backs up current ID if name is missing
         const id = await this.fetchIdInfo(controller);
         const wallet = await this.loadWallet();
@@ -958,20 +1198,39 @@ export default class Keymaster {
         const msg = JSON.stringify(data);
         const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
         const doc = await this.resolveDID(id.did);
-        const registry = doc.mdip.registry;
+        const registry = doc.mdip?.registry;
+        if (!registry) {
+            throw new InvalidParameterError('no registry found for agent DID');
+        }
+
         const vaultDid = await this.createAsset({ backup: backup }, { registry, controller });
 
-        doc.didDocumentData.vault = vaultDid;
-        return this.updateDID(doc);
+        if (doc.didDocumentData) {
+            const docData = doc.didDocumentData as { vault: string };
+            docData.vault = vaultDid;
+            return this.updateDID(doc);
+        }
+        return false;
     }
 
-    async recoverId(did) {
+    async recoverId(did: string): Promise<string> {
         try {
             const wallet = await this.loadWallet();
             const keypair = await this.hdKeyPair();
+
             const doc = await this.resolveDID(did);
-            const vault = await this.resolveAsset(doc.didDocumentData.vault);
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
+            const docData = doc.didDocumentData as { vault?: string };
+            if (!docData.vault) {
+                throw new InvalidDIDError('didDocumentData missing vault');
+            }
+
+            const vault = await this.resolveAsset(docData.vault);
+            const castVault = vault as { backup?: string };
+            if (typeof castVault.backup !== 'string') {
+                throw new InvalidDIDError('backup not found in vault');
+            }
+
+            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castVault.backup);
             const data = JSON.parse(backup);
 
             if (wallet.ids[data.name]) {
@@ -983,10 +1242,9 @@ export default class Keymaster {
             wallet.counter += 1;
 
             await this.saveWallet(wallet);
-
-            return wallet.current;
+            return wallet.current!;
         }
-        catch (error) {
+        catch (error: any) {
             if (error.type === 'Keymaster') {
                 throw error;
             }
@@ -996,18 +1254,22 @@ export default class Keymaster {
         }
     }
 
-    async rotateKeys() {
+    async rotateKeys(): Promise<MdipDocument> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current];
+        const id = wallet.ids[wallet.current!];
         const nextIndex = id.index + 1;
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey);
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
         const didkey = hdkey.derive(path);
-        const keypair = this.cipher.generateJwk(didkey.privateKey);
+        const keypair = this.cipher.generateJwk(didkey.privateKey!);
         const doc = await this.resolveDID(id.did);
 
-        if (!doc.didDocumentMetadata.confirmed) {
+        if (!doc.didDocumentMetadata?.confirmed) {
             throw new KeymasterError('Cannot rotate keys');
+        }
+
+        if (!doc.didDocument?.verificationMethod) {
+            throw new KeymasterError('DID Document missing verificationMethod');
         }
 
         const vmethod = doc.didDocument.verificationMethod[0];
@@ -1028,13 +1290,13 @@ export default class Keymaster {
         }
     }
 
-    async listNames() {
+    async listNames(): Promise<Record<string, string>> {
         const wallet = await this.loadWallet();
 
         return wallet.names || {};
     }
 
-    async addName(name, did) {
+    async addName(name: string, did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         if (!wallet.names) {
@@ -1046,7 +1308,7 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async getName(name) {
+    async getName(name: string): Promise<string | null> {
         const wallet = await this.loadWallet();
 
         if (wallet.names && name in wallet.names) {
@@ -1056,7 +1318,7 @@ export default class Keymaster {
         return null;
     }
 
-    async removeName(name) {
+    async removeName(name: string): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         if (wallet.names && name in wallet.names) {
@@ -1067,12 +1329,20 @@ export default class Keymaster {
         return true;
     }
 
-    async testAgent(id) {
+    async testAgent(id: string): Promise<boolean> {
         const doc = await this.resolveDID(id);
-        return doc?.mdip?.type === 'agent';
+        return doc.mdip?.type === 'agent';
     }
 
-    async bindCredential(schemaId, subjectId, options = {}) {
+    async bindCredential(
+        schemaId: string,
+        subjectId: string,
+        options: {
+            validFrom?: string;
+            validUntil?: string;
+            credential?: Record<string, unknown>;
+        } = {}
+    ): Promise<VerifiableCredential> {
         let { validFrom, validUntil, credential } = options;
 
         if (!validFrom) {
@@ -1104,7 +1374,10 @@ export default class Keymaster {
         };
     }
 
-    async issueCredential(credential, options = {}) {
+    async issueCredential(
+        credential: Partial<VerifiableCredential>,
+        options: IssueCredentialsOptions = {}
+    ): Promise<string> {
         const id = await this.fetchIdInfo();
 
         if (options.schema && options.subject) {
@@ -1116,18 +1389,34 @@ export default class Keymaster {
         }
 
         const signed = await this.addSignature(credential);
-        return this.encryptJSON(signed, credential.credentialSubject.id, { ...options, includeHash: true });
+        return this.encryptJSON(signed, credential.credentialSubject!.id, { ...options, includeHash: true });
     }
 
-    async updateCredential(did, credential) {
+    private isVerifiableCredential(obj: unknown): obj is VerifiableCredential {
+        if (typeof obj !== 'object' || !obj) {
+            return false;
+        }
+
+        const vc = obj as Partial<VerifiableCredential>;
+
+        return !(!Array.isArray(vc["@context"]) || !Array.isArray(vc.type) || !vc.issuer || !vc.credentialSubject);
+    }
+
+    async updateCredential(
+        did: string,
+        credential: VerifiableCredential
+    ): Promise<boolean> {
         did = await this.lookupDID(did);
         const originalVC = await this.decryptJSON(did);
 
-        if (!originalVC.credential) {
-            throw new InvalidParameterError('did is not a credential');
+        if (!this.isVerifiableCredential(originalVC)) {
+            throw new InvalidParameterError("did is not a credential");
         }
 
-        if (!credential?.credential || !credential?.credentialSubject?.id) {
+        if (!credential ||
+            !credential.credential ||
+            !credential.credentialSubject ||
+            !credential.credentialSubject.id) {
             throw new InvalidParameterError('credential');
         }
 
@@ -1137,15 +1426,23 @@ export default class Keymaster {
 
         const id = await this.fetchIdInfo();
         const senderKeypair = await this.fetchKeyPair();
+        if (!senderKeypair) {
+            throw new KeymasterError('No valid sender keypair');
+        }
+
         const holder = credential.credentialSubject.id;
         const holderDoc = await this.resolveDID(holder, { confirm: true });
-        const receivePublicJwk = holderDoc.didDocument.verificationMethod[0].publicKeyJwk;
+        const receivePublicJwk = holderDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!receivePublicJwk) {
+            throw new InvalidParameterError('holder DID has no public key');
+        }
+
         const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
         const msgHash = this.cipher.hashMessage(msg);
 
         const doc = await this.resolveDID(did);
-        const encrypted = {
+        const encrypted: EncryptedMessage = {
             sender: id.did,
             created: new Date().toISOString(),
             cipher_hash: msgHash,
@@ -1156,12 +1453,12 @@ export default class Keymaster {
         return this.updateDID(doc);
     }
 
-    async revokeCredential(credential) {
+    async revokeCredential(credential: string): Promise<boolean> {
         const did = await this.lookupDID(credential);
         return this.revokeDID(did);
     }
 
-    async listIssued(issuer) {
+    async listIssued(issuer?: string): Promise<string[]> {
         const id = await this.fetchIdInfo(issuer);
         const issued = [];
 
@@ -1170,26 +1467,26 @@ export default class Keymaster {
                 try {
                     const credential = await this.decryptJSON(did);
 
-                    if (credential.issuer === id.did) {
+                    if (this.isVerifiableCredential(credential) &&
+                        credential.issuer === id.did) {
                         issued.push(did);
                     }
                 }
-                catch (error) {
-                    continue;
-                }
+                catch (error) {}
             }
         }
 
         return issued;
     }
 
-    async acceptCredential(did) {
+    async acceptCredential(did: string): Promise<boolean> {
         try {
             const id = await this.fetchIdInfo();
             const credential = await this.lookupDID(did);
             const vc = await this.decryptJSON(credential);
 
-            if (vc.credentialSubject.id !== id.did) {
+            if (this.isVerifiableCredential(vc) &&
+                vc.credentialSubject?.id !== id.did) {
                 return false;
             }
 
@@ -1200,36 +1497,55 @@ export default class Keymaster {
         }
     }
 
-    async getCredential(id) {
+    async getCredential(id: string): Promise<VerifiableCredential | null> {
         const did = await this.lookupDID(id);
-        return this.decryptJSON(did);
+
+        const vc = await this.decryptJSON(did);
+
+        if (!this.isVerifiableCredential(vc)) {
+            return null;
+        }
+
+        return vc;
     }
 
-    async removeCredential(id) {
+    async removeCredential(id: string): Promise<boolean> {
         const did = await this.lookupDID(id);
         return this.removeFromHeld(did);
     }
 
-    async listCredentials(id) {
+    async listCredentials(id?: string): Promise<string[]> {
         const idInfo = await this.fetchIdInfo(id);
         return idInfo.held || [];
     }
 
-    async publishCredential(did, options = {}) {
+    async publishCredential(
+        did: string,
+        options: { reveal?: boolean } = {}
+    ): Promise<VerifiableCredential> {
         const { reveal = false } = options;
 
         const id = await this.fetchIdInfo();
         const credential = await this.lookupDID(did);
         const vc = await this.decryptJSON(credential);
+        if (!this.isVerifiableCredential(vc)) {
+            throw new InvalidParameterError("did is not a credential");
+        }
 
-        if (vc.credentialSubject.id !== id.did) {
+        if (vc.credentialSubject?.id !== id.did) {
             throw new InvalidParameterError('only subject can publish a credential');
         }
 
         const doc = await this.resolveDID(id.did);
 
-        if (!doc.didDocumentData.manifest) {
-            doc.didDocumentData.manifest = {};
+        if (!doc.didDocumentData) {
+            doc.didDocumentData = {};
+        }
+
+        const data = doc.didDocumentData as { manifest?: Record<string, unknown> };
+
+        if (!data.manifest) {
+            data.manifest = {};
         }
 
         if (!reveal) {
@@ -1237,26 +1553,24 @@ export default class Keymaster {
             vc.credential = null;
         }
 
-        doc.didDocumentData.manifest[credential] = vc;
+        data.manifest[credential] = vc;
 
         const ok = await this.updateDID(doc);
-
         if (ok) {
             return vc;
         }
-        else {
-            throw new KeymasterError('update DID failed');
-        }
+
+        throw new KeymasterError('update DID failed');
     }
 
-    async unpublishCredential(did) {
+    async unpublishCredential(did: string): Promise<string> {
         const id = await this.fetchIdInfo();
         const doc = await this.resolveDID(id.did);
         const credential = await this.lookupDID(did);
-        const manifest = doc.didDocumentData.manifest;
+        const data = doc.didDocumentData as { manifest?: Record<string, unknown> };
 
-        if (credential && manifest && credential in manifest) {
-            delete manifest[credential];
+        if (credential && data.manifest && credential in data.manifest) {
+            delete data.manifest[credential];
             await this.updateDID(doc);
 
             return `OK credential ${did} removed from manifest`;
@@ -1265,7 +1579,10 @@ export default class Keymaster {
         throw new InvalidParameterError('did');
     }
 
-    async createChallenge(challenge = {}, options = {}) {
+    async createChallenge(
+        challenge: Challenge = {},
+        options: { registry?: string; validUntil?: string } = {}
+    ): Promise<string> {
 
         if (!challenge || typeof challenge !== 'object' || Array.isArray(challenge)) {
             throw new InvalidParameterError('challenge');
@@ -1290,7 +1607,9 @@ export default class Keymaster {
         return this.createAsset({ challenge }, options);
     }
 
-    async findMatchingCredential(credential) {
+    private async findMatchingCredential(
+        credential: { schema: string; issuers?: string[] }
+    ): Promise<string | undefined> {
         const id = await this.fetchIdInfo();
 
         if (!id.held) {
@@ -1301,10 +1620,7 @@ export default class Keymaster {
             try {
                 const doc = await this.decryptJSON(did);
 
-                // console.log(doc);
-
-                if (!doc.issuer) {
-                    // Not a VC
+                if (!this.isVerifiableCredential(doc)) {
                     continue;
                 }
 
@@ -1332,7 +1648,9 @@ export default class Keymaster {
         }
     }
 
-    async createResponse(challengeDID, options = {}) {
+    async createResponse(
+        challengeDID: string, options: CreateResponseOptions = {}
+    ): Promise<string> {
         let { retries = 0, delay = 1000 } = options;
 
         if (!options.registry) {
@@ -1357,12 +1675,23 @@ export default class Keymaster {
                 await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milleseconds
             }
         }
+        if (!doc!) {
+            throw new InvalidParameterError('challengeDID does not resolve');
+        }
 
-        const requestor = doc.didDocument.controller;
-        const { challenge } = await this.resolveAsset(challengeDID);
+        const result = await this.resolveAsset(challengeDID);
+        if (!result) {
+            throw new InvalidParameterError('challengeDID');
+        }
 
+        const challenge = (result as { challenge?: Challenge }).challenge;
         if (!challenge) {
             throw new InvalidParameterError('challengeDID');
+        }
+
+        const requestor = doc.didDocument?.controller;
+        if (!requestor) {
+            throw new InvalidParameterError('requestor undefined');
         }
 
         // TBD check challenge isValid for expired?
@@ -1399,10 +1728,13 @@ export default class Keymaster {
             match: match
         };
 
-        return await this.encryptJSON({ response }, requestor, options);
+        return await this.encryptJSON({ response }, requestor!, options);
     }
 
-    async verifyResponse(responseDID, options = {}) {
+    async verifyResponse(
+        responseDID: string,
+        options: { retries?: number; delay?: number } = {}
+    ): Promise<ChallengeResponse> {
         let { retries = 0, delay = 1000 } = options;
 
         let responseDoc;
@@ -1417,40 +1749,63 @@ export default class Keymaster {
                 await new Promise(resolve => setTimeout(resolve, delay)); // Wait for delay milliseconds
             }
         }
+        if (!responseDoc!) {
+            throw new InvalidParameterError('responseDID does not resolve');
+        }
 
-        const { response } = await this.decryptJSON(responseDID);
-        const { challenge } = await this.resolveAsset(response.challenge);
+        const wrapper = await this.decryptJSON(responseDID);
+        if (typeof wrapper !== 'object' || !wrapper || !('response' in wrapper)) {
+            throw new InvalidParameterError('responseDID not a valid challenge response');
+        }
+        const { response } = wrapper as { response: ChallengeResponse };
 
-        const vps = [];
+        const result = await this.resolveAsset(response.challenge);
+        if (!result) {
+            throw new InvalidParameterError('challenge not found');
+        }
+
+        const challenge = (result as { challenge?: Challenge }).challenge;
+        if (!challenge) {
+            throw new InvalidParameterError('challengeDID');
+        }
+
+        const vps: unknown[] = [];
 
         for (let credential of response.credentials) {
             const vcData = await this.resolveAsset(credential.vc);
             const vpData = await this.resolveAsset(credential.vp);
 
-            if (!vcData) {
+            const castVCData = vcData as { encrypted?: EncryptedMessage };
+            const castVPData = vpData as { encrypted?: EncryptedMessage };
+
+            if (!vcData || !vpData || !castVCData.encrypted || !castVPData.encrypted) {
                 // VC revoked
                 continue;
             }
 
-            const vcHash = vcData.encrypted?.cipher_hash;
-            const vpHash = vpData.encrypted?.cipher_hash;
+            const vcHash = castVCData.encrypted;
+            const vpHash = castVPData.encrypted;
 
-            if (vcHash == null || vpHash == null || vcHash !== vpHash) {
+            if (vcHash.cipher_hash !== vpHash.cipher_hash) {
                 // can't verify that the contents of VP match the VC
                 continue;
             }
 
-            const vp = await this.decryptJSON(credential.vp);
+            const vp = await this.decryptJSON(credential.vp) as VerifiableCredential;
             const isValid = await this.verifySignature(vp);
 
             if (!isValid) {
                 continue;
             }
 
+            if (!vp.type || !Array.isArray(vp.type)) {
+                continue;
+            }
+
             // Check VP against VCs specified in challenge
-            if (vp.type.length > 1 && vp.type[1].startsWith('did:')) {
+            if (vp.type.length >= 2 && vp.type[1].startsWith('did:')) {
                 const schema = vp.type[1];
-                const credential = challenge.credentials.find(item => item.schema === schema);
+                const credential = challenge.credentials?.find(item => item.schema === schema);
 
                 if (!credential) {
                     continue;
@@ -1467,12 +1822,15 @@ export default class Keymaster {
 
         response.vps = vps;
         response.match = vps.length === (challenge.credentials?.length ?? 0);
-        response.responder = responseDoc.didDocument.controller;
+        response.responder = responseDoc.didDocument?.controller;
 
         return response;
     }
 
-    async createGroup(name, options = {}) {
+    async createGroup(
+        name: string,
+        options: { registry?: string; members?: string[] } = {}
+    ): Promise<string> {
         const group = {
             name: name,
             members: options.members || []
@@ -1481,18 +1839,27 @@ export default class Keymaster {
         return this.createAsset({ group }, options);
     }
 
-    async getGroup(id) {
+    async getGroup(id: string): Promise<Group | null> {
         const asset = await this.resolveAsset(id);
-
-        // TEMP during did:test, return old version groups
-        if (asset.members) {
-            return asset;
+        if (!asset) {
+            return null;
         }
 
-        return asset.group || null;
+        // TEMP during did:test, return old version groups
+        const castOldAsset = asset as Group;
+        if (castOldAsset.members) {
+            return castOldAsset;
+        }
+
+        const castAsset = asset as { group?: Group };
+        if (!castAsset.group) {
+            return null;
+        }
+
+        return castAsset.group;
     }
 
-    async addGroupMember(groupId, memberId) {
+    async addGroupMember(groupId: string, memberId: string): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
 
@@ -1534,7 +1901,7 @@ export default class Keymaster {
         return this.updateAsset(groupDID, { group });
     }
 
-    async removeGroupMember(groupId, memberId) {
+    async removeGroupMember(groupId: string, memberId: string): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
         const group = await this.getGroup(groupDID);
@@ -1563,15 +1930,11 @@ export default class Keymaster {
         return this.updateAsset(groupDID, { group });
     }
 
-    async testGroup(groupId, memberId) {
+    async testGroup(groupId: string, memberId?: string): Promise<boolean> {
         try {
             const group = await this.getGroup(groupId);
 
             if (!group) {
-                return false;
-            }
-
-            if (!Array.isArray(group.members)) {
                 return false;
             }
 
@@ -1599,7 +1962,7 @@ export default class Keymaster {
         }
     }
 
-    async listGroups(owner) {
+    async listGroups(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
         const groups = [];
 
@@ -1614,7 +1977,7 @@ export default class Keymaster {
         return groups;
     }
 
-    validateSchema(schema) {
+    private validateSchema(schema: unknown): boolean {
         try {
             // Attempt to instantiate the schema
             this.generateSchema(schema);
@@ -1625,27 +1988,27 @@ export default class Keymaster {
         }
     }
 
-    generateSchema(schema) {
-        const properties = Object.keys(schema);
-
-        if (!properties.includes('$schema')) {
+    private generateSchema(schema: unknown): Record<string, unknown> {
+        if (
+            typeof schema !== 'object' ||
+            !schema ||
+            !('$schema' in schema) ||
+            !('properties' in schema)
+        ) {
             throw new InvalidParameterError('schema');
         }
 
-        if (!properties.includes('properties')) {
-            throw new InvalidParameterError('schema');
-        }
+        const template: Record<string, unknown> = {};
 
-        let template = {};
-
-        for (const property of Object.keys(schema.properties)) {
+        const props = (schema as { properties: Record<string, unknown> }).properties;
+        for (const property of Object.keys(props)) {
             template[property] = "TBD";
         }
 
         return template;
     }
 
-    async createSchema(schema, options = {}) {
+    async createSchema(schema?: unknown, options: { registry?: string; validUntil?: string } = {}): Promise<string> {
         if (!schema) {
             schema = DefaultSchema;
         }
@@ -1657,18 +2020,27 @@ export default class Keymaster {
         return this.createAsset({ schema }, options);
     }
 
-    async getSchema(id) {
+    async getSchema(id: string): Promise<unknown | null> {
         const asset = await this.resolveAsset(id);
+        if (!asset) {
+            return null;
+        }
 
         // TEMP during did:test, return old version schemas
-        if (asset.properties) {
+        const castOldAsset = asset as { properties?: unknown };
+        if (castOldAsset.properties) {
             return asset;
         }
 
-        return asset.schema || null;
+        const castAsset = asset as { schema?: unknown };
+        if (!castAsset.schema) {
+            return null;
+        }
+
+        return castAsset.schema;
     }
 
-    async setSchema(id, schema) {
+    async setSchema(id: string, schema: unknown): Promise<boolean> {
         if (!this.validateSchema(schema)) {
             throw new InvalidParameterError('schema');
         }
@@ -1677,7 +2049,7 @@ export default class Keymaster {
     }
 
     // TBD add optional 2nd parameter that will validate JSON against the schema
-    async testSchema(id) {
+    async testSchema(id: string): Promise<boolean> {
         try {
             const schema = await this.getSchema(id);
 
@@ -1693,7 +2065,7 @@ export default class Keymaster {
         }
     }
 
-    async listSchemas(owner) {
+    async listSchemas(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
         const schemas = [];
 
@@ -1708,7 +2080,7 @@ export default class Keymaster {
         return schemas;
     }
 
-    async createTemplate(schemaId) {
+    async createTemplate(schemaId: string): Promise<Record<string, unknown>> {
         const isSchema = await this.testSchema(schemaId);
 
         if (!isSchema) {
@@ -1724,7 +2096,7 @@ export default class Keymaster {
         return template;
     }
 
-    async pollTemplate() {
+    async pollTemplate(): Promise<Poll> {
         const now = new Date();
         const nextWeek = new Date();
         nextWeek.setDate(now.getDate() + 7);
@@ -1739,7 +2111,10 @@ export default class Keymaster {
         };
     }
 
-    async createPoll(poll, options = {}) {
+    async createPoll(
+        poll: Poll,
+        options: { registry?: string; validUntil?: string } = {}
+    ): Promise<string> {
         if (poll.type !== 'poll') {
             throw new InvalidParameterError('poll');
         }
@@ -1790,18 +2165,27 @@ export default class Keymaster {
         return this.createAsset({ poll }, options);
     }
 
-    async getPoll(id) {
+    async getPoll(id: string): Promise<Poll | null> {
         const asset = await this.resolveAsset(id);
-
-        // TEMP during did:test, return old version poll
-        if (asset.options) {
-            return asset;
+        if (!asset) {
+            return null;
         }
 
-        return asset.poll || null;
+        // TEMP during did:test, return old version poll
+        const castOldAsset = asset as Poll;
+        if (castOldAsset.options) {
+            return castOldAsset;
+        }
+
+        const castAsset = asset as { poll?: Poll };
+        if (!castAsset.poll) {
+            return null;
+        }
+
+        return castAsset.poll;
     }
 
-    async testPoll(id) {
+    async testPoll(id: string): Promise<boolean> {
         try {
             const poll = await this.getPoll(id);
             return poll !== null;
@@ -1811,9 +2195,9 @@ export default class Keymaster {
         }
     }
 
-    async listPolls(owner) {
+    async listPolls(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
-        const polls = [];
+        const polls: string[] = [];
 
         for (const did of assets) {
             const isPoll = await this.testPoll(did);
@@ -1826,11 +2210,11 @@ export default class Keymaster {
         return polls;
     }
 
-    async viewPoll(pollId) {
+    async viewPoll(pollId: string): Promise<ViewPollResult> {
         const id = await this.fetchIdInfo();
         const poll = await this.getPoll(pollId);
 
-        if (!poll || !poll.options || !poll.deadline) {
+        if (!poll) {
             throw new InvalidParameterError('pollId');
         }
 
@@ -1840,24 +2224,24 @@ export default class Keymaster {
             hasVoted = !!poll.ballots[id.did];
         }
 
-        const voteExpired = Date(poll.deadline) > new Date();
+        const voteExpired = Date.now() > new Date(poll.deadline).getTime();
         const isEligible = await this.testGroup(poll.roster, id.did);
         const doc = await this.resolveDID(pollId);
 
-        const view = {
+        const view: ViewPollResult = {
             description: poll.description,
             options: poll.options,
             deadline: poll.deadline,
-            isOwner: (doc.didDocument.controller === id.did),
+            isOwner: (doc.didDocument?.controller === id.did),
             isEligible: isEligible,
             voteExpired: voteExpired,
             hasVoted: hasVoted,
         };
 
-        if (id.did === doc.didDocument.controller) {
+        if (id.did === doc.didDocument?.controller) {
             let voted = 0;
 
-            const results = {
+            const results: PollResults = {
                 tally: [],
                 ballots: [],
             }
@@ -1879,19 +2263,21 @@ export default class Keymaster {
             for (let voter in poll.ballots) {
                 const ballot = poll.ballots[voter];
                 const decrypted = await this.decryptJSON(ballot.ballot);
-                const vote = decrypted.vote;
-                results.ballots.push({
-                    ...ballot,
-                    voter: voter,
-                    vote: vote,
-                    option: poll.options[vote - 1],
-                });
+                const vote = (decrypted as {vote: number}).vote;
+                if (results.ballots) {
+                    results.ballots.push({
+                        ...ballot,
+                        voter,
+                        vote,
+                        option: poll.options[vote - 1],
+                    });
+                }
                 voted += 1;
                 results.tally[vote].count += 1;
             }
 
             const roster = await this.getGroup(poll.roster);
-            const total = roster.members.length;
+            const total = roster!.members.length;
 
             results.votes = {
                 eligible: total,
@@ -1906,16 +2292,28 @@ export default class Keymaster {
         return view;
     }
 
-    async votePoll(pollId, vote, options = {}) {
+    async votePoll(
+        pollId: string,
+        vote: number,
+        options: { spoil?: boolean; registry?: string; validUntil?: string } = {}
+    ): Promise<string> {
         const { spoil = false } = options;
 
         const id = await this.fetchIdInfo();
         const didPoll = await this.lookupDID(pollId);
         const doc = await this.resolveDID(didPoll);
         const poll = await this.getPoll(pollId);
+        if (!poll) {
+            throw new InvalidParameterError('pollId');
+        }
+
         const eligible = await this.testGroup(poll.roster, id.did);
-        const expired = (Date(poll.deadline) > new Date());
-        const owner = doc.didDocument.controller;
+        const expired = Date.now() > new Date(poll.deadline).getTime();
+        const owner = doc.didDocument?.controller;
+
+        if (!owner) {
+            throw new KeymasterError('owner mising from poll');
+        }
 
         if (!eligible) {
             throw new InvalidParameterError('voter not in roster');
@@ -1935,7 +2333,6 @@ export default class Keymaster {
         }
         else {
             const max = poll.options.length;
-            vote = parseInt(vote);
 
             if (!Number.isInteger(vote) || vote < 1 || vote > max) {
                 throw new InvalidParameterError('vote');
@@ -1948,20 +2345,19 @@ export default class Keymaster {
         }
 
         // Encrypt for receiver only
-        options.encryptForSender = false;
-        return await this.encryptJSON(ballot, owner, options);
+        return await this.encryptJSON(ballot, owner, { ...options, encryptForSender: false });
     }
 
-    async updatePoll(ballot) {
+    async updatePoll(ballot: string): Promise<boolean> {
         const id = await this.fetchIdInfo();
 
         const didBallot = await this.lookupDID(ballot);
         const docBallot = await this.resolveDID(ballot);
-        const didVoter = docBallot.didDocument.controller;
-        let dataBallot;
+        const didVoter = docBallot.didDocument!.controller!;
+        let dataBallot: { poll: string; vote: number };
 
         try {
-            dataBallot = await this.decryptJSON(didBallot);
+            dataBallot = await this.decryptJSON(didBallot) as { poll: string; vote: number };
 
             if (!dataBallot.poll || !dataBallot.vote) {
                 throw new InvalidParameterError('ballot');
@@ -1973,8 +2369,12 @@ export default class Keymaster {
 
         const didPoll = dataBallot.poll;
         const docPoll = await this.resolveDID(didPoll);
-        const didOwner = docPoll.didDocument.controller;
+        const didOwner = docPoll.didDocument!.controller!;
         const poll = await this.getPoll(didPoll);
+
+        if (!poll) {
+            throw new KeymasterError('Cannot find poll related to ballot');
+        }
 
         if (id.did !== didOwner) {
             throw new InvalidParameterError('only owner can update a poll');
@@ -1986,14 +2386,14 @@ export default class Keymaster {
             throw new InvalidParameterError('voter not in roster');
         }
 
-        const expired = (Date(poll.deadline) > new Date());
+        const expired = Date.now() > new Date(poll.deadline).getTime();
 
         if (expired) {
             throw new InvalidParameterError('poll has expired');
         }
 
         const max = poll.options.length;
-        const vote = parseInt(dataBallot.vote);
+        const vote = dataBallot.vote;
 
         if (!vote || vote < 0 || vote > max) {
             throw new InvalidParameterError('ballot.vote');
@@ -2011,12 +2411,15 @@ export default class Keymaster {
         return this.updateAsset(didPoll, { poll });
     }
 
-    async publishPoll(pollId, options = {}) {
+    async publishPoll(
+        pollId: string,
+        options: { reveal?: boolean } = {}
+    ): Promise<boolean> {
         const { reveal = false } = options;
 
         const id = await this.fetchIdInfo();
         const doc = await this.resolveDID(pollId);
-        const owner = doc.didDocument.controller;
+        const owner = doc.didDocument?.controller;
 
         if (id.did !== owner) {
             throw new InvalidParameterError('only owner can publish a poll');
@@ -2024,30 +2427,40 @@ export default class Keymaster {
 
         const view = await this.viewPoll(pollId);
 
-        if (!view.results.final) {
+        if (!view.results?.final) {
             throw new InvalidParameterError('poll not final');
         }
 
-        if (!reveal) {
+        if (!reveal && view.results.ballots) {
             delete view.results.ballots;
         }
 
         const poll = await this.getPoll(pollId);
+
+        if (!poll) {
+            throw new InvalidParameterError(pollId);
+        }
+
         poll.results = view.results;
 
         return this.updateAsset(pollId, { poll });
     }
 
-    async unpublishPoll(pollId) {
+    async unpublishPoll(pollId: string): Promise<boolean> {
         const id = await this.fetchIdInfo();
         const doc = await this.resolveDID(pollId);
-        const owner = doc.didDocument.controller;
+        const owner = doc.didDocument?.controller;
 
         if (id.did !== owner) {
             throw new InvalidParameterError(pollId);
         }
 
         const poll = await this.getPoll(pollId);
+
+        if (!poll) {
+            throw new InvalidParameterError(pollId);
+        }
+
         delete poll.results;
 
         return this.updateAsset(pollId, { poll });

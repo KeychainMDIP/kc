@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import {WalletWrapper, WalletBase, WrappedWallet} from '../types.js'
+import {WalletBase, StoredWallet} from '../types.js'
 import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'aes-256-gcm';      // Algorithm
@@ -9,7 +9,7 @@ const saltLength = 16;                // 128-bit salt
 const iterations = 100000;            // PBKDF2 iterations
 const digest = 'sha512';              // PBKDF2 hash function
 
-export default class WalletEncrypted implements WalletWrapper {
+export default class WalletEncrypted implements WalletBase {
     private baseWallet: WalletBase;
     private readonly passphrase: string;
 
@@ -18,7 +18,7 @@ export default class WalletEncrypted implements WalletWrapper {
         this.passphrase = passphrase;
     }
 
-    async saveWallet(wallet: WrappedWallet, overwrite: boolean = false): Promise<boolean> {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!this.passphrase) {
             throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }
@@ -44,7 +44,7 @@ export default class WalletEncrypted implements WalletWrapper {
         return this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    async loadWallet(): Promise<WrappedWallet> {
+    async loadWallet(): Promise<StoredWallet> {
         if (!this.passphrase) {
             throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }

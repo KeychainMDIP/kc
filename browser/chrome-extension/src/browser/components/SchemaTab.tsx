@@ -41,7 +41,7 @@ const SchemaTab = ()=> {
 
     async function editSchema(schemaName: string) {
         try {
-            const schema = await keymaster.getSchema(schemaName);
+            const schema = await keymaster.getSchema(schemaName) as string;
             setSelectedSchema(schema);
             setEditedSchemaName(schemaName);
             setSchemaString(JSON.stringify(schema, null, 4));

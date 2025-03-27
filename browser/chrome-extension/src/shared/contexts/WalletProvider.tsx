@@ -274,7 +274,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         try {
             const id = await keymaster.fetchIdInfo();
             const docs = await keymaster.resolveDID(id.did);
-            setManifest(docs.didDocumentData.manifest);
+            setManifest((docs.didDocumentData as {manifest: Record<string, unknown>}).manifest);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
