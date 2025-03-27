@@ -24,6 +24,7 @@ import HeliaClient from '@mdip/ipfs/helia';
 import { generateCID } from '@mdip/ipfs/utils';
 
 import canonicalizeModule from 'canonicalize';
+import {MdipDocument} from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 const db = new DbJson('test');
@@ -379,6 +380,27 @@ describe('decryptMnemonic', () => {
         // Split the mnemonic into words
         const words = mnemonic.split(' ');
         expect(words.length).toBe(12);
+    });
+});
+
+describe('updateSeedBank', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should throw error on missing DID', async () => {
+        mockFs({});
+
+        const doc: MdipDocument = {};
+
+        try {
+            await keymaster.updateSeedBank(doc);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: seed bank missing DID');
+        }
     });
 });
 
@@ -1503,6 +1525,18 @@ describe('updateDID', () => {
         mockFs.restore();
     });
 
+    it('should throw if doc missing id', async () => {
+        mockFs({});
+        const doc: MdipDocument = {};
+
+        try {
+            await keymaster.updateDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toContain('doc.didDocument.id');
+        }
+    });
+
     it('should update an asset DID', async () => {
         mockFs({});
 
@@ -1591,6 +1625,22 @@ describe('revokeDID', () => {
         expect(doc.didDocument).toStrictEqual({});
         expect(doc.didDocumentData).toStrictEqual({});
         expect(doc.didDocumentMetadata!.deactivated).toBe(true);
+    });
+});
+
+describe('removeFromOwned', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return false if nothing owned', async () => {
+        mockFs({});
+
+        const owner = await keymaster.createId('Alice');
+        const ok = await keymaster.removeFromOwned("did:mock", owner);
+
+        expect(ok).toBe(false);
     });
 });
 
@@ -1725,6 +1775,19 @@ describe('decryptMessage', () => {
 
         expect(decipher).toBe(msg);
     });
+
+    it('should throw an exception on invalid DID', async () => {
+        mockFs({});
+
+        const name = await keymaster.createId("Alice");
+
+        try {
+            await keymaster.decryptMessage(name);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toContain('did not encrypted');
+        }
+    });
 });
 
 const mockJson = {
@@ -1852,6 +1915,30 @@ describe('verifySignature', () => {
         expect(isValid).toBe(false);
     });
 
+    it('should return false for missing signer', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const signed = await keymaster.addSignature(mockJson);
+        delete signed.signature.signer;
+        const isValid = await keymaster.verifySignature(signed);
+
+        expect(isValid).toBe(false);
+    });
+
+    it('should return false for invalid hash', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        const signed = await keymaster.addSignature(mockJson);
+        signed.signature.hash = "1";
+        const isValid = await keymaster.verifySignature(signed);
+
+        expect(isValid).toBe(false);
+    });
+
     it('should return false for null parameter', async () => {
         mockFs({});
 
@@ -1885,6 +1972,26 @@ const mockSchema = {
     ],
     "type": "object"
 };
+
+describe ('isVerifiableCredential', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return false for non-object or null', async () => {
+        mockFs({});
+
+        // @ts-expect-error Testing invalid usage, calling private func
+        const res1 = keymaster.isVerifiableCredential(null);
+
+        // @ts-expect-error Testing invalid usage, calling private func
+        const res2 = keymaster.isVerifiableCredential("");
+
+        expect(res1).toBe(false);
+        expect(res2).toBe(false);
+    })
+})
 
 describe('bindCredential', () => {
 
@@ -2890,7 +2997,7 @@ describe('publishCredential', () => {
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
 
-        await keymaster.publishCredential(did, { reveal: false });
+        await keymaster.publishCredential(did);
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did) as VerifiableCredential;
@@ -2899,6 +3006,21 @@ describe('publishCredential', () => {
         vc.credential = null;
 
         expect(manifest[did]).toStrictEqual(vc);
+    });
+
+    it('should throw when did is not a verifiable credential', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.encryptJSON(mockJson, bob);
+
+        try {
+            await keymaster.publishCredential(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toContain('did is not a credential');
+        }
     });
 });
 
@@ -3661,6 +3783,15 @@ describe('getGroup', () => {
         expect(group.members).toStrictEqual([]);
     });
 
+    it('should return null on invalid DID', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const group = (await keymaster.getGroup(did));
+
+        expect(group).toBeNull();
+    });
+
     it('should return old style group (TEMP during did:test)', async () => {
         mockFs({});
 
@@ -3989,6 +4120,15 @@ describe('getPoll', () => {
         expect(poll).toStrictEqual(template);
     });
 
+    it('should return null on invalid id', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const poll = await keymaster.getPoll(did);
+
+        expect(poll).toBeNull();
+    });
+
     it('should return old style poll (TEMP during did:test)', async () => {
         mockFs({});
 
@@ -4060,6 +4200,20 @@ describe('viewPoll', () => {
         expect(view.results!.votes!.received).toBe(0);
         expect(view.results!.final).toBe(false);
     });
+
+    it('should throw on invalid poll id', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.viewPoll(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: pollId');
+        }
+    });
 });
 
 describe('votePoll', () => {
@@ -4090,6 +4244,28 @@ describe('votePoll', () => {
         expect(ballot).toStrictEqual(expectedBallot);
     });
 
+    it('should allow a spoiled ballot', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.addGroupMember(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+
+        template.roster = rosterDid;
+
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1, { spoil: true });
+        const ballot = await keymaster.decryptJSON(ballotDid);
+
+        const expectedBallot = {
+            poll: pollDid,
+            vote: 0,
+        };
+
+        expect(ballot).toStrictEqual(expectedBallot);
+    });
+
     it('should not return a ballot for an invalid vote', async () => {
         mockFs({});
 
@@ -4111,7 +4287,7 @@ describe('votePoll', () => {
         }
     });
 
-    it('should not return a ballot for an ineligiblew voter', async () => {
+    it('should not return a ballot for an ineligible voter', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -4128,6 +4304,20 @@ describe('votePoll', () => {
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: voter not in roster');
+        }
+    });
+
+    it('should throw on an invalid poll id', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.votePoll(did, 1);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: pollId');
         }
     });
 });
@@ -4172,6 +4362,42 @@ describe('updatePoll', () => {
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: ballot');
+        }
+    });
+
+    it('should throw on invalid ballot id', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.encryptJSON(mockJson, bob);
+
+        try {
+            await keymaster.updatePoll(did)
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: ballot');
+        }
+    });
+
+    it('should throw on invalid poll id', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        const ballot = {
+            poll: bob,
+            vote: 1,
+        };
+
+        const did = await keymaster.encryptJSON(ballot, bob);
+
+        try {
+            await keymaster.updatePoll(did)
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toContain('Cannot find poll related to ballot');
         }
     });
 });
@@ -4275,6 +4501,28 @@ describe('unpublishPoll', () => {
 
         expect(ok).toBe(true);
         expect(poll.results).toBe(undefined);
+    });
+
+    it('should throw when non-owner tries to update pill', async () => {
+        mockFs({});
+
+        const bobDid = await keymaster.createId('Bob');
+        const rosterDid = await keymaster.createGroup('mockRoster');
+        await keymaster.addGroupMember(rosterDid, bobDid);
+        const template = await keymaster.pollTemplate();
+        template.roster = rosterDid;
+        const pollDid = await keymaster.createPoll(template);
+        const ballotDid = await keymaster.votePoll(pollDid, 1);
+        await keymaster.updatePoll(ballotDid);
+        await keymaster.publishPoll(pollDid);
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.unpublishPoll(pollDid);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe(`Invalid parameter: ${pollDid}`);
+        }
     });
 });
 
@@ -4396,6 +4644,15 @@ describe('getSchema', () => {
         const schema = await keymaster.getSchema(did);
 
         expect(schema).toStrictEqual(mockSchema);
+    });
+
+    it('should return null on invalid id', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const schema = await keymaster.getSchema(did);
+
+        expect(schema).toBeNull();
     });
 
     it('should return the old style schema (TEMP during did:test)', async () => {
@@ -4848,6 +5105,16 @@ describe('getCredential', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
+    });
+
+    it('return null if not a verifiable credential', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.encryptJSON(mockJson, bob);
+        const res = await keymaster.getCredential(did);
+
+        expect(res).toBeNull();
     });
 });
 

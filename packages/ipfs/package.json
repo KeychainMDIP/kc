@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "MDIP IPFS lib",
   "type": "module",
-  "main": "./dist/helia-client.js",
-  "module": "./dist/helia-client.js",
-  "types": "./dist/types/helia-client.d.ts",
   "exports": {
     "./helia": {
       "import": "./dist/helia-client.js",

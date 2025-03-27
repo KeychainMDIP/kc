@@ -64,7 +64,7 @@ export interface FixWalletResult {
 
 export interface CreateAssetOptions {
     registry?: string;
-    controller?: string | null;
+    controller?: string;
     validUntil?: string
 }
 
@@ -636,7 +636,7 @@ export default class Keymaster {
         return (suffix1 === suffix2);
     }
 
-    async fetchIdInfo(id?: string | null): Promise<IDInfo> {
+    async fetchIdInfo(id?: string): Promise<IDInfo> {
         const wallet = await this.loadWallet();
         let idInfo = null;
 
@@ -677,7 +677,7 @@ export default class Keymaster {
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
-    async fetchKeyPair(name?: string | null): Promise<EcdsaJwkPair | null> {
+    async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
         const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
@@ -865,7 +865,7 @@ export default class Keymaster {
         }
     }
 
-    async addSignature<T extends object>(obj: T, controller?: string | null): Promise<T & { signature: Signature }> {
+    async addSignature<T extends object>(obj: T, controller?: string): Promise<T & { signature: Signature }> {
         if (obj == null) {
             throw new InvalidParameterError('obj');
         }
@@ -1066,7 +1066,7 @@ export default class Keymaster {
         return this.updateDID(doc);
     }
 
-    async listAssets(owner?: string | null) {
+    async listAssets(owner?: string) {
         const id = await this.fetchIdInfo(owner);
         return id.owned || [];
     }
@@ -1186,7 +1186,7 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async backupId(controller?: string | null): Promise<boolean> {
+    async backupId(controller?: string): Promise<boolean> {
         // Backs up current ID if name is missing
         const id = await this.fetchIdInfo(controller);
         const wallet = await this.loadWallet();
@@ -1219,26 +1219,15 @@ export default class Keymaster {
             const keypair = await this.hdKeyPair();
 
             const doc = await this.resolveDID(did);
-            if (!doc.didDocumentData ||
-                typeof doc.didDocumentData !== 'object' ||
-                Array.isArray(doc.didDocumentData)
-            ) {
-                throw new InvalidDIDError('didDocumentData is not an object');
-            }
-
             const docData = doc.didDocumentData as { vault?: string };
             if (!docData.vault) {
-                throw new InvalidDIDError();
+                throw new InvalidDIDError('didDocumentData missing vault');
             }
 
             const vault = await this.resolveAsset(docData.vault);
-            if (!vault) {
-                throw new InvalidDIDError();
-            }
-
             const castVault = vault as { backup?: string };
             if (typeof castVault.backup !== 'string') {
-                throw new InvalidDIDError();
+                throw new InvalidDIDError('backup not found in vault');
             }
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castVault.backup);
@@ -1469,7 +1458,7 @@ export default class Keymaster {
         return this.revokeDID(did);
     }
 
-    async listIssued(issuer?: string | null): Promise<string[]> {
+    async listIssued(issuer?: string): Promise<string[]> {
         const id = await this.fetchIdInfo(issuer);
         const issued = [];
 
@@ -1525,7 +1514,7 @@ export default class Keymaster {
         return this.removeFromHeld(did);
     }
 
-    async listCredentials(id?: string | null): Promise<string[]> {
+    async listCredentials(id?: string): Promise<string[]> {
         const idInfo = await this.fetchIdInfo(id);
         return idInfo.held || [];
     }
@@ -1949,10 +1938,6 @@ export default class Keymaster {
                 return false;
             }
 
-            if (!Array.isArray(group.members)) {
-                return false;
-            }
-
             if (!memberId) {
                 return true;
             }
@@ -1977,7 +1962,7 @@ export default class Keymaster {
         }
     }
 
-    async listGroups(owner?: string | null): Promise<string[]> {
+    async listGroups(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
         const groups = [];
 
@@ -2080,7 +2065,7 @@ export default class Keymaster {
         }
     }
 
-    async listSchemas(owner?: string | null): Promise<string[]> {
+    async listSchemas(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
         const schemas = [];
 
@@ -2210,7 +2195,7 @@ export default class Keymaster {
         }
     }
 
-    async listPolls(owner?: string | null): Promise<string[]> {
+    async listPolls(owner?: string): Promise<string[]> {
         const assets = await this.listAssets(owner);
         const polls: string[] = [];
 
@@ -2229,7 +2214,7 @@ export default class Keymaster {
         const id = await this.fetchIdInfo();
         const poll = await this.getPoll(pollId);
 
-        if (!poll || !poll.options || !poll.deadline) {
+        if (!poll) {
             throw new InvalidParameterError('pollId');
         }
 
