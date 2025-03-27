@@ -948,11 +948,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    function uploadImage() {
-        // Trigger the hidden file input
-        document.getElementById('imageUpload').click();
-    }
-
     async function handleImageUpload(event) {
         try {
             const file = event.target.files[0];
@@ -1478,10 +1473,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Button
                                                 variant="contained"
                                                 color="primary"
-                                                onClick={uploadImage}
+                                                onClick={() => document.getElementById('imageUpload').click()}
                                             >
                                                 Upload
                                             </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={registry}
+                                                fullWidth
+                                                onChange={(event) => setRegistry(event.target.value)}
+                                            >
+                                                {registries.map((registry, index) => (
+                                                    <MenuItem value={registry} key={index}>
+                                                        {registry}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
                                         </Grid>
                                     </Grid>
                                     <input
