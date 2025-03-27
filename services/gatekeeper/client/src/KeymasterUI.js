@@ -968,6 +968,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
                     // Call the Keymaster API to upload the image
                     const did = await keymaster.createImage(buffer, { registry });
+                    await keymaster.addName(file.name, did);
                     alert(`Image uploaded successfully! DID: ${did}`);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
