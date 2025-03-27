@@ -766,6 +766,30 @@ export default class Keymaster {
         return this.createAsset(data, options);
     }
 
+    async getImage(id: string): Promise<unknown | null> {
+        const asset = await this.resolveAsset(id);
+        if (!asset) {
+            return null;
+        }
+
+        const castAsset = asset as { image?: unknown };
+        if (!castAsset.image) {
+            return null;
+        }
+
+        return castAsset.image;
+    }
+
+    async testImage(id: string): Promise<boolean> {
+        try {
+            const image = await this.getImage(id);
+            return image === null ? false : true;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
     async encryptMessage(
         msg: string,
         receiver: string,

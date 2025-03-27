@@ -23,7 +23,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [response, setResponse] = useState(null);
     const [accessGranted, setAccessGranted] = useState(false);
     const [newName, setNewName] = useState('');
-    const [registry, setRegistry] = useState('hyperswarm');
+    const [registry, setRegistry] = useState('');
     const [nameList, setNameList] = useState(null);
     const [aliasName, setAliasName] = useState('');
     const [aliasDID, setAliasDID] = useState('');
@@ -74,6 +74,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [messageRecipient, setMessageRecipient] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
+    const [imageList, setImageList] = useState(null);
+    const [imageName, setImageName] = useState('');
+    const [selectedImageName, setSelectedImageName] = useState('');
+    const [selectedImage, setSelectedImage] = useState('');
 
     useEffect(() => {
         checkForChallenge();
@@ -408,6 +412,28 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         if (!schemaList.includes(credentialSchema)) {
             setCredentialSchema('');
             setCredentialString('');
+        }
+
+        const imageList = [];
+
+        for (const name of names) {
+            try {
+                const isImage = await keymaster.testImage(name);
+
+                if (isImage) {
+                    imageList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setImageList(imageList);
+
+        if (!imageList.includes(selectedImageName)) {
+            setSelectedImageName('');
+            setSelectedImage(null);
         }
 
         const agentList = await keymaster.listIds();
@@ -960,11 +986,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 try {
                     const arrayBuffer = e.target.result;
                     const buffer = Buffer.from(arrayBuffer);
+                    const name = file.name.slice(0, 32);
 
                     // Call the Keymaster API to upload the image
                     const did = await keymaster.createImage(buffer, { registry });
-                    await keymaster.addName(file.name, did);
+                    await keymaster.addName(name, did);
                     alert(`Image uploaded successfully! DID: ${did}`);
+
+                    refreshNames();
+                    setSelectedImageName(name);
+                    refreshImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
                     alert(`Error processing image: ${error.message}`);
@@ -978,6 +1009,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             reader.readAsArrayBuffer(file);
         } catch (error) {
             alert(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function refreshImage(imageName) {
+        try {
+            const image = await keymaster.getImage(imageName);
+            setSelectedImage(image);
+        } catch (error) {
+            showError(error);
         }
     }
 
@@ -1483,8 +1523,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 style={{ width: '300px' }}
                                                 value={registry}
                                                 fullWidth
+                                                displayEmpty
                                                 onChange={(event) => setRegistry(event.target.value)}
                                             >
+                                                <MenuItem value="" disabled>
+                                                    Select registry
+                                                </MenuItem>
                                                 {registries.map((registry, index) => (
                                                     <MenuItem value={registry} key={index}>
                                                         {registry}
@@ -1500,6 +1544,36 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         style={{ display: 'none' }}
                                         onChange={handleImageUpload}
                                     />
+                                    {imageList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedImageName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => setSelectedImageName(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select image
+                                                    </MenuItem>
+                                                    {imageList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
+                                                    Show Image
+                                                </Button>
+                                            </Grid>
+                                            <Grid item>
+                                                {selectedImage && `Showing: ${selectedImage.cid}`}
+                                            </Grid>
+                                        </Grid>
+                                    }
                                 </Box>
                             }
                         </Box>
