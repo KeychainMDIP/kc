@@ -12,9 +12,11 @@ import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { generateCID } from '@mdip/ipfs/utils';
 
 const db = new DbJson('test');
-const gatekeeper = new Gatekeeper({ db, registries: ['local', 'hyperswarm', 'TFTC'] });
+const ipfs = new HeliaClient();
+const gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
 const wallet = new WalletJson();
 const cipher = new CipherNode();
 const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
@@ -4924,8 +4926,7 @@ describe('createImage', () => {
                 background: { r: 255, g: 0, b: 0 }
             }
         }).png().toBuffer();
-        const ipfs = new HeliaClient({ minimal: true });
-        const cid = await ipfs.generateCID(mockImage);
+        const cid = await generateCID(mockImage);
 
         const ownerDid = await keymaster.createId('Bob');
         const dataDid = await keymaster.createImage(mockImage);

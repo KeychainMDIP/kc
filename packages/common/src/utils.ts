@@ -1,26 +1,5 @@
-import HeliaClient from '@mdip/ipfs/helia';
-
 export function copyJSON<T>(json: T): T {
     return JSON.parse(JSON.stringify(json)) as T;
-}
-
-export function isValidDID(did: string): boolean {
-    if (typeof did !== 'string') {
-        return false;
-    }
-
-    if (!did.startsWith('did:')) {
-        return false;
-    }
-
-    const parts = did.split(':');
-
-    if (parts.length < 3) {
-        return false;
-    }
-
-    const suffix = parts.pop();
-    return HeliaClient.isValidCID(suffix);
 }
 
 export function compareOrdinals(a: number[], b: number[]): -1 | 0 | 1 {

@@ -1,11 +1,12 @@
 import CipherNode from '@mdip/cipher/node';
-import { copyJSON, isValidDID, compareOrdinals } from '@mdip/common/utils';
+import { copyJSON, compareOrdinals } from '@mdip/common/utils';
+import { isValidDID, generateCID } from '@mdip/ipfs/utils';
 import {
     InvalidDIDError,
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
-import HeliaClient from '@mdip/ipfs/helia';
+import IPFSClient from '@mdip/ipfs/helia';
 import {
     GatekeeperDb,
     GatekeeperInterface,
@@ -25,7 +26,7 @@ const canonicalize = canonicalizeModule as unknown as (input: unknown) => string
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
-    ipfs?: HeliaClient,
+    ipfs: IPFSClient,
     console?: typeof console,
     didPrefix?: string,
     maxOpBytes?: number,
@@ -62,7 +63,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly eventsSeen: Record<string, boolean>
     private verifiedDIDs: Record<string, boolean>
     private isProcessingEvents: boolean
-    private ipfs: HeliaClient
+    private ipfs: IPFSClient
     private cipher: CipherNode
     private readonly didPrefix: string
     private readonly maxOpBytes: number
@@ -86,7 +87,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-        this.ipfs = options.ipfs || new HeliaClient({ minimal: true });
+        this.ipfs = options.ipfs;
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
@@ -263,7 +264,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return this.ipfs.addJSON(JSON.parse(canonical));
         }
 
-        return this.ipfs.generateCID(JSON.parse(canonical));
+        return generateCID(JSON.parse(canonical));
     }
 
     async generateDID(operation: Operation): Promise<string> {
@@ -297,10 +298,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return !isNaN(date.getTime());
     }
 
-    verifyHashFormat(hash?: string): boolean {
-        if (!hash) {
-            return false;
-        }
+    verifyHashFormat(hash: string): boolean {
         // Check if hash is a hexadecimal string of length 64
         const hex64Regex = /^[a-f0-9]{64}$/i;
         return hex64Regex.test(hash);

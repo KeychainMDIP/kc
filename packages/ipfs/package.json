@@ -11,7 +11,14 @@
       "import": "./dist/helia-client.js",
       "types": "./dist/types/helia-client.d.ts"
     },
-    "./kubo": "./src/kubo-client.js"
+    "./kubo": {
+      "import": "./dist/kubo-client.js",
+      "types": "./dist/types/kubo-client.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.js",
+      "types": "./dist/types/utils.d.ts"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

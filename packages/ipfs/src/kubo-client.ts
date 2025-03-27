@@ -1,27 +1,39 @@
 
-import { create } from 'kubo-rpc-client'
+import { create, KuboRPCClient } from 'kubo-rpc-client'
 import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
+import { IPFSClient } from './types.js';
 
-class KuboClient {
+interface KuboClientConfig {
+    url: string;
+    waitUntilReady?: boolean;
+    intervalSeconds?: number;
+    chatty?: boolean;
+    becomeChattyAfter?: number;
+    maxRetries?: number;
+}
+
+class KuboClient implements IPFSClient {
+    private ipfs: KuboRPCClient | any;
+
     // Factory method
-    static async create(options) {
+    static async create(options: KuboClientConfig): Promise<KuboClient> {
         const ipfs = new KuboClient();
         await ipfs.connect(options);
         return ipfs;
     }
 
-    async connect(options = {}) {
-        this.ipfs = new create(options);
+    async connect(options: KuboClientConfig): Promise<void> {
+        this.ipfs = create(options);
 
         if (options.waitUntilReady) {
             await this.waitUntilReady(options);
         }
     }
 
-    async waitUntilReady(options = {}) {
+    async waitUntilReady(options: KuboClientConfig): Promise<void> {
         let { intervalSeconds = 5, chatty = false, becomeChattyAfter = 0, maxRetries = 0 } = options;
         let ready = false;
         let retries = 0;
@@ -58,7 +70,7 @@ class KuboClient {
         }
     }
 
-    async isReady() {
+    async isReady(): Promise<boolean> {
         try {
             await this.ipfs.id();
             return true;
@@ -68,12 +80,12 @@ class KuboClient {
         }
     }
 
-    async addText(text) {
+    async addText(text: string): Promise<string> {
         const { cid } = await this.ipfs.add(text, { cidVersion: 1 });
         return cid.toString(base58btc);
     }
 
-    async getText(cid) {
+    async getText(cid: string): Promise<string> {
         const chunks = [];
         for await (const chunk of this.ipfs.cat(cid)) {
             chunks.push(chunk);
@@ -82,12 +94,12 @@ class KuboClient {
         return data.toString();
     }
 
-    async addData(data) {
+    async addData(data: Buffer): Promise<string> {
         const { cid } = await this.ipfs.add(data, { cidVersion: 1 });
         return cid.toString(base58btc);
     }
 
-    async getData(cid) {
+    async getData(cid: string): Promise<Buffer> {
         const chunks = [];
         for await (const chunk of this.ipfs.cat(cid)) {
             chunks.push(chunk);
@@ -95,7 +107,7 @@ class KuboClient {
         return Buffer.concat(chunks);
     }
 
-    async addJSON(json) {
+    async addJSON(json: any): Promise<string> {
         // Encode the JSON data using jsonCodec
         const buf = jsonCodec.encode(json);
         const hash = await sha256.sha256.digest(buf);
@@ -107,30 +119,21 @@ class KuboClient {
         return cid.toString(base58btc);
     }
 
-    async getJSON(cid) {
+    async getJSON(cid: string): Promise<any> {
         // Retrieve the data using ipfs.block.get instead of ipfs.cat
         const block = await this.ipfs.block.get(cid);
         return jsonCodec.decode(block);
     }
 
-    async generateCID(json) {
-        // Encode the JSON data using jsonCodec
-        const buf = jsonCodec.encode(json);
-        const hash = await sha256.sha256.digest(buf);
-        const cid = CID.createV1(jsonCodec.code, hash);
-
-        return cid.toString(base58btc);
-    }
-
-    async getID() {
+    async getID(): Promise<any> {
         return this.ipfs.id();
     }
 
-    async addPeer(peer) {
+    async addPeer(peer: string): Promise<any> {
         return this.ipfs.swarm.connect(peer);
     }
 
-    async getPeers() {
+    async getPeers(): Promise<any> {
         return this.ipfs.swarm.peers();
     }
 }

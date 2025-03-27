@@ -45,7 +45,7 @@ const ipfs = await HeliaClient.create({ datadir: 'data/ipfs' });
 ### minimal mode
 
 Starting IPFS in `minimal` mode avoids starting a Helia IPFS server.
-Only `add` works to generate CIDs. Nothing is persisted so `get` always returns null.
+Only `add` works to generate CIDs. Nothing is persisted so `get` always throws a `NotConnectedError`.
 
 ```js
 const ipfs = await HeliaClient.create({ minimal: true });
