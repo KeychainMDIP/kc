@@ -15,7 +15,7 @@
       "@mdip/common/errors": ["../../packages/common/src/errors.ts"],
       "@mdip/gatekeeper/types": ["../../packages/gatekeeper/src/types.ts"],
       "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.ts"],
-      "@mdip/keymaster": ["../../packages/keymaster/src/keymaster-lib.ts"],
+      "@mdip/keymaster": ["../../packages/keymaster/src/keymaster.ts"],
       "@mdip/keymaster/types": ["../../packages/keymaster/src/types.ts"],
       "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"],
     }

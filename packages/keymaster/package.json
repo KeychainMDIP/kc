@@ -5,8 +5,8 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/keymaster-lib.js",
-      "types": "./dist/types/keymaster-lib.d.ts"
+      "import": "./dist/keymaster.js",
+      "types": "./dist/types/keymaster.d.ts"
     },
     "./client": "./src/keymaster-sdk.js",
     "./wallet/json": {
