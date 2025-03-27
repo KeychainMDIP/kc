@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
 import axios from 'axios';
+import { Buffer } from 'buffer';
 import './App.css';
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
@@ -947,6 +948,43 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    function uploadImage() {
+        // Trigger the hidden file input
+        document.getElementById('imageUpload').click();
+    }
+
+    async function handleImageUpload(event) {
+        try {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    // Call the Keymaster API to upload the image
+                    const did = await keymaster.createImage(buffer, { registry });
+                    alert(`Image uploaded successfully! DID: ${did}`);
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    alert(`Error processing image: ${error.message}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                alert(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            alert(`Error uploading image: ${error}`);
+        }
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -1434,7 +1472,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             }
                             {assetsTab === 'images' &&
                                 <Box>
-                                    Images
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={uploadImage}
+                                            >
+                                                Upload
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                    <input
+                                        type="file"
+                                        id="imageUpload"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={handleImageUpload}
+                                    />
                                 </Box>
                             }
                         </Box>
