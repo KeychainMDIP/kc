@@ -56,7 +56,7 @@ function AuthTab() {
             await setResponse(response);
 
             const asset = await keymaster.resolveAsset(challenge);
-            const callback = asset.challenge.callback;
+            const callback = (asset as { challenge: { callback: string } }).challenge.callback;
 
             await setCallback(callback);
 

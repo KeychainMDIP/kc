@@ -336,7 +336,7 @@ export function UIProvider(
         try {
             const docs = await keymaster.resolveDID(cid);
             setCurrentDID(docs.didDocument.id);
-            setManifest(docs.didDocumentData.manifest);
+            setManifest((docs.didDocumentData as {manifest: Record<string, unknown>}).manifest);
         } catch (error) {
             setError(error.error || error.message || String(error));
         }
@@ -460,7 +460,7 @@ export function UIProvider(
             if (Array.isArray(regs)) {
                 setRegistries(regs);
             } else {
-                setRegistries(regs.registries);
+                setRegistries((regs as { registries: string[] }).registries);
             }
 
             const usedStored = await refreshStored();

@@ -99,6 +99,12 @@ export interface GatekeeperInterface {
     processEvents(): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;
     clearQueue(registry: string, events: Operation[]): Promise<boolean>;
+    addData(data: Buffer): Promise<string>;
+    getData(cid: string): Promise<Buffer | null>;
+    addJSON(json: object): Promise<string>;
+    getJSON(cid: string): Promise<object | null>;
+    addText(text: string): Promise<string>;
+    getText(cid: string): Promise<string | null>;
 }
 
 export interface MdipRegistration {

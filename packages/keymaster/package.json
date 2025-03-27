@@ -4,7 +4,10 @@
   "description": "MDIP Keymaster",
   "type": "module",
   "exports": {
-    ".": "./src/keymaster-lib.js",
+    ".": {
+      "import": "./dist/keymaster-lib.js",
+      "types": "./dist/types/keymaster-lib.d.ts"
+    },
     "./client": "./src/keymaster-sdk.js",
     "./wallet/json": {
       "import": "./dist/db/json.js",
@@ -51,7 +54,6 @@
       "types": "./dist/types/types.d.ts"
     }
   },
-  "types": "./types/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"

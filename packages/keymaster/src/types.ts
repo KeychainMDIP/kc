@@ -5,13 +5,13 @@ export interface EncryptedWallet {
 }
 
 export interface HDKey {
-    xpriv?: string
-    xpub?: string
+    xpriv: string
+    xpub: string
 }
 
 export interface Seed {
-    mnemonic?: string
-    hdkey?: HDKey
+    mnemonic: string
+    hdkey: HDKey
 }
 
 export interface IDInfo {
@@ -23,22 +23,16 @@ export interface IDInfo {
 }
 
 export interface WalletFile {
-    seed?: Seed
+    seed: Seed
     counter: number
     ids: Record<string, IDInfo>
     current?: string
     names?: Record<string, string>
 }
 
-export type WrappedWallet = WalletFile | null;
-export type StoredWallet = WrappedWallet | EncryptedWallet;
+export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
     loadWallet(): Promise<StoredWallet>
-}
-
-export interface WalletWrapper {
-    saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
-    loadWallet(): Promise<WrappedWallet>
 }

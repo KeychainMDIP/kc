@@ -1,10 +1,19 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
-import canonicalize from 'canonicalize';
 import sharp from 'sharp';
 
 import Gatekeeper from '@mdip/gatekeeper';
-import Keymaster from '@mdip/keymaster';
+import Keymaster, {
+    ChallengeResponse,
+    EncryptedMessage,
+    Poll,
+    VerifiableCredential
+} from '@mdip/keymaster';
+import {
+    EncryptedWallet,
+    Seed,
+    WalletFile,
+} from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJson from '@mdip/gatekeeper/db/json';
 import WalletJson from '@mdip/keymaster/wallet/json';
@@ -13,6 +22,9 @@ import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { generateCID } from '@mdip/ipfs/utils';
+
+import canonicalizeModule from 'canonicalize';
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 const db = new DbJson('test');
 const ipfs = new HeliaClient();
@@ -31,59 +43,66 @@ describe('constructor', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             new Keymaster();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, missing gatekeeper arg
             new Keymaster({ wallet, cipher });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, missing wallet arg
             new Keymaster({ gatekeeper, cipher });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, missing cipher arg
             new Keymaster({ gatekeeper, wallet });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.cipher');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid gatekeeper arg
             new Keymaster({ gatekeeper: {}, wallet, cipher });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.gatekeeper');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid wallet arg
             new Keymaster({ gatekeeper, wallet: {}, cipher });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.wallet');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid cipher arg
             new Keymaster({ gatekeeper, wallet, cipher: {} });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.cipher');
         }
 
@@ -92,7 +111,7 @@ describe('constructor', () => {
             new Keymaster({ gatekeeper, wallet, cipher });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Expected to throw an exception');
         }
     });
@@ -109,9 +128,9 @@ describe('loadWallet', () => {
 
         const wallet = await keymaster.loadWallet();
 
-        expect(wallet.seed.mnemonic.length > 0).toBe(true);
-        expect(wallet.seed.hdkey.xpub.length > 0).toBe(true);
-        expect(wallet.seed.hdkey.xpriv.length > 0).toBe(true);
+        expect(wallet.seed!.mnemonic.length > 0).toBe(true);
+        expect(wallet.seed!.hdkey.xpub.length > 0).toBe(true);
+        expect(wallet.seed!.hdkey.xpriv.length > 0).toBe(true);
         expect(wallet.counter).toBe(0);
         expect(wallet.ids).toStrictEqual({});
     });
@@ -136,20 +155,21 @@ describe('loadWallet', () => {
     it('should throw exception when passphrase not set', async () => {
         mockFs({});
 
+        // @ts-expect-error Testing invalid usage, no passphrase
         const wallet_enc = new WalletEncrypted(wallet);
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         try {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
         }
     });
 
     it('should throw exception on load with incorrect passphrase', async () => {
         mockFs({});
-        const mockWallet = { mock: 0 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         const wallet_enc1 = new WalletEncrypted(wallet, 'passphrase');
         const keymaster1 = new Keymaster({ gatekeeper, wallet: wallet_enc1, cipher });
         const ok = await keymaster1.saveWallet(mockWallet);
@@ -160,21 +180,21 @@ describe('loadWallet', () => {
             const keymaster2 = new Keymaster({ gatekeeper, wallet: wallet_enc2, cipher });
             await keymaster2.loadWallet();
             throw new ExpectedExceptionError();
-        } catch (e) {
-            expect(e.message).toBe('Incorrect passphrase.');
+        } catch (error: any) {
+            expect(error.message).toBe('Incorrect passphrase.');
         }
     });
 
     it('should throw exception on encrypted wallet', async () => {
         mockFs({});
 
-        const mockWallet = { salt: 1 };
+        const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
         await keymaster.saveWallet(mockWallet);
 
         try {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Keymaster: Wallet is encrypted');
         }
     });
@@ -182,13 +202,14 @@ describe('loadWallet', () => {
     it('should throw exception on corrupted wallet', async () => {
         mockFs({});
 
-        const mockWallet = { mock: 123 };
+        // @ts-expect-error Testing invalid usage, missing salt
+        const mockWallet: WalletFile = { counter: 0, ids: {} };
         await keymaster.saveWallet(mockWallet);
 
         try {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Keymaster: Wallet is corrupted');
         }
     });
@@ -202,7 +223,7 @@ describe('saveWallet', () => {
 
     it('test saving directly on the unencrypted wallet', async () => {
         mockFs({});
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await wallet.saveWallet(mockWallet);
         expect(ok).toBe(true);
@@ -210,7 +231,7 @@ describe('saveWallet', () => {
 
     it('test saving directly on the encrypted wallet', async () => {
         mockFs({});
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const ok = await wallet_enc.saveWallet(mockWallet);
 
@@ -219,7 +240,7 @@ describe('saveWallet', () => {
 
     it('should save a wallet', async () => {
         mockFs({});
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await keymaster.saveWallet(mockWallet);
         const wallet = await keymaster.loadWallet();
@@ -230,7 +251,7 @@ describe('saveWallet', () => {
 
     it('should ignore overwrite flag if unnecessary', async () => {
         mockFs({});
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await keymaster.saveWallet(mockWallet, false);
         const wallet = await keymaster.loadWallet();
@@ -243,7 +264,7 @@ describe('saveWallet', () => {
         mockFs({
             data: {}
         });
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await keymaster.saveWallet(mockWallet);
         const wallet = await keymaster.loadWallet();
@@ -254,8 +275,8 @@ describe('saveWallet', () => {
 
     it('should overwrite an existing wallet', async () => {
         mockFs({});
-        const mockWallet1 = { seed: 1 };
-        const mockWallet2 = { seed: 2 };
+        const mockWallet1: WalletFile = { seed: {} as Seed, counter: 1, ids: {} };
+        const mockWallet2: WalletFile = { seed: {} as Seed, counter: 2, ids: {} };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2);
@@ -267,8 +288,8 @@ describe('saveWallet', () => {
 
     it('should not overwrite an existing wallet if specified', async () => {
         mockFs({});
-        const mockWallet1 = { seed: 1 };
-        const mockWallet2 = { seed: 2 };
+        const mockWallet1: WalletFile = { seed: {} as Seed, counter: 1, ids: {} };
+        const mockWallet2: WalletFile = { seed: {} as Seed, counter: 2, ids: {} };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2, false);
@@ -282,7 +303,7 @@ describe('saveWallet', () => {
         mockFs({});
 
         for (let i = 0; i < 10; i++) {
-            const mockWallet = { seed: i + 1 };
+            const mockWallet: WalletFile = { seed: {} as Seed, counter: i+1, ids: {} };
 
             const ok = await keymaster.saveWallet(mockWallet);
             const wallet = await keymaster.loadWallet();
@@ -298,8 +319,8 @@ describe('saveWallet', () => {
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
-        const mockWallet1 = { seed: 1 };
-        const mockWallet2 = { seed: 2 };
+        const mockWallet1: WalletFile = { seed: {} as Seed, counter: 1, ids: {} };
+        const mockWallet2: WalletFile = { seed: {} as Seed, counter: 2, ids: {} };
 
         await keymaster.saveWallet(mockWallet1);
         const ok = await keymaster.saveWallet(mockWallet2, false);
@@ -311,14 +332,15 @@ describe('saveWallet', () => {
 
     it('wallet should throw when passphrase not set', async () => {
         mockFs({});
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
+        // @ts-expect-error Testing invalid usage, no passphrase
         const wallet_enc = new WalletEncrypted(wallet);
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
         try {
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
         }
     });
@@ -329,7 +351,7 @@ describe('saveWallet', () => {
         });
 
         const walletFile = 'data/wallet.json';
-        const mockWallet = { seed: 1 };
+        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
 
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
@@ -352,7 +374,7 @@ describe('decryptMnemonic', () => {
         const wallet = await keymaster.loadWallet();
         const mnemonic = await keymaster.decryptMnemonic();
 
-        expect(mnemonic !== wallet.seed.mnemonic).toBe(true);
+        expect(mnemonic !== wallet.seed!.mnemonic).toBe(true);
 
         // Split the mnemonic into words
         const words = mnemonic.split(' ');
@@ -370,10 +392,10 @@ describe('newWallet', () => {
         mockFs({});
 
         const wallet1 = await keymaster.loadWallet();
-        await keymaster.newWallet(null, true);
+        await keymaster.newWallet(undefined, true);
         const wallet2 = await keymaster.loadWallet();
 
-        expect(wallet1.seed.mnemonic !== wallet2.seed.mnemonic).toBe(true);
+        expect(wallet1.seed!.mnemonic !== wallet2.seed!.mnemonic).toBe(true);
     });
 
     it('should not overwrite an existing wallet by default', async () => {
@@ -385,7 +407,7 @@ describe('newWallet', () => {
             await keymaster.newWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Keymaster: save wallet failed');
         }
     });
@@ -404,10 +426,11 @@ describe('newWallet', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, incorrect argument
             await keymaster.newWallet([]);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: mnemonic');
         }
     });
@@ -441,7 +464,7 @@ describe('backupWallet', () => {
         const did = await keymaster.backupWallet();
         const doc = await keymaster.resolveDID(did);
 
-        expect(did === doc.didDocument.id).toBe(true);
+        expect(did === doc.didDocument!.id).toBe(true);
     });
 
     it('should store backup in seed bank', async () => {
@@ -451,7 +474,7 @@ describe('backupWallet', () => {
         const did = await keymaster.backupWallet();
         const bank = await keymaster.resolveSeedBank();
 
-        expect(did === bank.didDocumentData.wallet).toBe(true);
+        expect(did === (bank.didDocumentData! as { wallet: string }).wallet ).toBe(true);
     });
 });
 
@@ -553,7 +576,7 @@ describe('createId', () => {
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.mdip.registry).toBe('hyperswarm');
+        expect(doc.mdip!.registry).toBe('hyperswarm');
     });
 
     it('should create a new ID on customized default registry', async () => {
@@ -566,7 +589,7 @@ describe('createId', () => {
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.mdip.registry).toBe(defaultRegistry);
+        expect(doc.mdip!.registry).toBe(defaultRegistry);
     });
 
     it('should throw to create a second ID with the same name', async () => {
@@ -578,7 +601,7 @@ describe('createId', () => {
         try {
             await keymaster.createId(name);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: name already used');
         }
@@ -609,7 +632,7 @@ describe('createId', () => {
             await keymaster.createId('');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
@@ -617,31 +640,34 @@ describe('createId', () => {
             await keymaster.createId('    ');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, incorrect argument
             await keymaster.createId(undefined);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, incorrect argument
             await keymaster.createId(0);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, incorrect argument
             await keymaster.createId({});
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
     });
@@ -653,7 +679,7 @@ describe('createId', () => {
             await keymaster.createId('1234567890123456789012345678901234567890');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name too long');
         }
     });
@@ -665,7 +691,7 @@ describe('createId', () => {
             await keymaster.createId('hello\nworld!');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
         }
     });
@@ -702,7 +728,7 @@ describe('removeId', () => {
         try {
             await keymaster.removeId(name2);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -738,7 +764,7 @@ describe('renameId', () => {
         try {
             await keymaster.renameId(name1, name2);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -752,7 +778,7 @@ describe('renameId', () => {
         try {
             await keymaster.renameId(name1, name1);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(InvalidParameterError.type);
         }
     });
@@ -788,7 +814,7 @@ describe('setCurrentId', () => {
             await keymaster.setCurrentId('Alice');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -809,10 +835,10 @@ describe('backupId', () => {
         const ok = await keymaster.backupId();
 
         const doc = await keymaster.resolveDID(name);
-        const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
+        const vault = await keymaster.resolveDID((doc.didDocumentData! as { vault: string }).vault);
 
         expect(ok).toBe(true);
-        expect(vault.didDocumentData.backup.length > 0).toBe(true);
+        expect((vault.didDocumentData as { backup: string }).backup.length > 0).toBe(true);
     });
 
     it('should backup a non-current ID', async () => {
@@ -823,10 +849,10 @@ describe('backupId', () => {
         const ok = await keymaster.backupId('Alice');
 
         const doc = await keymaster.resolveDID(aliceDid);
-        const vault = await keymaster.resolveDID(doc.didDocumentData.vault);
+        const vault = await keymaster.resolveDID((doc.didDocumentData! as { vault: string }).vault);
 
         expect(ok).toBe(true);
-        expect(vault.didDocumentData.backup.length > 0).toBe(true);
+        expect((vault.didDocumentData as { backup: string }).backup.length > 0).toBe(true);
     });
 });
 
@@ -869,7 +895,7 @@ describe('recoverId', () => {
             await keymaster.recoverId(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Keymaster: Bob already exists in wallet');
         }
     });
@@ -881,13 +907,13 @@ describe('recoverId', () => {
         await keymaster.backupId();
 
         // reset to a different wallet
-        await keymaster.newWallet(null, true);
+        await keymaster.newWallet(undefined, true);
 
         try {
             await keymaster.recoverId(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
@@ -922,10 +948,11 @@ describe('testAgent', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.testAgent();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
@@ -937,7 +964,7 @@ describe('testAgent', () => {
             await keymaster.testAgent('mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -956,7 +983,7 @@ describe('resolveDID', () => {
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument!.id).toBe(did);
     });
 });
 
@@ -971,19 +998,19 @@ describe('rotateKeys', () => {
 
         const alice = await keymaster.createId('Alice', { registry: 'local' });
         let doc = await keymaster.resolveDID(alice);
-        let vm = doc.didDocument.verificationMethod[0];
-        let pubkey = vm.publicKeyJwk;
+        let vm = doc.didDocument!.verificationMethod![0];
+        let pubkey = vm.publicKeyJwk!;
 
         for (let i = 0; i < 3; i++) {
             await keymaster.rotateKeys();
 
             doc = await keymaster.resolveDID(alice);
-            vm = doc.didDocument.verificationMethod[0];
+            vm = doc.didDocument!.verificationMethod![0];
 
-            expect(pubkey.x !== vm.publicKeyJwk.x).toBe(true);
-            expect(pubkey.y !== vm.publicKeyJwk.y).toBe(true);
+            expect(pubkey.x !== vm.publicKeyJwk!.x).toBe(true);
+            expect(pubkey.y !== vm.publicKeyJwk!.y).toBe(true);
 
-            pubkey = vm.publicKeyJwk;
+            pubkey = vm.publicKeyJwk!;
         }
     });
 
@@ -1023,14 +1050,14 @@ describe('rotateKeys', () => {
     it('should raise an exception if latest version is not confirmed', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice', 'TFTC');
+        await keymaster.createId('Alice', { registry: 'TFTC'});
         await keymaster.rotateKeys();
 
         try {
             await keymaster.rotateKeys();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Keymaster: Cannot rotate keys');
         }
     });
@@ -1050,7 +1077,7 @@ describe('addName', () => {
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
-        expect(wallet.names['Jack'] === bob).toBe(true);
+        expect(wallet.names!['Jack'] === bob).toBe(true);
     });
 
     it('should create a Unicode name', async () => {
@@ -1063,7 +1090,7 @@ describe('addName', () => {
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
-        expect(wallet.names[name] === bob).toBe(true);
+        expect(wallet.names![name] === bob).toBe(true);
     });
 
     it('should not add duplicate name', async () => {
@@ -1077,7 +1104,7 @@ describe('addName', () => {
             await keymaster.addName('Jack', bob);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
@@ -1091,7 +1118,7 @@ describe('addName', () => {
             await keymaster.addName('Alice', alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
@@ -1106,7 +1133,7 @@ describe('addName', () => {
             await keymaster.addName('', alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
@@ -1114,31 +1141,34 @@ describe('addName', () => {
             await keymaster.addName('    ', alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid name arg
             await keymaster.addName(undefined, alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid name arg
             await keymaster.addName(0, alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid name arg
             await keymaster.addName({}, alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(expectedError);
         }
     });
@@ -1152,7 +1182,7 @@ describe('addName', () => {
             await keymaster.addName('1234567890123456789012345678901234567890', alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name too long');
         }
     });
@@ -1166,7 +1196,7 @@ describe('addName', () => {
             await keymaster.addName('hello\nworld!', alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: name contains unprintable characters');
         }
     });
@@ -1203,15 +1233,19 @@ describe('getName', () => {
 
         await keymaster.createId('Bob');
 
+        // @ts-expect-error Testing invalid usage, missing arg
         let did = await keymaster.getName();
         expect(did).toBe(null);
 
+        // @ts-expect-error Testing invalid usage, invalid name arg
         did = await keymaster.getName(333);
         expect(did).toBe(null);
 
+        // @ts-expect-error Testing invalid usage, invalid name arg
         did = await keymaster.getName([1, 2, 3]);
         expect(did).toBe(null);
 
+        // @ts-expect-error Testing invalid usage, invalid name arg
         did = await keymaster.getName({ id: 'mock' });
         expect(did).toBe(null);
     });
@@ -1233,7 +1267,7 @@ describe('removeName', () => {
 
         const wallet = await keymaster.loadWallet();
 
-        expect(wallet.names['Jack'] === bob).toBe(false);
+        expect(wallet.names!['Jack'] === bob).toBe(false);
     });
 
     it('should return true if name is missing', async () => {
@@ -1290,7 +1324,7 @@ describe('resolveDID', () => {
         const did = await keymaster.createId('Bob');
         const doc = await keymaster.resolveDID('Bob');
 
-        expect(doc.didDocument.id).toBe(did);
+        expect(doc.didDocument!.id).toBe(did);
     });
 
     it('should resolve a valid asset name', async () => {
@@ -1315,7 +1349,7 @@ describe('resolveDID', () => {
         try {
             await keymaster.resolveDID('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -1335,8 +1369,8 @@ describe('createAsset', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
-        expect(doc.didDocument.id).toBe(dataDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
     });
 
@@ -1348,8 +1382,8 @@ describe('createAsset', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
-        expect(doc.didDocument.id).toBe(dataDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
     });
 
@@ -1361,8 +1395,8 @@ describe('createAsset', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
         const doc = await keymaster.resolveDID(dataDid);
 
-        expect(doc.didDocument.id).toBe(dataDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
     });
 
@@ -1377,8 +1411,8 @@ describe('createAsset', () => {
         const dataDid = await keymaster.createAsset(mockAnchor, { registry: 'hyperswarm', controller: 'Bob' });
         const doc = await keymaster.resolveDID(dataDid);
 
-        expect(doc.didDocument.id).toBe(dataDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
     });
 
@@ -1389,7 +1423,7 @@ describe('createAsset', () => {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Keymaster: No current ID');
         }
@@ -1402,7 +1436,7 @@ describe('createAsset', () => {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: data');
         }
     });
@@ -1456,7 +1490,7 @@ describe('listAssets', () => {
         const mockAnchor = { name: 'mockAnchor' };
         const validUntil = new Date();
         validUntil.setMinutes(validUntil.getMinutes() + 1);
-        await keymaster.createAsset(mockAnchor, { validUntil });
+        await keymaster.createAsset(mockAnchor, { validUntil: validUntil.toISOString() });
         const assets = await keymaster.listAssets();
 
         expect(assets).toStrictEqual([]);
@@ -1485,7 +1519,7 @@ describe('updateDID', () => {
 
         expect(ok).toBe(true);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
-        expect(doc2.didDocumentMetadata.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe(2);
     });
 
     it('should update an asset DID when current ID is not owner ID', async () => {
@@ -1509,9 +1543,9 @@ describe('updateDID', () => {
         const doc2 = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc2.didDocument.controller).toBe(bob);
+        expect(doc2.didDocument!.controller).toBe(bob);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
-        expect(doc2.didDocumentMetadata.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe(2);
     });
 });
 
@@ -1534,7 +1568,7 @@ describe('revokeDID', () => {
         expect(ok).toBe(true);
         expect(doc.didDocument).toStrictEqual({});
         expect(doc.didDocumentData).toStrictEqual({});
-        expect(doc.didDocumentMetadata.deactivated).toBe(true);
+        expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });
 
     it('should revoke an asset DID when current ID is not owner ID', async () => {
@@ -1556,11 +1590,11 @@ describe('revokeDID', () => {
         expect(ok).toBe(true);
         expect(doc.didDocument).toStrictEqual({});
         expect(doc.didDocumentData).toStrictEqual({});
-        expect(doc.didDocumentMetadata.deactivated).toBe(true);
+        expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });
 });
 
-function generateRandomString(length) {
+function generateRandomString(length: number) {
     let result = '';
     let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let charactersLength = characters.length;
@@ -1588,7 +1622,7 @@ describe('encryptMessage', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.encrypted.cipher_hash).toBe(msgHash);
+        expect((data as { encrypted: EncryptedMessage }).encrypted.cipher_hash).toBe(msgHash);
     });
 
     it('should encrypt a long message', async () => {
@@ -1604,7 +1638,7 @@ describe('encryptMessage', () => {
         const data = doc.didDocumentData;
         const msgHash = cipher.hashMessage(msg);
 
-        expect(data.encrypted.cipher_hash).toBe(msgHash);
+        expect((data as { encrypted: EncryptedMessage }).encrypted.cipher_hash).toBe(msgHash);
     });
 });
 
@@ -1713,8 +1747,7 @@ describe('encryptJSON', () => {
 
         const did = await keymaster.encryptJSON(mockJson, bob);
         const data = await keymaster.resolveAsset(did);
-
-        expect(data.encrypted.sender).toStrictEqual(bob);
+        expect((data as { encrypted: EncryptedMessage }).encrypted.sender).toStrictEqual(bob);
     });
 });
 
@@ -1759,7 +1792,7 @@ describe('addSignature', () => {
         try {
             await keymaster.addSignature(mockJson);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Keymaster: No current ID');
         }
     });
@@ -1770,9 +1803,10 @@ describe('addSignature', () => {
         await keymaster.createId('Bob');
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.addSignature();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: obj');
         }
     });
@@ -1800,6 +1834,7 @@ describe('verifySignature', () => {
 
         await keymaster.createId('Bob');
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         const isValid = await keymaster.verifySignature(mockJson);
 
         expect(isValid).toBe(false);
@@ -1820,6 +1855,7 @@ describe('verifySignature', () => {
     it('should return false for null parameter', async () => {
         mockFs({});
 
+        // @ts-expect-error Testing invalid usage, missing arg
         const isValid = await keymaster.verifySignature();
 
         expect(isValid).toBe(false);
@@ -1828,6 +1864,7 @@ describe('verifySignature', () => {
     it('should return false for invalid JSON', async () => {
         mockFs({});
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         const isValid = await keymaster.verifySignature("not JSON");
 
         expect(isValid).toBe(false);
@@ -1864,8 +1901,8 @@ describe('bindCredential', () => {
         const vc = await keymaster.bindCredential(credentialDid, userDid);
 
         expect(vc.issuer).toBe(userDid);
-        expect(vc.credentialSubject.id).toBe(userDid);
-        expect(vc.credential.email).toEqual(expect.any(String));
+        expect(vc.credentialSubject!.id).toBe(userDid);
+        expect(vc.credential!.email).toEqual(expect.any(String));
     });
 
     it('should create a bound credential with provided default', async () => {
@@ -1878,8 +1915,8 @@ describe('bindCredential', () => {
         const vc = await keymaster.bindCredential(credentialDid, userDid, { credential });
 
         expect(vc.issuer).toBe(userDid);
-        expect(vc.credentialSubject.id).toBe(userDid);
-        expect(vc.credential.email).toEqual(credential.email);
+        expect(vc.credentialSubject!.id).toBe(userDid);
+        expect(vc.credential!.email).toEqual(credential.email);
     });
 
     it('should create a bound credential for a different user', async () => {
@@ -1893,8 +1930,8 @@ describe('bindCredential', () => {
         const vc = await keymaster.bindCredential(credentialDid, bob);
 
         expect(vc.issuer).toBe(alice);
-        expect(vc.credentialSubject.id).toBe(bob);
-        expect(vc.credential.email).toEqual(expect.any(String));
+        expect(vc.credentialSubject!.id).toBe(bob);
+        expect(vc.credential!.email).toEqual(expect.any(String));
     });
 });
 
@@ -1913,16 +1950,16 @@ describe('issueCredential', () => {
 
         const did = await keymaster.issueCredential(boundCredential);
 
-        const vc = await keymaster.decryptJSON(did);
+        const vc = await keymaster.decryptJSON(did) as VerifiableCredential;
         expect(vc.issuer).toBe(subject);
-        expect(vc.credentialSubject.id).toBe(subject);
-        expect(vc.credential.email).toEqual(expect.any(String));
+        expect(vc.credentialSubject!.id).toBe(subject);
+        expect(vc.credential!.email).toEqual(expect.any(String));
 
         const isValid = await keymaster.verifySignature(vc);
         expect(isValid).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Bob'].owned.includes(did)).toEqual(true);
+        expect(wallet.ids['Bob'].owned!.includes(did)).toEqual(true);
     });
 
     it('should bind and issue a credential', async () => {
@@ -1939,10 +1976,10 @@ describe('issueCredential', () => {
 
         const did = await keymaster.issueCredential(unboundCredential, { subject, schema, validFrom, validUntil });
 
-        const vc = await keymaster.decryptJSON(did);
+        const vc = await keymaster.decryptJSON(did) as VerifiableCredential;
         expect(vc.issuer).toBe(subject);
-        expect(vc.credentialSubject.id).toBe(subject);
-        expect(vc.credential.email).toEqual(expect.any(String));
+        expect(vc.credentialSubject!.id).toBe(subject);
+        expect(vc.credential!.email).toEqual(expect.any(String));
         expect(vc.validFrom).toBe(validFrom);
         expect(vc.validUntil).toBe(validUntil);
 
@@ -1967,7 +2004,7 @@ describe('issueCredential', () => {
             await keymaster.issueCredential(boundCredential);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
@@ -1984,7 +2021,7 @@ describe('issueCredential', () => {
             await keymaster.issueCredential(unboundCredential);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential.issuer');
         }
     });
@@ -2032,7 +2069,7 @@ describe('updateCredential', () => {
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
         const did = await keymaster.issueCredential(boundCredential);
-        const vc = await keymaster.getCredential(did);
+        const vc = (await keymaster.getCredential(did))!;
 
         const validUntilDate = new Date();
         validUntilDate.setHours(validUntilDate.getHours() + 24);
@@ -2040,11 +2077,11 @@ describe('updateCredential', () => {
         const ok = await keymaster.updateCredential(did, vc);
         expect(ok).toBe(true);
 
-        const updated = await keymaster.getCredential(did);
+        const updated = (await keymaster.getCredential(did))!;
         expect(updated.validUntil).toBe(vc.validUntil);
 
         const doc = await keymaster.resolveDID(did);
-        expect(doc.didDocumentMetadata.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -2054,13 +2091,14 @@ describe('updateCredential', () => {
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
         const did = await keymaster.issueCredential(boundCredential);
-        const vc = await keymaster.getCredential(did);
+        const vc = (await keymaster.getCredential(did))!;
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             await keymaster.updateCredential();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -2069,7 +2107,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(bob, vc);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
@@ -2080,7 +2118,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(cipherDID, vc);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did not encrypted JSON');
         }
 
@@ -2090,24 +2128,26 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(cipherDID, vc);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did is not a credential');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             await keymaster.updateCredential(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: credential');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.updateCredential(did, {});
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential');
         }
 
@@ -2117,7 +2157,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(did, vc2);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential');
         }
 
@@ -2127,7 +2167,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(did, vc2);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential');
         }
     });
@@ -2152,7 +2192,7 @@ describe('revokeCredential', () => {
 
         const revoked = await keymaster.resolveDID(did);
         expect(revoked.didDocument).toStrictEqual({});
-        expect(revoked.didDocumentMetadata.deactivated).toBe(true);
+        expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
     });
 
     it('should throw exception if verifiable credential is already revoked', async () => {
@@ -2168,13 +2208,13 @@ describe('revokeCredential', () => {
 
         const revoked = await keymaster.resolveDID(did);
         expect(revoked.didDocument).toStrictEqual({});
-        expect(revoked.didDocumentMetadata.deactivated).toBe(true);
+        expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
 
         try {
             await keymaster.revokeCredential(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid operation: DID deactivated');
         }
     });
@@ -2198,7 +2238,7 @@ describe('revokeCredential', () => {
             await keymaster.revokeCredential(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
 
@@ -2229,8 +2269,8 @@ describe('acceptCredential', () => {
         expect(ok).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Alice'].owned.includes(did));
-        expect(wallet.ids['Bob'].held.includes(did));
+        expect(wallet.ids['Alice'].owned!.includes(did));
+        expect(wallet.ids['Bob'].held!.includes(did));
     });
 
     it('should return false if user cannot decrypt credential', async () => {
@@ -2303,12 +2343,12 @@ describe('createChallenge', () => {
         const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocument!.id).toBe(did);
+        expect(doc.didDocument!.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual({ challenge: {} });
 
-        const now = new Date();
-        const validUntil = new Date(doc.mdip.validUntil);
+        const now = Date.now();
+        const validUntil = new Date(doc.mdip!.validUntil!).getTime();
         const ttl = validUntil - now;
 
         expect(ttl < 60 * 60 * 1000).toBe(true);
@@ -2322,10 +2362,10 @@ describe('createChallenge', () => {
         const did = await keymaster.createChallenge({}, { validUntil });
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocument!.id).toBe(did);
+        expect(doc.didDocument!.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual({ challenge: {} });
-        expect(doc.mdip.validUntil).toBe(validUntil);
+        expect(doc.mdip!.validUntil).toBe(validUntil);
     });
 
     it('should create a valid challenge', async () => {
@@ -2349,8 +2389,8 @@ describe('createChallenge', () => {
         const did = await keymaster.createChallenge(challenge);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocument.controller).toBe(alice);
+        expect(doc.didDocument!.id).toBe(did);
+        expect(doc.didDocument!.controller).toBe(alice);
         expect(doc.didDocumentData).toStrictEqual({ challenge });
     });
 
@@ -2360,28 +2400,31 @@ describe('createChallenge', () => {
         await keymaster.createId('Alice');
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.createChallenge(null);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: challenge');
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.createChallenge([]);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: challenge');
         }
 
         try {
             await keymaster.createChallenge({
+                // @ts-expect-error Testing invalid usage, invalid arg
                 credentials: 123
             });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: challenge.credentials');
         }
     });
@@ -2396,7 +2439,7 @@ describe('createChallenge', () => {
             await keymaster.createChallenge({}, { validUntil });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.validUntil');
         }
     });
@@ -2427,8 +2470,8 @@ describe('createResponse', () => {
         expect(ok).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Alice'].owned.includes(vcDid));
-        expect(wallet.ids['Bob'].held.includes(vcDid));
+        expect(wallet.ids['Alice'].owned!.includes(vcDid));
+        expect(wallet.ids['Bob'].held!.includes(vcDid));
 
         await keymaster.setCurrentId('Victor');
 
@@ -2444,7 +2487,7 @@ describe('createResponse', () => {
 
         await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
-        const { response } = await keymaster.decryptJSON(responseDID);
+        const { response } = await keymaster.decryptJSON(responseDID) as { response: ChallengeResponse };
 
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(1);
@@ -2457,10 +2500,11 @@ describe('createResponse', () => {
         const alice = await keymaster.createId('Alice');
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             await keymaster.createResponse();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -2468,7 +2512,7 @@ describe('createResponse', () => {
             await keymaster.createResponse('mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
 
@@ -2476,7 +2520,7 @@ describe('createResponse', () => {
             await keymaster.createResponse('did:mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
         }
 
@@ -2484,7 +2528,7 @@ describe('createResponse', () => {
             await keymaster.createResponse('did:mock', { retries: 10, delay: 10 });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
         }
 
@@ -2492,7 +2536,7 @@ describe('createResponse', () => {
             await keymaster.createResponse(alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: challengeDID');
         }
     });
@@ -2515,6 +2559,8 @@ describe('verifyResponse', () => {
 
         await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
+
+        const asset = await keymaster.resolveAsset(challengeDID);
 
         await keymaster.setCurrentId('Alice');
         const verify = await keymaster.verifyResponse(responseDID);
@@ -2571,7 +2617,7 @@ describe('verifyResponse', () => {
         expect(verify1.challenge).toBe(challengeDID);
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(1);
-        expect(verify1.vps.length).toBe(1);
+        expect(verify1.vps!.length).toBe(1);
     });
 
     it('should not verify a invalid response to a single credential challenge', async () => {
@@ -2607,7 +2653,7 @@ describe('verifyResponse', () => {
         expect(verify1.challenge).toBe(challengeDID);
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(0);
-        expect(verify1.vps.length).toBe(0);
+        expect(verify1.vps!.length).toBe(0);
     });
 
     it('should verify a response if credential is updated', async () => {
@@ -2627,7 +2673,7 @@ describe('verifyResponse', () => {
         await keymaster.acceptCredential(vc1);
 
         await keymaster.setCurrentId('Alice');
-        const credential2 = await keymaster.getCredential(vc1);
+        const credential2 = (await keymaster.getCredential(vc1))!;
         credential2.credential = { email: 'updated@email.com' };
         await keymaster.updateCredential(vc1, credential2);
 
@@ -2654,7 +2700,7 @@ describe('verifyResponse', () => {
         expect(verify1.challenge).toBe(challengeDID);
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(1);
-        expect(verify1.vps.length).toBe(1);
+        expect(verify1.vps!.length).toBe(1);
     });
 
     it('should demonstrate full workflow with credential revocations', async () => {
@@ -2663,7 +2709,7 @@ describe('verifyResponse', () => {
         const alice = await keymaster.createId('Alice', { registry: 'local' });
         const bob = await keymaster.createId('Bob', { registry: 'local' });
         const carol = await keymaster.createId('Carol', { registry: 'local' });
-        await keymaster.createId('Victor', 'local');
+        await keymaster.createId('Victor', { registry: 'local' });
 
         await keymaster.setCurrentId('Alice');
 
@@ -2720,7 +2766,7 @@ describe('verifyResponse', () => {
 
         await keymaster.setCurrentId('Carol');
         const responseDID = await keymaster.createResponse(challengeDID, { registry: 'local' });
-        const { response } = await keymaster.decryptJSON(responseDID);
+        const { response } = await keymaster.decryptJSON(responseDID) as { response: ChallengeResponse };
 
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(4);
@@ -2729,7 +2775,7 @@ describe('verifyResponse', () => {
 
         const verify1 = await keymaster.verifyResponse(responseDID);
         expect(verify1.match).toBe(true);
-        expect(verify1.vps.length).toBe(4);
+        expect(verify1.vps!.length).toBe(4);
 
         // All agents rotate keys
         await keymaster.setCurrentId('Alice');
@@ -2746,7 +2792,7 @@ describe('verifyResponse', () => {
 
         const verify2 = await keymaster.verifyResponse(responseDID);
         expect(verify2.match).toBe(true);
-        expect(verify2.vps.length).toBe(4);
+        expect(verify2.vps!.length).toBe(4);
 
         await keymaster.setCurrentId('Alice');
         await keymaster.revokeCredential(vc1);
@@ -2754,7 +2800,7 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
         const verify3 = await keymaster.verifyResponse(responseDID)
         expect(verify3.match).toBe(false);
-        expect(verify3.vps.length).toBe(3);
+        expect(verify3.vps!.length).toBe(3);
 
         await keymaster.setCurrentId('Bob');
         await keymaster.revokeCredential(vc3);
@@ -2762,7 +2808,7 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
         const verify4 = await keymaster.verifyResponse(responseDID);
         expect(verify4.match).toBe(false);
-        expect(verify4.vps.length).toBe(2);
+        expect(verify4.vps!.length).toBe(2);
     });
 
     it('should raise exception on invalid parameter', async () => {
@@ -2771,10 +2817,11 @@ describe('verifyResponse', () => {
         const alice = await keymaster.createId('Alice');
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             await keymaster.verifyResponse();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -2782,7 +2829,7 @@ describe('verifyResponse', () => {
             await keymaster.verifyResponse(alice);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
@@ -2790,7 +2837,7 @@ describe('verifyResponse', () => {
             await keymaster.verifyResponse('mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
 
@@ -2798,7 +2845,7 @@ describe('verifyResponse', () => {
             await keymaster.verifyResponse('did:mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
         }
 
@@ -2806,7 +2853,7 @@ describe('verifyResponse', () => {
             await keymaster.verifyResponse('did:mock', { retries: 10, delay: 10 });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
         }
     });
@@ -2830,7 +2877,7 @@ describe('publishCredential', () => {
 
         const doc = await keymaster.resolveDID(bob);
         const vc = await keymaster.decryptJSON(did);
-        const manifest = doc.didDocumentData.manifest;
+        const manifest = (doc.didDocumentData as { manifest: Record<string, VerifiableCredential> }).manifest;
 
         expect(manifest[did]).toStrictEqual(vc);
     });
@@ -2846,8 +2893,8 @@ describe('publishCredential', () => {
         await keymaster.publishCredential(did, { reveal: false });
 
         const doc = await keymaster.resolveDID(bob);
-        const vc = await keymaster.decryptJSON(did);
-        const manifest = doc.didDocumentData.manifest;
+        const vc = await keymaster.decryptJSON(did) as VerifiableCredential;
+        const manifest = (doc.didDocumentData as { manifest: Record<string, VerifiableCredential> }).manifest;
 
         vc.credential = null;
 
@@ -2873,7 +2920,7 @@ describe('unpublishCredential', () => {
         await keymaster.unpublishCredential(did);
 
         const doc = await keymaster.resolveDID(bob);
-        const manifest = doc.didDocumentData.manifest;
+        const manifest = (doc.didDocumentData as { manifest: Record<string, VerifiableCredential> }).manifest;
 
         expect(manifest).toStrictEqual({});
     });
@@ -2885,7 +2932,7 @@ describe('unpublishCredential', () => {
             await keymaster.unpublishCredential('mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Keymaster: No current ID');
         }
     });
@@ -2899,7 +2946,7 @@ describe('unpublishCredential', () => {
             await keymaster.unpublishCredential('did:test:mock49');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did');
         }
     });
@@ -2916,7 +2963,7 @@ describe('unpublishCredential', () => {
             await keymaster.unpublishCredential(did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did');
         }
     });
@@ -2936,8 +2983,8 @@ describe('createGroup', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const doc = await keymaster.resolveDID(groupDid);
 
-        expect(doc.didDocument.id).toBe(groupDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(groupDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
 
         const expectedGroup = {
             group: {
@@ -2957,8 +3004,8 @@ describe('createGroup', () => {
         const groupDid = await keymaster.createGroup(groupName, { members: [ownerDid] });
         const doc = await keymaster.resolveDID(groupDid);
 
-        expect(doc.didDocument.id).toBe(groupDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(groupDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
 
         const expectedGroup = {
             group: {
@@ -3032,7 +3079,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(groupDid, 'mockAlias');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -3071,7 +3118,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember('mockAlias', dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -3113,11 +3160,11 @@ describe('addGroupMember', () => {
 
         await keymaster.addGroupMember(groupDid, dataDid);
         const dox1 = await keymaster.resolveDID(groupDid);
-        const version1 = dox1.didDocumentMetadata.version;
+        const version1 = dox1.didDocumentMetadata!.version;
 
         await keymaster.addGroupMember(groupDid, dataDid);
         const dox2 = await keymaster.resolveDID(groupDid);
-        const version2 = dox2.didDocumentMetadata.version;
+        const version2 = dox2.didDocumentMetadata!.version;
 
         expect(version2).toBe(version1);
     });
@@ -3136,7 +3183,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(groupDid, dataDid);
         }
 
-        const group = await keymaster.getGroup(groupDid);
+        const group = (await keymaster.getGroup(groupDid))!;
 
         expect(group.members.length).toBe(memberCount);
     });
@@ -3149,34 +3196,38 @@ describe('addGroupMember', () => {
         const groupDid = await keymaster.createGroup(groupName);
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.addGroupMember(groupDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember(groupDid, 100);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember(groupDid, [1, 2, 3]);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember(groupDid, { name: 'mock' });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -3184,7 +3235,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(groupDid, 'did:mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: memberId');
         }
     });
@@ -3197,34 +3248,38 @@ describe('addGroupMember', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember(null, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember(100, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember([1, 2, 3], dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.addGroupMember({ name: 'mock' }, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -3232,7 +3287,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(agentDid, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: groupId');
         }
@@ -3241,7 +3296,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(dataDid, agentDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
@@ -3256,7 +3311,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(groupDid, groupDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe("Invalid parameter: can't add a group to itself");
         }
     });
@@ -3276,7 +3331,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(group3Did, group1Did);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe("Invalid parameter: can't create mutual membership");
         }
     });
@@ -3367,12 +3422,12 @@ describe('removeGroupMember', () => {
         const groupDid = await keymaster.createGroup(groupName);
         const mockAnchor = { name: 'mockData' };
         const dox1 = await keymaster.resolveDID(groupDid);
-        const version1 = dox1.didDocumentMetadata.version;
+        const version1 = dox1.didDocumentMetadata!.version;
 
         const dataDid = await keymaster.createAsset(mockAnchor);
         await keymaster.removeGroupMember(groupDid, dataDid);
         const dox2 = await keymaster.resolveDID(groupDid);
-        const version2 = dox2.didDocumentMetadata.version;
+        const version2 = dox2.didDocumentMetadata!.version;
 
         expect(version2).toBe(version1);
     });
@@ -3385,34 +3440,38 @@ describe('removeGroupMember', () => {
         const groupDid = await keymaster.createGroup(groupName);
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.removeGroupMember(groupDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember(groupDid, 100);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember(groupDid, [1, 2, 3]);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember(groupDid, { name: 'mock' });
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -3420,7 +3479,7 @@ describe('removeGroupMember', () => {
             await keymaster.removeGroupMember(groupDid, 'did:mock');
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: memberId');
         }
     });
@@ -3433,42 +3492,47 @@ describe('removeGroupMember', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.removeGroupMember();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember(null, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember(100, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember([1, 2, 3], dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
         try {
+            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.removeGroupMember({ name: 'mock' }, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
 
@@ -3476,7 +3540,7 @@ describe('removeGroupMember', () => {
             await keymaster.removeGroupMember(agentDid, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: groupId');
         }
 
@@ -3484,7 +3548,7 @@ describe('removeGroupMember', () => {
             await keymaster.removeGroupMember(dataDid, agentDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: groupId');
         }
     });
@@ -3591,7 +3655,7 @@ describe('getGroup', () => {
         const groupName = 'mock';
         const groupDid = await keymaster.createGroup(groupName);
 
-        const group = await keymaster.getGroup(groupDid);
+        const group = (await keymaster.getGroup(groupDid))!;
 
         expect(group.name).toBe(groupName);
         expect(group.members).toStrictEqual([]);
@@ -3625,10 +3689,11 @@ describe('getGroup', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.getGroup();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
@@ -3701,7 +3766,7 @@ describe('createPoll', () => {
         template.roster = rosterDid;
 
         const did = await keymaster.createPoll(template);
-        const asset = await keymaster.resolveAsset(did);
+        const asset = await keymaster.resolveAsset(did) as { poll: Poll };
 
         expect(asset.poll).toStrictEqual(template);
     });
@@ -3721,7 +3786,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll');
         }
 
@@ -3731,7 +3796,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.version');
         }
 
@@ -3741,7 +3806,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.description');
         }
 
@@ -3751,7 +3816,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.roster');
         }
 
@@ -3761,7 +3826,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: poll.options');
         }
@@ -3772,7 +3837,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
@@ -3782,7 +3847,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
@@ -3792,7 +3857,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
@@ -3802,7 +3867,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
@@ -3813,7 +3878,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
@@ -3828,7 +3893,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
     });
@@ -3859,9 +3924,11 @@ describe('testPoll', () => {
         isPoll = await keymaster.testPoll(rosterDid);
         expect(isPoll).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, missing arg
         isPoll = await keymaster.testPoll();
         expect(isPoll).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, missing arg
         isPoll = await keymaster.testPoll(100);
         expect(isPoll).toBe(false);
 
@@ -3950,10 +4017,11 @@ describe('getPoll', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.getPoll();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
@@ -3985,12 +4053,12 @@ describe('viewPoll', () => {
         expect(view.isEligible).toBe(true);
         expect(view.isOwner).toBe(true);
         expect(view.voteExpired).toBe(false);
-        expect(view.results.ballots).toStrictEqual([]);
-        expect(view.results.tally.length).toBe(4);
-        expect(view.results.votes.eligible).toBe(1);
-        expect(view.results.votes.pending).toBe(1);
-        expect(view.results.votes.received).toBe(0);
-        expect(view.results.final).toBe(false);
+        expect(view.results!.ballots).toStrictEqual([]);
+        expect(view.results!.tally.length).toBe(4);
+        expect(view.results!.votes!.eligible).toBe(1);
+        expect(view.results!.votes!.pending).toBe(1);
+        expect(view.results!.votes!.received).toBe(0);
+        expect(view.results!.final).toBe(false);
     });
 });
 
@@ -4038,7 +4106,7 @@ describe('votePoll', () => {
             await keymaster.votePoll(pollDid, 5);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: vote');
         }
     });
@@ -4058,7 +4126,7 @@ describe('votePoll', () => {
             await keymaster.votePoll(pollDid, 5);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: voter not in roster');
         }
     });
@@ -4082,10 +4150,10 @@ describe('updatePoll', () => {
         const ballotDid = await keymaster.votePoll(pollDid, 1);
 
         const ok = await keymaster.updatePoll(ballotDid);
-        const poll = await keymaster.getPoll(pollDid);
+        const poll = (await keymaster.getPoll(pollDid))!;
 
         expect(ok).toBe(true);
-        expect(poll.ballots[bobDid].ballot).toBe(ballotDid);
+        expect(poll.ballots![bobDid].ballot).toBe(ballotDid);
     });
 
     it('should reject non-ballots', async () => {
@@ -4102,7 +4170,7 @@ describe('updatePoll', () => {
             await keymaster.updatePoll(pollDid)
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe('Invalid parameter: ballot');
         }
     });
@@ -4127,30 +4195,30 @@ describe('publishPoll', () => {
         await keymaster.updatePoll(ballotDid);
         const ok = await keymaster.publishPoll(pollDid);
 
-        const poll = await keymaster.getPoll(pollDid);
+        const poll = (await keymaster.getPoll(pollDid))!;
 
         expect(ok).toBe(true);
-        expect(poll.results.final).toBe(true);
-        expect(poll.results.votes.eligible).toBe(1);
-        expect(poll.results.votes.pending).toBe(0);
-        expect(poll.results.votes.received).toBe(1);
-        expect(poll.results.tally.length).toBe(4);
-        expect(poll.results.tally[0]).toStrictEqual({
+        expect(poll.results!.final).toBe(true);
+        expect(poll.results!.votes!.eligible).toBe(1);
+        expect(poll.results!.votes!.pending).toBe(0);
+        expect(poll.results!.votes!.received).toBe(1);
+        expect(poll.results!.tally.length).toBe(4);
+        expect(poll.results!.tally[0]).toStrictEqual({
             vote: 0,
             option: 'spoil',
             count: 0,
         });
-        expect(poll.results.tally[1]).toStrictEqual({
+        expect(poll.results!.tally[1]).toStrictEqual({
             vote: 1,
             option: 'yes',
             count: 1,
         });
-        expect(poll.results.tally[2]).toStrictEqual({
+        expect(poll.results!.tally[2]).toStrictEqual({
             vote: 2,
             option: 'no',
             count: 0,
         });
-        expect(poll.results.tally[3]).toStrictEqual({
+        expect(poll.results!.tally[3]).toStrictEqual({
             vote: 3,
             option: 'abstain',
             count: 0,
@@ -4169,11 +4237,11 @@ describe('publishPoll', () => {
         const ballotDid = await keymaster.votePoll(pollDid, 1);
         await keymaster.updatePoll(ballotDid);
         const ok = await keymaster.publishPoll(pollDid, { reveal: true });
-        const poll = await keymaster.getPoll(pollDid);
+        const poll = (await keymaster.getPoll(pollDid))!;
 
         expect(ok).toBe(true);
-        expect(poll.results.ballots.length).toBe(1);
-        expect(poll.results.ballots[0]).toStrictEqual({
+        expect(poll.results!.ballots!.length).toBe(1);
+        expect(poll.results!.ballots![0]).toStrictEqual({
             ballot: ballotDid,
             voter: bobDid,
             vote: 1,
@@ -4203,7 +4271,7 @@ describe('unpublishPoll', () => {
         await keymaster.publishPoll(pollDid);
         const ok = await keymaster.unpublishPoll(pollDid);
 
-        const poll = await keymaster.getPoll(pollDid);
+        const poll = (await keymaster.getPoll(pollDid))!;
 
         expect(ok).toBe(true);
         expect(poll.results).toBe(undefined);
@@ -4224,8 +4292,8 @@ describe('createSchema', () => {
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocument.id).toBe(did);
-        expect(doc.didDocumentData.schema).toStrictEqual(mockSchema);
+        expect(doc.didDocument!.id).toBe(did);
+        expect((doc.didDocumentData! as { schema: Record<string, unknown> }).schema).toStrictEqual(mockSchema);
     });
 
     it('should create a default schema', async () => {
@@ -4248,7 +4316,7 @@ describe('createSchema', () => {
             ]
         };
 
-        expect(doc.didDocumentData.schema).toStrictEqual(expectedSchema);
+        expect((doc.didDocumentData! as { schema: Record<string, unknown> }).schema).toStrictEqual(expectedSchema);
     });
 
     it('should create a simple schema', async () => {
@@ -4258,7 +4326,7 @@ describe('createSchema', () => {
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
 
-        expect(doc.didDocumentData.schema).toStrictEqual(mockSchema);
+        expect((doc.didDocumentData! as { schema: Record<string, unknown> }).schema).toStrictEqual(mockSchema);
     });
 
     it('should throw an exception on create invalid schema', async () => {
@@ -4269,7 +4337,7 @@ describe('createSchema', () => {
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: schema');
         }
@@ -4283,7 +4351,7 @@ describe('createSchema', () => {
         try {
             await keymaster.createSchema({ "$schema": "http://json-schema.org/draft-07/schema#" });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: schema');
         }
     });
@@ -4348,7 +4416,7 @@ describe('getSchema', () => {
         try {
             await keymaster.getSchema('bogus');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -4381,7 +4449,7 @@ describe('setSchema', () => {
         try {
             await keymaster.setSchema(did, { mock: 'not a schema' });
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: schema');
         }
     });
@@ -4417,21 +4485,26 @@ describe('testSchema', () => {
     it('should return false for non-schemas', async () => {
         mockFs({});
 
+        // @ts-expect-error Testing invalid usage, missing arg
         let isSchema = await keymaster.testSchema();
         expect(isSchema).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         isSchema = await keymaster.testSchema(3);
         expect(isSchema).toBe(false);
 
         isSchema = await keymaster.testSchema('mock7');
         expect(isSchema).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         isSchema = await keymaster.testSchema([1, 2, 3]);
         expect(isSchema).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         isSchema = await keymaster.testSchema([1, 2, 3]);
         expect(isSchema).toBe(false);
 
+        // @ts-expect-error Testing invalid usage, invalid arg
         isSchema = await keymaster.testSchema({});
         expect(isSchema).toBe(false);
     });
@@ -4463,9 +4536,10 @@ describe('createTemplate', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.createTemplate();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: schemaId');
         }
     });
@@ -4731,7 +4805,7 @@ describe('listCredentials', () => {
         try {
             await keymaster.listCredentials('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -4748,7 +4822,7 @@ describe('getCredential', () => {
         const credentials = await setupCredentials();
 
         for (const did of credentials) {
-            const credential = await keymaster.getCredential(did);
+            const credential = (await keymaster.getCredential(did))!;
             expect(credential.type[0]).toBe('VerifiableCredential');
         }
     });
@@ -4759,7 +4833,7 @@ describe('getCredential', () => {
         try {
             await keymaster.getCredential('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -4771,7 +4845,7 @@ describe('getCredential', () => {
             const agentDID = await keymaster.createId('Rando');
             await keymaster.getCredential(agentDID);
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
@@ -4811,9 +4885,10 @@ describe('removeCredential', () => {
         mockFs({});
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.removeCredential();
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe(InvalidDIDError.type);
         }
     });
@@ -4824,7 +4899,7 @@ describe('removeCredential', () => {
         try {
             await keymaster.removeCredential('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -4902,7 +4977,7 @@ describe('setCurrentId', () => {
         try {
             await keymaster.setCurrentId('mock');
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.type).toBe(UnknownIDError.type);
         }
     });
@@ -4932,8 +5007,8 @@ describe('createImage', () => {
         const dataDid = await keymaster.createImage(mockImage);
         const doc = await keymaster.resolveDID(dataDid);
 
-        expect(doc.didDocument.id).toBe(dataDid);
-        expect(doc.didDocument.controller).toBe(ownerDid);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
 
         const expected = {
             image: {
@@ -4953,7 +5028,7 @@ describe('createImage', () => {
         try {
             await keymaster.createImage(Buffer.from('mock'));
             throw new ExpectedExceptionError();
-        } catch (error) {
+        } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: buffer');
         }
     });
