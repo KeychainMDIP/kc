@@ -1545,34 +1545,39 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         onChange={handleImageUpload}
                                     />
                                     {imageList &&
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Select
-                                                    style={{ width: '300px' }}
-                                                    value={selectedImageName}
-                                                    fullWidth
-                                                    displayEmpty
-                                                    onChange={(event) => setSelectedImageName(event.target.value)}
-                                                >
-                                                    <MenuItem value="" disabled>
-                                                        Select image
-                                                    </MenuItem>
-                                                    {imageList.map((name, index) => (
-                                                        <MenuItem value={name} key={index}>
-                                                            {name}
+                                        <Box>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Select
+                                                        style={{ width: '300px' }}
+                                                        value={selectedImageName}
+                                                        fullWidth
+                                                        displayEmpty
+                                                        onChange={(event) => setSelectedImageName(event.target.value)}
+                                                    >
+                                                        <MenuItem value="" disabled>
+                                                            Select image
                                                         </MenuItem>
-                                                    ))}
-                                                </Select>
+                                                        {imageList.map((name, index) => (
+                                                            <MenuItem value={name} key={index}>
+                                                                {name}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
+                                                        Show Image
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    {selectedImage && `Showing: ${selectedImage.cid}`}
+                                                </Grid>
                                             </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
-                                                    Show Image
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                {selectedImage && `Showing: ${selectedImage.cid}`}
-                                            </Grid>
-                                        </Grid>
+                                            {selectedImage &&
+                                                <img src={`/api/v1/cas/data/${selectedImage.cid}`} />
+                                            }
+                                        </Box>
                                     }
                                 </Box>
                             }
