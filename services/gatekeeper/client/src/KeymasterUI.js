@@ -72,6 +72,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [sendMessage, setSendMessage] = useState('');
     const [messageRecipient, setMessageRecipient] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
+    const [assetsTab, setAssetsTab] = useState('');
 
     useEffect(() => {
         checkForChallenge();
@@ -991,6 +992,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <Tab key="schemas" value="schemas" label={'Schemas'} />
                         }
                         {currentId && !widget &&
+                            <Tab key="assets" value="assets" label={'Assets'} />
+                        }
+                        {currentId && !widget &&
                             <Tab key="credentials" value="credentials" label={'Credentials'} />
                         }
                         {currentId && !widget &&
@@ -1413,6 +1417,39 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Button>
                                         </Grid>
                                     </Grid>
+                                </Box>
+                            }
+                        </Box>
+                    }
+                    {tab === 'assets' &&
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={assetsTab}
+                                    onChange={(event, newTab) => setAssetsTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="schemas" value="schemas" label={'Schemas'} />
+                                    <Tab key="groups" value="groups" label={'Groups'} />
+                                    <Tab key="images" value="images" label={'Images'} />
+                                </Tabs>
+                            </Box>
+                            {assetsTab === 'schemas' &&
+                                <Box>
+                                    Schemas
+                                </Box>
+                            }
+                            {assetsTab === 'groups' &&
+                                <Box>
+                                    Groups
+                                </Box>
+                            }
+                            {assetsTab === 'images' &&
+                                <Box>
+                                    Images
                                 </Box>
                             }
                         </Box>
