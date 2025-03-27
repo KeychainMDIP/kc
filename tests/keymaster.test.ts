@@ -2667,8 +2667,6 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Bob');
         const responseDID = await keymaster.createResponse(challengeDID);
 
-        const asset = await keymaster.resolveAsset(challengeDID);
-
         await keymaster.setCurrentId('Alice');
         const verify = await keymaster.verifyResponse(responseDID);
 
