@@ -24,7 +24,7 @@ import HeliaClient from '@mdip/ipfs/helia';
 import { generateCID } from '@mdip/ipfs/utils';
 
 import canonicalizeModule from 'canonicalize';
-import {MdipDocument} from "@mdip/gatekeeper/types";
+import { MdipDocument } from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 const db = new DbJson('test');
@@ -304,7 +304,7 @@ describe('saveWallet', () => {
         mockFs({});
 
         for (let i = 0; i < 10; i++) {
-            const mockWallet: WalletFile = { seed: {} as Seed, counter: i+1, ids: {} };
+            const mockWallet: WalletFile = { seed: {} as Seed, counter: i + 1, ids: {} };
 
             const ok = await keymaster.saveWallet(mockWallet);
             const wallet = await keymaster.loadWallet();
@@ -496,7 +496,7 @@ describe('backupWallet', () => {
         const did = await keymaster.backupWallet();
         const bank = await keymaster.resolveSeedBank();
 
-        expect(did === (bank.didDocumentData! as { wallet: string }).wallet ).toBe(true);
+        expect(did === (bank.didDocumentData! as { wallet: string }).wallet).toBe(true);
     });
 });
 
@@ -1072,7 +1072,7 @@ describe('rotateKeys', () => {
     it('should raise an exception if latest version is not confirmed', async () => {
         mockFs({});
 
-        await keymaster.createId('Alice', { registry: 'TFTC'});
+        await keymaster.createId('Alice', { registry: 'TFTC' });
         await keymaster.rotateKeys();
 
         try {
@@ -1973,7 +1973,7 @@ const mockSchema = {
     "type": "object"
 };
 
-describe ('isVerifiableCredential', () => {
+describe('isVerifiableCredential', () => {
 
     afterEach(() => {
         mockFs.restore();
@@ -5296,5 +5296,109 @@ describe('createImage', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: buffer');
         }
+    });
+});
+
+describe('getImage', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the image', async () => {
+        mockFs({});
+
+        // Create a small image buffer using sharp
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createImage(mockImage);
+        const image = await keymaster.getImage(did);
+
+        expect(image).not.toBeNull();
+        expect(image!.type).toStrictEqual('png');
+        expect(image!.width).toStrictEqual(100);
+        expect(image!.height).toStrictEqual(100);
+        expect(image!.bytes).toStrictEqual(392);
+    });
+
+    it('should return null on invalid did', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const image = await keymaster.getImage(did);
+
+        expect(image).toBeNull();
+    });
+
+    it('should throw an exception on get invalid image', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.getImage('bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+});
+
+describe('testImage', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for agent DID', async () => {
+        mockFs({});
+
+        // Create a small image buffer using sharp
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createImage(mockImage);
+        const isImage = await keymaster.testImage(did);
+
+        expect(isImage).toBe(true);
+    });
+
+    it('should return false for non-agent DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isImage = await keymaster.testImage(did);
+
+        expect(isImage).toBe(false);
+    });
+
+    it('should return false if no DID specified', async () => {
+        mockFs({});
+
+        // @ts-expect-error Testing invalid usage, missing arg
+        const isImage = await keymaster.testImage();
+        expect(isImage).toBe(false);
+    });
+
+    it('should return false if invalid DID specified', async () => {
+        mockFs({});
+
+        const isImage = await keymaster.testImage('mock');
+        expect(isImage).toBe(false);
     });
 });
