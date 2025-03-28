@@ -10,8 +10,6 @@ services:
     volumes:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - ./data/redis:/data
-    ports:
-      - "6379:6379"
 
   ipfs:
     image: ipfs/kubo:v0.33.2
