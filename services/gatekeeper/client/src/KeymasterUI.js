@@ -1525,6 +1525,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 variant="contained"
                                                 color="primary"
                                                 onClick={() => document.getElementById('imageUpload').click()}
+                                                disabled={!registry}
                                             >
                                                 Upload
                                             </Button>
