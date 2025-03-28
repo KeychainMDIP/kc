@@ -1,7 +1,7 @@
 #!/usr/bin/expect
 
 # Start the CLI program for showing mnemonic phrase
-spawn kc show-mnemonic
+spawn bash kc show-mnemonic
 
 # Capture full output
 set output ""

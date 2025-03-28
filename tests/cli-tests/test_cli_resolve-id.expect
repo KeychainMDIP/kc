@@ -9,7 +9,7 @@ set timeout 30
 log_user 1
 
 # Start the CLI program for did creation
-spawn kc resolve-id
+spawn bash kc resolve-id
 
 # Wait for and capture the full output
 expect {

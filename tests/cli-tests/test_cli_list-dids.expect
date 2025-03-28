@@ -1,7 +1,7 @@
 #!/usr/bin/expect
 
 # Start the command you want to test
-spawn kc list-ids
+spawn bash kc list-ids
 
 # Wait for the output and check if '<<< current' is present
 expect {

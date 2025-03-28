@@ -42,8 +42,8 @@ proc validate_wallet_output {output} {
         "index" \
     ]
 
-    # Detailed validation results for all keys
-    set validated_keys {}
+# Detailed validation results for all keys
+set validated_keys {}
 
     # Check for presence of each required key
     foreach key $required_keys {
