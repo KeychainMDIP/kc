@@ -8,5 +8,8 @@ Dependencies:
 - MacOSX or Linux machine
 - Capable of running the nodes locally with docker
 - Framework can be installed for MacOsx using Homebrew: https://formulae.brew.sh/formula/expect
-- When starting nodes, use the following command: "./start-node keymaster gatekeeper mongodb"
+- When starting nodes, use the following command: "./start-node cli"
+- Before running tests, the tests expect the cli is accessible by running the "kc" command.
 - Then from /tests/cli-tests, run "expect {name of file or test} ex. "expect test_cli_check_list_ids.expect"
+
+* When running without hyperswarm you should set KC_DEFAULT_REGISTRY=local in the .env, otherwise create operations will fail.
