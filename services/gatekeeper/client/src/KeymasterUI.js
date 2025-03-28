@@ -1555,7 +1555,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         style={{ display: 'none' }}
                                         onChange={handleImageUpload}
                                     />
-                                    <p/>
+                                    <p />
                                     {imageList &&
                                         <Box>
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -1583,7 +1583,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Button>
                                                 </Grid>
                                             </Grid>
-                                            <p/>
+                                            <p />
                                             {selectedImage && selectedImageDocs &&
                                                 <div className="container">
                                                     <div className="left-pane">
@@ -1619,7 +1619,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Image size</TableCell>
-                                                                        <TableCell>{selectedImage.width}x{selectedImage.height}</TableCell>
+                                                                        <TableCell>{selectedImage.width} x {selectedImage.height} pixels</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Image type</TableCell>
