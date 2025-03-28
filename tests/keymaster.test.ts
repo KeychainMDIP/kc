@@ -5317,7 +5317,6 @@ describe('getImage', () => {
                 background: { r: 255, g: 0, b: 0 }
             }
         }).png().toBuffer();
-        const cid = await generateCID(mockImage);
 
         await keymaster.createId('Bob');
         const did = await keymaster.createImage(mockImage);
