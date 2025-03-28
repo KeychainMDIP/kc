@@ -776,19 +776,15 @@ export default class Keymaster {
 
     async getImage(id: string): Promise<Image | null> {
         const asset = await this.resolveAsset(id);
-
         const castAsset = asset as { image?: Image };
-        if (!castAsset.image) {
-            return null;
-        }
 
-        return castAsset.image;
+        return castAsset.image ?? null;
     }
 
     async testImage(id: string): Promise<boolean> {
         try {
             const image = await this.getImage(id);
-            return image === null ? false : true;
+            return image !== null;
         }
         catch (error) {
             return false;
