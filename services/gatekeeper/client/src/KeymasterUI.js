@@ -75,9 +75,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [encryptedDID, setEncryptedDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
-    const [imageName, setImageName] = useState('');
     const [selectedImageName, setSelectedImageName] = useState('');
     const [selectedImage, setSelectedImage] = useState('');
+    const [selectedImageDocs, setSelectedImageDocs] = useState('');
 
     useEffect(() => {
         checkForChallenge();
@@ -1016,6 +1016,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const image = await keymaster.getImage(imageName);
             setSelectedImage(image);
+
+            const docs = await keymaster.resolveDID(imageName);
+            setSelectedImageDocs(docs);
         } catch (error) {
             showError(error);
         }
@@ -1552,6 +1555,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         style={{ display: 'none' }}
                                         onChange={handleImageUpload}
                                     />
+                                    <p/>
                                     {imageList &&
                                         <Box>
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -1579,19 +1583,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Button>
                                                 </Grid>
                                             </Grid>
-                                            {selectedImage &&
+                                            <p/>
+                                            {selectedImage && selectedImageDocs &&
                                                 <div className="container">
                                                     <div className="left-pane">
                                                         <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
                                                     </div>
                                                     <div className="right-pane">
-                                                        metadata
                                                         <TableContainer>
                                                             <Table>
                                                                 <TableBody>
                                                                     <TableRow>
                                                                         <TableCell>DID</TableCell>
-                                                                        <TableCell>did</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocument.id}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>CID</TableCell>
@@ -1599,11 +1603,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Created</TableCell>
-                                                                        <TableCell>date</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.created}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Updated</TableCell>
-                                                                        <TableCell>date</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.updated || selectedImageDocs.didDocumentMetadata.created}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Version</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>File size</TableCell>
