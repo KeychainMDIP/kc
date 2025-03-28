@@ -1,56 +1,101 @@
-#!/usr/bin/expect
+#!/usr/bin/expect -f
 
-# Set a timeout (optional)
-set timeout -1
+# Wallet Show Validation Script
+# Purpose: Null value validation for wallet show output
 
-# Start the pawn command
-spawn bash ./kc show-wallet
+# Set timeout for commands
+set timeout 10
 
-# Capture the output
-set output ""
+# Start the CLI program for wallet creation
+spawn bash kc "show-wallet"
 
-# Expect the end of the output or a prompt
-expect {
-    eof {
-        # Get the full output of the command
-        set output $expect_out(buffer)
+# Null value validation procedure
+proc validate_no_null_values {output} {
+    # Initialize validation tracking
+    set validation_passed 1
+    set validation_details {}
+
+    # Check for explicit null values in top-level keys
+    set top_level_keys [list "seed" "counter" "ids" "current"]
+    foreach key $top_level_keys {
+        if {[string first "\"$key\": null" $output] != -1} {
+            lappend validation_details "\n❌ Top-level key '$key' is null"
+            set validation_passed 0
+        } else {
+            lappend validation_details "\n✅ Top-level key '$key' is not null"
+        }
+    }
+
+    # Check nested keys 0
+    set nested_keys_0 [list "mnemonic" "hdkey"]
+    foreach key $nested_keys_0 {
+        if {[string first "\"$key\": null" $output] != -1} {
+            lappend validation_details "\n❌ Nested key '$key' is null"
+            set validation_passed 0
+        } else {
+            lappend validation_details "\n✅ Nested key '$key' is not null"
+        }
+    }
+
+    # Check nested keys 1
+    set nested_keys_1 [list "xpriv" "xpub"]
+    foreach key $nested_keys_1 {
+        if {[string first "\"$key\": null" $output] != -1} {
+            lappend validation_details "\n❌ Nested '$key' is null"
+            set validation_passed 0
+        } else {
+            lappend validation_details "\n✅ Nested '$key' is not null"
+        }
+    }
+
+    # Check nested ids keys
+    set ids_keys [list "did" "account" "index"]
+    foreach key $ids_keys {
+        if {[string first "\"$key\": null" $output] != -1} {
+            lappend validation_details "\n❌ IDs key '$key' is null"
+            set validation_passed 0
+        } else {
+            lappend validation_details "\n✅ IDs key '$key' is not null"
+        }
+    }
+
+    # Print out all validation details
+    puts "\nValidation Details:"
+    foreach detail $validation_details {
+        puts $detail
+    }
+
+    # Final validation summary
+    if {$validation_passed} {
+        puts "\n✅ Validation Passed: No null values detected"
+        return 1
+    } else {
+        puts "\n🔴 Validation Failed: Null values found"
+        return 0
     }
 }
 
-# Debug: Print the raw output to check its format
-puts "Raw output: $output"
+# Capture the full output
+set output ""
+expect {
+    -re ".*" {
+        append output $expect_out(0,string)
+    }
+    timeout {
+        puts "Test failed: Timeout waiting for output."
+        exit 1
+    }
+}
 
-# Sanitize the output by removing any non-printable characters (if necessary)
-# This uses a regular expression to keep only printable characters
-regsub -all {[^[:print:]\n]} $output "" output_clean
+# Print captured output for debugging
+puts "Captured Command Output:\n$output"
 
-# Write the sanitized output to a temporary file
-set tmpfile "/tmp/show_wallet_output.json"
-set f [open $tmpfile "w"]
-puts $f $output_clean
-close $f
+# Validate no null values in the output
+set validation_result [validate_no_null_values $output]
 
-# Debug: Print the contents of the temporary file to check
-set f [open $tmpfile "r"]
-set file_contents [read $f]
-close $f
-
-# Debug: Print file contents to the console to examine
-puts "File contents: $file_contents"
-
-# Optional: Save the contents to another file for inspection
-set debug_file "/tmp/debug_show_wallet_output.json"
-set f [open $debug_file "w"]
-puts $f $file_contents
-close $f
-puts "Debug file created at: $debug_file"
-
-# Parse the JSON file with jq to extract the desired value
-set debug_file "/tmp/debug_show_wallet_output.json"
-set validation [exec "jq -r '.seed.mnemonic' $debug_file"]
-puts "Validation result: $validation"
-# Remove the temporary file (optional)
-#file delete $tmpfile
-
-# Continue the script or exit
-exit 0
+# Exit with appropriate status
+if {$validation_result} {
+    exit 0
+} else {
+    exit 1
+}

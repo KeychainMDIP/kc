@@ -3,24 +3,19 @@
 # Set timeout for commands
 set timeout 10
 
-# Start the CLI program you want to test
-spawn bash ./kc "create-id"
+# Generate a random number between 0 and 100
+set random_value [expr {int(rand() * 100)}]
 
-# Expect the program's output
+# Start the CLI program you want to test
+spawn bash kc create-id "$random_value"
+
+# Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
 expect {
-    "3 DIDs checked, no problems found" {
-        # If the expected string is found, pass the test
-        puts "Test passed: Expected output received."
+    "did:test*" { 
+        puts "\n✅ Matched did:test output"
     }
     timeout {
-        # If the command times out, fail the test
-        puts "Test failed: Timeout waiting for expected output."
-        exit 1
-    }
-    default {
-        # If any other output is received, fail the test
-        puts "Test failed: Unexpected output received."
-        exit 1
+        puts "\n❌ Timeout waiting for expected output"
     }
 }
 

@@ -1,0 +1,33 @@
+#!/usr/bin/expect
+
+# Start the CLI program for showing mnemonic phrase
+spawn bash kc show-mnemonic
+
+# Capture full output
+set output ""
+expect {
+    -re "(.*)\n" {
+        append output $expect_out(1,string) " "
+        exp_continue
+    }
+    eof
+}
+
+# Trim any extra whitespace
+set output [string trim $output]
+
+# Function to count words
+proc count_words {input} {
+    set words [split $input " "]
+    return [llength $words]
+}
+
+# Count words from CLI output
+set word_count [count_words $output]
+
+# Validate word count
+if {$word_count == 12} {
+    puts "\n✅ Valid: The phrase contains exactly 12 words."
+} else {
+    puts "\n🔴 Invalid: The phrase contains $word_count words instead of 12."
+}
