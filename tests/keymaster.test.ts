@@ -5299,6 +5299,60 @@ describe('createImage', () => {
     });
 });
 
+describe('getImage', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the image', async () => {
+        mockFs({});
+
+        // Create a small image buffer using sharp
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+        const cid = await generateCID(mockImage);
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createImage(mockImage);
+        const image = await keymaster.getImage(did);
+
+        expect(image).not.toBeNull();
+        expect(image!.type).toStrictEqual('png');
+        expect(image!.width).toStrictEqual(100);
+        expect(image!.height).toStrictEqual(100);
+        expect(image!.bytes).toStrictEqual(392);
+    });
+
+    it('should return null on invalid did', async () => {
+        mockFs({});
+
+        const did = await keymaster.createId('Bob');
+        const image = await keymaster.getImage(did);
+
+        expect(image).toBeNull();
+    });
+
+    it('should throw an exception on get invalid image', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+
+        try {
+            await keymaster.getImage('bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+    });
+});
+
 describe('testImage', () => {
     afterEach(() => {
         mockFs.restore();

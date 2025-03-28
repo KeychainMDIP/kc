@@ -184,6 +184,14 @@ export interface ViewPollResult {
     results?: PollResults;
 }
 
+export interface Image {
+    cid: string;
+    type: string;
+    width: number;
+    height: number;
+    bytes: number;
+}
+
 export default class Keymaster {
     private gatekeeper: GatekeeperInterface;
     private db: WalletBase;
@@ -766,13 +774,10 @@ export default class Keymaster {
         return this.createAsset(data, options);
     }
 
-    async getImage(id: string): Promise<unknown | null> {
+    async getImage(id: string): Promise<Image | null> {
         const asset = await this.resolveAsset(id);
-        if (!asset) {
-            return null;
-        }
 
-        const castAsset = asset as { image?: unknown };
+        const castAsset = asset as { image?: Image };
         if (!castAsset.image) {
             return null;
         }
