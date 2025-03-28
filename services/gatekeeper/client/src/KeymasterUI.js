@@ -1325,8 +1325,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 style={{ width: '300px' }}
                                                 value={registry}
                                                 fullWidth
+                                                displayEmpty
                                                 onChange={(event) => setRegistry(event.target.value)}
                                             >
+                                                <MenuItem value="" disabled>
+                                                    Select registry
+                                                </MenuItem>
                                                 {registries.map((registry, index) => (
                                                     <MenuItem value={registry} key={index}>
                                                         {registry}
@@ -1409,8 +1413,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 style={{ width: '300px' }}
                                                 value={registry}
                                                 fullWidth
+                                                displayEmpty
                                                 onChange={(event) => setRegistry(event.target.value)}
                                             >
+                                                <MenuItem value="" disabled>
+                                                    Select registry
+                                                </MenuItem>
                                                 {registries.map((registry, index) => (
                                                     <MenuItem value={registry} key={index}>
                                                         {registry}
@@ -1570,12 +1578,50 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         Show Image
                                                     </Button>
                                                 </Grid>
-                                                <Grid item>
-                                                    {selectedImage && `Showing: ${selectedImage.cid}`}
-                                                </Grid>
                                             </Grid>
                                             {selectedImage &&
-                                                <img src={`/api/v1/cas/data/${selectedImage.cid}`} />
+                                                <div className="container">
+                                                    <div className="left-pane">
+                                                        <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
+                                                    </div>
+                                                    <div className="right-pane">
+                                                        metadata
+                                                        <TableContainer>
+                                                            <Table>
+                                                                <TableBody>
+                                                                    <TableRow>
+                                                                        <TableCell>DID</TableCell>
+                                                                        <TableCell>did</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>CID</TableCell>
+                                                                        <TableCell>{selectedImage.cid}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Created</TableCell>
+                                                                        <TableCell>date</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Updated</TableCell>
+                                                                        <TableCell>date</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>File size</TableCell>
+                                                                        <TableCell>{selectedImage.bytes} bytes</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Image size</TableCell>
+                                                                        <TableCell>{selectedImage.width}x{selectedImage.height}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Image type</TableCell>
+                                                                        <TableCell>{selectedImage.type}</TableCell>
+                                                                    </TableRow>
+                                                                </TableBody>
+                                                            </Table>
+                                                        </TableContainer>
+                                                    </div>
+                                                </div>
                                             }
                                         </Box>
                                     }
@@ -1753,8 +1799,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             style={{ width: '300px' }}
                                                             value={registry}
                                                             fullWidth
+                                                            displayEmpty
                                                             onChange={(event) => setRegistry(event.target.value)}
                                                         >
+                                                            <MenuItem value="" disabled>
+                                                                Select registry
+                                                            </MenuItem>
                                                             {registries.map((registry, index) => (
                                                                 <MenuItem value={registry} key={index}>
                                                                     {registry}
@@ -1930,8 +1980,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             style={{ width: '300px' }}
                                                             value={registry}
                                                             fullWidth
+                                                            displayEmpty
                                                             onChange={(event) => setRegistry(event.target.value)}
                                                         >
+                                                            <MenuItem value="" disabled>
+                                                                Select registry
+                                                            </MenuItem>
                                                             {registries.map((registry, index) => (
                                                                 <MenuItem value={registry} key={index}>
                                                                     {registry}
@@ -1973,8 +2027,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         style={{ width: '300px' }}
                                         value={registry}
                                         fullWidth
+                                        displayEmpty
                                         onChange={(event) => setRegistry(event.target.value)}
                                     >
+                                        <MenuItem value="" disabled>
+                                            Select registry
+                                        </MenuItem>
                                         {registries.map((registry, index) => (
                                             <MenuItem value={registry} key={index}>
                                                 {registry}
