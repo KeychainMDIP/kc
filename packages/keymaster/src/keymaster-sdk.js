@@ -746,11 +746,12 @@ export default class KeymasterClient {
         }
     }
 
-    async createImage(data) {
+    async createImage(data, options = {}) {
         try {
             const response = await axios.post(`${this.API}/images`, data, {
                 headers: {
-                    'Content-Type': 'application/octet-stream'
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify(options), // Pass options as a custom header
                 }
             });
             return response.data.did;

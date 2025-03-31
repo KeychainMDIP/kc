@@ -4091,7 +4091,10 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
 v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
-        const did = await keymaster.createImage(data);
+        const headers = req.headers;
+        const options = headers['x-options'] ? JSON.parse(headers['x-options']) : {};
+        const did = await keymaster.createImage(data, options);
+
         res.json({ did });
     } catch (error) {
         res.status(500).send(error.toString());

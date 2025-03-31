@@ -978,7 +978,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const fileInput = event.target; // Reference to the input element
             const file = fileInput.files[0];
-            
+
             if (!file) return;
 
             // Reset the input value to allow selecting the same file again
@@ -1010,7 +1010,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     refreshImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    alert(`Error processing image: ${error.message}`);
+                    alert(`Error processing image: ${error}`);
                 }
             };
 
