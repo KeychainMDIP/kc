@@ -4060,6 +4060,8 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  * /images:
  *   post:
  *     summary: Upload an image and create a DID for it.
+ *     description: >
+ *       Uploads an image as binary data and creates a DID for it. Additional options can be passed via the `X-Options` header.
  *     requestBody:
  *       required: true
  *       content:
@@ -4068,6 +4070,15 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  *             type: string
  *             format: binary
  *       description: The image data to store as a DID asset.
+ *     parameters:
+ *       - in: header
+ *         name: X-Options
+ *         required: false
+ *         schema:
+ *           type: string
+ *           description: >
+ *             A JSON string containing additional options for the image creation process.
+ *             Example: `{"registry":"local","validUntil":"2025-12-31T23:59:59Z"}`
  *     responses:
  *       200:
  *         description: The DID created for the uploaded image.
@@ -4102,6 +4113,58 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
     }
 });
 
+/**
+ * @swagger
+ * /images/{id}:
+ *   get:
+ *     summary: Retrieve an image by its DID.
+ *     description: >
+ *       Fetches the image data and metadata associated with the specified DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to retrieve.
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the image data and metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 image:
+ *                   type: object
+ *                   description: The image data and metadata.
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       description: The MIME type of the image (e.g., "image/png").
+ *                     width:
+ *                       type: integer
+ *                       description: The width of the image in pixels.
+ *                     height:
+ *                       type: integer
+ *                       description: The height of the image in pixels.
+ *                     bytes:
+ *                       type: integer
+ *                       description: The size of the image in bytes.
+ *                     cid:
+ *                       type: string
+ *                       description: The Content Identifier (CID) of the image.
+ *       404:
+ *         description: Image not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating the image was not found.
+ */
 v1router.get('/images/:id', async (req, res) => {
     try {
         const image = await keymaster.getImage(req.params.id);
@@ -4111,6 +4174,42 @@ v1router.get('/images/:id', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /images/{id}/test:
+ *   post:
+ *     summary: Test if the specified image is valid.
+ *     description: >
+ *       Checks whether the image associated with the given DID is valid or meets specific criteria.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to test.
+ *     responses:
+ *       200:
+ *         description: The result of the test.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 test:
+ *                   type: boolean
+ *                   description: `true` if the image is valid, otherwise `false`.
+ *       400:
+ *         description: Invalid request or test criteria not met.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the test failed.
+ */
 v1router.post('/images/:id/test', async (req, res) => {
     try {
         const test = await keymaster.testImage(req.params.id);
