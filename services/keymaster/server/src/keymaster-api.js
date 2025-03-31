@@ -4198,7 +4198,7 @@ v1router.get('/images/:id', async (req, res) => {
  *               properties:
  *                 test:
  *                   type: boolean
- *                   description: `true` if the image is valid, otherwise `false`.
+ *                   description: true if the image is valid, otherwise `false`.
  *       400:
  *         description: Invalid request or test criteria not met.
  *         content:
