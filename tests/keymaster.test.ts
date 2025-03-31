@@ -4,11 +4,13 @@ import sharp from 'sharp';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster, {
+    EncryptedMessage
+} from '@mdip/keymaster';
+import {
     ChallengeResponse,
-    EncryptedMessage,
     Poll,
     VerifiableCredential
-} from '@mdip/keymaster';
+} from '@mdip/keymaster/types';
 import {
     EncryptedWallet,
     Seed,

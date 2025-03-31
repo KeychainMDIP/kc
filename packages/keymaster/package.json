@@ -8,7 +8,10 @@
       "import": "./dist/keymaster.js",
       "types": "./dist/types/keymaster.d.ts"
     },
-    "./client": "./src/keymaster-sdk.js",
+    "./client": {
+      "import": "./dist/keymaster-sdk.js",
+      "types": "./dist/types/keymaster-sdk.d.ts"
+    },
     "./wallet/json": {
       "import": "./dist/db/json.js",
       "types": "./dist/types/db/json.d.ts"

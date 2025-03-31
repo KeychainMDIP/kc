@@ -12,9 +12,25 @@ import {
     Operation,
 } from '@mdip/gatekeeper/types';
 import {
+    Challenge,
+    ChallengeResponse,
+    CheckWalletResult,
+    CreateAssetOptions,
+    CreateResponseOptions,
+    EncryptOptions,
+    FixWalletResult,
+    Group,
+    IDInfo,
+    IssueCredentialsOptions,
+    KeymasterInterface,
+    Poll,
+    PollResults,
+    Signature,
+    StoredWallet,
+    VerifiableCredential,
+    ViewPollResult,
     WalletBase,
     WalletFile,
-    IDInfo, StoredWallet
 } from './types.js';
 import {
     Cipher,
@@ -34,94 +50,12 @@ const DefaultSchema = {
     ]
 };
 
-export interface Signature {
-    signer?: string;
-    signed: string;
-    hash: string;
-    value: string;
-}
-
 export interface KeymasterOptions {
     gatekeeper: GatekeeperInterface;
     wallet: WalletBase;
     cipher: Cipher;
     defaultRegistry?: string;
     maxNameLength?: number;
-}
-
-export interface CheckWalletResult {
-    checked: number;
-    invalid: number;
-    deleted: number;
-}
-
-export interface FixWalletResult {
-    idsRemoved: number;
-    ownedRemoved: number;
-    heldRemoved: number;
-    namesRemoved: number;
-}
-
-export interface CreateAssetOptions {
-    registry?: string;
-    controller?: string;
-    validUntil?: string
-}
-
-export interface EncryptOptions {
-    encryptForSender?: boolean;
-    includeHash?: boolean;
-    registry?: string;
-    validUntil?: string;
-}
-
-export interface CreateResponseOptions {
-    registry?: string;
-    validUntil?: string;
-    retries?: number;
-    delay?: number;
-}
-
-export interface VerifiableCredential {
-    "@context": string[];
-    type: string[];
-    issuer: string;
-    validFrom: string;
-    validUntil?: string;
-    credentialSubject?: {
-        id: string;
-    };
-    credential?: Record<string, unknown> | null;
-    signature?: Signature;
-}
-
-export interface IssueCredentialsOptions {
-    schema?: string;
-    subject?: string;
-    registry?: string;
-    validFrom?: string;
-    validUntil?: string;
-    credential?: Record<string, unknown>;
-}
-
-export interface Challenge {
-    credentials?: {
-        schema: string;
-        issuers?: string[];
-    }[];
-}
-
-export interface ChallengeResponse {
-    challenge: string;
-    credentials: {
-        vc: string;
-        vp: string;
-    }[];
-    requested: number;
-    fulfilled: number;
-    match: boolean;
-    vps?: unknown[];
-    responder?: string;
 }
 
 export interface EncryptedMessage {
@@ -136,54 +70,6 @@ interface PossiblySigned {
     signature?: Signature;
 }
 
-export interface Group {
-    name: string;
-    members: string[];
-}
-
-export interface PollResults {
-    tally: Array<{
-        vote: number;
-        option: string;
-        count: number;
-    }>;
-    ballots?: Array<{
-        ballot: string;
-        received: string;
-        voter: string;
-        vote: number;
-        option: string;
-    }>;
-    votes?: {
-        eligible: number;
-        received: number;
-        pending: number;
-    };
-    final?: boolean;
-}
-
-export interface Poll {
-    type: string;
-    version: number;
-    description: string;
-    roster: string;
-    options: string[];
-    deadline: string;
-    ballots?: Record<string, { ballot: string; received: string }>;
-    results?: PollResults;
-}
-
-export interface ViewPollResult {
-    description: string;
-    options: string[];
-    deadline: string;
-    isOwner: boolean;
-    isEligible: boolean;
-    voteExpired: boolean;
-    hasVoted: boolean;
-    results?: PollResults;
-}
-
 export interface Image {
     cid: string;
     type: string;
@@ -192,7 +78,7 @@ export interface Image {
     bytes: number;
 }
 
-export default class Keymaster {
+export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
     private db: WalletBase;
     private cipher: Cipher;
@@ -242,12 +128,18 @@ export default class Keymaster {
         return wallet;
     }
 
-    async saveWallet(wallet: StoredWallet, overwrite = true): Promise<boolean> {
+    async saveWallet(
+        wallet: StoredWallet,
+        overwrite = true
+    ): Promise<boolean> {
         // TBD validate wallet before saving
         return this.db.saveWallet(wallet, overwrite);
     }
 
-    async newWallet(mnemonic?: string, overwrite = false): Promise<WalletFile> {
+    async newWallet(
+        mnemonic?: string,
+        overwrite = false
+    ): Promise<WalletFile> {
         let wallet: WalletFile;
 
         try {
@@ -637,7 +529,10 @@ export default class Keymaster {
         }
     }
 
-    didMatch(did1: string, did2: string): boolean {
+    didMatch(
+        did1: string,
+        did2: string
+    ): boolean {
         const suffix1 = did1.split(':').pop();
         const suffix2 = did2.split(':').pop();
 
@@ -711,7 +606,10 @@ export default class Keymaster {
         return null;
     }
 
-    async createAsset(data: unknown, options: CreateAssetOptions = {}): Promise<string> {
+    async createAsset(
+        data: unknown,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
         let { registry = this.defaultRegistry, controller, validUntil } = options;
 
         if (validUntil) {
@@ -752,7 +650,10 @@ export default class Keymaster {
         return did;
     }
 
-    async createImage(buffer: Buffer, options: CreateAssetOptions = {}): Promise<string> {
+    async createImage(
+        buffer: Buffer,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
         let metadata;
 
         try {
@@ -890,7 +791,10 @@ export default class Keymaster {
         }
     }
 
-    async addSignature<T extends object>(obj: T, controller?: string): Promise<T & { signature: Signature }> {
+    async addSignature<T extends object>(
+        obj: T,
+        controller?: string
+    ): Promise<T & { signature: Signature }> {
         if (obj == null) {
             throw new InvalidParameterError('obj');
         }
@@ -1009,7 +913,10 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async removeFromOwned(did: string, owner: string): Promise<boolean> {
+    async removeFromOwned(
+        did: string,
+        owner: string
+    ): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner);
         if (!id.owned) {
@@ -1068,7 +975,10 @@ export default class Keymaster {
         throw new UnknownIDError();
     }
 
-    async resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument> {
+    async resolveDID(
+        did: string,
+        options?: ResolveDIDOptions
+    ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
         return this.gatekeeper.resolveDID(actualDid, options);
     }
@@ -1083,7 +993,10 @@ export default class Keymaster {
         return null;
     }
 
-    async updateAsset(did: string, data: Record<string, unknown>): Promise<boolean> {
+    async updateAsset(
+        did: string,
+        data: Record<string, unknown>
+    ): Promise<boolean> {
         const doc = await this.resolveDID(did);
 
         doc.didDocumentData = data;
@@ -1096,7 +1009,10 @@ export default class Keymaster {
         return id.owned || [];
     }
 
-    validateName(name: string, wallet?: WalletFile) {
+    validateName(
+        name: string,
+        wallet?: WalletFile
+    ) {
         if (typeof name !== 'string' || !name.trim()) {
             throw new InvalidParameterError('name must be a non-empty string');
         }
@@ -1124,7 +1040,10 @@ export default class Keymaster {
         return name;
     }
 
-    async createId(name: string, options: { registry?: string } = {}): Promise<string> {
+    async createId(
+        name: string,
+        options: { registry?: string } = {}
+    ): Promise<string> {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
@@ -1188,7 +1107,10 @@ export default class Keymaster {
         return this.saveWallet(wallet);
     }
 
-    async renameId(id: string, name: string): Promise<boolean> {
+    async renameId(
+        id: string,
+        name: string
+    ): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         name = this.validateName(name);
@@ -1321,7 +1243,10 @@ export default class Keymaster {
         return wallet.names || {};
     }
 
-    async addName(name: string, did: string): Promise<boolean> {
+    async addName(
+        name: string,
+        did: string
+    ): Promise<boolean> {
         const wallet = await this.loadWallet();
 
         if (!wallet.names) {
@@ -1633,7 +1558,10 @@ export default class Keymaster {
     }
 
     private async findMatchingCredential(
-        credential: { schema: string; issuers?: string[] }
+        credential: {
+            schema: string;
+            issuers?: string[]
+        }
     ): Promise<string | undefined> {
         const id = await this.fetchIdInfo();
 
@@ -1674,7 +1602,8 @@ export default class Keymaster {
     }
 
     async createResponse(
-        challengeDID: string, options: CreateResponseOptions = {}
+        challengeDID: string,
+        options: CreateResponseOptions = {}
     ): Promise<string> {
         let { retries = 0, delay = 1000 } = options;
 
@@ -1884,7 +1813,10 @@ export default class Keymaster {
         return castAsset.group;
     }
 
-    async addGroupMember(groupId: string, memberId: string): Promise<boolean> {
+    async addGroupMember(
+        groupId: string,
+        memberId: string
+    ): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
 
@@ -1926,7 +1858,10 @@ export default class Keymaster {
         return this.updateAsset(groupDID, { group });
     }
 
-    async removeGroupMember(groupId: string, memberId: string): Promise<boolean> {
+    async removeGroupMember(
+        groupId: string,
+        memberId: string
+    ): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
         const group = await this.getGroup(groupDID);
@@ -1955,7 +1890,10 @@ export default class Keymaster {
         return this.updateAsset(groupDID, { group });
     }
 
-    async testGroup(groupId: string, memberId?: string): Promise<boolean> {
+    async testGroup(
+        groupId: string,
+        memberId?: string
+    ): Promise<boolean> {
         try {
             const group = await this.getGroup(groupId);
 
@@ -2033,7 +1971,13 @@ export default class Keymaster {
         return template;
     }
 
-    async createSchema(schema?: unknown, options: { registry?: string; validUntil?: string } = {}): Promise<string> {
+    async createSchema(
+        schema?: unknown,
+        options: {
+            registry?: string,
+            validUntil?: string
+        } = {}
+    ): Promise<string> {
         if (!schema) {
             schema = DefaultSchema;
         }
@@ -2065,7 +2009,10 @@ export default class Keymaster {
         return castAsset.schema;
     }
 
-    async setSchema(id: string, schema: unknown): Promise<boolean> {
+    async setSchema(
+        id: string,
+        schema: unknown
+    ): Promise<boolean> {
         if (!this.validateSchema(schema)) {
             throw new InvalidParameterError('schema');
         }

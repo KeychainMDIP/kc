@@ -24,8 +24,9 @@ const config = {
         '^@mdip/ipfs/helia$': '<rootDir>/packages/ipfs/src/helia-client.ts',
         '^@mdip/ipfs/utils$': '<rootDir>/packages/ipfs/src/utils.ts',
         '^@mdip/keymaster$': '<rootDir>/packages/keymaster/src/keymaster.ts',
+        '^@mdip/keymaster/client$': '<rootDir>/packages/keymaster/src/keymaster-sdk.ts',
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
-        '^\\./typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
+        '^@mdip/keymaster/wallet/typeGuards$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
     },
     testPathIgnorePatterns: [
         "/node_modules/",
