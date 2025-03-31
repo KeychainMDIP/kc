@@ -760,4 +760,24 @@ export default class KeymasterClient {
             throwError(error);
         }
     }
+
+    async getImage(id) {
+        try {
+            const response = await axios.get(`${this.API}/images/${id}`);
+            return response.data.image;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testImage(id) {
+        try {
+            const response = await axios.post(`${this.API}/images/${id}/test`);
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
 }

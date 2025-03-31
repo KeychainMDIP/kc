@@ -4101,6 +4101,24 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
     }
 });
 
+v1router.get('/images/:id', async (req, res) => {
+    try {
+        const image = await keymaster.getImage(req.params.id);
+        res.json({ image });
+    } catch (error) {
+        res.status(404).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/images/:id/test', async (req, res) => {
+    try {
+        const test = await keymaster.testImage(req.params.id);
+        res.json({ test });
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
