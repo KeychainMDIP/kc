@@ -20,3 +20,18 @@
 .App-header {
   margin-left: 25px;
 }
+
+.container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.left-pane,
+.right-pane {
+  width: 50%;
+  padding: 16px;
+  box-sizing: border-box;
+}

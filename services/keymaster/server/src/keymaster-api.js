@@ -27,6 +27,7 @@ const DIDNotFound = { error: 'DID not found' };
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, '../../client/build')));
 
+let gatekeeper;
 let keymaster;
 let serverReady = false;
 
@@ -4119,6 +4120,50 @@ v1router.post('/images/:id/test', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /cas/data/{cid}:
+ *   get:
+ *     summary: Retrieve data from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the data to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the data
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Data not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/cas/data/:cid', async (req, res) => {
+    try {
+        const response = await gatekeeper.getData(req.params.cid);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
@@ -4190,7 +4235,7 @@ async function initWallet() {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    const gatekeeper = new GatekeeperClient();
+    gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
