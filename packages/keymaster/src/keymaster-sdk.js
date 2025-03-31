@@ -746,14 +746,35 @@ export default class KeymasterClient {
         }
     }
 
-    async createImage(data) {
+    async createImage(data, options = {}) {
         try {
             const response = await axios.post(`${this.API}/images`, data, {
                 headers: {
-                    'Content-Type': 'application/octet-stream'
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify(options), // Pass options as a custom header
                 }
             });
             return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getImage(id) {
+        try {
+            const response = await axios.get(`${this.API}/images/${id}`);
+            return response.data.image;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testImage(id) {
+        try {
+            const response = await axios.post(`${this.API}/images/${id}/test`);
+            return response.data.test;
         }
         catch (error) {
             throwError(error);

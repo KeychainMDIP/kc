@@ -974,10 +974,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function handleImageUpload(event) {
+    async function uploadImage(event) {
         try {
-            const file = event.target.files[0];
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
             if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
 
             // Read the file as a binary buffer
             const reader = new FileReader();
@@ -986,10 +991,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 try {
                     const arrayBuffer = e.target.result;
                     const buffer = Buffer.from(arrayBuffer);
-                    const name = file.name.slice(0, 32);
-
-                    // Call the Keymaster API to upload the image
                     const did = await keymaster.createImage(buffer, { registry });
+
+                    const nameList = await keymaster.listNames();
+                    // Names have a 32-character limit. Truncating to 26 characters and appending a number if needed.
+                    let name = file.name.slice(0, 26);
+                    let count = 1;
+
+                    while (name in nameList) {
+                        name = `${file.name.slice(0, 26)} (${count++})`;
+                    }
+
                     await keymaster.addName(name, did);
                     alert(`Image uploaded successfully! DID: ${did}`);
 
@@ -998,7 +1010,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     refreshImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    alert(`Error processing image: ${error.message}`);
+                    alert(`Error processing image: ${error}`);
                 }
             };
 
@@ -1319,7 +1331,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
+                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName || !registry}>
                                                 Create Schema
                                             </Button>
                                         </Grid>
@@ -1407,7 +1419,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName}>
+                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName || !registry}>
                                                 Create Group
                                             </Button>
                                         </Grid>
@@ -1554,7 +1566,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         id="imageUpload"
                                         accept="image/*"
                                         style={{ display: 'none' }}
-                                        onChange={handleImageUpload}
+                                        onChange={uploadImage}
                                     />
                                     <p />
                                     {imageList &&
@@ -1980,7 +1992,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage}>
+                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
                                                             Encrypt Message
                                                         </Button>
                                                     </Grid>
@@ -2052,7 +2064,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             </Grid>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
+                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName || !registry}>
                                         Create
                                     </Button>
                                 </Grid>

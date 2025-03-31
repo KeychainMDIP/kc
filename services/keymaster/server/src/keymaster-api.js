@@ -27,6 +27,7 @@ const DIDNotFound = { error: 'DID not found' };
 // Serve the React frontend
 app.use(express.static(path.join(__dirname, '../../client/build')));
 
+let gatekeeper;
 let keymaster;
 let serverReady = false;
 
@@ -4059,6 +4060,8 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  * /images:
  *   post:
  *     summary: Upload an image and create a DID for it.
+ *     description: >
+ *       Uploads an image as binary data and creates a DID for it. Additional options can be passed via the `X-Options` header.
  *     requestBody:
  *       required: true
  *       content:
@@ -4067,6 +4070,15 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  *             type: string
  *             format: binary
  *       description: The image data to store as a DID asset.
+ *     parameters:
+ *       - in: header
+ *         name: X-Options
+ *         required: false
+ *         schema:
+ *           type: string
+ *           description: >
+ *             A JSON string containing additional options for the image creation process.
+ *             Example: `{"registry":"local","validUntil":"2025-12-31T23:59:59Z"}`
  *     responses:
  *       200:
  *         description: The DID created for the uploaded image.
@@ -4091,10 +4103,163 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
 v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
-        const did = await keymaster.createImage(data);
+        const headers = req.headers;
+        const options = headers['x-options'] ? JSON.parse(headers['x-options']) : {};
+        const did = await keymaster.createImage(data, options);
+
         res.json({ did });
     } catch (error) {
         res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /images/{id}:
+ *   get:
+ *     summary: Retrieve an image by its DID.
+ *     description: >
+ *       Fetches the image data and metadata associated with the specified DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to retrieve.
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the image data and metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 image:
+ *                   type: object
+ *                   description: The image data and metadata.
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       description: The MIME type of the image (e.g., "image/png").
+ *                     width:
+ *                       type: integer
+ *                       description: The width of the image in pixels.
+ *                     height:
+ *                       type: integer
+ *                       description: The height of the image in pixels.
+ *                     bytes:
+ *                       type: integer
+ *                       description: The size of the image in bytes.
+ *                     cid:
+ *                       type: string
+ *                       description: The Content Identifier (CID) of the image.
+ *       404:
+ *         description: Image not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating the image was not found.
+ */
+v1router.get('/images/:id', async (req, res) => {
+    try {
+        const image = await keymaster.getImage(req.params.id);
+        res.json({ image });
+    } catch (error) {
+        res.status(404).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /images/{id}/test:
+ *   post:
+ *     summary: Test if the specified image is valid.
+ *     description: >
+ *       Checks whether the image associated with the given DID is valid or meets specific criteria.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to test.
+ *     responses:
+ *       200:
+ *         description: The result of the test.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 test:
+ *                   type: boolean
+ *                   description: true if the image is valid, otherwise `false`.
+ *       400:
+ *         description: Invalid request or test criteria not met.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the test failed.
+ */
+v1router.post('/images/:id/test', async (req, res) => {
+    try {
+        const test = await keymaster.testImage(req.params.id);
+        res.json({ test });
+    } catch (error) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /cas/data/{cid}:
+ *   get:
+ *     summary: Retrieve data from the CAS (Content Addressable Storage)
+ *     parameters:
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The CID (Content Identifier) of the data to retrieve
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the data
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Data not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               example: "Not Found"
+ *       500:
+ *         description: Internal Server Error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/cas/data/:cid', async (req, res) => {
+    try {
+        const response = await gatekeeper.getData(req.params.cid);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error) {
+        res.status(404).send(error.toString());
     }
 });
 
@@ -4169,7 +4334,7 @@ async function initWallet() {
 const port = config.keymasterPort;
 
 app.listen(port, async () => {
-    const gatekeeper = new GatekeeperClient();
+    gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
