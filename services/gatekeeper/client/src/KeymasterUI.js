@@ -1319,7 +1319,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName}>
+                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName || !registry}>
                                                 Create Schema
                                             </Button>
                                         </Grid>
@@ -1407,7 +1407,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName}>
+                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName || !registry}>
                                                 Create Group
                                             </Button>
                                         </Grid>
@@ -1980,7 +1980,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage}>
+                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
                                                             Encrypt Message
                                                         </Button>
                                                     </Grid>
@@ -2052,7 +2052,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             </Grid>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                 <Grid item>
-                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName}>
+                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName || !registry}>
                                         Create
                                     </Button>
                                 </Grid>
