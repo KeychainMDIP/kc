@@ -2236,3 +2236,66 @@ describe('createImage', () => {
         }
     });
 });
+
+describe('getImage', () => {
+    const mockImageId = 'image1';
+    const mockImage = { cid: 'mockCID', height: 100, width: 100, type: 'png' };
+
+    it('should get image', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.images}/${mockImageId}`)
+            .reply(200, { image: mockImage });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const schema = await keymaster.getImage(mockImageId);
+
+        expect(schema).toStrictEqual(mockImage);
+    });
+
+    it('should throw exception on getImage server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.images}/${mockImageId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getImage(mockImageId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('testImage', () => {
+    const mockImageId = 'image1';
+
+    it('should test image', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.images}/${mockImageId}/test`)
+            .reply(200, { test: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.testImage(mockImageId);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on testSchema server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.images}/${mockImageId}/test`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.testImage(mockImageId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
