@@ -479,6 +479,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function changeName(oldName, did) {
+        try {
+            const newName = window.prompt("Rename DID:");
+
+            if (newName && newName !== oldName) {
+                await keymaster.addName(newName, did);
+                await keymaster.removeName(oldName);
+                refreshNames();
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function resolveName(name) {
         try {
             const docs = await keymaster.resolveDID(name);
@@ -1242,6 +1256,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableCell>
                                                     <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
                                                         Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => changeName(name, did)}>
+                                                        Rename
                                                     </Button>
                                                 </TableCell>
                                                 <TableCell>
