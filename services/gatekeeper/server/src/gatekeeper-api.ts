@@ -3,24 +3,35 @@ import morgan from 'morgan';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { EventEmitter } from 'events';
+
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
+import {CheckDIDsResult, ResolveDIDOptions} from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import config from './config.js';
 
-import { EventEmitter } from 'events';
 EventEmitter.defaultMaxListeners = 100;
 
 const dbName = 'mdip';
-const db = (config.db === 'sqlite') ? new DbSqlite(dbName)
-    : (config.db === 'mongodb') ? new DbMongo(dbName)
-        : (config.db === 'redis') ? new DbRedis(dbName)
-            : (config.db === 'json') ? new DbJsonCache(dbName)
-                : (config.db === 'json-cache') ? new DbJsonCache(dbName)
-                    : null;
+const db = (() => {
+    switch (config.db) {
+    case 'sqlite':     return new DbSqlite(dbName);
+    case 'mongodb':    return new DbMongo(dbName);
+    case 'redis':      return new DbRedis(dbName);
+    case 'json':
+    case 'json-cache': return new DbJsonCache(dbName);
+    default:           return null;
+    }
+})();
+
+if (!db) {
+    throw new Error(`Unsupported DB type: ${config.db}`);
+}
+
 await db.start();
 
 const ipfs = await KuboClient.create({
@@ -30,7 +41,12 @@ const ipfs = await KuboClient.create({
     chatty: true,
 });
 
-const gatekeeper = new Gatekeeper({ db, ipfs, didPrefix: config.didPrefix, registries: config.registries });
+const gatekeeper = new Gatekeeper({
+    db,
+    ipfs,
+    didPrefix: config.didPrefix,
+    registries: config.registries
+});
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
@@ -63,7 +79,7 @@ let serverReady = false;
 v1router.get('/ready', async (req, res) => {
     try {
         res.json(serverReady);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -86,7 +102,7 @@ v1router.get('/ready', async (req, res) => {
 v1router.get('/version', async (req, res) => {
     try {
         res.json(1);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -175,7 +191,7 @@ v1router.get('/status', async (req, res) => {
     try {
         const status = await getStatus();
         res.json(status);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -343,7 +359,7 @@ v1router.post('/did', async (req, res) => {
             result = await gatekeeper.updateDID(operation);
         }
         res.json(result);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -512,28 +528,32 @@ v1router.post('/did', async (req, res) => {
  */
 v1router.get('/did/:did', async (req, res) => {
     try {
-        const options = {};
+        const options: ResolveDIDOptions = {};
+        const { atTime, atVersion, confirm, verify } = req.query;
 
-        if (req.query.atTime) {
-            options.atTime = req.query.atTime;
+        if (typeof atTime === 'string') {
+            options.atTime = atTime;
         }
 
-        if (req.query.atVersion) {
-            options.atVersion = parseInt(req.query.atVersion);
+        if (typeof atVersion === 'string') {
+            const parsed = parseInt(atVersion, 10);
+            if (!isNaN(parsed)) {
+                options.atVersion = parsed;
+            }
         }
 
-        if (req.query.confirm) {
-            options.confirm = req.query.confirm === 'true';
+        if (confirm) {
+            options.confirm = confirm === 'true';
         }
 
-        if (req.query.verify) {
-            options.verify = req.query.verify === 'true';
+        if (verify) {
+            options.verify = verify === 'true';
         }
 
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
-    } catch (error) {
-        return res.status(404).send({ error: 'DID not found' });
+    } catch (error: any) {
+        res.status(404).send({ error: 'DID not found' });
     }
 });
 
@@ -600,7 +620,7 @@ v1router.post('/did/:did', async (req, res) => {
         const operation = req.body;
         const ok = await gatekeeper.updateDID(operation);
         res.json(ok);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -659,7 +679,7 @@ v1router.delete('/did/:did', async (req, res) => {
         const operation = req.body;
         const ok = await gatekeeper.deleteDID(operation);
         res.json(ok);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -738,7 +758,7 @@ v1router.post('/dids/', async (req, res) => {
     try {
         const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -779,7 +799,7 @@ v1router.post('/dids/remove', async (req, res) => {
         const dids = req.body;
         const response = await gatekeeper.removeDIDs(dids);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -853,7 +873,7 @@ v1router.post('/dids/export', async (req, res) => {
         const { dids } = req.body;
         const response = await gatekeeper.exportDIDs(dids);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -956,7 +976,7 @@ v1router.post('/dids/import', async (req, res) => {
         const dids = req.body;
         const response = await gatekeeper.importDIDs(dids);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1036,7 +1056,7 @@ v1router.post('/batch/export', async (req, res) => {
         const { dids } = req.body;
         const response = await gatekeeper.exportBatch(dids);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1133,7 +1153,7 @@ v1router.post('/batch/import', async (req, res) => {
         const batch = req.body;
         const response = await gatekeeper.importBatch(batch);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1209,7 +1229,7 @@ v1router.get('/queue/:registry', async (req, res) => {
     try {
         const queue = await gatekeeper.getQueue(req.params.registry);
         res.json(queue);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1284,7 +1304,7 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
         const events = req.body;
         const queue = await gatekeeper.clearQueue(req.params.registry, events);
         res.json(queue);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1315,7 +1335,7 @@ v1router.get('/registries', async (req, res) => {
     try {
         const registries = await gatekeeper.listRegistries();
         res.json(registries);
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
     }
@@ -1345,7 +1365,7 @@ v1router.get('/db/reset', async (req, res) => {
     try {
         await gatekeeper.resetDb();
         res.json(true);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1387,7 +1407,7 @@ v1router.get('/db/verify', async (req, res) => {
     try {
         const response = await gatekeeper.verifyDb();
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1441,7 +1461,7 @@ v1router.post('/events/process', async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1480,7 +1500,7 @@ v1router.post('/cas/json', async (req, res) => {
     try {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1522,7 +1542,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
     try {
         const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1561,7 +1581,7 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
     try {
         const response = await gatekeeper.addText(req.body);
         res.send(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1603,7 +1623,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
     try {
         const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1644,7 +1664,7 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
         const data = req.body;
         const response = await gatekeeper.addData(data);
         res.send(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1688,7 +1708,7 @@ v1router.get('/cas/data/:cid', async (req, res) => {
         const response = await gatekeeper.getData(req.params.cid);
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).send(error.toString());
     }
 });
@@ -1710,13 +1730,13 @@ async function gcLoop() {
         console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
         await checkDids();
     }
-    catch (error) {
+    catch (error: any) {
         console.error(`Error in DID garbage collection: ${error}`);
     }
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
 
-let didCheck;
+let didCheck: CheckDIDsResult;
 
 async function checkDids() {
     console.time('checkDIDs');
@@ -1726,7 +1746,7 @@ async function checkDids() {
 
 async function getStatus() {
     return {
-        uptimeSeconds: Math.round((new Date() - startTime) / 1000),
+        uptimeSeconds: Math.round((Date.now() - startTime.getTime()) / 1000),
         dids: didCheck,
         memoryUsage: process.memoryUsage()
     };
@@ -1780,7 +1800,7 @@ async function reportStatus() {
     console.log('------------------------------------');
 }
 
-function formatDuration(seconds) {
+function formatDuration(seconds: number) {
     const secPerMin = 60;
     const secPerHour = secPerMin * 60;
     const secPerDay = secPerHour * 24;
@@ -1829,7 +1849,7 @@ function formatDuration(seconds) {
     return duration;
 }
 
-function formatBytes(bytes) {
+function formatBytes(bytes: number) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 Byte';
     const i = Math.floor(Math.log(bytes) / Math.log(1024));

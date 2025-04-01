@@ -19,7 +19,7 @@ const gatekeeperOptions = {
             title: 'Gatekeeper API'
         }
     },
-    apis: ['services/gatekeeper/server/src/gatekeeper-api.js']
+    apis: ['services/gatekeeper/server/src/gatekeeper-api.ts']
 };
 
 const keymasterOptions = {
@@ -31,7 +31,7 @@ const keymasterOptions = {
             title: 'Keymaster API'
         }
     },
-    apis: ['services/keymaster/server/src/keymaster-api.js']
+    apis: ['services/keymaster/server/src/keymaster-api.ts']
 };
 
 const gatekeeperSpec = swaggerJsdoc(gatekeeperOptions);

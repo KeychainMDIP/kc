@@ -15,6 +15,10 @@
     "./utils": {
       "import": "./dist/utils.js",
       "types": "./dist/types/utils.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types/types.d.js",
+      "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {
