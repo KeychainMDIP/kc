@@ -2263,7 +2263,7 @@ describe('getImage', () => {
             await keymaster.getImage(mockImageId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2294,7 +2294,7 @@ describe('testImage', () => {
             await keymaster.testImage(mockImageId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });

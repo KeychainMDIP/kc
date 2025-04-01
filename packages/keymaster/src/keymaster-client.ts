@@ -21,6 +21,7 @@ import {
 } from './types.js'
 
 import axios, {AxiosError} from 'axios';
+import {Image} from "./keymaster.js";
 
 const VERSION = '/api/v1';
 
@@ -867,7 +868,8 @@ export default class KeymasterClient implements KeymasterInterface {
     }
 
     async createImage(
-        data: Buffer
+        data: Buffer,
+        options: CreateAssetOptions = {}
     ): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/images`, data, {
@@ -883,7 +885,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getImage(id) {
+    async getImage(id: string): Promise<Image | null> {
         try {
             const response = await axios.get(`${this.API}/images/${id}`);
             return response.data.image;
@@ -893,7 +895,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async testImage(id) {
+    async testImage(id: string): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/images/${id}/test`);
             return response.data.test;

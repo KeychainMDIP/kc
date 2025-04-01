@@ -9,8 +9,8 @@
       "types": "./dist/types/keymaster.d.ts"
     },
     "./client": {
-      "import": "./dist/keymaster-sdk.js",
-      "types": "./dist/types/keymaster-sdk.d.ts"
+      "import": "./dist/keymaster-client.js",
+      "types": "./dist/types/keymaster-client.d.ts"
     },
     "./wallet/json": {
       "import": "./dist/db/json.js",
