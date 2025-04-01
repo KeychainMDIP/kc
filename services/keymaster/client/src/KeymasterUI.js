@@ -483,7 +483,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const newName = window.prompt("Rename DID:");
 
-            if (newName) {
+            if (newName !== oldName) {
                 await keymaster.addName(newName, did);
                 await keymaster.removeName(oldName);
                 refreshNames();
