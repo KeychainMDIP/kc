@@ -1,6 +1,7 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
+import {Seed, WalletFile} from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
@@ -47,6 +48,27 @@ const mockConsole = {
     time: () => { },
     timeEnd: () => { },
 }
+
+const mockCredential = {
+    "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://www.w3.org/ns/credentials/examples/v2"
+    ],
+    "type": [
+        "VerifiableCredential",
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        "did:test:z3v8AuacbUAvrNRex7q3dm2HJU5hQSpSp7YEcaCUcX1vhCfk5EY"
+    ],
+    // eslint-disable-next-line sonarjs/no-duplicate-string
+    "issuer": "did:test:z3v8AuaUaK93ip2KsM5KGsWXWqgXFSNQxRkcMReXe4LheX5CkHe",
+    "validFrom": "2025-03-28T10:57:47.055Z",
+    "credentialSubject": {
+        "id": "did:test:z3v8AuaUaK93ip2KsM5KGsWXWqgXFSNQxRkcMReXe4LheX5CkHe"
+    },
+    "credential": {
+        "email": "TBD"
+    }
+};
 
 describe('isReady', () => {
     it('should return ready flag', async () => {
@@ -130,14 +152,14 @@ describe('loadWallet', () => {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
 });
 
 describe('saveWallet', () => {
-    const mockWallet = { seed: 1 };
+    const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
     it('should save wallet', async () => {
         nock(KeymasterURL)
@@ -161,7 +183,7 @@ describe('saveWallet', () => {
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -192,7 +214,7 @@ describe('newWallet', () => {
             await keymaster.newWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -221,7 +243,7 @@ describe('backupWallet', () => {
             await keymaster.backupWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -252,7 +274,7 @@ describe('recoverWallet', () => {
             await keymaster.recoverWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -281,7 +303,7 @@ describe('checkWallet', () => {
             await keymaster.checkWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -310,7 +332,7 @@ describe('fixWallet', () => {
             await keymaster.fixWallet();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -341,7 +363,7 @@ describe('decryptMnemonic', () => {
             await keymaster.decryptMnemonic();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -372,7 +394,7 @@ describe('listRegistries', () => {
             await keymaster.listRegistries();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -403,7 +425,7 @@ describe('getCurrentId', () => {
             await keymaster.getCurrentId();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -434,7 +456,7 @@ describe('setCurrentId', () => {
             await keymaster.setCurrentId(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -465,7 +487,7 @@ describe('listIds', () => {
             await keymaster.listIds();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -499,7 +521,7 @@ describe('encryptMessage', () => {
             await keymaster.encryptMessage(mockMessage, mockReceiver, mockOptions);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -531,7 +553,7 @@ describe('decryptMessage', () => {
             await keymaster.decryptMessage(mockDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -565,7 +587,7 @@ describe('encryptJSON', () => {
             await keymaster.encryptJSON(mockJSON, mockReceiver, mockOptions);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -597,7 +619,7 @@ describe('decryptJSON', () => {
             await keymaster.decryptJSON(mockDid);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -630,7 +652,7 @@ describe('createId', () => {
             await keymaster.createId(mockName, mockOptions);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -661,7 +683,7 @@ describe('removeId', () => {
             await keymaster.removeId(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -693,7 +715,7 @@ describe('renameId', () => {
             await keymaster.renameId(mockOldName, mockNewName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -724,7 +746,7 @@ describe('backupId', () => {
             await keymaster.backupId(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -755,7 +777,7 @@ describe('recoverId', () => {
             await keymaster.recoverId(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -786,7 +808,7 @@ describe('listNames', () => {
             await keymaster.listNames();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -815,10 +837,11 @@ describe('addName', () => {
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
 
         try {
+            // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.addName(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -850,7 +873,7 @@ describe('getName', () => {
             await keymaster.getName(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -881,7 +904,7 @@ describe('removeName', () => {
             await keymaster.removeName(mockName);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -904,11 +927,11 @@ describe('resolveDID', () => {
 
     it('should resolve specified DID', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}?version=1&confirm=true`)
+            .get(`${Endpoints.did}/${mockDID}?confirm=true`)
             .reply(200, { docs: mockDocument });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const document = await keymaster.resolveDID(mockDID, { version: 1, confirm: true });
+        const document = await keymaster.resolveDID(mockDID, { confirm: true });
 
         expect(document).toStrictEqual(mockDocument);
     });
@@ -924,7 +947,7 @@ describe('resolveDID', () => {
             await keymaster.resolveDID(mockDID);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -956,7 +979,7 @@ describe('createAsset', () => {
             await keymaster.createAsset(mockAsset);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -987,7 +1010,7 @@ describe('listAssets', () => {
             await keymaster.listAssets();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1019,7 +1042,7 @@ describe('resolveAsset', () => {
             await keymaster.resolveAsset(mockAssetId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1051,7 +1074,7 @@ describe('updateAsset', () => {
             await keymaster.updateAsset(mockAssetId, mockAsset);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1082,7 +1105,7 @@ describe('createChallenge', () => {
             await keymaster.createChallenge();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1114,7 +1137,7 @@ describe('createResponse', () => {
             await keymaster.createResponse(mockChallenge);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1146,7 +1169,7 @@ describe('verifyResponse', () => {
             await keymaster.verifyResponse(mockResponse);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1178,7 +1201,7 @@ describe('createGroup', () => {
             await keymaster.createGroup(mockGroup);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1210,7 +1233,7 @@ describe('getGroup', () => {
             await keymaster.getGroup(mockGroupId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1218,7 +1241,7 @@ describe('getGroup', () => {
 
 describe('addGroupMember', () => {
     const mockGroupId = 'group1';
-    const mockMember = { id: 'member1', name: 'Test Member' };
+    const mockMember = 'member1';
 
     it('should add group member', async () => {
         nock(KeymasterURL)
@@ -1242,7 +1265,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(mockGroupId, mockMember);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1274,7 +1297,7 @@ describe('removeGroupMember', () => {
             await keymaster.removeGroupMember(mockGroupId, mockMemberId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1306,7 +1329,7 @@ describe('testGroup', () => {
             await keymaster.testGroup(mockGroupId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1349,7 +1372,7 @@ describe('listGroups', () => {
             await keymaster.listGroups();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1381,7 +1404,7 @@ describe('createSchema', () => {
             await keymaster.createSchema(mockSchema);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1413,7 +1436,7 @@ describe('getSchema', () => {
             await keymaster.getSchema(mockSchemaId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1445,7 +1468,7 @@ describe('setSchema', () => {
             await keymaster.setSchema(mockSchemaId, mockSchema);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1476,7 +1499,7 @@ describe('testSchema', () => {
             await keymaster.testSchema(mockSchemaId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1519,7 +1542,7 @@ describe('listSchemas', () => {
             await keymaster.listSchemas();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1550,14 +1573,15 @@ describe('testAgent', () => {
             await keymaster.testAgent(mockAgentId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
 });
 
 describe('bindCredential', () => {
-    const mockCredential = { id: 'cred1', data: 'some data' };
+    const credentialDID = 'did:test:z3v8AuacbUAvrNRex7q3dm2HJU5hQSpSp7YEcaCUcX1vhCfk5EY';
+    const userDID = 'did:test:z3v8AuaUaK93ip2KsM5KGsWXWqgXFSNQxRkcMReXe4LheX5CkHe';
 
     it('should bind credential', async () => {
         nock(KeymasterURL)
@@ -1565,7 +1589,7 @@ describe('bindCredential', () => {
             .reply(200, { credential: mockCredential });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const credential = await keymaster.bindCredential();
+        const credential = await keymaster.bindCredential(credentialDID, userDID);
 
         expect(credential).toStrictEqual(mockCredential);
     });
@@ -1578,17 +1602,35 @@ describe('bindCredential', () => {
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
 
         try {
+            // @ts-expect-error Testing invalid usage, missing args
             await keymaster.bindCredential();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
 });
 
 describe('issueCredential', () => {
-    const mockCredential = { id: 'cred1', data: 'some data' };
+    const mockCredential = {
+        "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://www.w3.org/ns/credentials/examples/v2"
+        ],
+        "type": [
+            "VerifiableCredential",
+            "did:test:z3v8AuacbUAvrNRex7q3dm2HJU5hQSpSp7YEcaCUcX1vhCfk5EY"
+        ],
+        "issuer": "did:test:z3v8AuaUaK93ip2KsM5KGsWXWqgXFSNQxRkcMReXe4LheX5CkHe",
+        "validFrom": "2025-03-28T10:57:47.055Z",
+        "credentialSubject": {
+            "id": "did:test:z3v8AuaUaK93ip2KsM5KGsWXWqgXFSNQxRkcMReXe4LheX5CkHe"
+        },
+        "credential": {
+            "email": "TBD"
+        }
+    };
     const mockDID = 'did:mock:credential';
 
     it('should issue credential', async () => {
@@ -1613,7 +1655,7 @@ describe('issueCredential', () => {
             await keymaster.issueCredential(mockCredential);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1621,7 +1663,6 @@ describe('issueCredential', () => {
 
 describe('updateCredential', () => {
     const mockCredentialId = 'cred1';
-    const mockCredential = { id: mockCredentialId, data: 'updated data' };
 
     it('should update credential', async () => {
         nock(KeymasterURL)
@@ -1645,7 +1686,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(mockCredentialId, mockCredential);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1676,7 +1717,7 @@ describe('listCredentials', () => {
             await keymaster.listCredentials();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1707,7 +1748,7 @@ describe('acceptCredential', () => {
             await keymaster.acceptCredential(mockDID);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1739,7 +1780,7 @@ describe('getCredential', () => {
             await keymaster.getCredential(mockCredentialId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1770,7 +1811,7 @@ describe('removeCredential', () => {
             await keymaster.removeCredential(mockCredentialId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1801,7 +1842,7 @@ describe('publishCredential', () => {
             await keymaster.publishCredential(mockCredentialId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1832,7 +1873,7 @@ describe('unpublishCredential', () => {
             await keymaster.unpublishCredential(mockCredentialId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1863,7 +1904,7 @@ describe('listIssued', () => {
             await keymaster.listIssued();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1894,7 +1935,7 @@ describe('revokeCredential', () => {
             await keymaster.revokeCredential(mockCredentialId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1925,14 +1966,25 @@ describe('pollTemplate', () => {
             await keymaster.pollTemplate();
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
 });
 
 describe('createPoll', () => {
-    const mockPoll = { id: 'poll1', question: 'Test Poll' };
+    const mockPoll = {
+        "type": "poll",
+        "version": 1,
+        "description": "What is this poll about?",
+        "roster": "DID of the eligible voter group",
+        "options": [
+            "yes",
+            "no",
+            "abstain"
+        ],
+        "deadline": "2025-04-04T10:06:49.417Z"
+    };
     const mockDID = 'did:mock:poll';
 
     it('should create poll', async () => {
@@ -1957,7 +2009,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(mockPoll);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -1989,7 +2041,7 @@ describe('getPoll', () => {
             await keymaster.getPoll(mockPollId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2021,7 +2073,7 @@ describe('viewPoll', () => {
             await keymaster.viewPoll(mockPollId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2029,7 +2081,7 @@ describe('viewPoll', () => {
 
 describe('votePoll', () => {
     const mockPollId = 'poll1';
-    const mockVote = { choice: 'option1' };
+    const mockVote = 1;
     const mockDID = 'did:mock:vote';
 
     it('should vote on poll', async () => {
@@ -2054,15 +2106,14 @@ describe('votePoll', () => {
             await keymaster.votePoll(mockPollId, mockVote);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
 });
 
 describe('updatePoll', () => {
-    const mockPollId = 'poll1';
-    const mockBallot = { id: mockPollId, question: 'Updated Poll' };
+    const mockBallot = "did:test:z3v8AuaZUTzAPHj4oUwYqjHuhBr9HczoLsfT4hZtx4iBkpsFKbL";
 
     it('should update poll', async () => {
         nock(KeymasterURL)
@@ -2086,7 +2137,7 @@ describe('updatePoll', () => {
             await keymaster.updatePoll(mockBallot);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2117,7 +2168,7 @@ describe('publishPoll', () => {
             await keymaster.publishPoll(mockPollId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2148,7 +2199,7 @@ describe('unpublishPoll', () => {
             await keymaster.unpublishPoll(mockPollId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2180,7 +2231,7 @@ describe('createImage', () => {
             await keymaster.createImage(mockImage);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2212,7 +2263,7 @@ describe('getImage', () => {
             await keymaster.getImage(mockImageId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });
@@ -2243,7 +2294,7 @@ describe('testImage', () => {
             await keymaster.testImage(mockImageId);
             throw new ExpectedExceptionError();
         }
-        catch (error) {
+        catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
     });

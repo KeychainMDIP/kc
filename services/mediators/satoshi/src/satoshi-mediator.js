@@ -6,7 +6,7 @@ import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
-import { isValidDID } from '@mdip/common/utils';
+import { isValidDID } from '@mdip/ipfs/utils';
 import { InvalidParameterError } from '@mdip/common/errors';
 
 const REGISTRY = config.chain;
