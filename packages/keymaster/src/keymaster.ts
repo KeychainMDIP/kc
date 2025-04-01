@@ -186,7 +186,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed!.mnemonic);
     }
 
-    async checkWallet(): Promise<CheckWalletResult>  {
+    async checkWallet(): Promise<CheckWalletResult> {
         const wallet = await this.loadWallet();
 
         let checked = 0;
@@ -726,7 +726,7 @@ export default class Keymaster implements KeymasterInterface {
             cipher_receiver,
         }
 
-        return await this.createAsset({encrypted}, options);
+        return await this.createAsset({ encrypted }, options);
     }
 
     async decryptMessage(did: string): Promise<string> {
@@ -902,25 +902,6 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async transferDID(did: string, controller: string): Promise<boolean> {
-        const doc = await this.resolveDID(did);
-
-        if (doc.didDocument!.controller === controller) {
-            return true;
-        }
-
-        const isAgent = await this.testAgent(controller);
-
-        if (!isAgent) {
-            throw new InvalidParameterError('controller');
-        }
-
-        doc.didDocument!.controller = controller;
-
-        // TBD !!! figure out whether to call removeFromOwned here
-        return this.updateDID(doc);
-    }
-
     async addToOwned(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = wallet.ids[wallet.current!];
@@ -1020,6 +1001,32 @@ export default class Keymaster implements KeymasterInterface {
 
         doc.didDocumentData = data;
 
+        return this.updateDID(doc);
+    }
+
+    async transferAsset(
+        did: string,
+        controller: string
+    ): Promise<boolean> {
+        const doc = await this.resolveDID(did);
+
+        if (doc.mdip?.type !== 'asset') {
+            throw new InvalidParameterError('did');
+        }
+
+        if (doc.didDocument!.controller === controller) {
+            return true;
+        }
+
+        const isAgent = await this.testAgent(controller);
+
+        if (!isAgent) {
+            throw new InvalidParameterError('controller');
+        }
+
+        doc.didDocument!.controller = controller;
+
+        // TBD !!! figure out whether to call removeFromOwned here
         return this.updateDID(doc);
     }
 
@@ -1441,7 +1448,7 @@ export default class Keymaster implements KeymasterInterface {
                         issued.push(did);
                     }
                 }
-                catch (error) {}
+                catch (error) { }
             }
         }
 
@@ -2254,7 +2261,7 @@ export default class Keymaster implements KeymasterInterface {
             for (let voter in poll.ballots) {
                 const ballot = poll.ballots[voter];
                 const decrypted = await this.decryptJSON(ballot.ballot);
-                const vote = (decrypted as {vote: number}).vote;
+                const vote = (decrypted as { vote: number }).vote;
                 if (results.ballots) {
                     results.ballots.push({
                         ...ballot,
