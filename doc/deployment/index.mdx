@@ -56,7 +56,7 @@ The MDIP [Integration Guide](https://github.com/KeychainMDIP/kc/blob/ab36a8a7b3b
 All the MDIP components illustrated above are composed together using Docker Compose in the official ['kc' v.0.3-beta](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta) release. The release provides a simple [`start-node`](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/start-node) script that will compile, dockerize, and launch all required MDIP components. The convenience of this script will be preserved as we explore configuration and deployment options below.
 
 Each MDIP component can also be manually launched using native nodeJS commands. The dockerfile for each component will reveal the particular shell command being executed within the Docker environment. Using [Dockerfile.gatekeeper](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/Dockerfile.gatekeeper) as an example, we see the command used to launch the Gatekeeper API:
-`CMD ["node", "server/src/gatekeeper-api.js"]`
+`CMD ["node", "server/dist/gatekeeper-api.js"]
 
 While perhaps not optimal for a production environment, developement environments can be deployed with all the required components on a single moderately-sized server. The statistics below demonstrate a typical development environment:
 
