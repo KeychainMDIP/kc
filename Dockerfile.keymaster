@@ -15,9 +15,9 @@ RUN npm run build
 COPY services/keymaster ./keymaster/
 
 RUN cd keymaster/client && npm ci && npm run build
-RUN cd keymaster/server && npm ci
+RUN cd keymaster/server && npm ci && npm run build
 
 WORKDIR /app/keymaster
 
 # Run...
-CMD ["node", "server/src/keymaster-api.js"]
+CMD ["node", "server/dist/keymaster-api.js"]

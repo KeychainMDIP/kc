@@ -15,9 +15,9 @@ RUN npm run build
 COPY services/gatekeeper ./gatekeeper/
 
 RUN cd gatekeeper/client && npm ci && npm run build
-RUN cd gatekeeper/server && npm ci
+RUN cd gatekeeper/server && npm ci && npm run build
 
 WORKDIR /app/gatekeeper
 
 # Run...
-CMD ["node", "server/src/gatekeeper-api.js"]
+CMD ["node", "server/dist/gatekeeper-api.js"]

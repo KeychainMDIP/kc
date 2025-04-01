@@ -6,7 +6,7 @@ import {
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
-import IPFSClient from '@mdip/ipfs/helia';
+import { IPFSClient } from '@mdip/ipfs/types';
 import {
     GatekeeperDb,
     GatekeeperInterface,
@@ -65,10 +65,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     private isProcessingEvents: boolean
     private ipfs: IPFSClient
     private cipher: CipherNode
-    private readonly didPrefix: string
+    readonly didPrefix: string
     private readonly maxOpBytes: number
     private readonly maxQueueSize: number
-    private supportedRegistries: string[]
+    supportedRegistries: string[]
 
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
