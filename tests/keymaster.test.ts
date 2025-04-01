@@ -1630,6 +1630,71 @@ describe('revokeDID', () => {
     });
 });
 
+describe('transferDID', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should transfer an asset DID', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.transferDID(dataDid, alice);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(alice);
+    });
+
+    it('should not update if controller does not change', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.transferDID(dataDid, bob);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(bob);
+        expect(doc.didDocumentMetadata!.version).toBe(1);
+    });
+
+    it('should throw an exception on invalid did', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.transferDID('mockDID', bob);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Unknown ID');
+        }
+    });
+
+    it('should throw an exception on invalid controller', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        try {
+            await keymaster.transferDID(dataDid, dataDid);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: controller');
+        }
+    });
+});
+
 describe('removeFromOwned', () => {
 
     afterEach(() => {

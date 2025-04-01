@@ -902,6 +902,25 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
+    async transferDID(did: string, controller: string): Promise<boolean> {
+        const doc = await this.resolveDID(did);
+
+        if (doc.didDocument!.controller === controller) {
+            return true;
+        }
+
+        const isAgent = await this.testAgent(controller);
+
+        if (!isAgent) {
+            throw new InvalidParameterError('controller');
+        }
+
+        doc.didDocument!.controller = controller;
+
+        // TBD !!! figure out whether to call removeFromOwned here
+        return this.updateDID(doc);
+    }
+
     async addToOwned(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = wallet.ids[wallet.current!];
