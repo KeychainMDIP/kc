@@ -3500,6 +3500,53 @@ v1router.put('/assets/:id', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /assets/{id}/transfer:
+ *   post:
+ *     summary: Transfer ownership of an asset.
+ *     description: >
+ *       Transfers the ownership of the specified asset (identified by its DID or name) to a new controller.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID or name of the asset to transfer.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               controller:
+ *                 type: string
+ *                 description: The DID of the new controller to transfer ownership to.
+ *             required:
+ *               - controller
+ *     responses:
+ *       200:
+ *         description: Indicates whether the transfer was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the transfer was successful, otherwise `false`.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 v1router.post('/assets/:id/transfer', async (req, res) => {
     try {
         const { controller } = req.body;

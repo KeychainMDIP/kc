@@ -1122,12 +1122,11 @@ program
     });
 
 program
-    .command('transfer-asset <did> <controller>')
+    .command('transfer-asset <id> <controller>')
     .description('Transfer asset to a new controller')
-    .action(async (did, controller) => {
+    .action(async (id, controller) => {
         try {
-            console.log(`Transferring ${did} to ${controller}`);
-            const ok = await keymaster.transferAsset(did, controller);
+            const ok = await keymaster.transferAsset(id, controller);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         } catch (error) {
             console.error(error.error || error);
