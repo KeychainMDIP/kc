@@ -1540,7 +1540,7 @@ describe('transferAsset', () => {
             await keymaster.transferAsset(bob, bob);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: asset');
+            expect(error.message).toBe('Invalid parameter: id');
         }
     });
 

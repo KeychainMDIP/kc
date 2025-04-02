@@ -1005,13 +1005,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async transferAsset(
-        asset: string,
+        id: string,
         controller: string
     ): Promise<boolean> {
-        const assetDoc = await this.resolveDID(asset);
+        const assetDoc = await this.resolveDID(id);
 
         if (assetDoc.mdip?.type !== 'asset') {
-            throw new InvalidParameterError('asset');
+            throw new InvalidParameterError('id');
         }
 
         if (assetDoc.didDocument!.controller === controller) {

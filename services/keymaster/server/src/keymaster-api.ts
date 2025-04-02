@@ -3500,6 +3500,16 @@ v1router.put('/assets/:id', async (req, res) => {
     }
 });
 
+v1router.post('/assets/:id/transfer', async (req, res) => {
+    try {
+        const { controller } = req.body;
+        const ok = await keymaster.transferAsset(req.params.id, controller);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 /**
  * @swagger
  * /templates/poll:
