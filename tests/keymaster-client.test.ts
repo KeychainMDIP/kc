@@ -1,7 +1,7 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import {Seed, WalletFile} from "@mdip/keymaster/types";
+import { Seed, WalletFile } from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
@@ -731,6 +731,22 @@ describe('backupId', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const ok = await keymaster.backupId(mockName);
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should backup current ID', async () => {
+
+        nock(KeymasterURL)
+            .get(Endpoints.ids_current)
+            .reply(200, { current: mockName });
+
+        nock(KeymasterURL)
+            .post(`${Endpoints.ids}/${mockName}/backup`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.backupId();
 
         expect(ok).toStrictEqual(true);
     });
@@ -1693,7 +1709,7 @@ describe('updateCredential', () => {
 });
 
 describe('listCredentials', () => {
-    const mockCredentials = [ 'cred1', 'cred2', 'cred3' ];
+    const mockCredentials = ['cred1', 'cred2', 'cred3'];
 
     it('should list credentials', async () => {
         nock(KeymasterURL)
@@ -1880,7 +1896,7 @@ describe('unpublishCredential', () => {
 });
 
 describe('listIssued', () => {
-    const mockCredentials = [ 'cred1', 'cred2', 'cred3' ];
+    const mockCredentials = ['cred1', 'cred2', 'cred3'];
 
     it('should list issued credentials', async () => {
         nock(KeymasterURL)

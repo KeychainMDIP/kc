@@ -1181,24 +1181,25 @@ export default class Keymaster implements KeymasterInterface {
         return this.saveWallet(wallet);
     }
 
-    async backupId(controller?: string): Promise<boolean> {
-        // Backs up current ID if name is missing
-        const id = await this.fetchIdInfo(controller);
+    async backupId(id?: string): Promise<boolean> {
+        // Backs up current ID if id is not provided
         const wallet = await this.loadWallet();
+        const name = id || wallet.current;
+        const idInfo = await this.fetchIdInfo(name, wallet);
         const keypair = await this.hdKeyPair();
         const data = {
-            name: controller || wallet.current,
-            id: id,
+            name: name,
+            id: idInfo,
         };
         const msg = JSON.stringify(data);
         const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-        const doc = await this.resolveDID(id.did);
+        const doc = await this.resolveDID(idInfo.did);
         const registry = doc.mdip?.registry;
         if (!registry) {
             throw new InvalidParameterError('no registry found for agent DID');
         }
 
-        const vaultDid = await this.createAsset({ backup: backup }, { registry, controller });
+        const vaultDid = await this.createAsset({ backup: backup }, { registry, controller: name });
 
         if (doc.didDocumentData) {
             const docData = doc.didDocumentData as { vault: string };

@@ -335,6 +335,9 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async backupId(id?: string): Promise<boolean> {
         try {
+            if (!id) {
+                id = await this.getCurrentId();
+            }
             const response = await axios.post(`${this.API}/ids/${id}/backup`);
             return response.data.ok;
         }
