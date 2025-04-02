@@ -1472,7 +1472,7 @@ describe('transferAsset', () => {
         mockFs.restore();
     });
 
-    it('should transfer an asset DID', async () => {
+    it('should transfer an asset DID to an agent DID', async () => {
         mockFs({});
 
         const alice = await keymaster.createId('Alice');
@@ -1481,6 +1481,22 @@ describe('transferAsset', () => {
         const dataDid = await keymaster.createAsset(mockAnchor);
 
         const ok = await keymaster.transferAsset(dataDid, alice);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(alice);
+    });
+
+    it('should transfer an asset name to an agent name', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        await keymaster.addName('asset', dataDid);
+
+        const ok = await keymaster.transferAsset('asset', 'Alice');
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
@@ -1524,7 +1540,7 @@ describe('transferAsset', () => {
             await keymaster.transferAsset(bob, bob);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: did');
+            expect(error.message).toBe('Invalid parameter: asset');
         }
     });
 

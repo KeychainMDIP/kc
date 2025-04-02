@@ -1005,29 +1005,29 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async transferAsset(
-        did: string,
+        asset: string,
         controller: string
     ): Promise<boolean> {
-        const doc = await this.resolveDID(did);
+        const assetDoc = await this.resolveDID(asset);
 
-        if (doc.mdip?.type !== 'asset') {
-            throw new InvalidParameterError('did');
+        if (assetDoc.mdip?.type !== 'asset') {
+            throw new InvalidParameterError('asset');
         }
 
-        if (doc.didDocument!.controller === controller) {
+        if (assetDoc.didDocument!.controller === controller) {
             return true;
         }
 
-        const isAgent = await this.testAgent(controller);
+        const agentDoc = await this.resolveDID(controller);
 
-        if (!isAgent) {
+        if (agentDoc.mdip?.type !== 'agent') {
             throw new InvalidParameterError('controller');
         }
 
-        doc.didDocument!.controller = controller;
+        assetDoc.didDocument!.controller = agentDoc.didDocument!.id;
 
         // TBD !!! figure out whether to call removeFromOwned here
-        return this.updateDID(doc);
+        return this.updateDID(assetDoc);
     }
 
     async listAssets(owner?: string) {
