@@ -186,7 +186,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed!.mnemonic);
     }
 
-    async checkWallet(): Promise<CheckWalletResult>  {
+    async checkWallet(): Promise<CheckWalletResult> {
         const wallet = await this.loadWallet();
 
         let checked = 0;
@@ -539,8 +539,12 @@ export default class Keymaster implements KeymasterInterface {
         return (suffix1 === suffix2);
     }
 
-    async fetchIdInfo(id?: string): Promise<IDInfo> {
-        const wallet = await this.loadWallet();
+    async fetchIdInfo(id?: string, wallet?: WalletFile): Promise<IDInfo> {
+        // Callers should pass in the wallet if they are going to modify and save it later
+        if (!wallet) {
+            wallet = await this.loadWallet();
+        }
+
         let idInfo = null;
 
         if (id) {
@@ -726,7 +730,7 @@ export default class Keymaster implements KeymasterInterface {
             cipher_receiver,
         }
 
-        return await this.createAsset({encrypted}, options);
+        return await this.createAsset({ encrypted }, options);
     }
 
     async decryptMessage(did: string): Promise<string> {
@@ -902,9 +906,12 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async addToOwned(did: string): Promise<boolean> {
+    async addToOwned(
+        did: string,
+        owner?: string
+    ): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current!];
+        const id = await this.fetchIdInfo(owner, wallet);
         const owned = new Set(id.owned);
 
         owned.add(did);
@@ -918,7 +925,7 @@ export default class Keymaster implements KeymasterInterface {
         owner: string
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner);
+        const id = await this.fetchIdInfo(owner, wallet);
         if (!id.owned) {
             return false;
         }
@@ -1002,6 +1009,47 @@ export default class Keymaster implements KeymasterInterface {
         doc.didDocumentData = data;
 
         return this.updateDID(doc);
+    }
+
+    async transferAsset(
+        id: string,
+        controller: string
+    ): Promise<boolean> {
+        const assetDoc = await this.resolveDID(id);
+
+        if (assetDoc.mdip?.type !== 'asset') {
+            throw new InvalidParameterError('id');
+        }
+
+        if (assetDoc.didDocument!.controller === controller) {
+            return true;
+        }
+
+        const agentDoc = await this.resolveDID(controller);
+
+        if (agentDoc.mdip?.type !== 'agent') {
+            throw new InvalidParameterError('controller');
+        }
+
+        const assetDID = assetDoc.didDocument!.id;
+        const prevOwner = assetDoc.didDocument!.controller;
+
+        assetDoc.didDocument!.controller = agentDoc.didDocument!.id;
+
+        const ok = await this.updateDID(assetDoc);
+
+        if (ok && assetDID && prevOwner) {
+            await this.removeFromOwned(assetDID, prevOwner);
+
+            try {
+                await this.addToOwned(assetDID, controller);
+            }
+            catch (error) {
+                // New controller is not in our wallet
+            }
+        }
+
+        return ok;
     }
 
     async listAssets(owner?: string) {
@@ -1422,7 +1470,7 @@ export default class Keymaster implements KeymasterInterface {
                         issued.push(did);
                     }
                 }
-                catch (error) {}
+                catch (error) { }
             }
         }
 
@@ -2235,7 +2283,7 @@ export default class Keymaster implements KeymasterInterface {
             for (let voter in poll.ballots) {
                 const ballot = poll.ballots[voter];
                 const decrypted = await this.decryptJSON(ballot.ballot);
-                const vote = (decrypted as {vote: number}).vote;
+                const vote = (decrypted as { vote: number }).vote;
                 if (results.ballots) {
                     results.ballots.push({
                         ...ballot,

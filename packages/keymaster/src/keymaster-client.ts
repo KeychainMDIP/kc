@@ -456,6 +456,16 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async transferAsset(id: string, controller: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/assets/${id}/transfer`, { controller });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async createChallenge(challenge: Challenge = {}, options: { registry?: string; validUntil?: string } = {}) {
         try {
             const response = await axios.post(`${this.API}/challenge`, { challenge, options });

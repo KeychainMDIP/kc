@@ -1466,6 +1466,129 @@ describe('createAsset', () => {
     });
 });
 
+describe('transferAsset', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should transfer an asset DID to an agent DID', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.transferAsset(dataDid, alice);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(alice);
+
+        const assetsAlice = await keymaster.listAssets('Alice');
+        const assetsBob = await keymaster.listAssets('Bob');
+
+        expect(assetsAlice).toStrictEqual([dataDid]);
+        expect(assetsBob).toStrictEqual([]);
+    });
+
+    it('should transfer an asset name to an agent name', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        await keymaster.addName('asset', dataDid);
+
+        const ok = await keymaster.transferAsset('asset', 'Alice');
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(alice);
+
+        const assetsAlice = await keymaster.listAssets('Alice');
+        const assetsBob = await keymaster.listAssets('Bob');
+
+        expect(assetsAlice).toStrictEqual([dataDid]);
+        expect(assetsBob).toStrictEqual([]);
+    });
+
+    it('should not update if controller does not change', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        const ok = await keymaster.transferAsset(dataDid, bob);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.controller).toBe(bob);
+        expect(doc.didDocumentMetadata!.version).toBe(1);
+    });
+
+    it('should throw an exception on invalid did', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.transferAsset('mockDID', bob);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Unknown ID');
+        }
+    });
+
+    it('should throw if did is an agent', async () => {
+        mockFs({});
+
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.transferAsset(bob, bob);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: id');
+        }
+    });
+
+    it('should throw an exception on invalid controller', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        try {
+            await keymaster.transferAsset(dataDid, dataDid);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: controller');
+        }
+    });
+
+    it('should throw an exception if asset not owned by this wallet', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        try {
+            await keymaster.removeId(bob);
+            await keymaster.transferAsset(dataDid, alice);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Unknown ID');
+        }
+    });
+});
+
 describe('listAssets', () => {
 
     afterEach(() => {
@@ -4936,9 +5059,9 @@ describe('checkWallet', () => {
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-        expect(checked).toBe(18);
+        expect(checked).toBe(16);
         expect(invalid).toBe(0);
-        expect(deleted).toBe(6); // 2 credentials mentioned in owned and held and name lists
+        expect(deleted).toBe(4); // 2 credentials mentioned both in held and name lists
     });
 });
 
@@ -5027,7 +5150,7 @@ describe('fixWallet', () => {
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(0);
-        expect(ownedRemoved).toBe(2);
+        expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
     });

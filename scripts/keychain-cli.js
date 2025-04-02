@@ -827,11 +827,24 @@ program
     });
 
 program
-    .command('create-asset-json [file]')
+    .command('create-asset')
+    .description('Create an empty asset')
+    .action(async () => {
+        try {
+            const did = await keymaster.createAsset({});
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('create-asset-json <file>')
     .description('Create an asset from a JSON file')
     .action(async (file) => {
         try {
-            const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
+            const data = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.createAsset(data);
             console.log(did);
         }
@@ -841,7 +854,7 @@ program
     });
 
 program
-    .command('create-asset-image [file]')
+    .command('create-asset-image <file>')
     .description('Create an asset from an image file')
     .action(async (file) => {
         try {
@@ -1104,6 +1117,18 @@ program
             console.timeEnd('total');
         }
         catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('transfer-asset <id> <controller>')
+    .description('Transfer asset to a new controller')
+    .action(async (id, controller) => {
+        try {
+            const ok = await keymaster.transferAsset(id, controller);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        } catch (error) {
             console.error(error.error || error);
         }
     });
