@@ -539,8 +539,11 @@ export default class Keymaster implements KeymasterInterface {
         return (suffix1 === suffix2);
     }
 
-    async fetchIdInfo(id?: string): Promise<IDInfo> {
-        const wallet = await this.loadWallet();
+    async fetchIdInfo(id?: string, wallet?: WalletFile): Promise<IDInfo> {
+        if (!wallet) {
+            wallet = await this.loadWallet();
+        }
+
         let idInfo = null;
 
         if (id) {
@@ -902,9 +905,12 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async addToOwned(did: string): Promise<boolean> {
+    async addToOwned(
+        did: string,
+        owner?: string
+    ): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current!];
+        const id = await this.fetchIdInfo(owner, wallet);
         const owned = new Set(id.owned);
 
         owned.add(did);
@@ -918,7 +924,7 @@ export default class Keymaster implements KeymasterInterface {
         owner: string
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner);
+        const id = await this.fetchIdInfo(owner, wallet);
         if (!id.owned) {
             return false;
         }
@@ -1024,10 +1030,25 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('controller');
         }
 
+        const assetDID = assetDoc.didDocument!.id;
+        const prevOwner = assetDoc.didDocument!.controller;
+
         assetDoc.didDocument!.controller = agentDoc.didDocument!.id;
 
-        // TBD !!! figure out whether to call removeFromOwned here
-        return this.updateDID(assetDoc);
+        const ok = await this.updateDID(assetDoc);
+
+        if (ok && assetDID && prevOwner) {
+            await this.removeFromOwned(assetDID, prevOwner);
+
+            try {
+                const id = await this.fetchIdInfo(controller);
+                //await this.addToOwned(assetDID, id.did);
+            }
+            catch (error) {
+            }
+        }
+
+        return ok;
     }
 
     async listAssets(owner?: string) {

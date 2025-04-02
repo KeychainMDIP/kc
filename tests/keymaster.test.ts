@@ -5030,9 +5030,9 @@ describe('checkWallet', () => {
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
-        expect(checked).toBe(18);
+        expect(checked).toBe(16);
         expect(invalid).toBe(0);
-        expect(deleted).toBe(6); // 2 credentials mentioned in owned and held and name lists
+        expect(deleted).toBe(4); // 2 credentials mentioned both in held and name lists
     });
 });
 
@@ -5121,7 +5121,7 @@ describe('fixWallet', () => {
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(0);
-        expect(ownedRemoved).toBe(2);
+        expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
     });
