@@ -540,6 +540,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async fetchIdInfo(id?: string, wallet?: WalletFile): Promise<IDInfo> {
+        // Callers should pass in the wallet if they are going to modify and save it later
         if (!wallet) {
             wallet = await this.loadWallet();
         }
@@ -1041,10 +1042,10 @@ export default class Keymaster implements KeymasterInterface {
             await this.removeFromOwned(assetDID, prevOwner);
 
             try {
-                const id = await this.fetchIdInfo(controller);
-                //await this.addToOwned(assetDID, id.did);
+                await this.addToOwned(assetDID, controller);
             }
             catch (error) {
+                // New controller is not in our wallet
             }
         }
 

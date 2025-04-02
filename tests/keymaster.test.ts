@@ -1485,6 +1485,12 @@ describe('transferAsset', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocument!.controller).toBe(alice);
+
+        const assetsAlice = await keymaster.listAssets('Alice');
+        const assetsBob = await keymaster.listAssets('Bob');
+
+        expect(assetsAlice).toStrictEqual([dataDid]);
+        expect(assetsBob).toStrictEqual([]);
     });
 
     it('should transfer an asset name to an agent name', async () => {
@@ -1501,6 +1507,12 @@ describe('transferAsset', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocument!.controller).toBe(alice);
+
+        const assetsAlice = await keymaster.listAssets('Alice');
+        const assetsBob = await keymaster.listAssets('Bob');
+
+        expect(assetsAlice).toStrictEqual([dataDid]);
+        expect(assetsBob).toStrictEqual([]);
     });
 
     it('should not update if controller does not change', async () => {
@@ -1556,6 +1568,23 @@ describe('transferAsset', () => {
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: controller');
+        }
+    });
+
+    it('should throw an exception if asset not owned by this wallet', async () => {
+        mockFs({});
+
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+
+        try {
+            await keymaster.removeId(bob);
+            await keymaster.transferAsset(dataDid, alice);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Unknown ID');
         }
     });
 });
