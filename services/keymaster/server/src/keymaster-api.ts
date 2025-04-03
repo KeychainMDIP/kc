@@ -851,7 +851,7 @@ v1router.get('/ids', async (req, res) => {
 
 /**
  * @swagger
- * /ids/:
+ * /ids:
  *   post:
  *     summary: Create a new ID in the wallet.
  *     requestBody:
@@ -892,7 +892,7 @@ v1router.get('/ids', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/ids/', async (req, res) => {
+v1router.post('/ids', async (req, res) => {
     try {
         const { name, options } = req.body;
         const did = await keymaster.createId(name, options);
@@ -3288,7 +3288,7 @@ v1router.post('/keys/verify', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/schemas/:id/template/', async (req, res) => {
+v1router.post('/schemas/:id/template', async (req, res) => {
     try {
         const template = await keymaster.createTemplate(req.params.id);
         res.json({ template });
@@ -3675,7 +3675,7 @@ v1router.get('/templates/poll', async (req, res) => {
 
 /**
  * @swagger
- * /polls/:
+ * /polls:
  *   get:
  *     summary: List polls owned by (or associated with) a given ID.
  *     parameters:
@@ -3707,7 +3707,7 @@ v1router.get('/templates/poll', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.get('/polls/', async (req, res) => {
+v1router.get('/polls', async (req, res) => {
     try {
         const param = typeof req.query.owner === 'string' ? req.query.owner : undefined;
         const polls = await keymaster.listPolls(param);
@@ -3719,7 +3719,7 @@ v1router.get('/polls/', async (req, res) => {
 
 /**
  * @swagger
- * /polls/:
+ * /polls:
  *   post:
  *     summary: Create a new poll.
  *     requestBody:
@@ -3816,7 +3816,7 @@ v1router.get('/polls/', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/polls/', async (req, res) => {
+v1router.post('/polls', async (req, res) => {
     try {
         const { poll, options } = req.body;
         const did = await keymaster.createPoll(poll, options);
