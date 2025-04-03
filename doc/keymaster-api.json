@@ -1026,9 +1026,7 @@
             }
           }
         }
-      }
-    },
-    "/ids/": {
+      },
       "post": {
         "summary": "Create a new ID in the wallet.",
         "requestBody": {
@@ -4419,7 +4417,7 @@
         }
       }
     },
-    "/polls/": {
+    "/polls": {
       "get": {
         "summary": "List polls owned by (or associated with) a given ID.",
         "parameters": [
