@@ -3557,6 +3557,16 @@ v1router.post('/assets/:id/transfer', async (req, res) => {
     }
 });
 
+v1router.post('/assets/:id/clone', async (req, res) => {
+    try {
+        const { options } = req.body;
+        const did = await keymaster.cloneAsset(req.params.id, options);
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 /**
  * @swagger
  * /templates/poll:

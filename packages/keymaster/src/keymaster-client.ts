@@ -429,6 +429,19 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async cloneAsset(
+        id: string,
+        options?: CreateAssetOptions
+    ): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/assets/${id}/clone`, { options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async listAssets(): Promise<string[]> {
         try {
             const response = await axios.get(`${this.API}/assets`);
