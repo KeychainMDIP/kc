@@ -18,7 +18,7 @@ program
 
 program
     .command('create-wallet')
-    .description('Create new wallet (or show existing wallet)')
+    .description('Create a new wallet (or show existing wallet)')
     .action(async () => {
         try {
             const wallet = await keymaster.loadWallet();
@@ -396,27 +396,8 @@ program
     });
 
 program
-    .command('create-schema <file> [name]')
-    .description('Create schema DID from schema file')
-    .action(async (file, name) => {
-        try {
-            const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createSchema(schema);
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
-            console.log(did);
-        }
-        catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
     .command('create-challenge [file] [name]')
-    .description('Create challenge (optionally from a file)')
+    .description('Create a challenge (optionally from a file)')
     .action(async (file, name) => {
         try {
             const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : undefined;
@@ -435,7 +416,7 @@ program
 
 program
     .command('create-challenge-cc <did> [name]')
-    .description('Create challenge from a credential DID')
+    .description('Create a challenge from a credential DID')
     .action(async (credentialDID, name) => {
         try {
             const challenge = { credentials: [{ schema: credentialDID }] };
@@ -632,7 +613,7 @@ program
 
 program
     .command('add-name <name> <did>')
-    .description('Adds a name for a DID')
+    .description('Add a name for a DID')
     .action(async (name, did) => {
         try {
             await keymaster.addName(name, did);
@@ -671,7 +652,7 @@ program
 
 program
     .command('list-names')
-    .description('Lists names of DIDs')
+    .description('List DID names (aliases)')
     .action(async () => {
         try {
             const names = await keymaster.listNames();
@@ -769,7 +750,7 @@ program
 
 program
     .command('create-schema <file> [name]')
-    .description('Create schema from a file')
+    .description('Create a schema from a file')
     .action(async (file, name) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
@@ -960,7 +941,7 @@ program
 
 program
     .command('create-poll-template')
-    .description('Generate a poll template')
+    .description('Create a poll template')
     .action(async () => {
         try {
             const template = await keymaster.pollTemplate();
@@ -973,7 +954,7 @@ program
 
 program
     .command('create-poll <file> [name]')
-    .description('Create poll')
+    .description('Create a poll')
     .action(async (file, name) => {
         try {
             const poll = JSON.parse(fs.readFileSync(file).toString());
