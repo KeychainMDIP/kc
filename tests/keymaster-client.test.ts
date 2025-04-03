@@ -971,7 +971,7 @@ describe('resolveDID', () => {
 
 describe('createAsset', () => {
     const mockAsset = { id: 'asset1', data: 'some data' };
-    const mockDID = 'did:example:123456789abcd';
+    const mockDID = 'did:example:1234567890abcd';
 
     it('should create asset', async () => {
         nock(KeymasterURL)
@@ -1097,7 +1097,7 @@ describe('updateAsset', () => {
 });
 
 describe('cloneAsset', () => {
-    const mockDID = 'did:example:123456789abcd';
+    const mockDID = 'did:example:123456789abcdef';
     const cloneDID = 'did:example:123456789clone';
 
     it('should clone asset', async () => {
@@ -1132,7 +1132,7 @@ describe('transferAsset', () => {
     const mockDID = 'did:example:123456789abcd';
     const controller = 'did:example:controller';
 
-    it('should clone asset', async () => {
+    it('should transfer asset', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.assets}/${mockDID}/transfer`)
             .reply(200, { ok: true });
@@ -1143,7 +1143,7 @@ describe('transferAsset', () => {
         expect(ok).toBe(true);
     });
 
-    it('should throw exception on cloneAsset server error', async () => {
+    it('should throw exception on transferAsset server error', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.assets}/${mockDID}/transfer`)
             .reply(500, ServerError);
