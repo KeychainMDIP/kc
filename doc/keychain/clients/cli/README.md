@@ -86,25 +86,26 @@ Options:
 Commands:
   accept-credential <did> [name]             Save verifiable credential for current ID
   add-group-member <group> <member>          Add a member to a group
-  add-name <name> <did>                      Adds a name for a DID
+  add-name <name> <did>                      Add a name for a DID
   backup-id                                  Backup the current ID to its registry
   backup-wallet-did                          Backup wallet to encrypted DID and seed bank
   backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  create-asset-image [file]                  Create an asset from an image file
-  create-asset-json [file]                   Create an asset from a JSON file
-  create-challenge [file] [name]             Create challenge (optionally from a file)
-  create-challenge-cc <did> [name]           Create challenge from a credential DID
+  clone-asset <id>                           Clone an asset
+  create-asset                               Create an empty asset
+  create-asset-image <file>                  Create an asset from an image file
+  create-asset-json <file>                   Create an asset from a JSON file
+  create-challenge [file] [name]             Create a challenge (optionally from a file)
+  create-challenge-cc <did> [name]           Create a challenge from a credential DID
   create-group <name>                        Create a new group
   create-id <name> [registry]                Create a new decentralized ID
-  create-poll <file> [name]                  Create poll
-  create-poll-template                       Generate a poll template
+  create-poll <file> [name]                  Create a poll
+  create-poll-template                       Create a poll template
   create-response <challenge>                Create a response to a challenge
-  create-schema <file> [name]                Create schema DID from schema file
-  create-schema <file> [name]                Create schema from a file
+  create-schema <file> [name]                Create a schema from a file
   create-schema-template <schema>            Create a template from a schema
-  create-wallet                              Create new wallet (or show existing wallet)
+  create-wallet                              Create a new wallet (or show existing wallet)
   decrypt-did <did>                          Decrypt an encrypted message DID
   decrypt-json <did>                         Decrypt an encrypted JSON DID
   encrypt-file <file> <did>                  Encrypt a file for a DID
@@ -124,7 +125,7 @@ Commands:
   list-groups                                List groups owned by current ID
   list-ids                                   List IDs and show current ID
   list-issued                                List issued credentials
-  list-names                                 Lists names of DIDs
+  list-names                                 List DID names (aliases)
   list-schemas                               List schemas owned by current ID
   perf-test [N]                              Performance test to create N credentials
   publish-credential <did>                   Publish the existence of a credential to the current user manifest
@@ -148,6 +149,7 @@ Commands:
   show-wallet                                Show wallet
   sign-file <file>                           Sign a JSON file
   test-group <group> [member]                Determine if a member is in a group
+  transfer-asset <id> <controller>           Transfer asset to a new controller
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
   update-asset <id> [file]                   Update an asset from a JSON file
