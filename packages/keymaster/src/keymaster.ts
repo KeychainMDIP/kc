@@ -665,11 +665,9 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const assetData = assetDoc.didDocumentData || {};
+        const cloneData = { ...assetData, cloned: assetDoc.didDocument!.id };
 
-        // Add a cloned property to track the origin
-        (assetData as Record<string, unknown>).cloned = assetDoc.didDocument!.id;
-
-        return this.createAsset(assetData, options);
+        return this.createAsset(cloneData, options);
     }
 
     async createImage(
