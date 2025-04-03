@@ -7,11 +7,11 @@ import WarningModal from "./WarningModal";
 import TextInputModal from "./TextInputModal";
 
 function IdentitiesTab() {
-    const [name, setName] = useState("");
+    const [name, setName] = useState<string>("");
     const [warningModal, setWarningModal] = useState<boolean>(false);
     const [removeCalled, setRemoveCalled] = useState<boolean>(false);
-    const [renameModalOpen, setRenameModalOpen] = useState(false);
-    const [recoverModalOpen, setRecoverModalOpen] = useState(false);
+    const [renameModalOpen, setRenameModalOpen] = useState<boolean>(false);
+    const [recoverModalOpen, setRecoverModalOpen] = useState<boolean>(false);
     const {
         currentId,
         isBrowser,
@@ -28,13 +28,18 @@ function IdentitiesTab() {
     } = useUIContext();
 
     const handleCreateId = async () => {
-        if (!name.trim()) return;
+        if (!keymaster) {
+            return;
+        }
+        if (!name.trim()) {
+            return;
+        }
         try {
             await keymaster.createId(name.trim(), { registry });
             await resetCurrentID();
             setName("");
             requestBrowserRefresh(isBrowser);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     };
@@ -44,6 +49,9 @@ function IdentitiesTab() {
     }
 
     async function renameId(newName: string) {
+        if (!keymaster) {
+            return;
+        }
         setRenameModalOpen(false);
         const name = newName.trim();
         if (!name) {
@@ -54,7 +62,7 @@ function IdentitiesTab() {
         try {
             await keymaster.renameId(currentId, name);
             await refreshAll();
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -69,6 +77,9 @@ function IdentitiesTab() {
     }
 
     async function removeId() {
+        if (!keymaster) {
+            return;
+        }
         setWarningModal(false);
         // Prevents multiple removals if confirm button spammed
         if (removeCalled) {
@@ -78,12 +89,15 @@ function IdentitiesTab() {
         try {
             await keymaster.removeId(currentId);
             await refreshAll();
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function backupId() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const ok = await keymaster.backupId(currentId);
 
@@ -92,7 +106,7 @@ function IdentitiesTab() {
             } else {
                 setError(`${currentId} backup failed`);
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -103,7 +117,7 @@ function IdentitiesTab() {
 
     async function recoverId(did: string) {
         setRecoverModalOpen(false);
-        if (!did) {
+        if (!did || !keymaster) {
             return;
         }
 
@@ -111,7 +125,7 @@ function IdentitiesTab() {
             const response = await keymaster.recoverId(did);
             await refreshAll();
             setSuccess(response + " recovered");
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

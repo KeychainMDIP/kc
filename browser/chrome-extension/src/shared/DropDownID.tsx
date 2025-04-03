@@ -34,13 +34,16 @@ const DropDownID = () => {
         currentId?.length > 10 ? currentId.slice(0, 10) + "..." : currentId;
 
     async function selectId(id: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
 
             await resetCurrentID();
             requestBrowserRefresh(isBrowser);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

@@ -1,4 +1,4 @@
-export function requestBrowserRefresh(isBrowser: boolean, theme: boolean = false) {
+export function requestBrowserRefresh(isBrowser: boolean, theme = false) {
     if (isBrowser) {
         return;
     }
@@ -9,6 +9,9 @@ export function requestBrowserRefresh(isBrowser: boolean, theme: boolean = false
 
         for (const tab of tabs) {
             const existingTabId = tab.id;
+            if (existingTabId === undefined) {
+                continue;
+            }
             chrome.tabs.sendMessage(
                 existingTabId,
                 { type: theme ? "BROWSER_THEME" : "BROWSER_REFRESH" }

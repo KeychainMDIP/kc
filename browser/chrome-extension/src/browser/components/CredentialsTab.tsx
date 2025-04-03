@@ -6,13 +6,13 @@ import IssuedTab from "./IssuedTab";
 import HeldTab from "../../shared/HeldTab";
 
 function CredentialsTab({ subTab, refresh }: {subTab: string, refresh: number}) {
-    const [credentialTab, setCredentialTab] = useState("held");
+    const [credentialTab, setCredentialTab] = useState<string>("held");
 
     useEffect(() => {
         setCredentialTab(subTab || "held");
     }, [subTab, refresh])
 
-    async function handleChange(event: React.SyntheticEvent, newValue: string) {
+    async function handleChange(_: React.SyntheticEvent, newValue: string) {
         setCredentialTab(newValue);
     }
 

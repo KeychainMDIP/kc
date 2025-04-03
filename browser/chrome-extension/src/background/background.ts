@@ -6,7 +6,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
             await chrome.storage.sync.set({
                 gatekeeperUrl: DEFAULT_GATEKEEPER_URL,
             });
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error setting gatekeeperUrl:", error);
         }
     }
@@ -28,7 +28,7 @@ chrome.runtime.onStartup.addListener(async () => {
     await createOffscreen();
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     if (message.action === "REQUEST_POPUP_OPEN") {
         chrome.action.openPopup(() => {
             chrome.runtime.sendMessage({

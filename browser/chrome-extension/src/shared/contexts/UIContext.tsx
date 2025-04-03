@@ -24,8 +24,8 @@ interface UIContextValue {
     setSelectedTab: (value: string) => Promise<void>;
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
-    openBrowser: openBrowserValues | null;
-    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | null>>,
+    openBrowser: openBrowserValues | undefined;
+    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>> | undefined;
     openBrowserWindow: (options: openBrowserValues) => void;
     handleCopyDID: (did: string) => void;
     refreshAll: () => Promise<void>;
@@ -57,7 +57,7 @@ export function UIProvider(
         children: ReactNode,
         pendingAuth?: string,
         openBrowser?: openBrowserValues,
-        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | null>>,
+        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -107,6 +107,7 @@ export function UIProvider(
         setCredentialSubject,
         setAgentList,
         setSelectedIssued,
+        setImageList,
         setIssuedStringOriginal,
         setIssuedEdit,
         resetCredentialState,
@@ -182,7 +183,7 @@ export function UIProvider(
             tab
         };
 
-        if (isBrowser) {
+        if (isBrowser && setOpenBrowser) {
             setOpenBrowser(payload);
             return;
         }
@@ -204,13 +205,13 @@ export function UIProvider(
         }
 
         if (options.contents) {
-            const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : null;
+            const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : "";
             const jsonEncoded = encodeURIComponent(contentsString);
             url += `&doc=${jsonEncoded}`;
         }
 
         chrome.tabs.query({ url: chrome.runtime.getURL("browser.html") + "*" }, (tabs) => {
-            if (!tabs || tabs.length === 0) {
+            if (!tabs || tabs.length === 0 || tabs[0].id === undefined) {
                 chrome.tabs.create({ url });
                 return;
             }
@@ -248,25 +249,34 @@ export function UIProvider(
     }
 
     async function refreshHeld() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const heldList = await keymaster.listCredentials();
             setHeldList(heldList);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function refreshIssued() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const issuedList = await keymaster.listIssued();
             setIssuedList(issuedList);
             setIssuedString("");
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function refreshNames() {
+        if (!keymaster) {
+            return;
+        }
         const nameList = await keymaster.listNames();
         const names = Object.keys(nameList);
 
@@ -306,6 +316,21 @@ export function UIProvider(
             setCredentialString("");
         }
 
+        const imageList = [];
+
+        for (const name of names) {
+            try {
+                const isImage = await keymaster.testImage(name);
+
+                if (isImage) {
+                    imageList.push(name);
+                }
+            }
+            catch {}
+        }
+
+        setImageList(imageList);
+
         const agents = await keymaster.listIds();
         for (const name of names) {
             try {
@@ -333,16 +358,28 @@ export function UIProvider(
     }
 
     async function refreshCurrentDID(cid: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const docs = await keymaster.resolveDID(cid);
+            if (!docs.didDocument || !docs.didDocument.id) {
+                setError("Failed to set current DID and manifest");
+                return;
+            }
             setCurrentDID(docs.didDocument.id);
-            setManifest((docs.didDocumentData as {manifest: Record<string, unknown>}).manifest);
-        } catch (error) {
+
+            const docData = docs.didDocumentData as {manifest?: Record<string, unknown>};
+            setManifest(docData.manifest);
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function refreshCurrentIDInternal(cid: string) {
+        if (!keymaster) {
+            return;
+        }
         await setCurrentId(cid);
         setSelectedId(cid);
         await refreshCurrentDID(cid);
@@ -359,12 +396,12 @@ export function UIProvider(
         resetCredentialState();
         setSelectedId("");
         setCurrentDID("");
-        setManifest(null);
-        setNameList(null);
+        setManifest({});
+        setNameList({});
         setSchemaList([]);
         setAgentList([]);
         setHeldList([]);
-        setIssuedList(null);
+        setIssuedList([]);
         setIssuedString("");
     }
 
@@ -385,6 +422,9 @@ export function UIProvider(
     }
 
     async function refreshCurrentID() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const cid = await keymaster.getCurrentId();
             if (cid) {
@@ -394,7 +434,7 @@ export function UIProvider(
             }
 
             wipeState()
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
             return false;
         }
@@ -403,7 +443,7 @@ export function UIProvider(
     }
 
     async function refreshStored() {
-        if (isBrowser) {
+        if (isBrowser || !keymaster) {
             return;
         }
 
@@ -455,6 +495,9 @@ export function UIProvider(
     }
 
     async function refreshAll() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const regs = await keymaster.listRegistries();
             if (Array.isArray(regs)) {
@@ -467,7 +510,7 @@ export function UIProvider(
             if (!usedStored) {
                 await refreshCurrentID();
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

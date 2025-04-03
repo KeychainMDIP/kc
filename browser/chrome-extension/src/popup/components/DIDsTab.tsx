@@ -7,15 +7,24 @@ import {
     Typography,
 } from "@mui/material";
 import WarningModal from "../../shared/WarningModal";
-import { Close, ContentCopy, ManageSearch } from "@mui/icons-material";
+import {
+    Close,
+    ContentCopy,
+    Edit,
+    ManageSearch
+} from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { requestBrowserRefresh } from "../../shared/sharedScripts";
+import TextInputModal from "../../shared/TextInputModal";
 
 function DIDsTab() {
-    const [open, setOpen] = useState(false);
-    const [removeDID, setRemoveDID] = useState("");
+    const [open, setOpen] = useState<boolean>(false);
+    const [removeDID, setRemoveDID] = useState<string>("");
+    const [renameModalOpen, setRenameModalOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
+    const [renameDID, setRenameDID] = useState<string>("");
     const {
         isBrowser,
         keymaster,
@@ -40,12 +49,15 @@ function DIDsTab() {
     }
 
     async function addName() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.addName(aliasName, aliasDID);
             await clearFields();
             await refreshNames();
             requestBrowserRefresh(isBrowser);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -59,16 +71,41 @@ function DIDsTab() {
     };
 
     const handleRemoveConfirm = async () => {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.removeName(removeDID);
             await refreshNames();
             requestBrowserRefresh(isBrowser);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
 
         setOpen(false);
         setRemoveDID("");
+    };
+
+    const openRenameModal = (oldName: string, did: string) => {
+        setRenameOldName(oldName);
+        setRenameDID(did);
+        setRenameModalOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName: string) => {
+        setRenameModalOpen(false);
+
+        if (!newName || newName === renameOldName || !keymaster) {
+            return;
+        }
+
+        try {
+            await keymaster.addName(newName, renameDID);
+            await keymaster.removeName(renameOldName);
+            await refreshNames();
+        } catch (error: any) {
+            setError(error.error || error.message || String(error));
+        }
     };
 
     return (
@@ -79,6 +116,17 @@ function DIDsTab() {
                 isOpen={open}
                 onClose={handleRemoveClose}
                 onSubmit={handleRemoveConfirm}
+            />
+
+            <TextInputModal
+                isOpen={renameModalOpen}
+                title="Rename DID"
+                description={`Rename '${renameOldName}' to:`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameModalOpen(false)}
             />
 
             <Box className="flex-box mt-2">
@@ -145,7 +193,7 @@ function DIDsTab() {
             <Box className="overflow-box">
                 {nameList &&
                     Object.entries(nameList).map(
-                        ([name, did]: [string, any], index) => (
+                        ([name, did]: [string, string], index) => (
                             <Box
                                 key={index}
                                 display="flex"
@@ -180,6 +228,12 @@ function DIDsTab() {
                                         size="small"
                                     >
                                         <ManageSearch fontSize="small" />
+                                    </IconButton>
+                                    <IconButton
+                                        onClick={() => openRenameModal(name, did)}
+                                        size="small"
+                                    >
+                                        <Edit />
                                     </IconButton>
                                     <IconButton
                                         onClick={() => {

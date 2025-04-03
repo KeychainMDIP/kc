@@ -9,15 +9,16 @@ import {
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import {MdipDocument} from "@mdip/gatekeeper/types";
 
 function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {browserTab: string, browserSubTab?: string, showResolveField?: boolean}) {
     const subTabKey = browserSubTab ?? 'noSubTab';
     const storageKey = `jsonViewerState-${browserTab}-${subTabKey}`;
 
-    const [aliasDocs, setAliasDocs] = useState<any>(null);
+    const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
-    const [aliasDocsVersions, setAliasDocsVersions] = useState<any | null>(null);
+    const [aliasDocsVersions, setAliasDocsVersions] = useState<number[] | undefined>(undefined);
     const [formDid, setFormDid] = useState<string>("");
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
@@ -32,7 +33,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                 setAliasDocs(parsed.aliasDocs);
                 setAliasDocsVersion(parsed.aliasDocsVersion ?? 1);
                 setAliasDocsVersionMax(parsed.aliasDocsVersionMax ?? 1);
-                setAliasDocsVersions(parsed.aliasDocsVersions ?? null);
+                setAliasDocsVersions(parsed.aliasDocsVersions);
                 setFormDid(parsed.formDid ?? "");
                 setCurrentDid(parsed.currentDid ?? "");
                 setCurrentTitle(parsed.currentTitle ?? "");
@@ -77,8 +78,8 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             return;
         }
 
-        setAliasDocsVersions(null);
-        setAliasDocs(null);
+        setAliasDocsVersions(undefined);
+        setAliasDocs(undefined);
         setCurrentTitle("");
 
         if (!did && !contents) {
@@ -90,57 +91,77 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             try {
                 if (contents) {
                     setAliasDocs(contents);
-                } else {
+                } else if (did) {
                     await resolveDID(did);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 setError(error.error || error.message || String(error));
             }
         };
 
         populateData();
 
-        setFormDid(did);
-        setCurrentTitle(title);
-        setOpenBrowser(null);
+        if (did) {
+            setFormDid(did);
+        }
+        if (title) {
+            setCurrentTitle(title);
+        }
+        if (setOpenBrowser) {
+            setOpenBrowser(undefined);
+        }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [openBrowser]);
 
     async function handleResolveDID(did?: string) {
-        setOpenBrowser({
-            title: "",
-            did: did || formDid,
-            tab: browserTab === "wallet" ? "viewer" : browserTab,
-            subTab: browserSubTab,
-        });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                title: "",
+                did: did || formDid,
+                tab: browserTab === "wallet" ? "viewer" : browserTab,
+                subTab: browserSubTab,
+            });
+        }
     }
 
     async function resolveDID(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const docs = await keymaster.resolveDID(did);
+            if (!docs.didDocumentMetadata) {
+                setError("Invalid DID");
+                return;
+            }
             const versions = docs.didDocumentMetadata.version;
 
             setAliasDocs(docs);
-            setAliasDocsVersion(versions);
-            setAliasDocsVersionMax(versions);
-            setAliasDocsVersions(
-                Array.from({ length: versions }, (_, i) => i + 1),
-            );
+            if (versions) {
+                setAliasDocsVersion(versions);
+                setAliasDocsVersionMax(versions);
+                setAliasDocsVersions(
+                    Array.from({ length: versions }, (_, i) => i + 1),
+                );
+            }
             setCurrentDid(did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function selectAliasDocsVersion(version: number) {
+        if (!keymaster) {
+            return;
+        }
         try {
             setAliasDocsVersion(version);
             const docs = await keymaster.resolveDID(currentDid, {
                 atVersion: version,
             });
             setAliasDocs(docs);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

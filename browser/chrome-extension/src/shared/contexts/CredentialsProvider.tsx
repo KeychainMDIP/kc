@@ -18,8 +18,10 @@ interface CredentialsContextValue {
     setSchemaList: Dispatch<SetStateAction<string[]>>;
     groupList: string[];
     setGroupList: Dispatch<SetStateAction<string[]>>;
-    issuedList: any;
-    setIssuedList: Dispatch<SetStateAction<any>>;
+    imageList: string[];
+    setImageList: Dispatch<SetStateAction<string[]>>;
+    issuedList: string[];
+    setIssuedList: Dispatch<SetStateAction<string[]>>;
     issuedString: string;
     setIssuedString: Dispatch<SetStateAction<string>>;
     issuedStringOriginal: string;
@@ -32,12 +34,12 @@ interface CredentialsContextValue {
     setAliasName: (value: string) => Promise<void>;
     aliasDID: string;
     setAliasDID: (value: string) => Promise<void>;
-    nameList: any;
-    setNameList: Dispatch<SetStateAction<any>>;
+    nameList: Record<string, string>;
+    setNameList: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
     setAgentList: Dispatch<SetStateAction<string[]>>;
     resetCredentialState: () => void;
-    refreshCredentialsStored: (state: any) => Promise<void>;
+    refreshCredentialsStored: (state: Record<string, any>) => Promise<void>;
 }
 
 const CredentialsContext = createContext<CredentialsContextValue | null>(null);
@@ -45,9 +47,12 @@ const CredentialsContext = createContext<CredentialsContextValue | null>(null);
 export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [heldList, setHeldList] = useState<string[]>([]);
     const [heldDID, setHeldDIDState] = useState<string>("");
+    const [nameList, setNameList] = useState<Record<string, string>>({});
+    const [agentList, setAgentList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<string[]>([]);
+    const [imageList, setImageList] = useState<string[]>([]);
     const [schemaList, setSchemaList] = useState<string[]>([]);
-    const [issuedList, setIssuedList] = useState(null);
+    const [issuedList, setIssuedList] = useState<string[]>([]);
     const [issuedString, setIssuedString] = useState<string>("");
     const [issuedEdit, setIssuedEdit] = useState<boolean>(false);
     const [issuedStringOriginal, setIssuedStringOriginal] = useState<string>("");
@@ -55,11 +60,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [credentialDID, setCredentialDID] = useState<string>("");
     const [credentialSubject, setCredentialSubject] = useState<string>("");
     const [credentialSchema, setCredentialSchema] = useState<string>("");
-    const [credentialString, setCredentialString] = useState(null);
+    const [credentialString, setCredentialString] = useState<string>("");
     const [aliasName, setAliasNameState] = useState<string>("");
     const [aliasDID, setAliasDIDState] = useState<string>("");
-    const [nameList, setNameList] = useState(null);
-    const [agentList, setAgentList] = useState<string[]>([]);
     const {
         storeState,
     } = useWalletContext();
@@ -85,7 +88,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setHeldDIDState("");
     }
 
-    async function refreshCredentialsStored(state: any) {
+    async function refreshCredentialsStored(state: Record<string, any>) {
         if (state.heldDID) {
             setHeldDIDState(state.heldDID);
         }
@@ -106,6 +109,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setHeldList,
         groupList,
         setGroupList,
+        imageList,
+        setImageList,
         schemaList,
         setSchemaList,
         issuedList,

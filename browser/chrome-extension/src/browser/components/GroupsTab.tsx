@@ -7,6 +7,7 @@ import { ContentCopy } from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "../../shared/DisplayDID";
+import { Group } from '@mdip/keymaster/types'
 
 const GroupsTab = () => {
     const {
@@ -28,7 +29,7 @@ const GroupsTab = () => {
     const [groupName, setGroupName] = useState<string>('');
     const [groupDID, setGroupDID] = useState<string>('');
     const [selectedGroupName, setSelectedGroupName] = useState<string>('');
-    const [selectedGroup, setSelectedGroup] = useState<any>(null);
+    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [memberDID, setMemberDID] = useState<string>('');
     const [jsonDID, setJsonDID] = useState<string>('');
     const [removeDID, setRemoveDID] = useState<string>('');
@@ -38,6 +39,9 @@ const GroupsTab = () => {
     sessionStorage.removeItem(storageKey);
 
     async function createGroup() {
+        if (!keymaster) {
+            return;
+        }
         try {
             if (Object.keys(nameList).includes(groupName)) {
                 setError(`${groupName} already in use`);
@@ -53,22 +57,27 @@ const GroupsTab = () => {
             await refreshNames();
             setSelectedGroupName(name);
             await refreshGroup(name);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function refreshGroup(groupName: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const group = await keymaster.getGroup(groupName);
             setSelectedGroup(group);
             setMemberDID('');
-            setOpenBrowser({
-                title: "",
-                did: "",
-                tab: "groups",
-            });
-        } catch (error) {
+            if (setOpenBrowser) {
+                setOpenBrowser({
+                    title: "",
+                    did: "",
+                    tab: "groups",
+                });
+            }
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -80,39 +89,49 @@ const GroupsTab = () => {
     async function resolveMember(did: string) {
         try {
             setJsonDID(did);
-            setOpenBrowser({
-                title: "",
-                did,
-                tab: "groups",
-            });
-        } catch (error) {
+            if (setOpenBrowser) {
+                setOpenBrowser({
+                    title: "",
+                    did,
+                    tab: "groups",
+                });
+            }
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function addMember(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.addGroupMember(selectedGroupName, did);
             await refreshGroup(selectedGroupName);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function removeMember() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.removeGroupMember(selectedGroupName, removeDID);
             await refreshGroup(selectedGroupName);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
         if (removeDID === jsonDID) {
             setJsonDID('');
-            setOpenBrowser({
-                title: "",
-                did: "",
-                tab: "groups",
-            });
+            if (setOpenBrowser) {
+                setOpenBrowser({
+                    title: "",
+                    did: "",
+                    tab: "groups",
+                });
+            }
         }
         setOpen(false);
         setRemoveDID("");

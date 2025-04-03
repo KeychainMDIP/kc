@@ -17,10 +17,13 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
     } = useMessageContext();
 
     async function decryptMessage(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const message = await keymaster.decryptMessage(did);
             await setReceiveMessage(message);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

@@ -29,10 +29,13 @@ const SchemaTab = ()=> {
     const [schemaString, setSchemaString] = useState<string>('');
 
     async function saveSchema() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
             await editSchema(editedSchemaName);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
             return;
         }
@@ -40,17 +43,23 @@ const SchemaTab = ()=> {
     }
 
     async function editSchema(schemaName: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const schema = await keymaster.getSchema(schemaName) as string;
             setSelectedSchema(schema);
             setEditedSchemaName(schemaName);
             setSchemaString(JSON.stringify(schema, null, 4));
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function createSchema() {
+        if (!keymaster) {
+            return;
+        }
         try {
             if (Object.keys(nameList).includes(schemaName)) {
                 setError(`${schemaName} already in use`);
@@ -66,7 +75,7 @@ const SchemaTab = ()=> {
             await refreshNames();
             setSelectedSchemaName(name);
             await editSchema(name);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
