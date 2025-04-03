@@ -1628,6 +1628,38 @@ describe('listSchemas', () => {
     });
 });
 
+describe('createTemplate', () => {
+    const mockTemplate = { id: 'schema1' };
+    const mockDID = 'did:mock:schema';
+
+    it('should create a template from the schema', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .reply(200, { template: mockTemplate });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const template = await keymaster.createTemplate(mockDID);
+
+        expect(template).toStrictEqual(mockTemplate);
+    });
+
+    it('should throw exception on createTemplate server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createTemplate(mockDID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('testAgent', () => {
     const mockAgentId = 'agent1';
 
