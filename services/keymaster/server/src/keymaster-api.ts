@@ -3244,9 +3244,12 @@ v1router.post('/keys/verify', async (req, res) => {
 
 /**
  * @swagger
- * /schemas/{id}/template/:
+ * /schemas/{id}/template:
  *   post:
  *     summary: Generate a JSON template from a schema.
+ *     description: >
+ *       Creates a JSON template object based on the specified schema. The template will include placeholder values
+ *       that conform to the schema's structure and constraints.
  *     parameters:
  *       - in: path
  *         name: id
@@ -3254,16 +3257,6 @@ v1router.post('/keys/verify', async (req, res) => {
  *         schema:
  *           type: string
  *         description: The name or DID of the schema from which to generate a template.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               schema:
- *                 type: string
- *                 description: The DID or name of the schema. (Typically matches the path parameter, but can be re-specified here.)
  *     responses:
  *       200:
  *         description: The generated JSON template object.
@@ -3275,8 +3268,18 @@ v1router.post('/keys/verify', async (req, res) => {
  *                 template:
  *                   type: object
  *                   description: A skeleton object containing placeholder values that conform to the schema.
+ *       404:
+ *         description: Schema not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating the schema was not found.
  *       500:
- *         description: Internal server error (e.g., invalid or non-existent schema).
+ *         description: Internal server error (e.g., invalid schema format or processing error).
  *         content:
  *           application/json:
  *             schema:
