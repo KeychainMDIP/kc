@@ -1466,6 +1466,98 @@ describe('createAsset', () => {
     });
 });
 
+describe('cloneAsset', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should clone an asset DID', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockData = { name: 'mockData' };
+        const assetDid = await keymaster.createAsset(mockData);
+        const cloneDid = await keymaster.cloneAsset(assetDid);
+        const doc = await keymaster.resolveDID(cloneDid);
+
+        expect(assetDid).not.toBe(cloneDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expectedData = {
+            ...mockData,
+            cloned: assetDid,
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedData);
+    });
+
+    it('should clone an asset name', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockData = { name: 'mockData' };
+        const assetDid = await keymaster.createAsset(mockData);
+        await keymaster.addName('asset', assetDid);
+        const cloneDid = await keymaster.cloneAsset('asset');
+        const doc = await keymaster.resolveDID(cloneDid);
+
+        const expectedData = {
+            ...mockData,
+            cloned: assetDid,
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedData);
+    });
+
+    it('should clone an empty asset', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const assetDid = await keymaster.createAsset({});
+        await keymaster.addName('asset', assetDid);
+        const cloneDid = await keymaster.cloneAsset('asset');
+        const doc = await keymaster.resolveDID(cloneDid);
+
+        const expectedData = {
+            cloned: assetDid,
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedData);
+    });
+
+    it('should clone a clone', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockData = { name: 'mockData' };
+        const assetDid = await keymaster.createAsset(mockData);
+        const cloneDid1 = await keymaster.cloneAsset(assetDid);
+        const cloneDid2 = await keymaster.cloneAsset(cloneDid1);
+        const doc = await keymaster.resolveDID(cloneDid2);
+
+        const expectedData = {
+            ...mockData,
+            cloned: cloneDid1,
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expectedData);
+    });
+
+    it('should throw an exception if invalid asset provided', async () => {
+        mockFs({});
+
+        try {
+            const bob = await keymaster.createId('Bob');
+            await keymaster.cloneAsset(bob);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid parameter: id');
+        }
+    });
+});
+
 describe('transferAsset', () => {
 
     afterEach(() => {
