@@ -3287,8 +3287,7 @@ v1router.post('/keys/verify', async (req, res) => {
  */
 v1router.post('/schemas/:id/template/', async (req, res) => {
     try {
-        const { schema } = req.body;
-        const template = await keymaster.createTemplate(schema);
+        const template = await keymaster.createTemplate(req.params.id);
         res.json({ template });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

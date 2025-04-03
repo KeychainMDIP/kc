@@ -659,6 +659,16 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async createTemplate(schemaId: string): Promise<Record<string, unknown>> {
+        try {
+            const response = await axios.post(`${this.API}/schemas/${schemaId}/template`);
+            return response.data.template;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async testAgent(id: string): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/agents/${id}/test`);
