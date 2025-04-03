@@ -851,7 +851,7 @@ v1router.get('/ids', async (req, res) => {
 
 /**
  * @swagger
- * /ids/:
+ * /ids:
  *   post:
  *     summary: Create a new ID in the wallet.
  *     requestBody:
@@ -892,7 +892,7 @@ v1router.get('/ids', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/ids/', async (req, res) => {
+v1router.post('/ids', async (req, res) => {
     try {
         const { name, options } = req.body;
         const did = await keymaster.createId(name, options);
@@ -3244,9 +3244,12 @@ v1router.post('/keys/verify', async (req, res) => {
 
 /**
  * @swagger
- * /schemas/{id}/template/:
+ * /schemas/{id}/template:
  *   post:
  *     summary: Generate a JSON template from a schema.
+ *     description: >
+ *       Creates a JSON template object based on the specified schema. The template will include placeholder values
+ *       that conform to the schema's structure and constraints.
  *     parameters:
  *       - in: path
  *         name: id
@@ -3254,16 +3257,6 @@ v1router.post('/keys/verify', async (req, res) => {
  *         schema:
  *           type: string
  *         description: The name or DID of the schema from which to generate a template.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               schema:
- *                 type: string
- *                 description: The DID or name of the schema. (Typically matches the path parameter, but can be re-specified here.)
  *     responses:
  *       200:
  *         description: The generated JSON template object.
@@ -3275,8 +3268,18 @@ v1router.post('/keys/verify', async (req, res) => {
  *                 template:
  *                   type: object
  *                   description: A skeleton object containing placeholder values that conform to the schema.
+ *       404:
+ *         description: Schema not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating the schema was not found.
  *       500:
- *         description: Internal server error (e.g., invalid or non-existent schema).
+ *         description: Internal server error (e.g., invalid schema format or processing error).
  *         content:
  *           application/json:
  *             schema:
@@ -3285,10 +3288,9 @@ v1router.post('/keys/verify', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/schemas/:id/template/', async (req, res) => {
+v1router.post('/schemas/:id/template', async (req, res) => {
     try {
-        const { schema } = req.body;
-        const template = await keymaster.createTemplate(schema);
+        const template = await keymaster.createTemplate(req.params.id);
         res.json({ template });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
@@ -3673,7 +3675,7 @@ v1router.get('/templates/poll', async (req, res) => {
 
 /**
  * @swagger
- * /polls/:
+ * /polls:
  *   get:
  *     summary: List polls owned by (or associated with) a given ID.
  *     parameters:
@@ -3705,7 +3707,7 @@ v1router.get('/templates/poll', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.get('/polls/', async (req, res) => {
+v1router.get('/polls', async (req, res) => {
     try {
         const param = typeof req.query.owner === 'string' ? req.query.owner : undefined;
         const polls = await keymaster.listPolls(param);
@@ -3717,7 +3719,7 @@ v1router.get('/polls/', async (req, res) => {
 
 /**
  * @swagger
- * /polls/:
+ * /polls:
  *   post:
  *     summary: Create a new poll.
  *     requestBody:
@@ -3814,7 +3816,7 @@ v1router.get('/polls/', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/polls/', async (req, res) => {
+v1router.post('/polls', async (req, res) => {
     try {
         const { poll, options } = req.body;
         const did = await keymaster.createPoll(poll, options);
