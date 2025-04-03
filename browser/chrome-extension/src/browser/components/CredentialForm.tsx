@@ -36,8 +36,8 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
         return types.filter((t) => t !== "null");
     };
 
-    const initialValues: { [key: string]: any } = {};
-    const initialTypes: { [key: string]: string } = {};
+    const initialValues: Record<string, any> = {};
+    const initialTypes: Record<string, string> = {};
 
     const fieldEntries = Object.entries(properties).filter(
         ([name, schema]: [string, any]) => {
@@ -55,9 +55,9 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
         fieldNames.includes(name),
     );
 
-    const [formValues, setFormValues] = useState(initialValues);
-    const [selectedTypes, setSelectedTypes] = useState(initialTypes);
-    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const [formValues, setFormValues] = useState<Record<string, any>>(initialValues);
+    const [selectedTypes, setSelectedTypes] = useState<Record<string, string>>(initialTypes);
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
     function getType(schema: any) {
         let typeDef = schema.type;
@@ -68,10 +68,10 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
     }
 
     const validateAll = (
-        values: { [key: string]: any },
-        typesMap: { [key: string]: string },
+        values: Record<string, any>,
+        typesMap: Record<string, string>,
     ) => {
-        const newErrors: { [key: string]: string } = {};
+        const newErrors: Record<string, string> = {};
         fieldEntries.forEach(([name, schema]: [string, any]) => {
             const typeDef = getType(schema);
             const typeList = Array.isArray(typeDef)
@@ -147,10 +147,10 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
     };
 
     const buildCredentialJson = (
-        values: { [key: string]: any },
-        typesMap: { [key: string]: string },
+        values: Record<string, any>,
+        typesMap: Record<string, string>,
     ) => {
-        const formCredential: { [key: string]: any } = {};
+        const formCredential: Record<string, any> = {};
         fieldEntries.forEach(([name, schema]: [string, any]) => {
             const value = values[name];
             if (value === "" || value === undefined || value === null) {
@@ -207,8 +207,8 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
     };
 
     const notifyParent = (
-        vals: { [key: string]: any },
-        types: { [key: string]: string },
+        vals: Record<string, any>,
+        types: Record<string, string>,
     ) => {
         const newErrors = validateAll(vals, types);
         setErrors(newErrors);

@@ -18,7 +18,7 @@ const BrowserHeader = (
     } = useThemeContext();
 
     function toggleMenuOpen() {
-        const newValue: boolean = !menuOpen;
+        const newValue = !menuOpen;
         setMenuOpen(newValue);
         chrome.storage.local.set({ menuOpen: newValue });
     }

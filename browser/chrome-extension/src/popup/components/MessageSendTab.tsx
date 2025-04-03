@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { MouseEvent, useState } from "react";
 import { TabPanel } from "@mui/lab";
 import { Box, Button, Menu, MenuItem, Select, TextField } from "@mui/material";
 import { ArrowDropDown, Close, ContentCopy } from "@mui/icons-material";
@@ -7,7 +7,7 @@ import { useMessageContext } from "../../shared/contexts/MessageContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 
 function MessageSendTab({ tabValue }: { tabValue: string }) {
-    const [anchorEl, setAnchorEl] = useState(null);
+    const [anchorEl, setAnchorEl] = useState<null | HTMLButtonElement>(null);
     const {
         registries,
         keymaster,
@@ -33,7 +33,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
         await setEncryptedDID("");
     }
 
-    const handleOpenMenu = (event) => {
+    const handleOpenMenu = (event: MouseEvent<HTMLButtonElement>) => {
         setAnchorEl(event.currentTarget);
     };
 
@@ -47,6 +47,9 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
     };
 
     async function encryptMessage() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const did = await keymaster.encryptMessage(
                 sendMessage,
@@ -54,7 +57,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                 { registry: messageRegistry },
             );
             await setEncryptedDID(did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

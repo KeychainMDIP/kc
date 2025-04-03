@@ -3,14 +3,14 @@ import { Box, Button, TextField } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 
 const SettingsTab = () => {
-    const [gatekeeperUrl, setGatekeeperUrl] = useState("");
+    const [gatekeeperUrl, setGatekeeperUrl] = useState<string>("");
 
     useEffect(() => {
         const init = async () => {
             try {
                 const result = await chrome.storage.sync.get(["gatekeeperUrl"]);
                 setGatekeeperUrl(result.gatekeeperUrl);
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error retrieving gatekeeperUrl:", error);
             }
         };
@@ -20,7 +20,7 @@ const SettingsTab = () => {
     const handleSave = async () => {
         try {
             await chrome.storage.sync.set({ gatekeeperUrl });
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving gatekeeperUrl:", error);
         }
     };

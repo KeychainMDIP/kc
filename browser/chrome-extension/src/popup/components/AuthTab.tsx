@@ -28,26 +28,35 @@ function AuthTab() {
     } = useUIContext();
 
     async function newChallenge() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const challenge = await keymaster.createChallenge();
             await setChallenge(challenge);
             await resolveChallenge(challenge);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function resolveChallenge(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const contents = await keymaster.resolveAsset(did);
             await setAuthDID(did);
             openBrowserWindow({ title: "Resolve Challenge", did, contents });
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function createResponse() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await clearResponse();
             const response = await keymaster.createResponse(challenge, {
@@ -63,7 +72,7 @@ function AuthTab() {
             if (callback) {
                 await setDisableSendResponse(false);
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -73,16 +82,22 @@ function AuthTab() {
     }
 
     async function decryptResponse(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const contents = await keymaster.decryptJSON(did);
             await setAuthDID(did);
             openBrowserWindow({ title: "Decrypt Response", did, contents });
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function verifyResponse() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const verify = await keymaster.verifyResponse(response);
 
@@ -91,7 +106,7 @@ function AuthTab() {
             } else {
                 setWarning("Response is NOT VALID");
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
             setError(error.error || error.message || String(error));
         }
@@ -105,8 +120,8 @@ function AuthTab() {
         try {
             await setDisableSendResponse(true);
             await axios.post(callback, { response });
-            await setCallback(null);
-        } catch (error) {
+            await setCallback("");
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }

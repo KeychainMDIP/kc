@@ -1,7 +1,7 @@
 let passphrase: string | null = null;
 const extensionState: Record<string, any> = {};
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     if (message.action === "OPEN_AUTH_TAB") {
         chrome.runtime.sendMessage({
             action: "REQUEST_POPUP_OPEN",

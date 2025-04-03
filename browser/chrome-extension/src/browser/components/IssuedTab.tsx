@@ -31,21 +31,26 @@ function IssuedTab() {
     const {
         setOpenBrowser
     } = useUIContext();
-    const [open, setOpen] = useState(false);
-    const [revokeDID, setRevokeDID] = useState("");
+    const [open, setOpen] = useState<boolean>(false);
+    const [revokeDID, setRevokeDID] = useState<string>("");
 
     async function resolveIssued(did: string) {
-        setOpenBrowser({
-            title: "",
-            did,
-            tab: "credentials",
-            subTab: "issued",
-        });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                title: "",
+                did,
+                tab: "credentials",
+                subTab: "issued",
+            });
+        }
         setSelectedIssued(did);
         setIssuedEdit(false);
     }
 
     async function decryptIssued(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const doc = await keymaster.getCredential(did);
             setSelectedIssued(did);
@@ -53,39 +58,47 @@ function IssuedTab() {
             setIssuedStringOriginal(issued);
             setIssuedString(issued);
             setIssuedEdit(true);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function updateIssued(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const credential = JSON.parse(issuedString);
             await keymaster.updateCredential(did, credential);
             await decryptIssued(did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function handleRevokeConfirm() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.revokeCredential(revokeDID);
-            const newIssuedList = issuedList.filter((item: any) => item !== revokeDID);
+            const newIssuedList = issuedList.filter((item) => item !== revokeDID);
             setIssuedList(newIssuedList);
             if (revokeDID === selectedIssued) {
                 setSelectedIssued("");
                 setIssuedEdit(false);
                 setIssuedString("");
                 setIssuedStringOriginal("");
-                setOpenBrowser({
-                    title: "",
-                    did: "",
-                    tab: "credentials",
-                    subTab: "issued",
-                });
+                if (setOpenBrowser) {
+                    setOpenBrowser({
+                        title: "",
+                        did: "",
+                        tab: "credentials",
+                        subTab: "issued",
+                    });
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
 
@@ -112,7 +125,7 @@ function IssuedTab() {
             />
 
             <Box sx={{ height: 300, overflowY: 'auto', mb: 2 }}>
-                {issuedList && issuedList.map((did: string, index: number) => (
+                {issuedList && issuedList.map((did, index) => (
                     <Box
                         key={index}
                         display="flex"

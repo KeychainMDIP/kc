@@ -12,7 +12,7 @@ interface AuthContextValue {
     setDisableSendResponse: (value: boolean) => Promise<void>;
     challenge: string;
     setChallenge: (value: string) => Promise<void>;
-    refreshAuthStored: (state: any) => Promise<void>;
+    refreshAuthStored: (state: Record<string, any>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await storeState("challenge", value);
     }
 
-    async function refreshAuthStored(state: any) {
+    async function refreshAuthStored(state: Record<string, any>) {
         if (state.challenge) {
             setChallengeState(state.challenge);
         }

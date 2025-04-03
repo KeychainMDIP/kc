@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { FormEvent, useState } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -10,7 +10,22 @@ import {
     Box,
 } from "@mui/material";
 
-const PassphraseModal = ({ isOpen, title, errorText, onSubmit, encrypt }) => {
+interface PassphraseModalProps {
+    isOpen: boolean,
+    title: string,
+    errorText: string,
+    onSubmit: (passphrase: string) => void,
+    encrypt: boolean,
+}
+
+const PassphraseModal: React.FC<PassphraseModalProps> = (
+    {
+        isOpen,
+        title,
+        errorText,
+        onSubmit,
+        encrypt
+    }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
@@ -18,7 +33,7 @@ const PassphraseModal = ({ isOpen, title, errorText, onSubmit, encrypt }) => {
 
     if (!isOpen) return null;
 
-    function handleSubmit(e) {
+    function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         onSubmit(passphrase);
         handleClose();

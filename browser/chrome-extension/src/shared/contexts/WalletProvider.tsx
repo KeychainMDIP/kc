@@ -45,12 +45,12 @@ interface WalletContextValue {
     setError(error: string): void;
     setWarning(warning: string): void;
     setSuccess(message: string): void;
-    manifest: any;
-    setManifest: Dispatch<SetStateAction<any>>;
+    manifest: Record<string, unknown> | undefined;
+    setManifest: Dispatch<SetStateAction<Record<string, unknown> | undefined>>;
     resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
     storeState: (key: string, value: string | boolean) => Promise<void>;
-    refreshWalletStored: (state: any) => Promise<void>;
+    refreshWalletStored: (state: Record<string, any>) => Promise<void>;
     resetWalletState: () => void;
     isBrowser: boolean;
     reloadBrowserWallet: () => Promise<void>;
@@ -64,12 +64,12 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const [currentId, setCurrentIdState] = useState<string>("");
     const [currentDID, setCurrentDID] = useState<string>("");
     const [idList, setIdList] = useState<string[]>([]);
-    const [manifest, setManifest] = useState(null);
+    const [manifest, setManifest] = useState<Record<string, unknown> | undefined>(undefined);
     const [registry, setRegistryState] = useState<string>("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
-    const [passphraseErrorText, setPassphraseErrorText] = useState(null);
-    const [modalAction, setModalAction] = useState(null);
+    const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
+    const [modalAction, setModalAction] = useState<string>("");
     const [isReady, setIsReady] = useState<boolean>(false);
     const [refreshFlag, setRefreshFlag] = useState<number>(0);
 
@@ -99,7 +99,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         await storeState("registry", value);
     }
 
-    async function refreshWalletStored(state: any) {
+    async function refreshWalletStored(state: Record<string, any>) {
         if (state.registry) {
             setRegistryState(state.registry);
         }
@@ -150,7 +150,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         const wallet = new WalletChrome();
         const walletData = await wallet.loadWallet();
 
-        let pass: string;
+        let pass = "";
         let response = await chrome.runtime.sendMessage({
             action: "GET_PASSPHRASE",
         });
@@ -187,7 +187,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             return;
         }
 
-        let pass: string;
+        let pass = "";
         let response = await chrome.runtime.sendMessage({
             action: "GET_PASSPHRASE",
         });
@@ -219,7 +219,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
     }
 
-    async function decryptWallet(passphrase: string, modal: boolean = false) {
+    async function decryptWallet(passphrase: string, modal = false) {
         const wallet_chrome = new WalletChrome();
         const wallet_enc = new WalletWebEncrypted(wallet_chrome, passphrase);
         const wallet_cache = new WalletCache(wallet_enc);
@@ -254,8 +254,8 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         });
 
         setIsReady(true);
-        setModalAction(null);
-        setPassphraseErrorText(null);
+        setModalAction("");
+        setPassphraseErrorText("");
         setRefreshFlag(r => r + 1);
 
         return true;
@@ -274,8 +274,8 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         try {
             const id = await keymaster.fetchIdInfo();
             const docs = await keymaster.resolveDID(id.did);
-            setManifest((docs.didDocumentData as {manifest: Record<string, unknown>}).manifest);
-        } catch (error) {
+            setManifest((docs.didDocumentData as {manifest?: Record<string, unknown>}).manifest);
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -312,7 +312,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     return (
         <>
             <PassphraseModal
-                isOpen={modalAction !== null}
+                isOpen={modalAction !== ""}
                 title={
                     modalAction === "decrypt"
                         ? "Enter Your Wallet Passphrase"

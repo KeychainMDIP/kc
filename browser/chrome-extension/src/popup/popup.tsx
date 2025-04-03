@@ -8,7 +8,11 @@ const PopupUI = () => {
     const [pendingAuth, setPendingAuth] = useState<string>("");
 
     useEffect(() => {
-        const handleMessage = (message, _, sendResponse) => {
+        const handleMessage = (
+            message: any,
+            _: chrome.runtime.MessageSender,
+            sendResponse: (response?: any) => void
+        ) => {
             if (message.action === "SHOW_POPUP_AUTH") {
                 setPendingAuth(message.challenge);
                 sendResponse({ success: true });

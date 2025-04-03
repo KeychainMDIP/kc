@@ -8,6 +8,9 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "allowJs": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "baseUrl": "./",
     "paths": {
       "@mdip/cipher/web": ["../../packages/cipher/src/cipher-web.ts"],
@@ -17,7 +20,7 @@
       "@mdip/gatekeeper/client": ["../../packages/gatekeeper/src/gatekeeper-client.ts"],
       "@mdip/keymaster": ["../../packages/keymaster/src/keymaster.ts"],
       "@mdip/keymaster/types": ["../../packages/keymaster/src/types.ts"],
-      "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"],
+      "@mdip/keymaster/wallet/*": ["../../packages/keymaster/src/db/*"]
     }
   }
 }

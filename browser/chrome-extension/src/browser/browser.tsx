@@ -7,10 +7,10 @@ import "../shared/extension.css";
 import { RefreshMode } from '../shared/contexts/UIContext';
 
 const BrowserUI = () => {
-    const [openBrowser, setOpenBrowser] = useState<openBrowserValues | null>(null);
+    const [openBrowser, setOpenBrowser] = useState<openBrowserValues | undefined>(undefined);
     const [browserRefresh, setBrowserRefresh] = useState<RefreshMode>(RefreshMode.NONE);
 
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
         if (request.type === "PING_JSON_VIEWER") {
             sendResponse({ ack: true });
         } else if (request.type === "LOAD_JSON") {

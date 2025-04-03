@@ -8,7 +8,7 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 function MessageTab() {
     const { selectedMessageTab, setSelectedMessageTab } = useUIContext();
 
-    async function handleChange(event: React.SyntheticEvent, newValue: string) {
+    async function handleChange(_: React.SyntheticEvent, newValue: string) {
         await setSelectedMessageTab(newValue);
     }
 
