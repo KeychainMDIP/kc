@@ -654,6 +654,22 @@ export default class Keymaster implements KeymasterInterface {
         return did;
     }
 
+    async cloneAsset(
+        id: string,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
+        const assetDoc = await this.resolveDID(id);
+
+        if (assetDoc.mdip?.type !== 'asset') {
+            throw new InvalidParameterError('id');
+        }
+
+        const assetData = assetDoc.didDocumentData || {};
+        const cloneData = { ...assetData, cloned: assetDoc.didDocument!.id };
+
+        return this.createAsset(cloneData, options);
+    }
+
     async createImage(
         buffer: Buffer,
         options: CreateAssetOptions = {}

@@ -895,6 +895,30 @@ program
     });
 
 program
+    .command('transfer-asset <id> <controller>')
+    .description('Transfer asset to a new controller')
+    .action(async (id, controller) => {
+        try {
+            const ok = await keymaster.transferAsset(id, controller);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        } catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('clone-asset <id>')
+    .description('Clone an asset')
+    .action(async (id) => {
+        try {
+            const did = await keymaster.cloneAsset(id);
+            console.log(did);
+        } catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('set-property <id> <key> [value]')
     .description('Assign a key-value pair to an asset')
     .action(async (id, key, value) => {
@@ -1117,18 +1141,6 @@ program
             console.timeEnd('total');
         }
         catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
-    .command('transfer-asset <id> <controller>')
-    .description('Transfer asset to a new controller')
-    .action(async (id, controller) => {
-        try {
-            const ok = await keymaster.transferAsset(id, controller);
-            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
-        } catch (error) {
             console.error(error.error || error);
         }
     });

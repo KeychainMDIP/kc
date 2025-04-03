@@ -4280,6 +4280,83 @@
         }
       }
     },
+    "/assets/{id}/clone": {
+      "post": {
+        "summary": "Clone an existing asset.",
+        "description": "Creates a new asset by cloning the data of an existing asset identified by its DID or name. The cloned asset will include a reference to the original asset in its metadata.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID or name of the asset to clone."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "options": {
+                    "type": "object",
+                    "description": "Additional parameters for cloning the asset.",
+                    "properties": {
+                      "registry": {
+                        "type": "string",
+                        "description": "The registry in which to create the cloned asset (e.g., \"local\", \"hyperswarm\")."
+                      },
+                      "validUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Expiration timestamp for the cloned asset."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The DID of the newly created cloned asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "did": {
+                      "type": "string",
+                      "description": "The DID of the cloned asset."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/templates/poll": {
       "get": {
         "summary": "Retrieve a boilerplate poll template.",
