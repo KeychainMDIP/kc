@@ -5,6 +5,7 @@ import {
     AccountBalanceWallet,
     Badge,
     Groups,
+    Image,
     ManageSearch,
     PermIdentity,
     Schema,
@@ -22,6 +23,7 @@ import { useUIContext } from "../shared/contexts/UIContext";
 import { useThemeContext } from "../shared/contexts/ContextProviders";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import SchemaTab from "./components/SchemaTab";
+import ImageTab from "./components/ImageTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -50,7 +52,7 @@ function BrowserContent() {
         const urlDoc = urlParams.get("doc");
 
         let initialTab = urlTab || "identities";
-        if (!currentId && (urlTab === "credentials" || urlTab === "groups" || urlTab === "schemas")) {
+        if (!currentId && (urlTab === "credentials" || urlTab === "groups" || urlTab === "schemas" || urlTab === "images")) {
             initialTab = "identities";
             setParamTab(urlTab);
         }
@@ -65,19 +67,21 @@ function BrowserContent() {
         let parsedContents = null;
         if (urlDoc) {
             try {
-                parsedContents = typeof urlDoc === "string" ? JSON.parse(urlDoc) : urlDoc;
-            } catch (error) {
+                parsedContents = JSON.parse(urlDoc);
+            } catch (error: any) {
                 return;
             }
         }
 
-        setOpenBrowser({
-            title: urlTitle,
-            did: urlDid,
-            tab: urlTab,
-            subTab: urlSubTab,
-            contents: parsedContents,
-        });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                title: urlTitle,
+                did: urlDid,
+                tab: urlTab,
+                subTab: urlSubTab,
+                contents: parsedContents,
+            });
+        }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
@@ -109,7 +113,7 @@ function BrowserContent() {
         }
     }, [didRun, paramTab, currentId]);
 
-    const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
+    const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
         setActiveTab(newValue);
     };
 
@@ -148,6 +152,16 @@ function BrowserContent() {
                                         icon={<Schema />}
                                         label={menuOpen ? "Schemas" : ""}
                                         value="schemas"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
+                                {currentId && (
+                                    <Tab
+                                        icon={<Image />}
+                                        label={menuOpen ? "Images" : ""}
+                                        value="images"
                                         iconPosition="start"
                                         className="sidebarTab"
                                         sx={{ gap: 0.25 }}
@@ -205,6 +219,11 @@ function BrowserContent() {
                             {currentId && (
                                 <TabPanel value="schemas" sx={{ p: 0 }}>
                                     <SchemaTab />
+                                </TabPanel>
+                            )}
+                            {currentId && (
+                                <TabPanel value="images" sx={{ p: 0 }}>
+                                    <ImageTab />
                                 </TabPanel>
                             )}
                             <TabPanel value="wallet" sx={{ p: 0 }}>

@@ -40,10 +40,13 @@ function IssueTab() {
         handleCopyDID,
     } = useUIContext();
 
-    const [schemaObject, setSchemaObject] = useState(null);
+    const [schemaObject, setSchemaObject] = useState<any>(null);
     const [isFormValid, setIsFormValid] = useState<boolean>(false);
 
     async function editCredential() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const credentialBound = await keymaster.bindCredential(
                 credentialSchema,
@@ -51,26 +54,32 @@ function IssueTab() {
             );
             setCredentialString(JSON.stringify(credentialBound, null, 4));
             setCredentialDID("");
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function issueCredential() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const did = await keymaster.issueCredential(
                 JSON.parse(credentialString),
                 { registry },
             );
             setCredentialDID(did);
-            setIssuedList((prevIssuedList: any) => [...prevIssuedList, did]);
-        } catch (error) {
+            setIssuedList((prevIssuedList) => [...prevIssuedList, did]);
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     useEffect(() => {
         async function getSchema() {
+            if (!keymaster) {
+                return;
+            }
             try {
                 const credentialObject = JSON.parse(credentialString);
                 if (
@@ -84,7 +93,7 @@ function IssueTab() {
                 const schemaDID = credentialObject.type[1];
                 const schemaObject = await keymaster.getSchema(schemaDID);
                 setSchemaObject(schemaObject);
-            } catch (error) {
+            } catch (error: any) {
                 setError(error.error || error.message || String(error));
             }
         }

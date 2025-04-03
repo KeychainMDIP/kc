@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { MouseEvent, useState } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -9,13 +9,19 @@ import {
     TextField,
 } from "@mui/material";
 
-const MnemonicModal = ({ isOpen, onSubmit, onClose }) => {
-    const [mnemonic, setMnemonic] = useState("");
+interface MnemonicModalProps {
+    isOpen: boolean;
+    onSubmit: (mnemonic: string) => void;
+    onClose: () => void;
+}
+
+const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose }) => {
+    const [mnemonic, setMnemonic] = useState<string>("");
 
     const words = mnemonic.trim().split(/\s+/).filter(Boolean);
     const canConfirm = words.length === 12;
 
-    const handleSubmit = (event) => {
+    const handleSubmit = (event: MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         onSubmit(mnemonic);
     };

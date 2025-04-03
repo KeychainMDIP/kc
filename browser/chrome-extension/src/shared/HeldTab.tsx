@@ -33,6 +33,9 @@ function HeldTab() {
     } = useUIContext();
 
     async function acceptCredential() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const ok = await keymaster.acceptCredential(heldDID);
             if (ok) {
@@ -42,46 +45,58 @@ function HeldTab() {
             } else {
                 setWarning("Credential not accepted");
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function decryptCredential(prefix: string, did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             const doc = await keymaster.getCredential(did);
             displayJson(prefix + " Credential", did, doc);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function publishCredential(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.publishCredential(did, { reveal: false });
             await resolveDID();
             await decryptCredential("Publish", did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function revealCredential(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.publishCredential(did, { reveal: true });
             await resolveDID();
             await decryptCredential("Reveal", did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function unpublishCredential(did: string) {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.unpublishCredential(did);
             await resolveDID();
             await decryptCredential("Unpublish", did);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -97,12 +112,15 @@ function HeldTab() {
     };
 
     const handleRemoveConfirm = async () => {
+        if (!keymaster) {
+            return;
+        }
         setLoading(true);
         try {
             await keymaster.removeCredential(removeDID);
             await refreshHeld();
             requestBrowserRefresh(isBrowser);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         } finally {
             setOpen(false);
@@ -120,7 +138,9 @@ function HeldTab() {
             return false;
         }
 
-        return manifest[did].credential === null;
+        const castManifest = manifest[did] as { credential?: string };
+
+        return castManifest.credential === null;
     }
 
     function credentialRevealed(did: string) {
@@ -132,7 +152,9 @@ function HeldTab() {
             return false;
         }
 
-        return manifest[did].credential !== null;
+        const castManifest = manifest[did] as { credential?: string };
+
+        return castManifest.credential !== null;
     }
 
     function credentialUnpublished(did: string) {
@@ -152,7 +174,7 @@ function HeldTab() {
     }
 
     function displayJson(title: string, did: string, contents?: any) {
-        if (isBrowser) {
+        if (isBrowser && setOpenBrowser) {
             setOpenBrowser({
                 title,
                 did,

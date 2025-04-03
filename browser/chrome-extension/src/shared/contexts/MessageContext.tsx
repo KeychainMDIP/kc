@@ -14,7 +14,7 @@ interface MessageContextValue {
     setReceiveMessage: (value: string) => Promise<void>;
     encryptedDID: string;
     setEncryptedDID: (value: string) => Promise<void>;
-    refreshMessageStored: (state: any) => Promise<void>;
+    refreshMessageStored: (state: Record<string, any>) => Promise<void>;
 }
 
 const MessageContext = createContext<MessageContextValue | null>(null);
@@ -61,7 +61,7 @@ export function MessageProvider({ children }: { children: ReactNode }) {
         await storeState("encryptedDID", value);
     }
 
-    async function refreshMessageStored(state: any) {
+    async function refreshMessageStored(state: Record<string, any>) {
         if (state.messageRegistry) {
             setMessageRegistryState(state.messageRegistry);
         }

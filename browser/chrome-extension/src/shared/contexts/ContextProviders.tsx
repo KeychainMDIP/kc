@@ -30,7 +30,7 @@ export function ContextProviders(
         isBrowser: boolean,
         pendingAuth?: string,
         openBrowser?: openBrowserValues,
-        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | null>>,
+        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {

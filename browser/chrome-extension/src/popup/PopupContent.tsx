@@ -46,7 +46,7 @@ const PopupContent = () => {
 
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
 
-    async function handleChange(event: React.SyntheticEvent, newValue: string) {
+    async function handleChange(_: React.SyntheticEvent, newValue: string) {
         await setSelectedTab(newValue);
     }
 
@@ -130,6 +130,7 @@ const PopupContent = () => {
                     <MenuItem onClick={() => handleMenuClick("identities")}>Open Browser</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("groups")}>Groups</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("schemas")}>Schemas</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("images")}>Images</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("wallet")}>Wallet</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("settings")}>Settings</MenuItem>
                     <MenuItem>

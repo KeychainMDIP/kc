@@ -54,11 +54,13 @@ const WalletTab = () => {
 
     function clearJsonWallet() {
         setJsonViewerOpen(false);
-        setOpenBrowser({
-            title: "",
-            did: "",
-            tab: "wallet",
-        });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                title: "",
+                did: "",
+                tab: "wallet",
+            });
+        }
     }
 
     const handleCloseFixModal = () => {
@@ -109,6 +111,9 @@ const WalletTab = () => {
     }
 
     async function checkWallet() {
+        if (!keymaster) {
+            return;
+        }
         setCheckingWallet(true);
         try {
             const { checked, invalid, deleted } = await keymaster.checkWallet();
@@ -124,7 +129,7 @@ const WalletTab = () => {
                 setCheckResultMessage(msg);
                 setShowFixModal(true);
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
         setCheckingWallet(false);
@@ -133,6 +138,9 @@ const WalletTab = () => {
     async function handleFixWalletConfirm() {
         setShowFixModal(false);
         setCheckResultMessage("");
+        if (!keymaster) {
+            return;
+        }
         try {
             const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } =
                 await keymaster.fixWallet();
@@ -142,12 +150,15 @@ const WalletTab = () => {
             await initialiseWallet();
             clearJsonWallet();
             setMnemonicString("");
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
 
     async function recoverWallet() {
+        if (!keymaster) {
+            return;
+        }
         await keymaster.recoverWallet();
         await initialiseWallet();
         clearJsonWallet();
@@ -165,7 +176,7 @@ const WalletTab = () => {
             } else {
                 await wipeAndClose();
             }
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
 
@@ -176,10 +187,13 @@ const WalletTab = () => {
     };
 
     async function showMnemonic() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const response = await keymaster.decryptMnemonic();
             setMnemonicString(response);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -189,16 +203,21 @@ const WalletTab = () => {
     }
 
     async function showWallet() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const wallet = await keymaster.loadWallet();
             setJsonViewerOpen(true);
-            setOpenBrowser({
-                title: "",
-                did: "",
-                tab: "wallet",
-                contents: wallet,
-            });
-        } catch (error) {
+            if (setOpenBrowser) {
+                setOpenBrowser({
+                    title: "",
+                    did: "",
+                    tab: "wallet",
+                    contents: wallet,
+                });
+            }
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -250,6 +269,9 @@ const WalletTab = () => {
     }
 
     async function downloadWallet() {
+        if (!keymaster) {
+            return;
+        }
         try {
             const wallet = await keymaster.loadWallet();
             const walletJSON = JSON.stringify(wallet, null, 4);
@@ -262,7 +284,7 @@ const WalletTab = () => {
             link.click();
 
             URL.revokeObjectURL(url);
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
@@ -289,10 +311,13 @@ const WalletTab = () => {
     }
 
     async function backupWallet() {
+        if (!keymaster) {
+            return;
+        }
         try {
             await keymaster.backupWallet();
             setSuccess("Wallet backup successful");
-        } catch (error) {
+        } catch (error: any) {
             setError(error.error || error.message || String(error));
         }
     }
