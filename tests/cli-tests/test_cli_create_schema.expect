@@ -1,0 +1,30 @@
+#!/usr/bin/expect
+
+# Set timeout to avoid infinite waits
+set timeout 10
+
+
+# Start the CLI program
+spawn bash kc create-schema share/social-media.json testing
+
+# Look for the specific DID pattern
+expect {
+    -re "(did:test:\[a-zA-Z0-9]+)" {
+        set captured_did $expect_out(1,string)
+        puts "\n✅ Captured DID: $captured_did"
+    }
+    timeout {
+        puts "\n❌ Timeout occurred while waiting for output"
+        exit 1
+    }
+    eof {
+        puts "\n❌ End of file reached without finding a match"
+        exit 1
+    }
+}
+
+# Verify the captured DID
+if {$captured_did eq ""} {
+    puts "No DID was captured! \n❌"
+    exit 1
+}
