@@ -1096,6 +1096,70 @@ describe('updateAsset', () => {
     });
 });
 
+describe('cloneAsset', () => {
+    const mockDID = 'did:example:123456789abcd';
+    const cloneDID = 'did:example:123456789clone';
+
+    it('should clone asset', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .reply(200, { did: cloneDID });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.cloneAsset(mockDID);
+
+        expect(did).toBe(cloneDID);
+    });
+
+    it('should throw exception on cloneAsset server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.cloneAsset(mockDID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('transferAsset', () => {
+    const mockDID = 'did:example:123456789abcd';
+    const controller = 'did:example:controller';
+
+    it('should clone asset', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.transferAsset(mockDID, controller);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on cloneAsset server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.transferAsset(mockDID, controller);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('createChallenge', () => {
     const mockDID = 'did:mock:challenge';
 
