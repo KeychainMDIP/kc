@@ -1440,6 +1440,20 @@ describe('createAsset', () => {
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
     });
 
+    it('should create asset with specified name', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor' };
+        const mockName = 'mockName'
+        const dataDid = await keymaster.createAsset(mockAnchor, { name: mockName });
+        const doc = await keymaster.resolveDID(mockName);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+        expect(doc.didDocumentData).toStrictEqual(mockAnchor);
+    });
+
     it('should throw an exception if no ID selected', async () => {
         mockFs({});
 
@@ -1454,6 +1468,18 @@ describe('createAsset', () => {
     });
 
     it('should throw an exception for an empty string anchor', async () => {
+        mockFs({});
+
+        try {
+            await keymaster.createId('Bob');
+            await keymaster.createAsset({}, { name: 'Bob' });
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: name already used');
+        }
+    });
+
+    it('should throw an exception for an invalid name', async () => {
         mockFs({});
 
         try {

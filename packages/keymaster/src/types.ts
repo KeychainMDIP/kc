@@ -52,7 +52,8 @@ export interface FixWalletResult {
 export interface CreateAssetOptions {
     registry?: string;
     controller?: string;
-    validUntil?: string
+    validUntil?: string;
+    name?: string;
 }
 
 export interface EncryptOptions {
