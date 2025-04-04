@@ -3323,25 +3323,13 @@ v1router.post('/schemas/:id/template', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: Expiration date/time for an ephemeral asset. Omit for a permanent asset.
- *                   retries:
- *                     type: integer
- *                     default: 0
- *                     description: Number of times to retry creation if not successful at first.
- *                   delay:
- *                     type: integer
- *                     default: 1000
- *                     description: Milliseconds to wait between retries.
- *                   encryptForSender:
- *                     type: boolean
- *                     default: true
- *                     description: Whether to include an encrypted copy for the creator (sender).
- *                   includeHash:
- *                     type: boolean
- *                     default: false
- *                     description: Whether to embed a hash of the `data` in the asset for verification.
  *                   controller:
  *                     type: string
  *                     description: Specific ID or DID to act as the asset’s controller. Defaults to the current ID.
+ *                   name:
+ *                     type: string
+ *                     description: A human-readable name for the asset.
+
  *     responses:
  *       200:
  *         description: The DID of the newly created asset.

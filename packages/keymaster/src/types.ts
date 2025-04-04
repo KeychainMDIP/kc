@@ -52,14 +52,13 @@ export interface FixWalletResult {
 export interface CreateAssetOptions {
     registry?: string;
     controller?: string;
-    validUntil?: string
+    validUntil?: string;
+    name?: string;
 }
 
-export interface EncryptOptions {
+export interface EncryptOptions extends CreateAssetOptions {
     encryptForSender?: boolean;
     includeHash?: boolean;
-    registry?: string;
-    validUntil?: string;
 }
 
 export interface Group {
@@ -87,12 +86,10 @@ export interface VerifiableCredential {
     signature?: Signature;
 }
 
-export interface IssueCredentialsOptions {
+export interface IssueCredentialsOptions extends EncryptOptions {
     schema?: string;
     subject?: string;
-    registry?: string;
     validFrom?: string;
-    validUntil?: string;
     credential?: Record<string, unknown>;
 }
 

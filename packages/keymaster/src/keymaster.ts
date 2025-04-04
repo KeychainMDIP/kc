@@ -614,7 +614,7 @@ export default class Keymaster implements KeymasterInterface {
         data: unknown,
         options: CreateAssetOptions = {}
     ): Promise<string> {
-        let { registry = this.defaultRegistry, controller, validUntil } = options;
+        let { registry = this.defaultRegistry, controller, validUntil, name } = options;
 
         if (validUntil) {
             const validate = new Date(validUntil);
@@ -622,6 +622,11 @@ export default class Keymaster implements KeymasterInterface {
             if (isNaN(validate.getTime())) {
                 throw new InvalidParameterError('options.validUntil');
             }
+        }
+
+        if (name) {
+            const wallet = await this.loadWallet();
+            this.validateName(name, wallet);
         }
 
         if (!data) {
@@ -649,6 +654,10 @@ export default class Keymaster implements KeymasterInterface {
         // Keep assets that will be garbage-collected out of the owned list
         if (!validUntil) {
             await this.addToOwned(did);
+        }
+
+        if (name) {
+            await this.addName(name, did);
         }
 
         return did;
@@ -1596,7 +1605,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async createChallenge(
         challenge: Challenge = {},
-        options: { registry?: string; validUntil?: string } = {}
+        options: CreateAssetOptions = {}
     ): Promise<string> {
 
         if (!challenge || typeof challenge !== 'object' || Array.isArray(challenge)) {
@@ -1855,7 +1864,7 @@ export default class Keymaster implements KeymasterInterface {
             members: options.members || []
         };
 
-        return this.createAsset({ group }, options);
+        return this.createAsset({ group }, { ...options, name });
     }
 
     async getGroup(id: string): Promise<Group | null> {
