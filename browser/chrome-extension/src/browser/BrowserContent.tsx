@@ -86,6 +86,21 @@ function BrowserContent() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
+    function toggleMenuOpen() {
+        const newValue = !menuOpen;
+        setMenuOpen(newValue);
+        chrome.storage.local.set({ menuOpen: newValue });
+    }
+
+    useEffect(() => {
+        chrome.storage.local.get(['menuOpen'], (result) => {
+            if (result.menuOpen) {
+                setMenuOpen(result.menuOpen);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         if (!isBrowser || !openBrowser) {
             return;
@@ -120,7 +135,7 @@ function BrowserContent() {
     return (
         <ThemeProvider theme={theme}>
             <Box className="rootContainer">
-                <BrowserHeader menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+                <BrowserHeader menuOpen={menuOpen} toggleMenuOpen={toggleMenuOpen} />
                 <TabContext value={activeTab}>
                     <Box className="layoutContainer">
                         <Box className={`sidebar ${menuOpen ? "open" : ""}`}>

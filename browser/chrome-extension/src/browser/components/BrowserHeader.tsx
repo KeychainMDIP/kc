@@ -1,41 +1,27 @@
+import React from "react";
 import { Box, IconButton, Typography, Switch } from "@mui/material";
 import { DarkMode, LightMode, Menu } from "@mui/icons-material";
 import { useThemeContext } from "../../shared/contexts/ContextProviders";
 import DropDownID from "../../shared/DropDownID";
-import React, { Dispatch, SetStateAction, useEffect } from "react";
 
 const BrowserHeader = (
     {
         menuOpen,
-        setMenuOpen
+        toggleMenuOpen
     }: {
         menuOpen: boolean,
-        setMenuOpen: Dispatch<SetStateAction<boolean>>,
+        toggleMenuOpen: () => void,
     }) => {
     const {
         darkMode,
         handleDarkModeToggle,
     } = useThemeContext();
 
-    function toggleMenuOpen() {
-        const newValue = !menuOpen;
-        setMenuOpen(newValue);
-        chrome.storage.local.set({ menuOpen: newValue });
-    }
-
-    useEffect(() => {
-        chrome.storage.local.get(['menuOpen'], (result) => {
-            if (result.menuOpen) {
-                setMenuOpen(result.menuOpen);
-            }
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
     return (
         <Box
             sx={{
                 width: menuOpen ? 890 : 790,
+                transition: 'width 0.2s ease-in-out',
                 display: "flex",
                 alignItems: "center",
                 height: 48,
