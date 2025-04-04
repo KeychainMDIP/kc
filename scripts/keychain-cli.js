@@ -189,12 +189,7 @@ program
     .action(async () => {
         try {
             const ok = await keymaster.backupId();
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -401,12 +396,7 @@ program
     .action(async (file, name) => {
         try {
             const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : undefined;
-            const did = await keymaster.createChallenge(challenge);
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
+            const did = await keymaster.createChallenge(challenge, { name });
             console.log(did);
         }
         catch (error) {
@@ -420,12 +410,7 @@ program
     .action(async (credentialDID, name) => {
         try {
             const challenge = { credentials: [{ schema: credentialDID }] };
-            const did = await keymaster.createChallenge(challenge);
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
+            const did = await keymaster.createChallenge(challenge, { name });
             console.log(did);
         }
         catch (error) {
@@ -452,12 +437,7 @@ program
     .action(async (file, registry, name) => {
         try {
             const vc = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.issueCredential(vc, { registry });
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
+            const did = await keymaster.issueCredential(vc, { registry, name });
             console.log(did);
         }
         catch (error) {
@@ -471,7 +451,6 @@ program
     .action(async () => {
         try {
             const response = await keymaster.listIssued();
-
             console.log(JSON.stringify(response, null, 4));
         }
         catch (error) {
@@ -485,12 +464,7 @@ program
     .action(async (did) => {
         try {
             const ok = await keymaster.revokeCredential(did);
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -676,7 +650,6 @@ program
         try {
             const did = await keymaster.createGroup(name);
             console.log(did);
-            await keymaster.addName(name, did);
         }
         catch (error) {
             console.error(error.error || error);
@@ -754,12 +727,7 @@ program
     .action(async (file, name) => {
         try {
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createSchema(schema);
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
+            const did = await keymaster.createSchema(schema, { name });
             console.log(did);
         }
         catch (error) {
@@ -958,12 +926,7 @@ program
     .action(async (file, name) => {
         try {
             const poll = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createPoll(poll);
-
-            if (name) {
-                await keymaster.addName(name, did);
-            }
-
+            const did = await keymaster.createPoll(poll, { name });
             console.log(did);
         }
         catch (error) {
@@ -1003,12 +966,7 @@ program
     .action(async (ballot) => {
         try {
             const ok = await keymaster.updatePoll(ballot);
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -1021,12 +979,7 @@ program
     .action(async (poll) => {
         try {
             const ok = await keymaster.publishPoll(poll);
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -1039,12 +992,7 @@ program
     .action(async (poll) => {
         try {
             const ok = await keymaster.publishPoll(poll, { reveal: true });
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -1057,12 +1005,7 @@ program
     .action(async (poll) => {
         try {
             const ok = await keymaster.unpublishPoll(poll);
-            if (ok) {
-                console.log(UPDATE_OK);
-            }
-            else {
-                console.log(UPDATE_FAILED);
-            }
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);

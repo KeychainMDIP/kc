@@ -1605,7 +1605,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async createChallenge(
         challenge: Challenge = {},
-        options: { registry?: string; validUntil?: string } = {}
+        options: CreateAssetOptions = {}
     ): Promise<string> {
 
         if (!challenge || typeof challenge !== 'object' || Array.isArray(challenge)) {
@@ -1864,7 +1864,7 @@ export default class Keymaster implements KeymasterInterface {
             members: options.members || []
         };
 
-        return this.createAsset({ group }, options);
+        return this.createAsset({ group }, { ...options, name });
     }
 
     async getGroup(id: string): Promise<Group | null> {
