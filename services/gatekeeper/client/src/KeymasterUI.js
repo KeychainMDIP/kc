@@ -85,6 +85,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         // eslint-disable-next-line
     }, []);
 
+    function showAlert(message) {
+        window.alert(message);
+    }
+
     function showError(error) {
         window.alert(error.error || error);
     }
@@ -191,9 +195,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             await keymaster.createId(newName, { registry });
             refreshAll();
-            // TBD this should be done in keymaster?
-            // The backup forces a change, triggering registration
-            // const ok = await keymaster.backupId(currentId);
         } catch (error) {
             showError(error);
         }
@@ -264,8 +265,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             if (did) {
                 const response = await keymaster.recoverId(did);
                 refreshAll();
-                showError(response);
+                showAlert(response);
             }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function rotateKeys() {
+        try {
+            await keymaster.rotateKeys();
+            refreshAll();
         } catch (error) {
             showError(error);
         }
@@ -1152,6 +1162,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Grid item>
                                     <Button variant="contained" color="primary" onClick={recoverId}>
                                         Recover...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={rotateKeys}>
+                                        Rotate keys
                                     </Button>
                                 </Grid>
                             </Grid>
