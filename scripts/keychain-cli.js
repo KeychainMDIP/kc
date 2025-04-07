@@ -275,8 +275,8 @@ program
     .description('Generates new set of keys for current ID')
     .action(async () => {
         try {
-            const doc = await keymaster.rotateKeys();
-            console.log(JSON.stringify(doc, null, 4));
+            const ok = await keymaster.rotateKeys();
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
