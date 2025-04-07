@@ -4216,6 +4216,7 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  *                 error:
  *                   type: string
  */
+// eslint-disable-next-line
 v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
@@ -4527,7 +4528,7 @@ app.listen(port, async () => {
     try {
         await waitForCurrentId();
     }
-    catch(error) {
+    catch (error) {
         console.error('Failed to resolve current ID:', error);
     }
 

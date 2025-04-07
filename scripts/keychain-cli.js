@@ -393,6 +393,7 @@ program
 program
     .command('create-challenge [file]')
     .description('Create a challenge (optionally from a file)')
+    // eslint-disable-next-line
     .option('-n, --name <name>', 'DID name')
     .action(async (file, options) => {
         try {
@@ -653,6 +654,7 @@ program
     .command('create-group <name>')
     .description('Create a new group')
     .requiredOption('-n, --name <name>', 'group name')
+    // eslint-disable-next-line
     .option('-r, --registry <registry>', 'registry to use')
     .action(async (options) => {
         try {
@@ -735,7 +737,7 @@ program
     .description('Create a schema from a file')
     .option('-n, --name <name>', 'DID name')
     .option('-r, --registry <registry>', 'registry to use')
-    .action(async (file, name) => {
+    .action(async (file, options) => {
         try {
             const { name, registry } = options;
             const schema = JSON.parse(fs.readFileSync(file).toString());
@@ -895,7 +897,7 @@ program
     .description('Clone an asset')
     .option('-n, --name <name>', 'DID name')
     .option('-r, --registry <registry>', 'registry to use')
-    .action(async (id) => {
+    .action(async (id, options) => {
         try {
             const { name, registry } = options;
             const did = await keymaster.cloneAsset(id, { name, registry });
