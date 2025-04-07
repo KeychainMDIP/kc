@@ -84,7 +84,7 @@ Options:
   -h, --help                                 display help for command
 
 Commands:
-  accept-credential <did> [name]             Save verifiable credential for current ID
+  accept-credential [options] <did>          Save verifiable credential for current ID
   add-group-member <group> <member>          Add a member to a group
   add-name <name> <did>                      Add a name for a DID
   backup-id                                  Backup the current ID to its registry
@@ -92,18 +92,18 @@ Commands:
   backup-wallet-file <file>                  Backup wallet to file
   bind-credential <schema> <subject>         Create bound credential for a user
   check-wallet                               Validate DIDs in wallet
-  clone-asset <id>                           Clone an asset
-  create-asset                               Create an empty asset
-  create-asset-image <file>                  Create an asset from an image file
-  create-asset-json <file>                   Create an asset from a JSON file
-  create-challenge [file] [name]             Create a challenge (optionally from a file)
-  create-challenge-cc <did> [name]           Create a challenge from a credential DID
-  create-group <name>                        Create a new group
+  clone-asset [options] <id>                 Clone an asset
+  create-asset [options]                     Create an empty asset
+  create-asset-image [options] <file>        Create an asset from an image file
+  create-asset-json [options] <file>         Create an asset from a JSON file
+  create-challenge [options] [file]          Create a challenge (optionally from a file)
+  create-challenge-cc [options] <did>        Create a challenge from a credential DID
+  create-group [options] <name>              Create a new group
   create-id <name> [registry]                Create a new decentralized ID
-  create-poll <file> [name]                  Create a poll
+  create-poll [options] <file>               Create a poll
   create-poll-template                       Create a poll template
   create-response <challenge>                Create a response to a challenge
-  create-schema <file> [name]                Create a schema from a file
+  create-schema [options] <file>             Create a schema from a file
   create-schema-template <schema>            Create a template from a schema
   create-wallet                              Create a new wallet (or show existing wallet)
   decrypt-did <did>                          Decrypt an encrypted message DID
@@ -152,7 +152,8 @@ Commands:
   transfer-asset <id> <controller>           Transfer asset to a new controller
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
-  update-asset <id> [file]                   Update an asset from a JSON file
+  update-asset-image <id> <file>             Update an asset from an image file
+  update-asset-json <id> <file>              Update an asset from a JSON file
   update-poll <ballot>                       Add a ballot to the poll
   use-id <name>                              Set the current ID
   verify-file <file>                         Verify the signature in a JSON file
