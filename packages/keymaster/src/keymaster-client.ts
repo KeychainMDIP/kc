@@ -249,10 +249,10 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async rotateKeys(): Promise<MdipDocument> {
+    async rotateKeys(): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/keys/rotate`);
-            return response.data.docs;
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);

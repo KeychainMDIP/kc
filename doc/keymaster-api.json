@@ -3457,15 +3457,14 @@
         },
         "responses": {
           "200": {
-            "description": "The updated DID Document reflecting the new key rotation.",
+            "description": "Indicates whether key rotation was successful.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "ok": {
-                      "type": "object",
-                      "description": "The updated DID Document (with the new key)."
+                      "type": "boolean"
                     }
                   }
                 }

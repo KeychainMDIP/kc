@@ -2877,15 +2877,14 @@ v1router.delete('/credentials/issued/:did', async (req, res) => {
  *             description: No options required. Key rotation applies to the current ID.
  *     responses:
  *       200:
- *         description: The updated DID Document reflecting the new key rotation.
+ *         description: Indicates whether key rotation was successful.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 docs:
- *                   type: object
- *                   description: The updated DID Document (with the new key).
+ *                 ok:
+ *                   type: boolean
  *       500:
  *         description: Internal server error.
  *         content:
@@ -2898,8 +2897,8 @@ v1router.delete('/credentials/issued/:did', async (req, res) => {
  */
 v1router.post('/keys/rotate', async (req, res) => {
     try {
-        const docs = await keymaster.rotateKeys();
-        res.json({ docs });
+        const ok = await keymaster.rotateKeys();
+        res.json({ ok });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }

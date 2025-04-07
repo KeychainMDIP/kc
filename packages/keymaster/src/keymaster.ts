@@ -1275,7 +1275,7 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async rotateKeys(): Promise<MdipDocument> {
+    async rotateKeys(): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = wallet.ids[wallet.current!];
         const nextIndex = id.index + 1;
@@ -1304,11 +1304,12 @@ export default class Keymaster implements KeymasterInterface {
         if (ok) {
             id.index = nextIndex;
             await this.saveWallet(wallet);
-            return doc;
         }
         else {
             throw new KeymasterError('Cannot rotate keys');
         }
+
+        return ok;
     }
 
     async listNames(): Promise<Record<string, string>> {
