@@ -4229,6 +4229,49 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
     }
 });
 
+/**
+ * @swagger
+ * /images/{id}:
+ *   put:
+ *     summary: Update an existing image.
+ *     description: >
+ *       Updates the binary data of an existing image identified by its DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The new image data to replace the existing one.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the update was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the update was successful, otherwise `false`.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 v1router.put('/images/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
