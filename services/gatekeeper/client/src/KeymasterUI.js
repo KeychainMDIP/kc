@@ -528,8 +528,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const name = groupName;
             setGroupName('');
 
-            const groupDID = await keymaster.createGroup(name, { registry });
-            await keymaster.addName(groupName, groupDID);
+            await keymaster.createGroup(name, { registry, name });
 
             refreshNames();
             setSelectedGroupName(name);
@@ -589,8 +588,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const name = schemaName;
             setSchemaName('');
 
-            const schemaDID = await keymaster.createSchema(null, { registry });
-            await keymaster.addName(name, schemaDID);
+            await keymaster.createSchema(null, { registry, name });
 
             refreshNames();
             setSelectedSchemaName(name);
