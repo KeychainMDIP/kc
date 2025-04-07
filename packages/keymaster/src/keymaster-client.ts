@@ -20,8 +20,8 @@ import {
     WalletFile,
 } from './types.js'
 
-import axios, {AxiosError} from 'axios';
-import {Image} from "./keymaster.js";
+import axios, { AxiosError } from 'axios';
+import { Image } from "./keymaster.js";
 
 const VERSION = '/api/v1';
 
@@ -243,6 +243,16 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.get(`${this.API}/ids`);
             return response.data.ids;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async rotateKeys(): Promise<MdipDocument> {
+        try {
+            const response = await axios.post(`${this.API}/keys/rotate`);
+            return response.data.docs;
         }
         catch (error) {
             throwError(error);

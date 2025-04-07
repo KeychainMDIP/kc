@@ -2883,7 +2883,7 @@ v1router.delete('/credentials/issued/:did', async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 ok:
+ *                 docs:
  *                   type: object
  *                   description: The updated DID Document (with the new key).
  *       500:
@@ -2898,8 +2898,8 @@ v1router.delete('/credentials/issued/:did', async (req, res) => {
  */
 v1router.post('/keys/rotate', async (req, res) => {
     try {
-        const ok = await keymaster.rotateKeys();
-        res.json({ ok });
+        const docs = await keymaster.rotateKeys();
+        res.json({ docs });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }
