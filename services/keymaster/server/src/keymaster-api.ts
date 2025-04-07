@@ -4229,6 +4229,17 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
     }
 });
 
+v1router.put('/images/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const ok = await keymaster.updateImage(req.params.id, data);
+
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
 /**
  * @swagger
  * /images/{id}:

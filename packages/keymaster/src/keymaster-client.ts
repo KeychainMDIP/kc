@@ -931,6 +931,23 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async updateImage(
+        id: string,
+        data: Buffer
+    ): Promise<string> {
+        try {
+            const response = await axios.put(`${this.API}/images/${id}`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async getImage(id: string): Promise<Image | null> {
         try {
             const response = await axios.get(`${this.API}/images/${id}`);

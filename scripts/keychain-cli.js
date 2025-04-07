@@ -830,12 +830,26 @@ program
     });
 
 program
-    .command('update-asset <id> [file]')
+    .command('update-asset-json <id> [file]')
     .description('Update an asset from a JSON file')
     .action(async (id, file) => {
         try {
             const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
             const ok = await keymaster.updateAsset(id, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('update-asset-image <id> <file>')
+    .description('Update an asset from an image file')
+    .action(async (id, file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const ok = await keymaster.updateImage(id, data);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
