@@ -495,7 +495,7 @@ describe('listIds', () => {
 });
 
 describe('rotateKeys', () => {
-    it('should encrypt message', async () => {
+    it('should rotate keys', async () => {
         nock(KeymasterURL)
             .post(Endpoints.keys_rotate)
             .reply(200, { ok: true });
@@ -506,7 +506,7 @@ describe('rotateKeys', () => {
         expect(ok).toStrictEqual(true);
     });
 
-    it('should throw exception on encryptMessage server error', async () => {
+    it('should throw exception on rotateKeys server error', async () => {
         nock(KeymasterURL)
             .post(Endpoints.keys_rotate)
             .reply(500, ServerError);
