@@ -2,4 +2,5 @@
 set -e
 
 npm --prefix services/gatekeeper/client run build
-node services/gatekeeper/server/src/gatekeeper-api.js
+npm --prefix services/gatekeeper/server run build
+node services/gatekeeper/server/dist/gatekeeper-api.js
