@@ -1065,7 +1065,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const buffer = Buffer.from(arrayBuffer);
 
                     await keymaster.updateImage(selectedImageName, buffer);
-                    
+
                     showAlert(`Image updated successfully`);
                     refreshImage(selectedImageName);
                 } catch (error) {
@@ -1085,6 +1085,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshImage(imageName) {
         try {
+            setSelectedImageName(imageName);
+
             const image = await keymaster.getImage(imageName);
             setSelectedImage(image);
 
@@ -1647,7 +1649,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         value={selectedImageName}
                                                         fullWidth
                                                         displayEmpty
-                                                        onChange={(event) => setSelectedImageName(event.target.value)}
+                                                        onChange={(event) => refreshImage(event.target.value)}
                                                     >
                                                         <MenuItem value="" disabled>
                                                             Select image
@@ -1658,11 +1660,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             </MenuItem>
                                                         ))}
                                                     </Select>
-                                                </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
-                                                        Show Image
-                                                    </Button>
                                                 </Grid>
                                                 <Grid item>
                                                     <Button
