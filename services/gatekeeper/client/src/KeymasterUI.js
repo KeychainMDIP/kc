@@ -1682,7 +1682,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         variant="contained"
                                                         color="primary"
                                                         onClick={() => document.getElementById('imageUpdate').click()}
-                                                        disabled={!registry}
+                                                        disabled={!selectedImageName}
                                                     >
                                                         Update image...
                                                     </Button>

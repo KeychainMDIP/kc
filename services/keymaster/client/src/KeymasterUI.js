@@ -78,6 +78,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedImageName, setSelectedImageName] = useState('');
     const [selectedImage, setSelectedImage] = useState('');
     const [selectedImageDocs, setSelectedImageDocs] = useState('');
+    const [imageVersion, setImageVersion] = useState(1);
+    const [imageVersionMax, setImageVersionMax] = useState(1);
+    const [imageVersions, setImageVersions] = useState([]);
 
     useEffect(() => {
         checkForChallenge();
@@ -1025,34 +1028,86 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
 
                     await keymaster.addName(name, did);
-                    alert(`Image uploaded successfully! DID: ${did}`);
+                    showAlert(`Image uploaded successfully: ${name}`);
 
                     refreshNames();
-                    setSelectedImageName(name);
-                    refreshImage(name);
+                    selectImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    alert(`Error processing image: ${error}`);
+                    showError(`Error processing image: ${error}`);
                 }
             };
 
             reader.onerror = (error) => {
-                alert(`Error reading file: ${error}`);
+                showError(`Error reading file: ${error}`);
             };
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            alert(`Error uploading image: ${error}`);
+            showError(`Error uploading image: ${error}`);
         }
     }
 
-    async function refreshImage(imageName) {
+    async function updateImage(event) {
         try {
-            const image = await keymaster.getImage(imageName);
-            setSelectedImage(image);
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
 
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    await keymaster.updateImage(selectedImageName, buffer);
+
+                    showAlert(`Image updated successfully`);
+                    selectImage(selectedImageName);
+                } catch (error) {
+                    showError(`Error processing image: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function selectImage(imageName) {
+        try {
             const docs = await keymaster.resolveDID(imageName);
+            const versions = docs.didDocumentMetadata.version;
+
+            setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
+            setSelectedImage(docs.didDocumentData.image);
+            setImageVersion(versions);
+            setImageVersionMax(versions);
+            setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function selectImageVersion(version) {
+        try {
+            const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+
+            setSelectedImageDocs(docs);
+            setSelectedImage(docs.didDocumentData.image);
+            setImageVersion(version);
         } catch (error) {
             showError(error);
         }
@@ -1565,16 +1620,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <Button
-                                                variant="contained"
-                                                color="primary"
-                                                onClick={() => document.getElementById('imageUpload').click()}
-                                                disabled={!registry}
-                                            >
-                                                Upload
-                                            </Button>
-                                        </Grid>
-                                        <Grid item>
                                             <Select
                                                 style={{ width: '300px' }}
                                                 value={registry}
@@ -1592,14 +1637,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 ))}
                                             </Select>
                                         </Grid>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => document.getElementById('imageUpload').click()}
+                                                disabled={!registry}
+                                            >
+                                                Upload Image...
+                                            </Button>
+                                            <input
+                                                type="file"
+                                                id="imageUpload"
+                                                accept="image/*"
+                                                style={{ display: 'none' }}
+                                                onChange={uploadImage}
+                                            />
+                                        </Grid>
                                     </Grid>
-                                    <input
-                                        type="file"
-                                        id="imageUpload"
-                                        accept="image/*"
-                                        style={{ display: 'none' }}
-                                        onChange={uploadImage}
-                                    />
                                     <p />
                                     {imageList &&
                                         <Box>
@@ -1610,7 +1665,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         value={selectedImageName}
                                                         fullWidth
                                                         displayEmpty
-                                                        onChange={(event) => setSelectedImageName(event.target.value)}
+                                                        onChange={(event) => selectImage(event.target.value)}
                                                     >
                                                         <MenuItem value="" disabled>
                                                             Select image
@@ -1623,14 +1678,63 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Select>
                                                 </Grid>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
-                                                        Show Image
+                                                    <Button
+                                                        variant="contained"
+                                                        color="primary"
+                                                        onClick={() => document.getElementById('imageUpdate').click()}
+                                                        disabled={!selectedImageName}
+                                                    >
+                                                        Update image...
                                                     </Button>
+                                                    <input
+                                                        type="file"
+                                                        id="imageUpdate"
+                                                        accept="image/*"
+                                                        style={{ display: 'none' }}
+                                                        onChange={updateImage}
+                                                    />
                                                 </Grid>
                                             </Grid>
                                             <p />
-                                            {selectedImage && selectedImageDocs &&
+                                            {selectedImage && selectedImageDocs && imageVersions &&
                                                 <div className="container">
+                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(1)} disabled={imageVersion === 1}>
+                                                                First
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion - 1)} disabled={imageVersion === 1}>
+                                                                Prev
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Select
+                                                                style={{ width: '150px' }}
+                                                                value={imageVersion}
+                                                                fullWidth
+                                                                onChange={(event) => selectImageVersion(event.target.value)}
+                                                            >
+                                                                {imageVersions.map((version, index) => (
+                                                                    <MenuItem value={version} key={index}>
+                                                                        version {version}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion + 1)} disabled={imageVersion === imageVersionMax}>
+                                                                Next
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersionMax)} disabled={imageVersion === imageVersionMax}>
+                                                                Last
+                                                            </Button>
+                                                        </Grid>
+                                                    </Grid>
+                                                    <br />
                                                     <div className="left-pane">
                                                         <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
                                                     </div>
@@ -1656,7 +1760,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Version</TableCell>
-                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version} of {imageVersionMax}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>File size</TableCell>
