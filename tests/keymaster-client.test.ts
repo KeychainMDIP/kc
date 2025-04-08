@@ -17,6 +17,7 @@ const Endpoints = {
     registries: '/api/v1/registries',
     ids: '/api/v1/ids',
     ids_current: '/api/v1/ids/current',
+    keys_rotate: '/api/v1/keys/rotate',
     keys_encrypt_message: '/api/v1/keys/encrypt/message',
     keys_decrypt_message: '/api/v1/keys/decrypt/message',
     keys_encrypt_json: '/api/v1/keys/encrypt/json',
@@ -485,6 +486,35 @@ describe('listIds', () => {
 
         try {
             await keymaster.listIds();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('rotateKeys', () => {
+    it('should rotate keys', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.keys_rotate)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.rotateKeys();
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should throw exception on rotateKeys server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.keys_rotate)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.rotateKeys();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
