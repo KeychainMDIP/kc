@@ -78,6 +78,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedImageName, setSelectedImageName] = useState('');
     const [selectedImage, setSelectedImage] = useState('');
     const [selectedImageDocs, setSelectedImageDocs] = useState('');
+    const [imageVersion, setImageVersion] = useState(1);
+    const [imageVersionMax, setImageVersionMax] = useState(1);
+    const [imageVersions, setImageVersions] = useState([]);
 
     useEffect(() => {
         checkForChallenge();
@@ -1087,11 +1090,28 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             setSelectedImageName(imageName);
 
-            const image = await keymaster.getImage(imageName);
-            setSelectedImage(image);
+            // const image = await keymaster.getImage(imageName);
+            // setSelectedImage(image);
 
             const docs = await keymaster.resolveDID(imageName);
             setSelectedImageDocs(docs);
+            setSelectedImage(docs.didDocumentData.image);
+
+            const versions = docs.didDocumentMetadata.version;
+            setImageVersion(versions);
+            setImageVersionMax(versions);
+            setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function selectImageVersion(version) {
+        try {
+            setImageVersion(version);
+            const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+            setSelectedImageDocs(docs);
+            setSelectedImage(docs.didDocumentData.image);
         } catch (error) {
             showError(error);
         }
@@ -1680,8 +1700,45 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                             </Grid>
                                             <p />
-                                            {selectedImage && selectedImageDocs &&
+                                            {selectedImage && selectedImageDocs && imageVersions &&
                                                 <div className="container">
+                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(1)} disabled={imageVersion === 1}>
+                                                                First
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion - 1)} disabled={imageVersion === 1}>
+                                                                Prev
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Select
+                                                                style={{ width: '150px' }}
+                                                                value={imageVersion}
+                                                                fullWidth
+                                                                onChange={(event) => selectImageVersion(event.target.value)}
+                                                            >
+                                                                {imageVersions.map((version, index) => (
+                                                                    <MenuItem value={version} key={index}>
+                                                                        version {version}
+                                                                    </MenuItem>
+                                                                ))}
+                                                            </Select>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion + 1)} disabled={imageVersion === imageVersionMax}>
+                                                                Next
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersionMax)} disabled={imageVersion === imageVersionMax}>
+                                                                Last
+                                                            </Button>
+                                                        </Grid>
+                                                    </Grid>
+                                                    <br />
                                                     <div className="left-pane">
                                                         <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
                                                     </div>
