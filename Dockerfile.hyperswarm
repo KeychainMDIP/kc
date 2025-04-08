@@ -17,7 +17,7 @@ RUN npm run build
 
 COPY services/mediators/hyperswarm ./hyperswarm/
 WORKDIR /app/hyperswarm
-RUN npm ci
+RUN npm ci && npm run build
 
 # Run...
-CMD ["node", "src/hyperswarm-mediator.js"]
+CMD ["node", "dist/hyperswarm-mediator.js"]
