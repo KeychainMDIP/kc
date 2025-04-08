@@ -1031,8 +1031,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     showAlert(`Image uploaded successfully: ${name}`);
 
                     refreshNames();
-                    setSelectedImageName(name);
-                    refreshImage(name);
+                    selectImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
                     showError(`Error processing image: ${error}`);
@@ -1070,7 +1069,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     await keymaster.updateImage(selectedImageName, buffer);
 
                     showAlert(`Image updated successfully`);
-                    refreshImage(selectedImageName);
+                    selectImage(selectedImageName);
                 } catch (error) {
                     showError(`Error processing image: ${error}`);
                 }
@@ -1086,18 +1085,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function refreshImage(imageName) {
+    async function selectImage(imageName) {
         try {
-            setSelectedImageName(imageName);
-
-            // const image = await keymaster.getImage(imageName);
-            // setSelectedImage(image);
-
             const docs = await keymaster.resolveDID(imageName);
+            const versions = docs.didDocumentMetadata.version;
+
+            setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
             setSelectedImage(docs.didDocumentData.image);
-
-            const versions = docs.didDocumentMetadata.version;
             setImageVersion(versions);
             setImageVersionMax(versions);
             setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
@@ -1108,10 +1103,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectImageVersion(version) {
         try {
-            setImageVersion(version);
             const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+
             setSelectedImageDocs(docs);
             setSelectedImage(docs.didDocumentData.image);
+            setImageVersion(version);
         } catch (error) {
             showError(error);
         }
@@ -1650,15 +1646,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             >
                                                 Upload Image...
                                             </Button>
+                                            <input
+                                                type="file"
+                                                id="imageUpload"
+                                                accept="image/*"
+                                                style={{ display: 'none' }}
+                                                onChange={uploadImage}
+                                            />
                                         </Grid>
                                     </Grid>
-                                    <input
-                                        type="file"
-                                        id="imageUpload"
-                                        accept="image/*"
-                                        style={{ display: 'none' }}
-                                        onChange={uploadImage}
-                                    />
                                     <p />
                                     {imageList &&
                                         <Box>
@@ -1669,7 +1665,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         value={selectedImageName}
                                                         fullWidth
                                                         displayEmpty
-                                                        onChange={(event) => refreshImage(event.target.value)}
+                                                        onChange={(event) => selectImage(event.target.value)}
                                                     >
                                                         <MenuItem value="" disabled>
                                                             Select image
@@ -1688,7 +1684,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         onClick={() => document.getElementById('imageUpdate').click()}
                                                         disabled={!registry}
                                                     >
-                                                        Update Image...
+                                                        Update image...
                                                     </Button>
                                                     <input
                                                         type="file"
@@ -1764,7 +1760,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Version</TableCell>
-                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version} of {imageVersionMax}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>File size</TableCell>
