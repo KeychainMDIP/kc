@@ -2877,15 +2877,14 @@ v1router.delete('/credentials/issued/:did', async (req, res) => {
  *             description: No options required. Key rotation applies to the current ID.
  *     responses:
  *       200:
- *         description: The updated DID Document reflecting the new key rotation.
+ *         description: Indicates whether key rotation was successful.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 ok:
- *                   type: object
- *                   description: The updated DID Document (with the new key).
+ *                   type: boolean
  *       500:
  *         description: Internal server error.
  *         content:
@@ -4217,6 +4216,7 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  *                 error:
  *                   type: string
  */
+// eslint-disable-next-line
 v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const data = req.body;
@@ -4225,6 +4225,60 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
         const did = await keymaster.createImage(data, options);
 
         res.json({ did });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /images/{id}:
+ *   put:
+ *     summary: Update an existing image.
+ *     description: >
+ *       Updates the binary data of an existing image identified by its DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the image to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The new image data to replace the existing one.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the update was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the update was successful, otherwise `false`.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.put('/images/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const ok = await keymaster.updateImage(req.params.id, data);
+
+        res.json({ ok });
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
@@ -4474,7 +4528,7 @@ app.listen(port, async () => {
     try {
         await waitForCurrentId();
     }
-    catch(error) {
+    catch (error) {
         console.error('Failed to resolve current ID:', error);
     }
 

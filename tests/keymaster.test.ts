@@ -5500,7 +5500,6 @@ describe('createImage', () => {
     it('should create DID from image data', async () => {
         mockFs({});
 
-        // Create a small image buffer using sharp
         const mockImage = await sharp({
             create: {
                 width: 100,
@@ -5535,6 +5534,114 @@ describe('createImage', () => {
 
         try {
             await keymaster.createImage(Buffer.from('mock'));
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: buffer');
+        }
+    });
+});
+
+describe('updateImage', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update image DID from image data', async () => {
+        mockFs({});
+
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createImage(mockImage);
+
+        const mockImage2 = await sharp({
+            create: {
+                width: 200,
+                height: 200,
+                channels: 3,
+                background: { r: 0, g: 255, b: 0 }
+            }
+        }).png().toBuffer();
+        const cid = await generateCID(mockImage2);
+        const ok = await keymaster.updateImage(dataDid, mockImage2);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            image: {
+                cid,
+                bytes: 779,
+                type: 'png',
+                width: 200,
+                height: 200,
+            }
+        }
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should add image to an empty asset', async () => {
+        mockFs({});
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createAsset({});
+
+        const mockImage = await sharp({
+            create: {
+                width: 200,
+                height: 200,
+                channels: 3,
+                background: { r: 0, g: 255, b: 0 }
+            }
+        }).png().toBuffer();
+        const cid = await generateCID(mockImage);
+        const ok = await keymaster.updateImage(dataDid, mockImage);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            image: {
+                cid,
+                bytes: 779,
+                type: 'png',
+                width: 200,
+                height: 200,
+            }
+        }
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should throw an exception on invalid update image buffer', async () => {
+        mockFs({});
+
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+
+        await keymaster.createId('Bob');
+        const dataDid = await keymaster.createImage(mockImage);
+
+        try {
+            await keymaster.updateImage(dataDid, Buffer.from('mock'));
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: buffer');

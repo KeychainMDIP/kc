@@ -3457,15 +3457,14 @@
         },
         "responses": {
           "200": {
-            "description": "The updated DID Document reflecting the new key rotation.",
+            "description": "Indicates whether key rotation was successful.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "ok": {
-                      "type": "object",
-                      "description": "The updated DID Document (with the new key)."
+                      "type": "boolean"
                     }
                   }
                 }
@@ -5082,6 +5081,66 @@
       }
     },
     "/images/{id}": {
+      "put": {
+        "summary": "Update an existing image.",
+        "description": "Updates the binary data of an existing image identified by its DID.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the image to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "description": "The new image data to replace the existing one."
+        },
+        "responses": {
+          "200": {
+            "description": "Indicates whether the update was successful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "true if the update was successful, otherwise `false`."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "summary": "Retrieve an image by its DID.",
         "description": "Fetches the image data and metadata associated with the specified DID.\n",

@@ -275,8 +275,8 @@ program
     .description('Generates new set of keys for current ID')
     .action(async () => {
         try {
-            const doc = await keymaster.rotateKeys();
-            console.log(JSON.stringify(doc, null, 4));
+            const ok = await keymaster.rotateKeys();
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
             console.error(error.error || error);
@@ -391,10 +391,13 @@ program
     });
 
 program
-    .command('create-challenge [file] [name]')
+    .command('create-challenge [file]')
     .description('Create a challenge (optionally from a file)')
-    .action(async (file, name) => {
+    // eslint-disable-next-line
+    .option('-n, --name <name>', 'DID name')
+    .action(async (file, options) => {
         try {
+            const { name } = options;
             const challenge = file ? JSON.parse(fs.readFileSync(file).toString()) : undefined;
             const did = await keymaster.createChallenge(challenge, { name });
             console.log(did);
@@ -405,10 +408,12 @@ program
     });
 
 program
-    .command('create-challenge-cc <did> [name]')
+    .command('create-challenge-cc <did>')
     .description('Create a challenge from a credential DID')
-    .action(async (credentialDID, name) => {
+    .option('-n, --name <name>', 'DID name')
+    .action(async (credentialDID, options) => {
         try {
+            const { name } = options;
             const challenge = { credentials: [{ schema: credentialDID }] };
             const did = await keymaster.createChallenge(challenge, { name });
             console.log(did);
@@ -472,9 +477,11 @@ program
     });
 
 program
-    .command('accept-credential <did> [name]')
+    .command('accept-credential <did>')
     .description('Save verifiable credential for current ID')
-    .action(async (did, name) => {
+    .option('-n, --name <name>', 'DID name')
+    .action(async (did, options) => {
+        const { name } = options;
         try {
             const ok = await keymaster.acceptCredential(did);
 
@@ -646,9 +653,13 @@ program
 program
     .command('create-group <name>')
     .description('Create a new group')
-    .action(async (name) => {
+    .requiredOption('-n, --name <name>', 'group name')
+    // eslint-disable-next-line
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (options) => {
         try {
-            const did = await keymaster.createGroup(name);
+            const { name, registry } = options;
+            const did = await keymaster.createGroup(name, { registry });
             console.log(did);
         }
         catch (error) {
@@ -722,12 +733,15 @@ program
     });
 
 program
-    .command('create-schema <file> [name]')
+    .command('create-schema <file>')
     .description('Create a schema from a file')
-    .action(async (file, name) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
         try {
+            const { name, registry } = options;
             const schema = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createSchema(schema, { name });
+            const did = await keymaster.createSchema(schema, { name, registry });
             console.log(did);
         }
         catch (error) {
@@ -778,9 +792,12 @@ program
 program
     .command('create-asset')
     .description('Create an empty asset')
-    .action(async () => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (options) => {
         try {
-            const did = await keymaster.createAsset({});
+            const { name, registry } = options;
+            const did = await keymaster.createAsset({}, { name, registry });
             console.log(did);
         }
         catch (error) {
@@ -791,10 +808,13 @@ program
 program
     .command('create-asset-json <file>')
     .description('Create an asset from a JSON file')
-    .action(async (file) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
         try {
+            const { name, registry } = options;
             const data = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createAsset(data);
+            const did = await keymaster.createAsset(data, { name, registry });
             console.log(did);
         }
         catch (error) {
@@ -805,10 +825,13 @@ program
 program
     .command('create-asset-image <file>')
     .description('Create an asset from an image file')
-    .action(async (file) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
         try {
+            const { name, registry } = options;
             const data = fs.readFileSync(file);
-            const did = await keymaster.createImage(data);
+            const did = await keymaster.createImage(data, { name, registry });
             console.log(did);
         }
         catch (error) {
@@ -830,12 +853,26 @@ program
     });
 
 program
-    .command('update-asset <id> [file]')
+    .command('update-asset-json <id> <file>')
     .description('Update an asset from a JSON file')
     .action(async (id, file) => {
         try {
-            const data = file ? JSON.parse(fs.readFileSync(file).toString()) : {};
+            const data = JSON.parse(fs.readFileSync(file).toString());
             const ok = await keymaster.updateAsset(id, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('update-asset-image <id> <file>')
+    .description('Update an asset from an image file')
+    .action(async (id, file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const ok = await keymaster.updateImage(id, data);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
@@ -858,9 +895,12 @@ program
 program
     .command('clone-asset <id>')
     .description('Clone an asset')
-    .action(async (id) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (id, options) => {
         try {
-            const did = await keymaster.cloneAsset(id);
+            const { name, registry } = options;
+            const did = await keymaster.cloneAsset(id, { name, registry });
             console.log(did);
         } catch (error) {
             console.error(error.error || error);
@@ -921,12 +961,15 @@ program
     });
 
 program
-    .command('create-poll <file> [name]')
+    .command('create-poll <file>')
     .description('Create a poll')
-    .action(async (file, name) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
         try {
+            const { name, registry } = options;
             const poll = JSON.parse(fs.readFileSync(file).toString());
-            const did = await keymaster.createPoll(poll, { name });
+            const did = await keymaster.createPoll(poll, { name, registry });
             console.log(did);
         }
         catch (error) {

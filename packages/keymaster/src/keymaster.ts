@@ -704,6 +704,31 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset(data, options);
     }
 
+    async updateImage(
+        id: string,
+        buffer: Buffer
+    ): Promise<boolean> {
+        let metadata;
+
+        try {
+            metadata = imageSize(buffer);
+        }
+        catch (error) {
+            throw new InvalidParameterError('buffer');
+        }
+
+        const cid = await this.gatekeeper.addData(buffer);
+        const data = {
+            image: {
+                cid,
+                bytes: buffer.length,
+                ...metadata
+            }
+        };
+
+        return this.updateAsset(id, data);
+    }
+
     async getImage(id: string): Promise<Image | null> {
         const asset = await this.resolveAsset(id);
         const castAsset = asset as { image?: Image };
@@ -1275,7 +1300,7 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async rotateKeys(): Promise<MdipDocument> {
+    async rotateKeys(): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = wallet.ids[wallet.current!];
         const nextIndex = id.index + 1;
@@ -1304,11 +1329,12 @@ export default class Keymaster implements KeymasterInterface {
         if (ok) {
             id.index = nextIndex;
             await this.saveWallet(wallet);
-            return doc;
         }
         else {
             throw new KeymasterError('Cannot rotate keys');
         }
+
+        return ok;
     }
 
     async listNames(): Promise<Record<string, string>> {

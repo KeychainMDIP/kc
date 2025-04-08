@@ -2332,7 +2332,7 @@ describe('createImage', () => {
         expect(did).toBe(mockDID);
     });
 
-    it('should throw exception on createAsset server error', async () => {
+    it('should throw exception on createImage server error', async () => {
         nock(KeymasterURL)
             .post(Endpoints.images)
             .reply(500, ServerError);
@@ -2341,6 +2341,38 @@ describe('createImage', () => {
 
         try {
             await keymaster.createImage(mockImage);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('updateImage', () => {
+    const mockImage = Buffer.from('image data');
+    const mockDID = 'did:example:923456789abcd';
+
+    it('should create an image asset', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.images}/${mockDID}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.updateImage(mockDID, mockImage);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on updateImage server error', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.images}/${mockDID}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.updateImage(mockDID, mockImage);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

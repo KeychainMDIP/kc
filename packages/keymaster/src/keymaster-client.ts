@@ -20,8 +20,8 @@ import {
     WalletFile,
 } from './types.js'
 
-import axios, {AxiosError} from 'axios';
-import {Image} from "./keymaster.js";
+import axios, { AxiosError } from 'axios';
+import { Image } from "./keymaster.js";
 
 const VERSION = '/api/v1';
 
@@ -243,6 +243,16 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.get(`${this.API}/ids`);
             return response.data.ids;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async rotateKeys(): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/keys/rotate`);
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);
@@ -915,6 +925,23 @@ export default class KeymasterClient implements KeymasterInterface {
                 }
             });
             return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateImage(
+        id: string,
+        data: Buffer
+    ): Promise<boolean> {
+        try {
+            const response = await axios.put(`${this.API}/images/${id}`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream'
+                }
+            });
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);
