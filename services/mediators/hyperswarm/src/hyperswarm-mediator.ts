@@ -369,14 +369,14 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
             logBatch(msg.data, msg.node || 'anon');
-            await importQueue.push({ name, msg });
+            importQueue.push({ name, msg });
         }
         return;
     }
 
     if (msg.type === 'queue') {
         if (newBatch(msg.data)) {
-            await importQueue.push({ name, msg });
+            importQueue.push({ name, msg });
             msg.relays.push(name);
             logConnection(msg.relays[0]);
             await relayMsg(msg);
@@ -385,7 +385,7 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     }
 
     if (msg.type === 'sync') {
-        await exportQueue.push({ name, msg, conn });
+        exportQueue.push({ name, msg, conn });
         return;
     }
 
