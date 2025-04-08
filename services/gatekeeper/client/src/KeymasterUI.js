@@ -1025,24 +1025,61 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
 
                     await keymaster.addName(name, did);
-                    alert(`Image uploaded successfully! DID: ${did}`);
+                    showAlert(`Image uploaded successfully: ${name}`);
 
                     refreshNames();
                     setSelectedImageName(name);
                     refreshImage(name);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    alert(`Error processing image: ${error}`);
+                    showError(`Error processing image: ${error}`);
                 }
             };
 
             reader.onerror = (error) => {
-                alert(`Error reading file: ${error}`);
+                showError(`Error reading file: ${error}`);
             };
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            alert(`Error uploading image: ${error}`);
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function updateImage(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    await keymaster.updateImage(selectedImageName, buffer);
+                    
+                    showAlert(`Image updated successfully`);
+                    refreshImage(selectedImageName);
+                } catch (error) {
+                    showError(`Error processing image: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
         }
     }
 
@@ -1565,16 +1602,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <Button
-                                                variant="contained"
-                                                color="primary"
-                                                onClick={() => document.getElementById('imageUpload').click()}
-                                                disabled={!registry}
-                                            >
-                                                Upload
-                                            </Button>
-                                        </Grid>
-                                        <Grid item>
                                             <Select
                                                 style={{ width: '300px' }}
                                                 value={registry}
@@ -1591,6 +1618,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </MenuItem>
                                                 ))}
                                             </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => document.getElementById('imageUpload').click()}
+                                                disabled={!registry}
+                                            >
+                                                Upload Image...
+                                            </Button>
                                         </Grid>
                                     </Grid>
                                     <input
@@ -1626,6 +1663,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Button variant="contained" color="primary" onClick={() => refreshImage(selectedImageName)} disabled={!selectedImageName}>
                                                         Show Image
                                                     </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button
+                                                        variant="contained"
+                                                        color="primary"
+                                                        onClick={() => document.getElementById('imageUpdate').click()}
+                                                        disabled={!registry}
+                                                    >
+                                                        Update Image...
+                                                    </Button>
+                                                    <input
+                                                        type="file"
+                                                        id="imageUpdate"
+                                                        accept="image/*"
+                                                        style={{ display: 'none' }}
+                                                        onChange={updateImage}
+                                                    />
                                                 </Grid>
                                             </Grid>
                                             <p />
