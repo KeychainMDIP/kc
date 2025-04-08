@@ -514,7 +514,7 @@ describe('rotateKeys', () => {
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
 
         try {
-            const ok = await keymaster.rotateKeys();
+            await keymaster.rotateKeys();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
