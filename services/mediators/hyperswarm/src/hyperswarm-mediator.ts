@@ -375,12 +375,14 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
         return;
     }
 
-    console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
+    const nodeName = msg.node || 'anon';
+
+    console.log(`received ${msg.type} from: ${shortName(name)} (${nodeName})`);
     connectionLastSeen[name] = new Date().getTime();
 
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
-            logBatch(msg.data, msg.node || 'anon');
+            logBatch(msg.data, nodeName);
             importQueue.push({ name, msg });
         }
         return;
@@ -398,15 +400,20 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
 
     if (msg.type === 'sync') {
         exportQueue.push({ name, msg, conn });
+
+        if (msg.ipfs) {
+            console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
+        }
+
         return;
     }
 
     if (msg.type === 'ping') {
-        connectionNodeName[name] = msg.node || 'anon';
+        connectionNodeName[name] = nodeName;
         return;
     }
 
-    console.log(`unknown message type`);
+    console.log(`unknown message type: ${msg.type}`);
 }
 
 async function flushQueue(): Promise<void> {
