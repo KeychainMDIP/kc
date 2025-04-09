@@ -8,6 +8,8 @@ import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
 import { InvalidParameterError } from '@mdip/common/errors';
+import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
+import {GatekeeperEvent, Operation} from '@mdip/gatekeeper/types';
 
 const REGISTRY = config.chain;
 
@@ -22,10 +24,10 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-let jsonPersister;
+let jsonPersister: MediatorDbInterface;
 
-async function loadDb() {
-    const newDb = {
+async function loadDb(): Promise<MediatorDb> {
+    const newDb: MediatorDb = {
         height: 0,
         time: "",
         blockCount: 0,
@@ -41,11 +43,11 @@ async function loadDb() {
     return db || newDb;
 }
 
-async function saveDb(db) {
-    return jsonPersister.saveDb(db);
+async function saveDb(db: MediatorDb): Promise<boolean> {
+    return await jsonPersister.saveDb(db);
 }
 
-async function fetchTransaction(height, index, timestamp, txid) {
+async function fetchTransaction(height: number, index: number, timestamp: string, txid: string): Promise<void> {
     try {
         const txn = await btcClient.getTransactionByHash(txid);
         const asm = txn.vout[0].scriptPubKey.asm;
@@ -72,7 +74,7 @@ async function fetchTransaction(height, index, timestamp, txid) {
     }
 }
 
-async function fetchBlock(height, blockCount) {
+async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
         const blockHash = await btcClient.getBlockHash(height);
         const block = await btcClient.getBlock(blockHash);
@@ -98,7 +100,7 @@ async function fetchBlock(height, blockCount) {
     }
 }
 
-async function scanBlocks() {
+async function scanBlocks(): Promise<void> {
     let start = config.startBlock;
     let blockCount = await btcClient.getBlockCount();
 
@@ -117,7 +119,7 @@ async function scanBlocks() {
     }
 }
 
-async function importBatch(item) {
+async function importBatch(item: DiscoveredItem): Promise<void> {
     if (item.error) {
         return;
     }
@@ -127,14 +129,14 @@ async function importBatch(item) {
     }
 
     const asset = await keymaster.resolveAsset(item.did);
-    const queue = asset.batch || asset;
+    const queue = (asset as { batch?: Operation[]}).batch || asset;
 
     // Skip badly formatted batches
     if (!queue || !Array.isArray(queue) || queue.length === 0) {
         return;
     }
 
-    const batch = [];
+    const batch: GatekeeperEvent[] = [];
 
     for (let i = 0; i < queue.length; i++) {
         batch.push({
@@ -162,14 +164,14 @@ async function importBatch(item) {
     console.log(JSON.stringify(item, null, 4));
 }
 
-async function importBatches() {
+async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
     for (const item of db.discovered) {
         try {
             await importBatch(item);
         }
-        catch (error) {
+        catch (error: any) {
             // OK if DID not found, we'll just try again later
             if (error.error !== 'DID not found') {
                 console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
@@ -177,10 +179,10 @@ async function importBatches() {
         }
     }
 
-    return saveDb(db);
+    return await saveDb(db);
 }
 
-export async function createOpReturnTxn(opReturnData) {
+export async function createOpReturnTxn(opReturnData: string): Promise<string | undefined> {
     const txnfee = config.feeMin;
     const utxos = await btcClient.listUnspent();
     const utxo = utxos.find(utxo => utxo.amount > txnfee);
@@ -227,7 +229,7 @@ export async function createOpReturnTxn(opReturnData) {
     return txid;
 }
 
-async function replaceByFee() {
+async function replaceByFee(): Promise<boolean> {
     const db = await loadDb();
 
     if (!db.pendingTxid) {
@@ -239,7 +241,7 @@ async function replaceByFee() {
     const tx = await btcClient.getRawTransaction(db.pendingTxid, 1);
 
     if (tx.blockhash) {
-        db.pendingTxid = null;
+        db.pendingTxid = undefined;
         await saveDb(db);
         return false;
     }
@@ -258,7 +260,7 @@ async function replaceByFee() {
         return true;
     }
 
-    const inputs = tx.vin.map(vin => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
+    const inputs = tx.vin.map((vin: any) => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
     const address = tx.vout[1].scriptPubKey.address;
     const amountBack = tx.vout[1].value - config.feeInc;
@@ -295,7 +297,7 @@ async function replaceByFee() {
     return true;
 }
 
-async function checkExportInterval() {
+async function checkExportInterval(): Promise<boolean> {
     const db = await loadDb();
 
     if (!db.lastExport) {
@@ -304,14 +306,14 @@ async function checkExportInterval() {
         return true;
     }
 
-    const lastExport = new Date(db.lastExport);
-    const now = new Date();
+    const lastExport = new Date(db.lastExport).getTime();
+    const now = Date.now();
     const elapsedMinutes = (now - lastExport) / (60 * 1000);
 
     return (elapsedMinutes < config.exportInterval);
 }
 
-async function anchorBatch() {
+async function anchorBatch(): Promise<void> {
 
     if (await checkExportInterval()) {
         return;
@@ -370,18 +372,18 @@ async function anchorBatch() {
     }
 }
 
-async function importLoop() {
+async function importLoop(): Promise<void> {
     try {
         await scanBlocks();
         await importBatches();
         console.log(`import loop waiting ${config.importInterval} minute(s)...`);
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
     }
     setTimeout(importLoop, config.importInterval * 60 * 1000);
 }
 
-async function exportLoop() {
+async function exportLoop(): Promise<void> {
     try {
         await anchorBatch();
         console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
@@ -411,9 +413,9 @@ async function waitForChain() {
     }
 
     try {
-        await btcClient.createWallet(config.wallet);
+        await btcClient.createWallet(config.wallet!);
         console.log(`Wallet '${config.wallet}' created successfully.`);
-    } catch (error) {
+    } catch (error: any) {
         // If wallet already exists, log a message
         if (error.message.includes("already exists")) {
             console.log(`Wallet '${config.wallet}' already exists.`);
@@ -447,17 +449,17 @@ async function waitForNodeID() {
 
     while (!isReady) {
         try {
-            await keymaster.resolveDID(config.nodeID);
+            await keymaster.resolveDID(config.nodeID!);
             console.log(`Using node ID '${config.nodeID}'`);
             isReady = true;
         }
         catch {
             try {
-                await keymaster.createId(config.nodeID);
+                await keymaster.createId(config.nodeID!);
                 console.log(`Created node ID '${config.nodeID}'`);
                 isReady = true;
             }
-            catch (error) {
+            catch (error: any) {
                 if (error.type === InvalidParameterError.type) {
                     console.log(`Waiting for gatekeeper to sync...`);
                 }
@@ -485,7 +487,7 @@ async function main() {
         jsonPersister = await JsonMongo.create(REGISTRY);
     }
     else if (config.db === 'sqlite') {
-        jsonPersister = await JsonSQLite.create(REGISTRY);;
+        jsonPersister = await JsonSQLite.create(REGISTRY);
     }
     else {
         jsonPersister = jsonFile;

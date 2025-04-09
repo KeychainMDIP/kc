@@ -1,5 +1,5 @@
 import fs from 'fs';
-import Hyperswarm from 'hyperswarm';
+import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { sha256 } from '@noble/hashes/sha256';
@@ -7,8 +7,26 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
+
+interface MediatorMessage {
+    type: 'batch' | 'queue' | 'sync' | 'ping';
+    time?: string;
+    relays: string[];
+    node?: string;
+    data?: Operation[];
+}
+
+interface ImportQueueTask {
+    name: string;
+    msg: MediatorMessage;
+}
+
+interface ExportQueueTask extends ImportQueueTask {
+    conn: HyperswarmConnection;
+}
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherNode();
@@ -18,14 +36,14 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 
-const nodes = {};
+const nodes: Record<string, number> = {};
 
 // Keep track of all connections
-let connections = [];
-const connectionLastSeen = {};
-const connectionNodeName = {};
+let connections: HyperswarmConnection[] = [];
+const connectionLastSeen: Record<string, number> = {};
+const connectionNodeName: Record<string, string> = {};
 
-let swarm = null;
+let swarm: Hyperswarm | null = null;
 let peerName = '';
 
 goodbye(() => {
@@ -34,7 +52,7 @@ goodbye(() => {
     }
 });
 
-async function createSwarm() {
+async function createSwarm(): Promise<void> {
     if (swarm) {
         swarm.destroy();
     }
@@ -51,31 +69,32 @@ async function createSwarm() {
     console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
-let syncQueue = asyncLib.queue(async function (conn, callback) {
-    try {
-        // Wait until the importQueue is empty
-        while (importQueue.length() > 0) {
-            console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
-            await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
+    async function (conn, callback) {
+        try {
+            // Wait until the importQueue is empty
+            while (importQueue.length() > 0) {
+                console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+            }
+
+            const msg = {
+                type: 'sync',
+                time: new Date().toISOString(),
+                relays: [],
+                node: config.nodeName,
+            };
+
+            const json = JSON.stringify(msg);
+            conn.write(json);
         }
+        catch (error) {
+            console.log('sync error:', error);
+        }
+        callback();
+    }, 1); // concurrency is 1
 
-        const msg = {
-            type: 'sync',
-            time: new Date().toISOString(),
-            relays: [],
-            node: config.nodeName,
-        };
-
-        const json = JSON.stringify(msg);
-        conn.write(json);
-    }
-    catch (error) {
-        console.log('sync error:', error);
-    }
-    callback();
-}, 1); // concurrency is 1
-
-async function addConnection(conn) {
+function addConnection(conn: HyperswarmConnection): void {
     connections.push(conn);
 
     const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -91,7 +110,7 @@ async function addConnection(conn) {
     syncQueue.push(conn);
 }
 
-function closeConnection(conn, name) {
+function closeConnection(conn: HyperswarmConnection, name: string): void {
     console.log(`* connection closed with: ${shortName(name)} (${connectionNodeName[name]}) *`);
     const index = connections.indexOf(conn);
     if (index !== -1) {
@@ -99,11 +118,11 @@ function closeConnection(conn, name) {
     }
 }
 
-function shortName(name) {
+function shortName(name: string): string {
     return name.slice(0, 4) + '-' + name.slice(-4);
 }
 
-function logBatch(batch, name) {
+function logBatch(batch: Operation[], name: string): void {
     const debugFolder = 'data/debug';
 
     if (!config.debug) {
@@ -120,7 +139,7 @@ function logBatch(batch, name) {
     fs.writeFileSync(batchfile, batchJSON);
 }
 
-function sendBatch(conn, batch) {
+function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
 
     const msg = {
@@ -152,11 +171,20 @@ function sendBatch(conn, batch) {
     }
 }
 
-async function shareDb(conn) {
+function isStringArray(arr: any[]): arr is string[] {
+    return arr.every(item => typeof item === 'string');
+}
+
+async function shareDb(conn: HyperswarmConnection): Promise<void> {
     console.time('shareDb');
     try {
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
         const dids = await gatekeeper.getDIDs();
+
+        // Either empty or we got an MdipDocument[] which should not happen.
+        if (!isStringArray(dids)) {
+            return;
+        }
 
         for (let i = 0; i < dids.length; i += batchSize) {
             const didBatch = dids.slice(i, i + batchSize);
@@ -183,7 +211,7 @@ async function shareDb(conn) {
     console.timeEnd('shareDb');
 }
 
-async function relayMsg(msg) {
+async function relayMsg(msg: MediatorMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
     console.log(`* sending ${msg.type} from: ${shortName(peerName)} (${config.nodeName}) *`);
@@ -197,8 +225,8 @@ async function relayMsg(msg) {
 
         if (lastTime) {
             const last = new Date(lastTime);
-            const now = new Date();
-            const minutesSinceLastSeen = Math.floor((now - last) / 1000 / 60);
+            const now = Date.now();
+            const minutesSinceLastSeen = Math.floor((now - last.getTime()) / 1000 / 60);
             lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
         }
 
@@ -212,7 +240,7 @@ async function relayMsg(msg) {
     }
 }
 
-async function importBatch(batch) {
+async function importBatch(batch: Operation[]): Promise<void> {
     // The batch we receive from other hyperswarm nodes includes just operations.
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
@@ -242,7 +270,7 @@ async function importBatch(batch) {
     }
 }
 
-async function mergeBatch(batch) {
+async function mergeBatch(batch: Operation[]): Promise<void> {
 
     if (!batch) {
         return;
@@ -268,49 +296,51 @@ async function mergeBatch(batch) {
     console.log(`mergeBatch: ${JSON.stringify(response)}`);
 }
 
-let importQueue = asyncLib.queue(async function (task, callback) {
-    const { name, msg } = task;
-    try {
-        const ready = await gatekeeper.isReady();
+let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
+    async function (task, callback) {
+        const { name, msg } = task;
+        try {
+            const ready = await gatekeeper.isReady();
 
-        if (ready) {
-            const batch = msg.data;
+            if (ready) {
+                const batch = msg.data || [];
 
-            if (batch.length === 0) {
-                return;
+                if (batch.length === 0) {
+                    return;
+                }
+
+                const nodeName = msg.node || 'anon';
+                console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
+                await mergeBatch(batch);
             }
-
-            const nodeName = msg.node || 'anon';
-            console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
-            await mergeBatch(batch);
         }
-    }
-    catch (error) {
-        console.log('mergeBatch error:', error);
-    }
-    callback();
-}, 1); // concurrency is 1
-
-let exportQueue = asyncLib.queue(async function (task, callback) {
-    const { name, msg, conn } = task;
-    try {
-        const ready = await gatekeeper.isReady();
-
-        if (ready) {
-            console.log(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
-            await shareDb(conn);
+        catch (error) {
+            console.log('mergeBatch error:', error);
         }
-    }
-    catch (error) {
-        console.log('shareDb error:', error);
-    }
-    callback();
-}, 1); // concurrency is 1
+        callback();
+    }, 1); // concurrency is 1
+
+let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
+    async function (task, callback) {
+        const { name, msg, conn } = task;
+        try {
+            const ready = await gatekeeper.isReady();
+
+            if (ready) {
+                console.log(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
+                await shareDb(conn);
+            }
+        }
+        catch (error) {
+            console.log('shareDb error:', error);
+        }
+        callback();
+    }, 1); // concurrency is 1
 
 
-const batchesSeen = {};
+const batchesSeen: Record<string, boolean> = {};
 
-function newBatch(batch) {
+function newBatch(batch: Operation[]): boolean {
     const hash = cipher.hashJSON(batch);
 
     if (!batchesSeen[hash]) {
@@ -321,7 +351,7 @@ function newBatch(batch) {
     return false;
 }
 
-async function receiveMsg(conn, name, json) {
+async function receiveMsg(conn: HyperswarmConnection, name: string, json: string): Promise<void> {
     let msg;
 
     try {
@@ -349,7 +379,7 @@ async function receiveMsg(conn, name, json) {
             importQueue.push({ name, msg });
             msg.relays.push(name);
             logConnection(msg.relays[0]);
-            relayMsg(msg);
+            await relayMsg(msg);
         }
         return;
     }
@@ -367,12 +397,12 @@ async function receiveMsg(conn, name, json) {
     console.log(`unknown message type`);
 }
 
-async function flushQueue() {
+async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
     console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
     if (batch.length > 0) {
-        const msg = {
+        const msg: MediatorMessage = {
             type: 'queue',
             data: batch,
             relays: [],
@@ -385,7 +415,7 @@ async function flushQueue() {
     }
 }
 
-async function exportLoop() {
+async function exportLoop(): Promise<void> {
     try {
         await flushQueue();
         console.log(`export loop waiting ${config.exportInterval}s...`);
@@ -395,7 +425,7 @@ async function exportLoop() {
     setTimeout(exportLoop, config.exportInterval * 1000);
 }
 
-async function checkConnections() {
+async function checkConnections(): Promise<void> {
     if (connections.length === 0) {
         // Rejoin the topic to find peers
         await createSwarm();
@@ -417,11 +447,11 @@ async function checkConnections() {
     }
 }
 
-async function connectionLoop() {
+async function connectionLoop(): Promise<void> {
     try {
         await checkConnections();
 
-        const msg = {
+        const msg: MediatorMessage = {
             type: 'ping',
             time: new Date().toISOString(),
             relays: [],
@@ -437,7 +467,7 @@ async function connectionLoop() {
     setTimeout(connectionLoop, 60 * 1000);
 }
 
-function logConnection(name) {
+function logConnection(name: string): void {
     nodes[name] = (nodes[name] || 0) + 1;
     const detected = Object.keys(nodes).length;
 
@@ -461,9 +491,9 @@ process.stdin.on('data', d => {
 // Join a common topic
 const hash = sha256(config.protocol);
 const networkID = Buffer.from(hash).toString('hex');
-const topic = b4a.from(networkID, 'hex');
+const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
-async function main() {
+async function main(): Promise<void> {
     await gatekeeper.connect({
         url: config.gatekeeperURL,
         waitUntilReady: true,
