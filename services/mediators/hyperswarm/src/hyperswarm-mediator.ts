@@ -7,9 +7,12 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import KeymasterClient from '@mdip/keymaster/client';
+import KuboClient from '@mdip/ipfs/kubo';
 import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
+import { exit } from 'process';
 
 interface MediatorMessage {
     type: 'batch' | 'queue' | 'sync' | 'ping';
@@ -26,6 +29,12 @@ interface ImportQueueTask {
 
 interface ExportQueueTask extends ImportQueueTask {
     conn: HyperswarmConnection;
+}
+
+interface NodeInfo {
+    name: string;
+    did: any;
+    ipfs: any;
 }
 
 const gatekeeper = new GatekeeperClient();
@@ -45,6 +54,7 @@ const connectionNodeName: Record<string, string> = {};
 
 let swarm: Hyperswarm | null = null;
 let peerName = '';
+let nodeInfo: NodeInfo;
 
 goodbye(() => {
     if (swarm) {
@@ -82,7 +92,9 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
                 type: 'sync',
                 time: new Date().toISOString(),
                 relays: [],
-                node: config.nodeName,
+                node: nodeInfo.name,
+                did: nodeInfo.did,
+                ipfs: nodeInfo.ipfs,
             };
 
             const json = JSON.stringify(msg);
@@ -500,6 +512,37 @@ async function main(): Promise<void> {
         intervalSeconds: 5,
         chatty: true,
     });
+
+    const keymaster = await KeymasterClient.create({
+        url: config.keymasterURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+
+    if (!config.nodeID) {
+        console.log('nodeID is not set. Please set the nodeID in the config file.');
+        exit(1);
+    }
+
+    const { didDocument } = await keymaster.resolveDID(config.nodeID);
+    console.log(`Using nodeID: ${config.nodeID} (${didDocument!.id})`);
+
+    const ipfs = await KuboClient.create({
+        url: config.ipfsURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+
+    const ipfsID = await ipfs.getID();
+    console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
+
+    nodeInfo = {
+        name: config.nodeName,
+        did: didDocument!.id,
+        ipfs: ipfsID,
+    };
 
     await connectionLoop();
     await exportLoop();
