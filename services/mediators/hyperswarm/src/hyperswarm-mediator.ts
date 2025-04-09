@@ -38,6 +38,7 @@ interface NodeInfo {
 }
 
 const gatekeeper = new GatekeeperClient();
+const ipfs = new KuboClient();
 const cipher = new CipherNode();
 
 EventEmitter.defaultMaxListeners = 100;
@@ -403,6 +404,7 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
 
         if (msg.ipfs) {
             console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
+            ipfs.addPeers(msg.ipfs.addresses);
         }
 
         return;
@@ -535,7 +537,7 @@ async function main(): Promise<void> {
     const { didDocument } = await keymaster.resolveDID(config.nodeID);
     console.log(`Using nodeID: ${config.nodeID} (${didDocument!.id})`);
 
-    const ipfs = await KuboClient.create({
+    await ipfs.connect({
         url: config.ipfsURL,
         waitUntilReady: true,
         intervalSeconds: 5,

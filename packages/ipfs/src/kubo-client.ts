@@ -4,6 +4,7 @@ import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
+import ip from 'ip';
 import { IPFSClient } from './types.js';
 
 interface KuboClientConfig {
@@ -130,7 +131,27 @@ class KuboClient implements IPFSClient {
     }
 
     async addPeer(peer: string): Promise<any> {
+        const match = peer.match(/\/ip4\/([\d.]+)/);
+
+        if (!match) {
+            return;
+        }
+
+        const ipAddress = match[1];
+
+        if (ip.isPrivate(ipAddress)) {
+            return;
+        }
+
         return this.ipfs.swarm.connect(peer);
+    }
+
+    async addPeers(peers: string[]): Promise<any> {
+        for (const peer of peers) {
+            await this.ipfs.swarm.connect(peer);
+        }
+
+        return this.getPeers()
     }
 
     async getPeers(): Promise<any> {
