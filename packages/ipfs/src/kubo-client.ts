@@ -88,7 +88,7 @@ class KuboClient implements IPFSClient {
 
     async getText(cid: string): Promise<string> {
         const chunks = [];
-        for await (const chunk of this.ipfs.cat(cid)) {
+        for await (const chunk of this.ipfs.cat(cid, { timeout: 10000 })) {
             chunks.push(chunk);
         }
         const data = Buffer.concat(chunks);
@@ -102,7 +102,7 @@ class KuboClient implements IPFSClient {
 
     async getData(cid: string): Promise<Buffer> {
         const chunks = [];
-        for await (const chunk of this.ipfs.cat(cid)) {
+        for await (const chunk of this.ipfs.cat(cid, { timeout: 10000 })) {
             chunks.push(chunk);
         }
         return Buffer.concat(chunks);
@@ -122,7 +122,7 @@ class KuboClient implements IPFSClient {
 
     async getJSON(cid: string): Promise<any> {
         // Retrieve the data using ipfs.block.get instead of ipfs.cat
-        const block = await this.ipfs.block.get(cid);
+        const block = await this.ipfs.block.get(cid, { timeout: 10000 });
         return jsonCodec.decode(block);
     }
 
