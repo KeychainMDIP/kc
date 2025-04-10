@@ -130,30 +130,54 @@ class KuboClient implements IPFSClient {
         return this.ipfs.id();
     }
 
-    async addPeer(peer: string): Promise<any> {
-        const match = peer.match(/\/ip4\/([\d.]+)/);
+    async addPeer(peer: string): Promise<boolean> {
+        try {
+            // Match both IPv4 and IPv6 addresses
+            const match = peer.match(/\/ip[46]\/([a-fA-F\d.:]+)/);
+            //const match = peer.match(/\/ip4\/([\d.]+)/);
 
-        if (!match) {
-            throw new Error('not an ip4 peer address');
+            if (!match) {
+                console.warn(`Invalid peer address format: ${peer}`);
+                return false;
+            }
+
+            const ipAddress = match[1];
+
+            // Check if the IP address is private
+            if (ip.isPrivate(ipAddress)) {
+                console.warn(`Skipping private IP address: ${ipAddress}`);
+                return false;
+            }
+
+            // Attempt to connect to the peer
+            const response = await this.ipfs.swarm.connect(peer);
+
+            // Validate the response (assuming it's a list containing a single string)
+            if (Array.isArray(response) && response.length === 1 && typeof response[0] === 'string') {
+                const responseString = response[0];
+                if (responseString.includes('success')) {
+                    console.log(`Successfully connected to peer: ${peer}`);
+                    return true;
+                }
+
+                console.warn(`Unexpected response from swarm.connect: ${responseString}`);
+                return false;
+            }
+
+            console.warn(`Unexpected response from swarm.connect: ${response}`);
+            return false;
+        } catch (error) {
+            console.error(`Failed to connect to peer ${peer}:`, error);
+            return false;
         }
-
-        const ipAddress = match[1];
-
-        if (ip.isPrivate(ipAddress)) {
-            throw new Error('not a public IP address');
-        }
-
-        return this.ipfs.swarm.connect(peer);
     }
 
     async addPeers(peers: string[]): Promise<any> {
         for (const peer of peers) {
-            try {
-                const response = await this.addPeer(peer);
-                console.log(`Added peer ${peer}: ${response}`);
-            }
-            catch (error) {
-                // console.error(`Error adding peer ${peer}: ${error}`);
+            const ok = await this.addPeer(peer);
+
+            if (ok) {
+                console.log(`Added peer ${peer}`);
             }
         }
 
