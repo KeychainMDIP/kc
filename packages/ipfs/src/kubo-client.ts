@@ -134,13 +134,13 @@ class KuboClient implements IPFSClient {
         const match = peer.match(/\/ip4\/([\d.]+)/);
 
         if (!match) {
-            return;
+            throw `not a ip4 peer address`;
         }
 
         const ipAddress = match[1];
 
         if (ip.isPrivate(ipAddress)) {
-            return;
+            throw `private IP address`;
         }
 
         return this.ipfs.swarm.connect(peer);
@@ -148,7 +148,13 @@ class KuboClient implements IPFSClient {
 
     async addPeers(peers: string[]): Promise<any> {
         for (const peer of peers) {
-            await this.ipfs.swarm.connect(peer);
+            try {
+                const response = await this.addPeer(peer);
+                console.log(`Added peer ${peer}: ${response}`);
+            }
+            catch (error) {
+                console.error(`Error adding peer ${peer}: ${error}`);
+            }
         }
 
         return this.getPeers()
