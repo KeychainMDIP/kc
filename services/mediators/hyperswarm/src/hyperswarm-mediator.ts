@@ -442,11 +442,21 @@ async function flushQueue(): Promise<void> {
 async function exportLoop(): Promise<void> {
     try {
         await flushQueue();
-        console.log(`export loop waiting ${config.exportInterval}s...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, config.exportInterval * 1000);
+
+    const importQueueLength = importQueue.length();
+
+    if (importQueueLength > 0) {
+        const delay = 60;
+        console.log(`export loop waiting ${delay}s for import queue to clear: ${importQueueLength}...`);
+        setTimeout(exportLoop, delay * 1000);
+    }
+    else {
+        console.log(`export loop waiting ${config.exportInterval}s...`);
+        setTimeout(exportLoop, config.exportInterval * 1000);
+    }
 }
 
 async function checkConnections(): Promise<void> {
