@@ -428,12 +428,17 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
         exportQueue.push({ name, msg, conn });
 
         if (msg.ipfs) {
-            console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
-            const addedPeers = await ipfs.addPeers(msg.ipfs.addresses);
-            if (addedPeers) {
-                ipfsPeers[nodeName] = addedPeers;
+            try {
+                console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
+                const addedPeers = await ipfs.addPeers(msg.ipfs.addresses);
+                if (addedPeers.length > 0) {
+                    ipfsPeers[nodeName] = addedPeers;
+                }
+                console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
             }
-            console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
+            catch (error) {
+                console.error(`Error adding IPFS peers: ${error}`);
+            }
         }
 
         if (ipfsPeers && Object.keys(ipfsPeers).length > 0) {
