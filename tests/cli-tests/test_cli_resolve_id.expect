@@ -1,6 +1,6 @@
 #!/usr/bin/env expect
 
-# Wallet Creation Validation
+# DID Document Validation
 
 # Set timeout for commands
 set timeout 30
@@ -8,8 +8,24 @@ set timeout 30
 # Enable Expect's debugging output
 log_user 1
 
-# Start the CLI program for wallet creation
-spawn bash kc create-wallet
+# Generate a random number between 0 and 100
+set random_value [expr {int(rand() * 100)}]
+
+# Start the CLI program
+spawn bash kc create-id "$random_value" local
+
+# Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
+expect {
+    "did:test*" { 
+        puts "\n✅ Matched did:test output"
+    }
+    timeout {
+        puts "\n❌ Timeout waiting for expected output"
+    }
+}
+
+# Start the CLI program for DID creation
+spawn bash kc resolve-id
 
 # Wait for and capture the full output
 expect {
@@ -23,24 +39,29 @@ expect {
 }
 
 # Validation procedure
-proc validate_wallet_output {output} {
+proc validate_did_output {output} {
     # Initialize validation tracking
     set validation_passed 1
     set validation_details {}
 
     # Define exact required keys
     set required_keys [list \
-        "seed" \
-        "mnemonic" \
-        "hdkey" \
-        "xpriv" \
-        "xpub" \
-        "counter" \
-        "ids" \
+        "@context" \
+        "didDocument" \
+        "id" \
+        "verificationMethod" \
+        "authentication" \
+        "controller" \
+        "type" \
+        "publicKeyJwk" \
+        "kty" \
+        "crv" \
+        "x" \
+        "y" \
     ]
 
-# Detailed validation results for all keys
-set validated_keys {}
+    # Detailed validation results for all keys
+    set validated_keys {}
 
     # Check for presence of each required key
     foreach key $required_keys {

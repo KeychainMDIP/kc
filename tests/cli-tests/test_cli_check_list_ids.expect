@@ -1,7 +1,35 @@
-#!/usr/bin/expect -f
+#!/usr/bin/env expect -f
 
 # Set timeout for commands
 set timeout 10
+
+# Generate a random number between 0 and 100
+set random_value [expr {int(rand() * 100)}]
+
+# Start the CLI program you want to test
+spawn bash kc create-id "$random_value" local
+
+# Look for the specific DID pattern
+expect {
+    -re "(did:test:\[a-zA-Z0-9]+)" {
+        set captured_did $expect_out(1,string)
+        puts "\n✅ Captured DID: $captured_did"
+    }
+    timeout {
+        puts "\n❌ Timeout occurred while waiting for output"
+        exit 1
+    }
+    eof {
+        puts "\n❌ End of file reached without finding a match"
+        exit 1
+    }
+}
+
+# Verify the captured DID
+if {$captured_did eq ""} {
+    puts "No DID was captured! \n❌"
+    exit 1
+}
 
 # Start the CLI program you want to test
 spawn bash kc "list-ids"
@@ -24,5 +52,47 @@ expect {
     }
 }
 
+# Clean up
+spawn bash admin reset-db
+expect {
+    "true" {
+        send_user "\n✅ DB Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ DB Reset Failed!.\n"
+        exit 1
+    }
+}
+
+
+# Delete Wallet
+set script_dir [file dirname [file normalize [info script]]]
+
+# Navigate one level up from script directory, then into kc/data/wallet.json
+set filepath [file join $script_dir ../../data/wallet.json]
+
+# Normalize the path to get an absolute reference
+set abs_filepath [file normalize $filepath]
+
+# Check if the file exists
+if {[file exists $abs_filepath]} {
+    puts "File exists: $abs_filepath"
+    # Delete the file
+    file delete -force $abs_filepath
+    puts "File deleted: $abs_filepath"
+} else {
+    puts "File not found: $abs_filepath"
+}
+
+spawn bash kc create-wallet
+expect {
+    "true" {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Failed!.\n"
+        exit 1
+    }
+}
 # Exit the script
 exit 0
