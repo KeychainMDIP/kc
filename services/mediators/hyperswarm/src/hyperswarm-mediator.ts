@@ -52,7 +52,7 @@ const nodes: Record<string, number> = {};
 let connections: HyperswarmConnection[] = [];
 const connectionLastSeen: Record<string, number> = {};
 const connectionNodeName: Record<string, string> = {};
-let ipfsPeers: string[] = [];
+let ipfsPeers: any = {};
 
 let swarm: Hyperswarm | null = null;
 let peerName = '';
@@ -405,9 +405,9 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
 
         if (msg.ipfs) {
             console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
-            const allPeers = await ipfs.addPeers(msg.ipfs.addresses);
-            console.log(`* current peers: ${JSON.stringify(allPeers, null, 4)}`);
-            ipfsPeers.push(nodeName);
+            const addedPeers = await ipfs.addPeers(msg.ipfs.addresses);
+            ipfsPeers[nodeName] = addedPeers;
+            console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
         }
 
         return;
@@ -494,8 +494,7 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        console.log(`IPFS peers: ${ipfsPeers}`);
-
+        console.log(`IPFS peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);

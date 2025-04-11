@@ -173,15 +173,18 @@ class KuboClient implements IPFSClient {
     }
 
     async addPeers(peers: string[]): Promise<any> {
+        const addedPeers: string[] = [];
+
         for (const peer of peers) {
             const ok = await this.addPeer(peer);
 
             if (ok) {
                 console.log(`Added peer ${peer}`);
+                addedPeers.push(peer);
             }
         }
 
-        return this.getPeers()
+        return addedPeers;
     }
 
     async getPeers(): Promise<any> {
