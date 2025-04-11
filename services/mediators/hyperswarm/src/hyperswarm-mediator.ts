@@ -19,12 +19,19 @@ interface MediatorMessage {
     time?: string;
     relays: string[];
     node?: string;
-    data?: any;
+}
+
+interface IPFSMessage extends MediatorMessage {
+    peers: Record<string, string[]>;
+}
+
+interface OpsMessage extends MediatorMessage {
+    data: Operation[];
 }
 
 interface ImportQueueTask {
     name: string;
-    msg: MediatorMessage;
+    msg: OpsMessage;
 }
 
 interface ExportQueueTask extends ImportQueueTask {
@@ -442,12 +449,12 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
         }
 
         if (ipfsPeers && Object.keys(ipfsPeers).length > 0) {
-            const ipfsMsg: MediatorMessage = {
+            const ipfsMsg: IPFSMessage = {
                 type: 'ipfs',
                 time: new Date().toISOString(),
                 relays: [],
                 node: config.nodeName,
-                data: ipfsPeers,
+                peers: ipfsPeers,
             };
 
             await relayMsg(ipfsMsg);
@@ -462,7 +469,7 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     }
 
     if (msg.type === 'ipfs') {
-        const relay = await newPeers(msg.data);
+        const relay = await newPeers(msg.peers);
 
         if (relay) {
             msg.relays.push(name);
@@ -479,7 +486,7 @@ async function flushQueue(): Promise<void> {
     console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
     if (batch.length > 0) {
-        const msg: MediatorMessage = {
+        const msg: OpsMessage = {
             type: 'queue',
             data: batch,
             relays: [],
