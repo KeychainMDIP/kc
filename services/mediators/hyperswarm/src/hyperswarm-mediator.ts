@@ -366,18 +366,25 @@ function newBatch(batch: Operation[]): boolean {
 }
 
 async function newPeers(peers: any): Promise<boolean> {
-    if (!peers || peers.length === 0) {
-        return false;
-    }
-
     let relayMsg: boolean = false;
 
-    for (const peer of peers) {
-        if (!(peer in ipfsPeers)) {
-            ipfsPeers[peer] = await ipfs.addPeers(peers[peer]);
-            relayMsg = true;
+    for (const peer in peers) {
+        if (!(peer in ipfsPeers) && peer !== config.nodeName) {
+            try {
+                const addedPeers = await ipfs.addPeers(peers[peer]);
+
+                if (addedPeers.length > 0) {
+                    ipfsPeers[peer] = addedPeers
+                    relayMsg = true;
+                }
+            }
+            catch (error) {
+                console.error(`Error adding IPFS peers: ${error}`);
+            }
         }
     }
+
+    console.log(`* new peers: ${relayMsg ? 'yes' : 'no'} ${JSON.stringify(ipfsPeers, null, 4)}`);
 
     return relayMsg;
 }
@@ -423,7 +430,9 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
         if (msg.ipfs) {
             console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
             const addedPeers = await ipfs.addPeers(msg.ipfs.addresses);
-            ipfsPeers[nodeName] = addedPeers;
+            if (addedPeers) {
+                ipfsPeers[nodeName] = addedPeers;
+            }
             console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
         }
 
