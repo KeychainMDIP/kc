@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
+npm run build
+npm --prefix services/mediators/hyperswarm run build
+node services/mediators/hyperswarm//dist/hyperswarm-mediator.js

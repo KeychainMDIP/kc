@@ -34,11 +34,15 @@
     "axios": "^1.7.7",
     "blockstore-fs": "^2.0.2",
     "helia": "^3.0.0",
+    "ip": "^2.0.1",
     "kubo-rpc-client": "^5.1.0",
     "multiformats": "^13.0.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@types/ip": "^1.1.3"
   }
 }

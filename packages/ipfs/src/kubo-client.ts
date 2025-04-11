@@ -4,6 +4,7 @@ import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
+import ip from 'ip';
 import { IPFSClient } from './types.js';
 
 interface KuboClientConfig {
@@ -87,7 +88,7 @@ class KuboClient implements IPFSClient {
 
     async getText(cid: string): Promise<string> {
         const chunks = [];
-        for await (const chunk of this.ipfs.cat(cid)) {
+        for await (const chunk of this.ipfs.cat(cid, { timeout: 10000 })) {
             chunks.push(chunk);
         }
         const data = Buffer.concat(chunks);
@@ -101,7 +102,7 @@ class KuboClient implements IPFSClient {
 
     async getData(cid: string): Promise<Buffer> {
         const chunks = [];
-        for await (const chunk of this.ipfs.cat(cid)) {
+        for await (const chunk of this.ipfs.cat(cid, { timeout: 10000 })) {
             chunks.push(chunk);
         }
         return Buffer.concat(chunks);
@@ -121,7 +122,7 @@ class KuboClient implements IPFSClient {
 
     async getJSON(cid: string): Promise<any> {
         // Retrieve the data using ipfs.block.get instead of ipfs.cat
-        const block = await this.ipfs.block.get(cid);
+        const block = await this.ipfs.block.get(cid, { timeout: 10000 });
         return jsonCodec.decode(block);
     }
 
@@ -129,8 +130,61 @@ class KuboClient implements IPFSClient {
         return this.ipfs.id();
     }
 
-    async addPeer(peer: string): Promise<any> {
-        return this.ipfs.swarm.connect(peer);
+    async addPeer(peer: string): Promise<boolean> {
+        try {
+            // Match both IPv4 and IPv6 addresses
+            const match = peer.match(/\/ip[46]\/([a-fA-F\d.:]+)/);
+            //const match = peer.match(/\/ip4\/([\d.]+)/);
+
+            if (!match) {
+                console.warn(`Invalid peer address format: ${peer}`);
+                return false;
+            }
+
+            const ipAddress = match[1];
+
+            // Check if the IP address is private
+            if (ip.isPrivate(ipAddress)) {
+                console.warn(`Skipping private IP address: ${ipAddress}`);
+                return false;
+            }
+
+            // Attempt to connect to the peer
+            const response = await this.ipfs.swarm.connect(peer);
+
+            // Validate the response (assuming it's a list containing a single string)
+            if (Array.isArray(response) && response.length === 1 && typeof response[0] === 'string') {
+                const responseString = response[0];
+                if (responseString.includes('success')) {
+                    console.log(`Successfully connected to peer: ${peer}`);
+                    return true;
+                }
+
+                console.warn(`Unexpected response from swarm.connect: ${responseString}`);
+                return false;
+            }
+
+            console.warn(`Unexpected response from swarm.connect: ${response}`);
+            return false;
+        } catch (error) {
+            console.error(`Failed to connect to peer ${peer}:`, error);
+            return false;
+        }
+    }
+
+    async addPeers(peers: string[]): Promise<any> {
+        const addedPeers: string[] = [];
+
+        for (const peer of peers) {
+            const ok = await this.addPeer(peer);
+
+            if (ok) {
+                console.log(`Added peer ${peer}`);
+                addedPeers.push(peer);
+            }
+        }
+
+        return addedPeers;
     }
 
     async getPeers(): Promise<any> {
