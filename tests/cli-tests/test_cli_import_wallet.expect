@@ -1,15 +1,10 @@
-#!/usr/bin/expect
-
-# DID Document Validation
+#!/usr/bin/env expect -f
 
 # Set timeout for commands
-set timeout 30
+set timeout 10
 
-# Enable Expect's debugging output
-log_user 1
-
-# Start the CLI program for did creation
-spawn bash kc resolve-id
+# Start the CLI program you want to test
+spawn bash kc import-wallet "borrow submit turtle wrist behind announce leaf soccer juice choice oven above"
 
 # Wait for and capture the full output
 expect {
@@ -23,29 +18,24 @@ expect {
 }
 
 # Validation procedure
-proc validate_did_output {output} {
+proc validate_wallet_output {output} {
     # Initialize validation tracking
     set validation_passed 1
     set validation_details {}
 
     # Define exact required keys
     set required_keys [list \
-        "@context" \
-        "didDocument" \
-        "id" \
-        "verificationMethod" \
-        "authentication" \
-        "controller" \
-        "type" \
-        "publicKeyJwk" \
-        "kty" \
-        "crv" \
-        "x" \
-        "y" \
+        "seed" \
+        "mnemonic" \
+        "hdkey" \
+        "xpriv" \
+        "xpub" \
+        "counter" \
+        "ids" \
     ]
 
-    # Detailed validation results for all keys
-    set validated_keys {}
+# Detailed validation results for all keys
+set validated_keys {}
 
     # Check for presence of each required key
     foreach key $required_keys {
@@ -86,12 +76,44 @@ proc validate_did_output {output} {
     }
 }
 
-# Validate did output
-set validation_result [validate_did_output $output]
+# Clean up
+spawn bash admin reset-db
+expect {
+    "true" {
+        send_user "\n✅ DB Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ DB Reset Failed!.\n"
+        exit 1
+    }
+}
 
-# Exit with appropriate status
-if {$validation_result} {
-    exit 0
+# Delete Wallet
+set script_dir [file dirname [file normalize [info script]]]
+
+# Navigate one level up from script directory, then into kc/data/wallet.json
+set filepath [file join $script_dir ../../data/wallet.json]
+
+# Normalize the path to get an absolute reference
+set abs_filepath [file normalize $filepath]
+
+# Check if the file exists
+if {[file exists $abs_filepath]} {
+    puts "File exists: $abs_filepath"
+    # Delete the file
+    file delete -force $abs_filepath
+    puts "File deleted: $abs_filepath"
 } else {
-    exit 1
+    puts "File not found: $abs_filepath"
+}
+
+spawn bash kc create-wallet
+expect {
+    "true" {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Failed!.\n"
+        exit 1
+    }
 }

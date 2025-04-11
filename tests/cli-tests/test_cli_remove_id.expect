@@ -1,7 +1,7 @@
-#!/usr/bin/expect
+#!/usr/bin/env expect
 
 # Start the CLI program you want to test
-spawn bash kc create-id "qa"
+spawn bash kc create-id "qa" local
 
 # Wait for the output and check if 'qa' is present
 expect {
@@ -19,7 +19,6 @@ spawn bash kc remove-id "qa"
 expect {
     "ID qa removed" {
         send_user "\n✅ Test Passed: 'ID qa removed' found in output.\n"
-        exit 1
     }
     timeout {
         send_user "\n❌ Test Failed: 'ID qa removed' not found in output.\n"
@@ -28,5 +27,48 @@ expect {
     eof {
         send_user "\n❌ Test Failed: Unexpected end of output, '<<< current' not found.\n"
         exit 0
+    }
+}
+
+# Clean up
+spawn bash admin reset-db
+expect {
+    "true" {
+        send_user "\n✅ DB Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ DB Reset Failed!.\n"
+        exit 1
+    }
+}
+
+# Delete Wallet
+set script_dir [file dirname [file normalize [info script]]]
+
+# Navigate one level up from script directory, then into kc/data/wallet.json
+set filepath [file join $script_dir ../../data/wallet.json]
+
+# Normalize the path to get an absolute reference
+set abs_filepath [file normalize $filepath]
+
+# Check if the file exists
+if {[file exists $abs_filepath]} {
+    puts "File exists: $abs_filepath"
+    # Delete the file
+    file delete -force $abs_filepath
+    puts "File deleted: $abs_filepath"
+} else {
+    puts "File not found: $abs_filepath"
+}
+
+spawn bash kc create-wallet
+expect {
+    "true" {
+        send_user "\n✅ Wallet Reset Complete!\n"
+        exit 0
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Failed!.\n"
+        exit 1
     }
 }

@@ -31,40 +31,29 @@ if {$captured_did eq ""} {
     exit 1
 }
 
-# Use the captured value in another function call
-spawn bash kc add-name qa $captured_did
-spawn bash clear
-sleep 2
+# Start the CLI test
+spawn bash kc create-schema share/schema/social-media.json testing
 
-# Remove the name
-spawn bash kc remove-name "qa"
-
-# Wait for the output and check if 'qa' is present
+# Look for the specific DID pattern
 expect {
-    "OK" {
-        send_user "\n✅ Test Passed: name is removed!\n"
+    -re "(did:test:\[a-zA-Z0-9]+)" {
+        set captured_did $expect_out(1,string)
+        puts "\n✅ Captured DID: $captured_did"
     }
     timeout {
-        send_user "\n❌ Test Failed: 'qa' not found in output.\n"
+        puts "\n❌ Timeout occurred while waiting for output"
+        exit 1
+    }
+    eof {
+        puts "\n❌ End of file reached without finding a match"
         exit 1
     }
 }
 
-# Check List
-spawn bash kc list-names
-
-expect {
-    # Negative match to fail if "qa" is found
-    -re "qa" {
-        puts "Error: Unexpected 'qa' found in output \n❌"
-        exit 1
-    }
-    
-    # Timeout handling
-    timeout {
-        puts "Timeout occurred \n❌"
-        exit 1
-    }
+# Verify the captured DID
+if {$captured_did eq ""} {
+    puts "No DID was captured! \n❌"
+    exit 1
 }
 
 # Clean up
@@ -102,7 +91,6 @@ spawn bash kc create-wallet
 expect {
     "true" {
         send_user "\n✅ Wallet Reset Complete!\n"
-        exit 0
     }
     timeout {
         send_user "\n❌ Wallet Reset Failed!.\n"
