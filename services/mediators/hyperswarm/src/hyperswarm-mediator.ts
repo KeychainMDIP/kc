@@ -15,11 +15,11 @@ import config from './config.js';
 import { exit } from 'process';
 
 interface MediatorMessage {
-    type: 'batch' | 'queue' | 'sync' | 'ping';
+    type: 'batch' | 'queue' | 'sync' | 'ping' | 'ipfs';
     time?: string;
     relays: string[];
     node?: string;
-    data?: Operation[];
+    data?: any;
 }
 
 interface ImportQueueTask {
@@ -365,6 +365,23 @@ function newBatch(batch: Operation[]): boolean {
     return false;
 }
 
+async function newPeers(peers: any): Promise<boolean> {
+    if (!peers || peers.length === 0) {
+        return false;
+    }
+
+    let relayMsg: boolean = false;
+
+    for (const peer of peers) {
+        if (!(peer in ipfsPeers)) {
+            ipfsPeers[peer] = await ipfs.addPeers(peers[peer]);
+            relayMsg = true;
+        }
+    }
+
+    return relayMsg;
+}
+
 async function receiveMsg(conn: HyperswarmConnection, name: string, json: string): Promise<void> {
     let msg;
 
@@ -410,12 +427,34 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
             console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
         }
 
+        if (ipfsPeers && Object.keys(ipfsPeers).length > 0) {
+            const ipfsMsg: MediatorMessage = {
+                type: 'ipfs',
+                time: new Date().toISOString(),
+                relays: [],
+                node: config.nodeName,
+                data: ipfsPeers,
+            };
+
+            await relayMsg(ipfsMsg);
+        }
+
         return;
     }
 
     if (msg.type === 'ping') {
         connectionNodeName[name] = nodeName;
         return;
+    }
+
+    if (msg.type === 'ipfs') {
+        const relay = await newPeers(msg.data);
+
+        if (relay) {
+            msg.relays.push(name);
+            logConnection(msg.relays[0]);
+            await relayMsg(msg);
+        }
     }
 
     console.log(`unknown message type: ${msg.type}`);
