@@ -1,13 +1,13 @@
-#!/usr/bin/env expect -f
+#!/usr/bin/env expect
 
-# Set timeout for commands
+# Set timeout to avoid infinite waits
 set timeout 10
 
 # Generate a random number between 0 and 100
 set random_value [expr {int(rand() * 100)}]
 
 # Start the CLI program
-spawn bash kc create-id "$random_value" -r local
+spawn bash kc create-id "$random_value" local
 
 # Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
 expect {
@@ -16,6 +16,25 @@ expect {
     }
     timeout {
         puts "\n❌ Timeout waiting for expected output"
+    }
+}
+
+# Start the command you want to test
+spawn bash kc list-ids
+
+# Wait for the output and check if '<<< current' is present
+expect {
+    "<<< current" {
+        send_user "\n✅ Test Passed: '<<< current' found in output.\n"
+        exit 0
+    }
+    timeout {
+        send_user "\n❌ Test Failed: '<<< current' not found in output.\n"
+        exit 1
+    }
+    eof {
+        send_user "\n❌ Test Failed: Unexpected end of output, '<<< current' not found.\n"
+        exit 1
     }
 }
 
@@ -60,6 +79,3 @@ expect {
         exit 1
     }
 }
-
-# Exit the script
-exit 0

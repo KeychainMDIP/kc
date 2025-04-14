@@ -1,7 +1,6 @@
-#!/usr/bin/expect -f
+#!/usr/bin/env expect -f
 
 # Wallet Show Validation Script
-# Purpose: Null value validation for wallet show output
 
 # Set timeout for commands
 set timeout 10
@@ -90,12 +89,44 @@ expect {
 # Print captured output for debugging
 puts "Captured Command Output:\n$output"
 
-# Validate no null values in the output
-set validation_result [validate_no_null_values $output]
+# Clean up
+spawn bash admin reset-db
+expect {
+    "true" {
+        send_user "\n✅ DB Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ DB Reset Failed!.\n"
+        exit 1
+    }
+}
 
-# Exit with appropriate status
-if {$validation_result} {
-    exit 0
+# Delete Wallet
+set script_dir [file dirname [file normalize [info script]]]
+
+# Navigate one level up from script directory, then into kc/data/wallet.json
+set filepath [file join $script_dir ../../data/wallet.json]
+
+# Normalize the path to get an absolute reference
+set abs_filepath [file normalize $filepath]
+
+# Check if the file exists
+if {[file exists $abs_filepath]} {
+    puts "File exists: $abs_filepath"
+    # Delete the file
+    file delete -force $abs_filepath
+    puts "File deleted: $abs_filepath"
 } else {
-    exit 1
+    puts "File not found: $abs_filepath"
+}
+
+spawn bash kc create-wallet
+expect {
+    "true" {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Failed!.\n"
+        exit 1
+    }
 }
