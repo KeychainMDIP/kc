@@ -215,6 +215,37 @@ class KuboClient implements IPFSClient {
     async getPeers(): Promise<any> {
         return this.ipfs.swarm.peers();
     }
+
+    async addPeeringPeer(id: string, addresses: string[]): Promise<void> {
+        const currentPeers: { ID: string; Addrs: string[] }[] =
+            (await this.ipfs.config.get('Peering.Peers')) || [];
+
+        // Check if peer is already present
+        const existing = currentPeers.find(p => p.ID === id);
+
+        if (existing) {
+            // Merge addresses without duplicates
+            existing.Addrs = Array.from(new Set([...existing.Addrs, ...addresses]));
+        } else {
+            currentPeers.push({ ID: id, Addrs: addresses });
+        }
+
+        await this.ipfs.config.set('Peering.Peers', currentPeers, { json: true });
+    }
+
+    async removePeeringPeer(id: string): Promise<void> {
+        const currentPeers: { ID: string; Addrs: string[] }[] =
+            (await this.ipfs.config.get('Peering.Peers')) || [];
+
+        const filtered = currentPeers.filter(p => p.ID !== id);
+        await this.ipfs.config.set('Peering.Peers', filtered, { json: true });
+        console.log(`🗑️ Removed peering peer ${id}`);
+    }
+
+    async getPeeringPeers(): Promise<{ ID: string; Addrs: string[] }[]> {
+        return (await this.ipfs.config.get('Peering.Peers')) || [];
+    }
+
 }
 
 export default KuboClient

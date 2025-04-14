@@ -153,4 +153,16 @@ program
         }
     });
 
+program
+    .command('get-peering-peers')
+    .description('Get peering peers')
+    .action(async () => {
+        try {
+            const json = await ipfs.getPeeringPeers();
+            console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
 program.parse(process.argv);

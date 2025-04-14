@@ -57,7 +57,6 @@ const nodes: Record<string, number> = {};
 let connections: HyperswarmConnection[] = [];
 const connectionLastSeen: Record<string, number> = {};
 const connectionNodeName: Record<string, string> = {};
-let ipfsPeers: any = {};
 
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
@@ -371,48 +370,28 @@ function newBatch(batch: Operation[]): boolean {
     return false;
 }
 
-async function newPeers(peers: any): Promise<boolean> {
-    let relayMsg: boolean = false;
-
-    for (const nodeName in peers) {
-        if (!(nodeName in ipfsPeers) && nodeName !== nodeKey) {
-            try {
-                const addedPeers = await ipfs.addPeers(peers[nodeName]);
-
-                if (addedPeers.length > 0) {
-                    ipfsPeers[nodeName] = addedPeers
-                    relayMsg = true;
-                }
-            }
-            catch (error) {
-                console.error(`Error adding IPFS peers: ${error}`);
-            }
-        }
-    }
-
-    console.log(`* new peers: ${relayMsg ? 'yes' : 'no'} ${JSON.stringify(ipfsPeers, null, 4)}`);
-
-    return relayMsg;
-}
-
-async function syncPeers(did: string): Promise<boolean> {
+async function syncPeers(did: string): Promise<void> {
     const asset = await keymaster.resolveAsset(did) as { node: NodeInfo };
 
     if (!asset || !asset.node) {
-        return false;
+        return;
     }
 
     if (!asset.node.ipfs) {
-        return false;
+        return;
     }
 
     const { id, addresses } = asset.node.ipfs;
 
     if (!id || !addresses) {
-        return false;
+        return;
     }
 
-    return newPeers(addresses);
+    if (id === nodeInfo.ipfs.id) {
+        return;
+    }
+
+    return ipfs.addPeeringPeer(id, addresses);
 }
 
 async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: string): Promise<void> {
@@ -455,9 +434,8 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
 
         if (msg.did) {
             try {
-                console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
+                console.log(`* adding IPFS peer ${msg.did}`);
                 await syncPeers(msg.did);
-                console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
             }
             catch (error) {
                 console.error(`Error adding IPFS peers: ${error}`);
@@ -470,16 +448,6 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
     if (msg.type === 'ping') {
         connectionNodeName[peerKey] = nodeName;
         return;
-    }
-
-    if (msg.type === 'ipfs') {
-        const relay = await newPeers(msg.peers);
-
-        if (relay) {
-            msg.relays.push(peerKey);
-            logConnection(msg.relays[0]);
-            await relayMsg(msg);
-        }
     }
 
     console.log(`unknown message type: ${msg.type}`);
@@ -561,7 +529,8 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        console.log(`IPFS peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
+        const peers = await ipfs.getPeeringPeers();
+        console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
