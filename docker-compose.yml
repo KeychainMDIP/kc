@@ -19,8 +19,9 @@ services:
       - 4001:4001
       - 5001:5001
     volumes:
-      - ./share:/export/share
       - ./data/ipfs:/data/ipfs
+      - ./data/ipfs.config:/data/ipfs/config
+      - ./share:/export/share
 
   gatekeeper:
     build:
