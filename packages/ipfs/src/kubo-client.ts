@@ -135,6 +135,26 @@ class KuboClient implements IPFSClient {
         return id.id.toString();
     }
 
+    async getAddresses(): Promise<string[]> {
+        const id = await this.ipfs.id();
+        const publicAddresses = [];
+
+        for (const addr of id.addresses) {
+            const address = addr.toString();
+            // Match both IPv4 and IPv6 addresses
+            const match = address.match(/\/ip[46]\/([a-fA-F\d.:]+)/);
+            if (match) {
+                const ipAddress = match[1];
+                // Check if the IP address is private
+                if (!ip.isPrivate(ipAddress)) {
+                    publicAddresses.push(addr);
+                }
+            }
+        }
+
+        return publicAddresses;
+    }
+
     async addPeer(peer: string): Promise<boolean> {
         try {
             // Match both IPv4 and IPv6 addresses

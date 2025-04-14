@@ -118,6 +118,18 @@ program
     });
 
 program
+    .command('get-addresses')
+    .description('Get public addresses')
+    .action(async () => {
+        try {
+            const addresses = await ipfs.getAddresses();
+            console.log(JSON.stringify(addresses, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
     .command('add-peer <peer>')
     .description('Add peer to swarm')
     .action(async (peer) => {
