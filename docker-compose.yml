@@ -20,7 +20,6 @@ services:
       - 5001:5001
     volumes:
       - ./data/ipfs:/data/ipfs
-      - ./data/ipfs.config:/data/ipfs/config
       - ./share:/export/share
 
   gatekeeper:
