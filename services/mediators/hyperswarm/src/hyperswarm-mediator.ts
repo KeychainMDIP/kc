@@ -15,14 +15,11 @@ import config from './config.js';
 import { exit } from 'process';
 
 interface MediatorMessage {
-    type: 'batch' | 'queue' | 'sync' | 'ping' | 'ipfs';
-    time?: string;
+    type: 'batch' | 'queue' | 'sync' | 'ping';
+    time: string;
+    node: string;
+    did: string;
     relays: string[];
-    node?: string;
-}
-
-interface IPFSMessage extends MediatorMessage {
-    peers: Record<string, string[]>;
 }
 
 interface OpsMessage extends MediatorMessage {
@@ -45,6 +42,7 @@ interface NodeInfo {
 }
 
 const gatekeeper = new GatekeeperClient();
+const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
 const cipher = new CipherNode();
 
@@ -97,13 +95,12 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
                 await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
             }
 
-            const msg = {
+            const msg: MediatorMessage = {
                 type: 'sync',
                 time: new Date().toISOString(),
-                relays: [],
                 node: nodeInfo.name,
                 did: nodeInfo.did,
-                ipfs: nodeInfo.ipfs,
+                relays: [],
             };
 
             const json = JSON.stringify(msg);
@@ -163,11 +160,13 @@ function logBatch(batch: Operation[], name: string): void {
 function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
 
-    const msg = {
+    const msg: OpsMessage = {
         type: 'batch',
-        data: batch,
+        time: new Date().toISOString(),
+        node: nodeInfo.name,
+        did: nodeInfo.did,
         relays: [],
-        node: config.nodeName,
+        data: batch,
     };
 
     const json = JSON.stringify(msg);
@@ -396,28 +395,25 @@ async function newPeers(peers: any): Promise<boolean> {
     return relayMsg;
 }
 
-async function syncPeers(peerKey: string, addresses: string[]): Promise<void> {
-    const addedPeers = await ipfs.addPeers(addresses);
+async function syncPeers(did: string): Promise<boolean> {
+    const asset = await keymaster.resolveAsset(did) as { node: NodeInfo };
 
-    if (addedPeers.length === 0) {
-        return;
+    if (!asset || !asset.node) {
+        return false;
     }
 
-    const peersChanged = await newPeers({ [peerKey]: addedPeers });
-
-    if (peersChanged) {
-        const ipfsMsg: IPFSMessage = {
-            type: 'ipfs',
-            time: new Date().toISOString(),
-            relays: [],
-            node: config.nodeName,
-            peers: ipfsPeers,
-        };
-
-        await relayMsg(ipfsMsg);
+    if (!asset.node.ipfs) {
+        return false;
     }
+
+    const { id, addresses } = asset.node.ipfs;
+
+    if (!id || !addresses) {
+        return false;
+    }
+
+    return newPeers(addresses);
 }
-
 
 async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: string): Promise<void> {
     let msg;
@@ -457,10 +453,10 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
     if (msg.type === 'sync') {
         exportQueue.push({ name: peerKey, msg, conn });
 
-        if (msg.ipfs) {
+        if (msg.did) {
             try {
                 console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
-                await syncPeers(peerKey, msg.ipfs.addresses);
+                await syncPeers(msg.did);
                 console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
             }
             catch (error) {
@@ -496,9 +492,11 @@ async function flushQueue(): Promise<void> {
     if (batch.length > 0) {
         const msg: OpsMessage = {
             type: 'queue',
-            data: batch,
+            time: new Date().toISOString(),
+            node: nodeInfo.name,
+            did: nodeInfo.did,
             relays: [],
-            node: config.nodeName,
+            data: batch,
         };
 
         await gatekeeper.clearQueue(REGISTRY, batch);
@@ -556,8 +554,9 @@ async function connectionLoop(): Promise<void> {
         const msg: MediatorMessage = {
             type: 'ping',
             time: new Date().toISOString(),
+            node: nodeInfo.name,
+            did: nodeInfo.did,
             relays: [],
-            node: config.nodeName,
         };
 
         await relayMsg(msg);
@@ -604,7 +603,7 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    const keymaster = await KeymasterClient.create({
+    await keymaster.connect({
         url: config.keymasterURL,
         waitUntilReady: true,
         intervalSeconds: 5,
@@ -617,7 +616,20 @@ async function main(): Promise<void> {
     }
 
     const { didDocument } = await keymaster.resolveDID(config.nodeID);
-    console.log(`Using nodeID: ${config.nodeID} (${didDocument!.id})`);
+
+    if (!didDocument) {
+        console.error(`DID document not found for nodeID: ${config.nodeID}`);
+        exit(1);
+    }
+
+    const nodeDID = didDocument.id;
+
+    if (!nodeDID) {
+        console.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
+        exit(1);
+    }
+
+    console.log(`Using nodeID: ${config.nodeID} (${nodeDID})`);
 
     await ipfs.connect({
         url: config.ipfsURL,
@@ -626,17 +638,22 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    const ipfsID = await ipfs.getID();
+    const ipfsID = await ipfs.getPeerID();
+    const ipfsAddresses = await ipfs.getAddresses();
     console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
 
     nodeInfo = {
         name: config.nodeName,
-        did: didDocument!.id,
-        ipfs: ipfsID,
+        did: nodeDID,
+        ipfs: {
+            id: ipfsID,
+            addresses: ipfsAddresses,
+        },
     };
 
-    await connectionLoop();
     await exportLoop();
+    await keymaster.updateAsset(nodeDID, { node: nodeInfo });
+    await connectionLoop();
 }
 
 main();
