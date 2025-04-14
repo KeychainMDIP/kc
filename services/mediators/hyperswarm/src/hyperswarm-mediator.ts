@@ -62,7 +62,7 @@ const connectionNodeName: Record<string, string> = {};
 let ipfsPeers: any = {};
 
 let swarm: Hyperswarm | null = null;
-let peerName = '';
+let nodeKey = '';
 let nodeInfo: NodeInfo;
 
 goodbye(() => {
@@ -77,7 +77,7 @@ async function createSwarm(): Promise<void> {
     }
 
     swarm = new Hyperswarm();
-    peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
+    nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => addConnection(conn));
 
@@ -85,7 +85,7 @@ async function createSwarm(): Promise<void> {
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
-    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
+    console.log(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
 let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
@@ -118,11 +118,11 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
 function addConnection(conn: HyperswarmConnection): void {
     connections.push(conn);
 
-    const name = b4a.toString(conn.remotePublicKey, 'hex');
-    conn.once('close', () => closeConnection(conn, name));
-    conn.on('data', data => receiveMsg(conn, name, data));
+    const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
+    conn.once('close', () => closeConnection(conn, peerKey));
+    conn.on('data', data => receiveMsg(conn, peerKey, data));
 
-    console.log(`received connection from: ${shortName(name)}`);
+    console.log(`received connection from: ${shortName(peerKey)}`);
 
     const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
     console.log(`${connections.length} connections: ${names}`);
@@ -139,8 +139,8 @@ function closeConnection(conn: HyperswarmConnection, name: string): void {
     }
 }
 
-function shortName(name: string): string {
-    return name.slice(0, 4) + '-' + name.slice(-4);
+function shortName(peerKey: string): string {
+    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 function logBatch(batch: Operation[], name: string): void {
@@ -235,7 +235,7 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
 async function relayMsg(msg: MediatorMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
-    console.log(`* sending ${msg.type} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
     for (const conn of connections) {
         const name = b4a.toString(conn.remotePublicKey, 'hex');
@@ -375,13 +375,13 @@ function newBatch(batch: Operation[]): boolean {
 async function newPeers(peers: any): Promise<boolean> {
     let relayMsg: boolean = false;
 
-    for (const peer in peers) {
-        if (!(peer in ipfsPeers) && peer !== config.nodeName) {
+    for (const nodeName in peers) {
+        if (!(nodeName in ipfsPeers) && nodeName !== nodeKey) {
             try {
-                const addedPeers = await ipfs.addPeers(peers[peer]);
+                const addedPeers = await ipfs.addPeers(peers[nodeName]);
 
                 if (addedPeers.length > 0) {
-                    ipfsPeers[peer] = addedPeers
+                    ipfsPeers[nodeName] = addedPeers
                     relayMsg = true;
                 }
             }
@@ -396,7 +396,30 @@ async function newPeers(peers: any): Promise<boolean> {
     return relayMsg;
 }
 
-async function receiveMsg(conn: HyperswarmConnection, name: string, json: string): Promise<void> {
+async function syncPeers(peerKey: string, addresses: string[]): Promise<void> {
+    const addedPeers = await ipfs.addPeers(addresses);
+
+    if (addedPeers.length === 0) {
+        return;
+    }
+
+    const peersChanged = await newPeers({ [peerKey]: addedPeers });
+
+    if (peersChanged) {
+        const ipfsMsg: IPFSMessage = {
+            type: 'ipfs',
+            time: new Date().toISOString(),
+            relays: [],
+            node: config.nodeName,
+            peers: ipfsPeers,
+        };
+
+        await relayMsg(ipfsMsg);
+    }
+}
+
+
+async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: string): Promise<void> {
     let msg;
 
     try {
@@ -404,27 +427,27 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     }
     catch (error) {
         const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
-        console.log(`received invalid message from: ${shortName(name)}, JSON: ${jsonPreview}`);
+        console.log(`received invalid message from: ${shortName(peerKey)}, JSON: ${jsonPreview}`);
         return;
     }
 
     const nodeName = msg.node || 'anon';
 
-    console.log(`received ${msg.type} from: ${shortName(name)} (${nodeName})`);
-    connectionLastSeen[name] = new Date().getTime();
+    console.log(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
+    connectionLastSeen[peerKey] = new Date().getTime();
 
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
             logBatch(msg.data, nodeName);
-            importQueue.push({ name, msg });
+            importQueue.push({ name: peerKey, msg });
         }
         return;
     }
 
     if (msg.type === 'queue') {
         if (newBatch(msg.data)) {
-            importQueue.push({ name, msg });
-            msg.relays.push(name);
+            importQueue.push({ name: peerKey, msg });
+            msg.relays.push(peerKey);
             logConnection(msg.relays[0]);
             await relayMsg(msg);
         }
@@ -432,15 +455,12 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     }
 
     if (msg.type === 'sync') {
-        exportQueue.push({ name, msg, conn });
+        exportQueue.push({ name: peerKey, msg, conn });
 
         if (msg.ipfs) {
             try {
                 console.log(`* adding IPFS peer ${JSON.stringify(msg.ipfs, null, 4)}`);
-                const addedPeers = await ipfs.addPeers(msg.ipfs.addresses);
-                if (addedPeers.length > 0) {
-                    ipfsPeers[nodeName] = addedPeers;
-                }
+                await syncPeers(peerKey, msg.ipfs.addresses);
                 console.log(`* current peers: ${JSON.stringify(ipfsPeers, null, 4)}`);
             }
             catch (error) {
@@ -448,23 +468,11 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
             }
         }
 
-        if (ipfsPeers && Object.keys(ipfsPeers).length > 0) {
-            const ipfsMsg: IPFSMessage = {
-                type: 'ipfs',
-                time: new Date().toISOString(),
-                relays: [],
-                node: config.nodeName,
-                peers: ipfsPeers,
-            };
-
-            await relayMsg(ipfsMsg);
-        }
-
         return;
     }
 
     if (msg.type === 'ping') {
-        connectionNodeName[name] = nodeName;
+        connectionNodeName[peerKey] = nodeName;
         return;
     }
 
@@ -472,7 +480,7 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
         const relay = await newPeers(msg.peers);
 
         if (relay) {
-            msg.relays.push(name);
+            msg.relays.push(peerKey);
             logConnection(msg.relays[0]);
             await relayMsg(msg);
         }
