@@ -130,6 +130,11 @@ class KuboClient implements IPFSClient {
         return this.ipfs.id();
     }
 
+    async getPeerID(): Promise<string> {
+        const id = await this.ipfs.id();
+        return id.id.toString();
+    }
+
     async addPeer(peer: string): Promise<boolean> {
         try {
             // Match both IPv4 and IPv6 addresses
