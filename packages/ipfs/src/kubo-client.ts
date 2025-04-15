@@ -225,6 +225,12 @@ class KuboClient implements IPFSClient {
     readonly PeeringPeers = 'Peering.Peers';
 
     async addPeeringPeer(id: string, addresses: string[]): Promise<void> {
+        const peerID = await this.getPeerID();
+
+        if (peerID === id) {
+            throw new Error(`Cannot add self as a peering peer: ${id}`);
+        }
+
         const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
 
         // Check if peer is already present
