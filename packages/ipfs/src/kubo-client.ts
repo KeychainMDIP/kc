@@ -16,6 +16,11 @@ interface KuboClientConfig {
     maxRetries?: number;
 }
 
+interface PeeringPeer {
+    ID: string;
+    Addrs: string[];
+}
+
 class KuboClient implements IPFSClient {
     private ipfs: KuboRPCClient | any;
 
@@ -216,9 +221,11 @@ class KuboClient implements IPFSClient {
         return this.ipfs.swarm.peers();
     }
 
+    // Peering.Peers is a list of permanent peers
+    readonly PeeringPeers = 'Peering.Peers';
+
     async addPeeringPeer(id: string, addresses: string[]): Promise<void> {
-        const currentPeers: { ID: string; Addrs: string[] }[] =
-            (await this.ipfs.config.get('Peering.Peers')) || [];
+        const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
 
         // Check if peer is already present
         const existing = currentPeers.find(p => p.ID === id);
@@ -230,22 +237,19 @@ class KuboClient implements IPFSClient {
             currentPeers.push({ ID: id, Addrs: addresses });
         }
 
-        await this.ipfs.config.set('Peering.Peers', currentPeers, { json: true });
+        await this.ipfs.config.set(this.PeeringPeers, currentPeers, { json: true });
     }
 
     async removePeeringPeer(id: string): Promise<void> {
-        const currentPeers: { ID: string; Addrs: string[] }[] =
-            (await this.ipfs.config.get('Peering.Peers')) || [];
-
+        const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
         const filtered = currentPeers.filter(p => p.ID !== id);
-        await this.ipfs.config.set('Peering.Peers', filtered, { json: true });
-        console.log(`🗑️ Removed peering peer ${id}`);
+
+        await this.ipfs.config.set(this.PeeringPeers, filtered, { json: true });
     }
 
-    async getPeeringPeers(): Promise<{ ID: string; Addrs: string[] }[]> {
-        return (await this.ipfs.config.get('Peering.Peers')) || [];
+    async getPeeringPeers(): Promise<PeeringPeer[]> {
+        return (await this.ipfs.config.get(this.PeeringPeers)) || [];
     }
-
 }
 
 export default KuboClient
