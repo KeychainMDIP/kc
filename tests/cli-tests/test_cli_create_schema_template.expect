@@ -1,15 +1,64 @@
 #!/usr/bin/env expect
 
-# Wallet Creation Validation
+# Set timeout to avoid infinite waits
+set timeout 10
 
-# Set timeout for commands
-set timeout 30
+# Generate a random number between 0 and 100
+set random_value [expr {int(rand() * 100)}]
 
-# Enable Expect's debugging output
-log_user 1
+# Start the CLI program you want to test
+spawn bash kc create-id "$random_value"
 
-# Start the CLI program for wallet creation
-spawn bash kc create-wallet
+# Look for the specific DID pattern
+expect {
+    -re "(did:test:\[a-zA-Z0-9]+)" {
+        set captured_did $expect_out(1,string)
+        puts "\n✅ Captured DID: $captured_did"
+    }
+    timeout {
+        puts "\n❌ Timeout occurred while waiting for output"
+        exit 1
+    }
+    eof {
+        puts "\n❌ End of file reached without finding a match"
+        exit 1
+    }
+}
+
+# Verify the captured DID
+if {$captured_did eq ""} {
+    puts "No DID was captured! \n❌"
+    exit 1
+}
+
+# Start the CLI Test
+spawn bash kc create-schema share/schema/social-media.json testing
+
+# Look for the specific DID pattern
+expect {
+    -re "(did:test:\[a-zA-Z0-9]+)" {
+        set captured_did $expect_out(1,string)
+        puts "\n✅ Captured DID: $captured_did"
+    }
+    timeout {
+        puts "\n❌ Timeout occurred while waiting for output"
+        exit 1
+    }
+    eof {
+        puts "\n❌ End of file reached without finding a match"
+        exit 1
+    }
+}
+
+# Verify the captured DID
+if {$captured_did eq ""} {
+    puts "No DID was captured! \n❌"
+    exit 1
+}
+
+
+# Start the CLI program
+spawn bash -c "kc create-schema-template $captured_did"
 
 # Wait for and capture the full output
 expect {
@@ -30,13 +79,8 @@ proc validate_wallet_output {output} {
 
     # Define exact required keys
     set required_keys [list \
-        "seed" \
-        "mnemonic" \
-        "hdkey" \
-        "xpriv" \
-        "xpub" \
-        "counter" \
-        "ids" \
+        "nickname" \
+        "\$schema" \
     ]
 
 # Detailed validation results for all keys
@@ -74,10 +118,8 @@ set validated_keys {}
     # Final validation summary
     if {$validation_passed} {
         puts "\n✅ Validation Passed: All required keys present, no null values"
-        return 1
     } else {
         puts "\n🔴 Validation Failed: Missing or null values found"
-        return 0
     }
 }
 
