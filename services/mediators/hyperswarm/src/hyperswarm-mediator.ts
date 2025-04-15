@@ -533,6 +533,7 @@ async function connectionLoop(): Promise<void> {
 
         const peers = await ipfs.getPeeringPeers();
         console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
+        console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
