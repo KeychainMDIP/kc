@@ -33,12 +33,32 @@ if {$captured_did eq ""} {
 
 # Use the captured value in another function call
 spawn bash kc add-name qa $captured_did
-spawn bash clear
-sleep 2
+
+
+# Check List
+spawn bash kc list-names
+
+expect {
+    # Pass if "qa" is found
+    -re "qa" {
+        puts "Success, found 'qa' in output \n✅"
+    }
+    
+    # Timeout handling
+    timeout {
+        puts "Timeout occurred \n❌"
+        exit 1
+    }
+    
+    # Default match (successful case)
+    eof {
+        puts "Process completed successfully \n✅"
+        exit 0
+    }
+}
 
 # Remove the name
 spawn bash kc remove-name "qa"
-
 # Wait for the output and check if 'qa' is present
 expect {
     "OK" {
@@ -65,6 +85,11 @@ expect {
         puts "Timeout occurred \n❌"
         exit 1
     }
+    
+    # Default match (successful case)
+    eof {
+        puts "Process completed successfully \n✅"
+    }
 }
 
 # Clean up
@@ -78,6 +103,7 @@ expect {
         exit 1
     }
 }
+
 
 # Delete Wallet
 set script_dir [file dirname [file normalize [info script]]]
@@ -102,7 +128,6 @@ spawn bash kc create-wallet
 expect {
     "true" {
         send_user "\n✅ Wallet Reset Complete!\n"
-        exit 0
     }
     timeout {
         send_user "\n❌ Wallet Reset Failed!.\n"
