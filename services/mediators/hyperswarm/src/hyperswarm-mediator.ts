@@ -51,12 +51,16 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 
-const nodes: Record<string, number> = {};
+interface ConnectionInfo {
+    connection: HyperswarmConnection;
+    key: string;
+    peerName: string;
+    nodeName: string;
+    did: string;
+    lastSeen: number;
+}
 
-// Keep track of all connections
-let connections: HyperswarmConnection[] = [];
-const connectionLastSeen: Record<string, number> = {};
-const connectionNodeName: Record<string, string> = {};
+const connectionInfo: Record<string, ConnectionInfo> = {};
 
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
@@ -112,27 +116,35 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     }, 1); // concurrency is 1
 
 function addConnection(conn: HyperswarmConnection): void {
-    connections.push(conn);
-
     const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
-    conn.once('close', () => closeConnection(conn, peerKey));
-    conn.on('data', data => receiveMsg(conn, peerKey, data));
+    const peerName = shortName(peerKey);
 
-    console.log(`received connection from: ${shortName(peerKey)}`);
+    conn.once('close', () => closeConnection(peerKey));
+    conn.on('data', data => receiveMsg(peerKey, data));
 
-    const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
-    console.log(`${connections.length} connections: ${names}`);
+    console.log(`received connection from: ${peerName}`);
 
     // Push the connection to the syncQueue instead of writing directly
     syncQueue.push(conn);
+
+    connectionInfo[peerKey] = {
+        connection: conn,
+        key: peerKey,
+        peerName: peerName,
+        nodeName: 'anon',
+        did: '',
+        lastSeen: new Date().getTime(),
+    };
+
+    const peerNames = Object.values(connectionInfo).map(info => info.peerName);
+    console.log(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 }
 
-function closeConnection(conn: HyperswarmConnection, name: string): void {
-    console.log(`* connection closed with: ${shortName(name)} (${connectionNodeName[name]}) *`);
-    const index = connections.indexOf(conn);
-    if (index !== -1) {
-        connections.splice(index, 1);
-    }
+function closeConnection(peerKey: string): void {
+    const conn = connectionInfo[peerKey];
+    console.log(`* connection closed with: ${conn.peerName} (${conn.nodeName}) *`);
+
+    delete connectionInfo[peerKey];
 }
 
 function shortName(peerKey: string): string {
@@ -235,26 +247,19 @@ async function relayMsg(msg: MediatorMessage): Promise<void> {
 
     console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
-    for (const conn of connections) {
-        const name = b4a.toString(conn.remotePublicKey, 'hex');
-        const short = shortName(name);
-        const nodeName = connectionNodeName[name];
-        const lastTime = connectionLastSeen[name];
-        let lastSeen = '';
+    for (const peerKey in connectionInfo) {
+        const conn = connectionInfo[peerKey];
+        const last = new Date(conn.lastSeen);
+        const now = Date.now();
+        const minutesSinceLastSeen = Math.floor((now - last.getTime()) / 1000 / 60);
+        const lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
 
-        if (lastTime) {
-            const last = new Date(lastTime);
-            const now = Date.now();
-            const minutesSinceLastSeen = Math.floor((now - last.getTime()) / 1000 / 60);
-            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
-        }
-
-        if (!msg.relays.includes(name)) {
-            conn.write(json);
-            console.log(`* relaying to: ${short} (${nodeName}) ${lastSeen} *`);
+        if (!msg.relays.includes(peerKey)) {
+            conn.connection.write(json);
+            console.log(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
         else {
-            console.log(`* skipping relay to: ${short} (${nodeName}) ${lastSeen} *`);
+            console.log(`* skipping relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
     }
 }
@@ -394,7 +399,8 @@ async function syncPeers(did: string): Promise<void> {
     return ipfs.addPeeringPeer(id, addresses);
 }
 
-async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: string): Promise<void> {
+async function receiveMsg(peerKey: string, json: string): Promise<void> {
+    const conn = connectionInfo[peerKey];
     let msg;
 
     try {
@@ -402,14 +408,14 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
     }
     catch (error) {
         const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
-        console.log(`received invalid message from: ${shortName(peerKey)}, JSON: ${jsonPreview}`);
+        console.log(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
         return;
     }
 
     const nodeName = msg.node || 'anon';
 
     console.log(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
-    connectionLastSeen[peerKey] = new Date().getTime();
+    connectionInfo[peerKey].lastSeen = new Date().getTime();
 
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
@@ -423,14 +429,13 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
         if (newBatch(msg.data)) {
             importQueue.push({ name: peerKey, msg });
             msg.relays.push(peerKey);
-            logConnection(msg.relays[0]);
             await relayMsg(msg);
         }
         return;
     }
 
     if (msg.type === 'sync') {
-        exportQueue.push({ name: peerKey, msg, conn });
+        exportQueue.push({ name: peerKey, msg, conn: conn.connection });
 
         if (msg.did) {
             try {
@@ -446,7 +451,7 @@ async function receiveMsg(conn: HyperswarmConnection, peerKey: string, json: str
     }
 
     if (msg.type === 'ping') {
-        connectionNodeName[peerKey] = nodeName;
+        connectionInfo[peerKey].nodeName = nodeName;
         return;
     }
 
@@ -494,24 +499,23 @@ async function exportLoop(): Promise<void> {
 }
 
 async function checkConnections(): Promise<void> {
-    if (connections.length === 0) {
-        // Rejoin the topic to find peers
+    if (Object.keys(connectionInfo).length === 0) {
+        console.log("No active connections, rejoining the topic...");
         await createSwarm();
+        return;
     }
-    else {
-        // Remove connections that have not be seen in >3 minutes
-        const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
-        const now = Date.now();
 
-        connections = connections.filter(conn => {
-            const name = b4a.toString(conn.remotePublicKey, 'hex');
-            const lastTime = connectionLastSeen[name];
-            if (lastTime) {
-                const timeSinceLastSeen = now - lastTime;
-                return timeSinceLastSeen <= expireLimit;
-            }
-            return true; // If we don't have a last seen time for a connection, keep it
-        });
+    const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
+    const now = Date.now();
+
+    for (const peerKey in connectionInfo) {
+        const conn = connectionInfo[peerKey];
+        const timeSinceLastSeen = now - conn.lastSeen;
+
+        if (timeSinceLastSeen > expireLimit) {
+            console.log(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
+            delete connectionInfo[peerKey];
+        }
     }
 }
 
@@ -536,13 +540,6 @@ async function connectionLoop(): Promise<void> {
         console.error(`Error in pingLoop: ${error}`);
     }
     setTimeout(connectionLoop, 60 * 1000);
-}
-
-function logConnection(name: string): void {
-    nodes[name] = (nodes[name] || 0) + 1;
-    const detected = Object.keys(nodes).length;
-
-    console.log(`--- ${connections.length} nodes connected, ${detected} nodes detected`);
 }
 
 process.on('uncaughtException', (error) => {
