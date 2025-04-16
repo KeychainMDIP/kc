@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
+npm run build
 npm --prefix services/gatekeeper/client run build
 npm --prefix services/gatekeeper/server run build
 node services/gatekeeper/server/dist/gatekeeper-api.js

@@ -1,4 +1,3 @@
-import fs from 'fs';
 import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
@@ -7,28 +6,54 @@ import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import KeymasterClient from '@mdip/keymaster/client';
+import KuboClient from '@mdip/ipfs/kubo';
 import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import config from './config.js';
+import { exit } from 'process';
 
-interface MediatorMessage {
+interface HyperMessage {
     type: 'batch' | 'queue' | 'sync' | 'ping';
-    time?: string;
+    time: string;
+    node: string;
     relays: string[];
-    node?: string;
-    data?: Operation[];
+}
+
+interface PingMessage extends HyperMessage {
+    peers: string[];
+}
+
+interface BatchMessage extends HyperMessage {
+    data: Operation[];
 }
 
 interface ImportQueueTask {
     name: string;
-    msg: MediatorMessage;
+    msg: BatchMessage;
 }
 
 interface ExportQueueTask extends ImportQueueTask {
     conn: HyperswarmConnection;
 }
 
+interface NodeInfo {
+    name: string;
+    ipfs: any;
+}
+
+interface ConnectionInfo {
+    connection: HyperswarmConnection;
+    key: string;
+    peerName: string;
+    nodeName: string;
+    did: string;
+    lastSeen: number;
+}
+
 const gatekeeper = new GatekeeperClient();
+const keymaster = new KeymasterClient();
+const ipfs = new KuboClient();
 const cipher = new CipherNode();
 
 EventEmitter.defaultMaxListeners = 100;
@@ -36,15 +61,12 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 
-const nodes: Record<string, number> = {};
-
-// Keep track of all connections
-let connections: HyperswarmConnection[] = [];
-const connectionLastSeen: Record<string, number> = {};
-const connectionNodeName: Record<string, string> = {};
+const knownNodes: Record<string, NodeInfo> = {};
+const connectionInfo: Record<string, ConnectionInfo> = {};
 
 let swarm: Hyperswarm | null = null;
-let peerName = '';
+let nodeKey = '';
+let nodeInfo: NodeInfo;
 
 goodbye(() => {
     if (swarm) {
@@ -58,7 +80,7 @@ async function createSwarm(): Promise<void> {
     }
 
     swarm = new Hyperswarm();
-    peerName = b4a.toString(swarm.keyPair.publicKey, 'hex');
+    nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => addConnection(conn));
 
@@ -66,7 +88,7 @@ async function createSwarm(): Promise<void> {
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
-    console.log(`new hyperswarm peer id: ${shortName(peerName)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
+    console.log(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
 let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
@@ -74,15 +96,15 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
         try {
             // Wait until the importQueue is empty
             while (importQueue.length() > 0) {
-                console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+                console.log(`* sync waiting 10s for importQueue to empty. Current length: ${importQueue.length()}`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
             }
 
-            const msg = {
+            const msg: HyperMessage = {
                 type: 'sync',
                 time: new Date().toISOString(),
+                node: nodeInfo.name,
                 relays: [],
-                node: config.nodeName,
             };
 
             const json = JSON.stringify(msg);
@@ -95,58 +117,50 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     }, 1); // concurrency is 1
 
 function addConnection(conn: HyperswarmConnection): void {
-    connections.push(conn);
+    const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
+    const peerName = shortName(peerKey);
 
-    const name = b4a.toString(conn.remotePublicKey, 'hex');
-    conn.once('close', () => closeConnection(conn, name));
-    conn.on('data', data => receiveMsg(conn, name, data));
+    conn.once('close', () => closeConnection(peerKey));
+    conn.on('data', data => receiveMsg(peerKey, data));
 
-    console.log(`received connection from: ${shortName(name)}`);
-
-    const names = connections.map(conn => shortName(b4a.toString(conn.remotePublicKey, 'hex')));
-    console.log(`${connections.length} connections: ${names}`);
+    console.log(`received connection from: ${peerName}`);
 
     // Push the connection to the syncQueue instead of writing directly
     syncQueue.push(conn);
+
+    connectionInfo[peerKey] = {
+        connection: conn,
+        key: peerKey,
+        peerName: peerName,
+        nodeName: 'anon',
+        did: '',
+        lastSeen: new Date().getTime(),
+    };
+
+    const peerNames = Object.values(connectionInfo).map(info => info.peerName);
+    console.log(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 }
 
-function closeConnection(conn: HyperswarmConnection, name: string): void {
-    console.log(`* connection closed with: ${shortName(name)} (${connectionNodeName[name]}) *`);
-    const index = connections.indexOf(conn);
-    if (index !== -1) {
-        connections.splice(index, 1);
-    }
+function closeConnection(peerKey: string): void {
+    const conn = connectionInfo[peerKey];
+    console.log(`* connection closed with: ${conn.peerName} (${conn.nodeName}) *`);
+
+    delete connectionInfo[peerKey];
 }
 
-function shortName(name: string): string {
-    return name.slice(0, 4) + '-' + name.slice(-4);
-}
-
-function logBatch(batch: Operation[], name: string): void {
-    const debugFolder = 'data/debug';
-
-    if (!config.debug) {
-        return;
-    }
-
-    if (!fs.existsSync(debugFolder)) {
-        fs.mkdirSync(debugFolder, { recursive: true });
-    }
-
-    const hash = shortName(cipher.hashJSON(batch));
-    const batchfile = `${debugFolder}/${hash}-${name}.json`;
-    const batchJSON = JSON.stringify(batch, null, 4);
-    fs.writeFileSync(batchfile, batchJSON);
+function shortName(peerKey: string): string {
+    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
 
-    const msg = {
+    const msg: BatchMessage = {
         type: 'batch',
-        data: batch,
+        time: new Date().toISOString(),
+        node: nodeInfo.name,
         relays: [],
-        node: config.nodeName,
+        data: batch,
     };
 
     const json = JSON.stringify(msg);
@@ -211,31 +225,24 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
     console.timeEnd('shareDb');
 }
 
-async function relayMsg(msg: MediatorMessage): Promise<void> {
+async function relayMsg(msg: HyperMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
-    console.log(`* sending ${msg.type} from: ${shortName(peerName)} (${config.nodeName}) *`);
+    console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
-    for (const conn of connections) {
-        const name = b4a.toString(conn.remotePublicKey, 'hex');
-        const short = shortName(name);
-        const nodeName = connectionNodeName[name];
-        const lastTime = connectionLastSeen[name];
-        let lastSeen = '';
+    for (const peerKey in connectionInfo) {
+        const conn = connectionInfo[peerKey];
+        const last = new Date(conn.lastSeen);
+        const now = Date.now();
+        const minutesSinceLastSeen = Math.floor((now - last.getTime()) / 1000 / 60);
+        const lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
 
-        if (lastTime) {
-            const last = new Date(lastTime);
-            const now = Date.now();
-            const minutesSinceLastSeen = Math.floor((now - last.getTime()) / 1000 / 60);
-            lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
-        }
-
-        if (!msg.relays.includes(name)) {
-            conn.write(json);
-            console.log(`* relaying to: ${short} (${nodeName}) ${lastSeen} *`);
+        if (!msg.relays.includes(peerKey)) {
+            conn.connection.write(json);
+            console.log(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
         else {
-            console.log(`* skipping relay to: ${short} (${nodeName}) ${lastSeen} *`);
+            console.log(`* skipping relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
     }
 }
@@ -351,7 +358,51 @@ function newBatch(batch: Operation[]): boolean {
     return false;
 }
 
-async function receiveMsg(conn: HyperswarmConnection, name: string, json: string): Promise<void> {
+async function addPeer(did: string): Promise<void> {
+    const asset = await keymaster.resolveAsset(did) as { node: NodeInfo };
+
+    if (!asset?.node?.ipfs) {
+        return;
+    }
+
+    const { id, addresses } = asset.node.ipfs;
+
+    if (!id || !addresses) {
+        return;
+    }
+
+    if (id === nodeInfo.ipfs.id) {
+        return;
+    }
+
+    await ipfs.addPeeringPeer(id, addresses);
+
+    knownNodes[did] = {
+        name: asset.node.name,
+        ipfs: {
+            id,
+            addresses,
+        },
+    };
+}
+
+async function syncPeers(peers: string[]): Promise<void> {
+    for (const did of peers) {
+        if (!(did in knownNodes)) {
+            try {
+                await addPeer(did);
+                console.log(`added peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
+            }
+            catch (error) {
+                console.error(`Error adding peer: ${did}`, error);
+                continue;
+            }
+        }
+    }
+}
+
+async function receiveMsg(peerKey: string, json: string): Promise<void> {
+    const conn = connectionInfo[peerKey];
     let msg;
 
     try {
@@ -359,42 +410,47 @@ async function receiveMsg(conn: HyperswarmConnection, name: string, json: string
     }
     catch (error) {
         const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
-        console.log(`received invalid message from: ${shortName(name)}, JSON: ${jsonPreview}`);
+        console.log(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
         return;
     }
 
-    console.log(`received ${msg.type} from: ${shortName(name)} (${msg.node || 'anon'})`);
-    connectionLastSeen[name] = new Date().getTime();
+    const nodeName = msg.node || 'anon';
+
+    console.log(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
+    connectionInfo[peerKey].lastSeen = new Date().getTime();
 
     if (msg.type === 'batch') {
         if (newBatch(msg.data)) {
-            logBatch(msg.data, msg.node || 'anon');
-            importQueue.push({ name, msg });
+            importQueue.push({ name: peerKey, msg });
         }
         return;
     }
 
     if (msg.type === 'queue') {
         if (newBatch(msg.data)) {
-            importQueue.push({ name, msg });
-            msg.relays.push(name);
-            logConnection(msg.relays[0]);
+            importQueue.push({ name: peerKey, msg });
+            msg.relays.push(peerKey);
             await relayMsg(msg);
         }
         return;
     }
 
     if (msg.type === 'sync') {
-        exportQueue.push({ name, msg, conn });
+        exportQueue.push({ name: peerKey, msg, conn: conn.connection });
         return;
     }
 
     if (msg.type === 'ping') {
-        connectionNodeName[name] = msg.node || 'anon';
+        connectionInfo[peerKey].nodeName = nodeName;
+
+        if (msg.peers) {
+            await syncPeers(msg.peers);
+        }
+
         return;
     }
 
-    console.log(`unknown message type`);
+    console.log(`unknown message type: ${msg.type}`);
 }
 
 async function flushQueue(): Promise<void> {
@@ -402,11 +458,12 @@ async function flushQueue(): Promise<void> {
     console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
     if (batch.length > 0) {
-        const msg: MediatorMessage = {
+        const msg: BatchMessage = {
             type: 'queue',
-            data: batch,
+            time: new Date().toISOString(),
+            node: nodeInfo.name,
             relays: [],
-            node: config.nodeName,
+            data: batch,
         };
 
         await gatekeeper.clearQueue(REGISTRY, batch);
@@ -418,32 +475,41 @@ async function flushQueue(): Promise<void> {
 async function exportLoop(): Promise<void> {
     try {
         await flushQueue();
-        console.log(`export loop waiting ${config.exportInterval}s...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     }
-    setTimeout(exportLoop, config.exportInterval * 1000);
+
+    const importQueueLength = importQueue.length();
+
+    if (importQueueLength > 0) {
+        const delay = 60;
+        console.log(`export loop waiting ${delay}s for import queue to clear: ${importQueueLength}...`);
+        setTimeout(exportLoop, delay * 1000);
+    }
+    else {
+        console.log(`export loop waiting ${config.exportInterval}s...`);
+        setTimeout(exportLoop, config.exportInterval * 1000);
+    }
 }
 
 async function checkConnections(): Promise<void> {
-    if (connections.length === 0) {
-        // Rejoin the topic to find peers
+    if (Object.keys(connectionInfo).length === 0) {
+        console.log("No active connections, rejoining the topic...");
         await createSwarm();
+        return;
     }
-    else {
-        // Remove connections that have not be seen in >3 minutes
-        const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
-        const now = Date.now();
 
-        connections = connections.filter(conn => {
-            const name = b4a.toString(conn.remotePublicKey, 'hex');
-            const lastTime = connectionLastSeen[name];
-            if (lastTime) {
-                const timeSinceLastSeen = now - lastTime;
-                return timeSinceLastSeen <= expireLimit;
-            }
-            return true; // If we don't have a last seen time for a connection, keep it
-        });
+    const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
+    const now = Date.now();
+
+    for (const peerKey in connectionInfo) {
+        const conn = connectionInfo[peerKey];
+        const timeSinceLastSeen = now - conn.lastSeen;
+
+        if (timeSinceLastSeen > expireLimit) {
+            console.log(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
+            delete connectionInfo[peerKey];
+        }
     }
 }
 
@@ -451,27 +517,24 @@ async function connectionLoop(): Promise<void> {
     try {
         await checkConnections();
 
-        const msg: MediatorMessage = {
+        const msg: PingMessage = {
             type: 'ping',
             time: new Date().toISOString(),
+            node: nodeInfo.name,
             relays: [],
-            node: config.nodeName,
+            peers: Object.keys(knownNodes),
         };
 
         await relayMsg(msg);
 
-        console.log('ping loop waiting 60s...');
+        const peers = await ipfs.getPeeringPeers();
+        console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
+        console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
+        console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
     }
     setTimeout(connectionLoop, 60 * 1000);
-}
-
-function logConnection(name: string): void {
-    nodes[name] = (nodes[name] || 0) + 1;
-    const detected = Object.keys(nodes).length;
-
-    console.log(`--- ${connections.length} nodes connected, ${detected} nodes detected`);
 }
 
 process.on('uncaughtException', (error) => {
@@ -501,8 +564,58 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    await connectionLoop();
+    await keymaster.connect({
+        url: config.keymasterURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+
+    if (!config.nodeID) {
+        console.log('nodeID is not set. Please set the nodeID in the config file.');
+        exit(1);
+    }
+
+    const { didDocument } = await keymaster.resolveDID(config.nodeID);
+
+    if (!didDocument) {
+        console.error(`DID document not found for nodeID: ${config.nodeID}`);
+        exit(1);
+    }
+
+    const nodeDID = didDocument.id;
+
+    if (!nodeDID) {
+        console.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
+        exit(1);
+    }
+
+    console.log(`Using nodeID: ${config.nodeID} (${nodeDID})`);
+
+    await ipfs.connect({
+        url: config.ipfsURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
+
+    const ipfsID = await ipfs.getPeerID();
+    const ipfsAddresses = await ipfs.getAddresses();
+    console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
+
+    nodeInfo = {
+        name: config.nodeName,
+        ipfs: {
+            id: ipfsID,
+            addresses: ipfsAddresses,
+        },
+    };
+
+    knownNodes[nodeDID] = nodeInfo;
+
     await exportLoop();
+    await keymaster.updateAsset(nodeDID, { node: nodeInfo });
+    await connectionLoop();
 }
 
 main();

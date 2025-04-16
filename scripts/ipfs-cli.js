@@ -95,11 +95,35 @@ program
 
 program
     .command('get-id')
-    .description('Get node ID')
+    .description('Get node ID info')
     .action(async () => {
         try {
             const json = await ipfs.getID();
             console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('get-peer-id')
+    .description('Get node peer ID')
+    .action(async () => {
+        try {
+            const peerID = await ipfs.getPeerID();
+            console.log(peerID);
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('get-addresses')
+    .description('Get public addresses')
+    .action(async () => {
+        try {
+            const addresses = await ipfs.getAddresses();
+            console.log(JSON.stringify(addresses, null, 4));
         } catch (error) {
             console.error(error);
         }
@@ -123,6 +147,18 @@ program
     .action(async () => {
         try {
             const json = await ipfs.getPeers();
+            console.log(JSON.stringify(json, null, 4));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+program
+    .command('get-peering-peers')
+    .description('Get peering peers')
+    .action(async () => {
+        try {
+            const json = await ipfs.getPeeringPeers();
             console.log(JSON.stringify(json, null, 4));
         } catch (error) {
             console.error(error);
