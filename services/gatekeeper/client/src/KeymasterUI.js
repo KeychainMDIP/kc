@@ -481,6 +481,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function cloneAsset() {
+        try {
+            await keymaster.cloneAsset(aliasDID, { name: aliasName, registry });
+            refreshNames();
+        } catch (error) {
+            if (error.detail === 'id') {
+                showError("Only asset DIDs can be cloned");
+            }
+            else {
+                showError(error);
+            }
+        }
+    }
+
     async function removeName(name) {
         try {
             if (window.confirm(`Are you sure you want to remove ${name}?`)) {
@@ -1311,6 +1325,29 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
                                                     Add
                                                 </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={cloneAsset} disabled={!aliasName || !aliasDID || !registry}>
+                                                    Clone
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={registry}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => setRegistry(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select registry
+                                                    </MenuItem>
+                                                    {registries.map((registry, index) => (
+                                                        <MenuItem value={registry} key={index}>
+                                                            {registry}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
                                             </TableCell>
                                         </TableRow>
                                         {Object.entries(nameList).map(([name, did], index) => (
