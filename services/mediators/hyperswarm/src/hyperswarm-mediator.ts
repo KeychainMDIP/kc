@@ -96,8 +96,8 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
         try {
             // Wait until the importQueue is empty
             while (importQueue.length() > 0) {
-                console.log(`* sync waiting 1s for importQueue to empty. Current length: ${importQueue.length()}`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // wait for 1 second
+                console.log(`* sync waiting 10s for importQueue to empty. Current length: ${importQueue.length()}`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
             }
 
             const msg: HyperMessage = {
@@ -361,11 +361,7 @@ function newBatch(batch: Operation[]): boolean {
 async function addPeer(did: string): Promise<void> {
     const asset = await keymaster.resolveAsset(did) as { node: NodeInfo };
 
-    if (!asset || !asset.node) {
-        return;
-    }
-
-    if (!asset.node.ipfs) {
+    if (!asset?.node?.ipfs) {
         return;
     }
 
@@ -391,10 +387,16 @@ async function addPeer(did: string): Promise<void> {
 }
 
 async function syncPeers(peers: string[]): Promise<void> {
-    for(const did of peers) {
+    for (const did of peers) {
         if (!(did in knownNodes)) {
-            console.log(`* adding new peer: ${did}`);
-            await addPeer(did);
+            try {
+                await addPeer(did);
+                console.log(`added peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
+            }
+            catch (error) {
+                console.error(`Error adding peer: ${did}`, error);
+                continue;
+            }
         }
     }
 }
@@ -442,13 +444,7 @@ async function receiveMsg(peerKey: string, json: string): Promise<void> {
         connectionInfo[peerKey].nodeName = nodeName;
 
         if (msg.peers) {
-            try {
-                console.log(`* adding IPFS peers ${JSON.stringify(msg.peers, null, 4)}`);
-                await syncPeers(msg.peers);
-            }
-            catch (error) {
-                console.error(`Error adding IPFS peers: ${error}`);
-            }
+            await syncPeers(msg.peers);
         }
 
         return;
