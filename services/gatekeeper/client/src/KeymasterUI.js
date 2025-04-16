@@ -486,8 +486,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             await keymaster.cloneAsset(aliasDID, { name: aliasName, registry });
             refreshNames();
         } catch (error) {
-            if (error.detail === 'id') {
-                showError("Only asset DIDs can be cloned");
+            const errorMessage = error.error || error.toString();
+
+            if (errorMessage.includes('Invalid parameter: id')) {
+                showError('Only assets can be cloned');
             }
             else {
                 showError(error);
