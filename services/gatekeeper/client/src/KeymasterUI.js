@@ -481,6 +481,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function cloneAsset() {
+        try {
+            await keymaster.cloneAsset(aliasDID, { name: aliasName, registry });
+            refreshNames();
+        } catch (error) {
+            const errorMessage = error.error || error.toString();
+
+            if (errorMessage.includes('Invalid parameter: id')) {
+                showError('Only assets can be cloned');
+            }
+            else {
+                showError(error);
+            }
+        }
+    }
+
     async function removeName(name) {
         try {
             if (window.confirm(`Are you sure you want to remove ${name}?`)) {
@@ -1113,6 +1129,27 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    function RegistrySelect() {
+        return (
+            <Select
+                style={{ width: '300px' }}
+                value={registry}
+                fullWidth
+                displayEmpty
+                onChange={(event) => setRegistry(event.target.value)}
+            >
+                <MenuItem value="" disabled>
+                    Select registry
+                </MenuItem>
+                {registries.map((registry, index) => (
+                    <MenuItem value={registry} key={index}>
+                        {registry}
+                    </MenuItem>
+                ))}
+            </Select>
+        );
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -1312,6 +1349,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     Add
                                                 </Button>
                                             </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={cloneAsset} disabled={!aliasName || !aliasDID || !registry}>
+                                                    Clone
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <RegistrySelect />
+                                            </TableCell>
                                         </TableRow>
                                         {Object.entries(nameList).map(([name, did], index) => (
                                             <TableRow key={index}>
@@ -1423,22 +1468,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Button>
                                         </Grid>
                                         <Grid item>
-                                            <Select
-                                                style={{ width: '300px' }}
-                                                value={registry}
-                                                fullWidth
-                                                displayEmpty
-                                                onChange={(event) => setRegistry(event.target.value)}
-                                            >
-                                                <MenuItem value="" disabled>
-                                                    Select registry
-                                                </MenuItem>
-                                                {registries.map((registry, index) => (
-                                                    <MenuItem value={registry} key={index}>
-                                                        {registry}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
+                                            <RegistrySelect />
                                         </Grid>
                                     </Grid>
                                     {schemaList &&
@@ -1511,22 +1541,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Button>
                                         </Grid>
                                         <Grid item>
-                                            <Select
-                                                style={{ width: '300px' }}
-                                                value={registry}
-                                                fullWidth
-                                                displayEmpty
-                                                onChange={(event) => setRegistry(event.target.value)}
-                                            >
-                                                <MenuItem value="" disabled>
-                                                    Select registry
-                                                </MenuItem>
-                                                {registries.map((registry, index) => (
-                                                    <MenuItem value={registry} key={index}>
-                                                        {registry}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
+                                            <RegistrySelect />
                                         </Grid>
                                     </Grid>
                                     {groupList &&
@@ -1620,22 +1635,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <Select
-                                                style={{ width: '300px' }}
-                                                value={registry}
-                                                fullWidth
-                                                displayEmpty
-                                                onChange={(event) => setRegistry(event.target.value)}
-                                            >
-                                                <MenuItem value="" disabled>
-                                                    Select registry
-                                                </MenuItem>
-                                                {registries.map((registry, index) => (
-                                                    <MenuItem value={registry} key={index}>
-                                                        {registry}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
+                                            <RegistrySelect />
                                         </Grid>
                                         <Grid item>
                                             <Button
@@ -1952,22 +1952,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
-                                                        <Select
-                                                            style={{ width: '300px' }}
-                                                            value={registry}
-                                                            fullWidth
-                                                            displayEmpty
-                                                            onChange={(event) => setRegistry(event.target.value)}
-                                                        >
-                                                            <MenuItem value="" disabled>
-                                                                Select registry
-                                                            </MenuItem>
-                                                            {registries.map((registry, index) => (
-                                                                <MenuItem value={registry} key={index}>
-                                                                    {registry}
-                                                                </MenuItem>
-                                                            ))}
-                                                        </Select>
+                                                        <RegistrySelect />
                                                     </Grid>
                                                 </Grid>
                                                 {credentialDID &&
@@ -2133,22 +2118,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
-                                                        <Select
-                                                            style={{ width: '300px' }}
-                                                            value={registry}
-                                                            fullWidth
-                                                            displayEmpty
-                                                            onChange={(event) => setRegistry(event.target.value)}
-                                                        >
-                                                            <MenuItem value="" disabled>
-                                                                Select registry
-                                                            </MenuItem>
-                                                            {registries.map((registry, index) => (
-                                                                <MenuItem value={registry} key={index}>
-                                                                    {registry}
-                                                                </MenuItem>
-                                                            ))}
-                                                        </Select>
+                                                        <RegistrySelect />
                                                     </Grid>
                                                 </Grid>
                                                 {encryptedDID &&
@@ -2180,22 +2150,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     />
                                 </Grid>
                                 <Grid item>
-                                    <Select
-                                        style={{ width: '300px' }}
-                                        value={registry}
-                                        fullWidth
-                                        displayEmpty
-                                        onChange={(event) => setRegistry(event.target.value)}
-                                    >
-                                        <MenuItem value="" disabled>
-                                            Select registry
-                                        </MenuItem>
-                                        {registries.map((registry, index) => (
-                                            <MenuItem value={registry} key={index}>
-                                                {registry}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
+                                    <RegistrySelect />
                                 </Grid>
                             </Grid>
                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
