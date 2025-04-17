@@ -77,7 +77,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
     const [selectedImage, setSelectedImage] = useState('');
+    const [selectedImageOwned, setSelectedImageOwned] = useState(false);
     const [selectedImageDocs, setSelectedImageDocs] = useState('');
+    const [selectedImageURL, setSelectedImageURL] = useState('');
     const [imageVersion, setImageVersion] = useState(1);
     const [imageVersionMax, setImageVersionMax] = useState(1);
     const [imageVersions, setImageVersions] = useState([]);
@@ -1103,12 +1105,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectImage(imageName) {
         try {
+            setSelectedImageURL('');
+
             const docs = await keymaster.resolveDID(imageName);
             const versions = docs.didDocumentMetadata.version;
+            const asset = await keymaster.resolveAsset(imageName);
 
             setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
-            setSelectedImage(docs.didDocumentData.image);
+            setSelectedImage(asset.image);
+            setSelectedImageOwned(asset.isOwned);
+            setSelectedImageURL(`/api/v1/cas/data/${asset.image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
             setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
@@ -1119,10 +1126,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectImageVersion(version) {
         try {
+            setSelectedImageURL('');
+
             const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+            const image = docs.didDocumentData.image;
 
             setSelectedImageDocs(docs);
-            setSelectedImage(docs.didDocumentData.image);
+            setSelectedImage(image);
+            setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(version);
         } catch (error) {
             showError(error);
@@ -1682,7 +1693,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         variant="contained"
                                                         color="primary"
                                                         onClick={() => document.getElementById('imageUpdate').click()}
-                                                        disabled={!selectedImageName}
+                                                        disabled={!selectedImageName || !selectedImageOwned}
                                                     >
                                                         Update image...
                                                     </Button>
@@ -1736,7 +1747,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Grid>
                                                     <br />
                                                     <div className="left-pane">
-                                                        <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
+                                                        <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
                                                     </div>
                                                     <div className="right-pane">
                                                         <TableContainer>
