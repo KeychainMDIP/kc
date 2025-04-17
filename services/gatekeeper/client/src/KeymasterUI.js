@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
-import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
+import { Box, Button, Grid, MenuItem, Paper, Select, Tab, Tabs, TableContainer } from '@mui/material';
+import { Table, TableBody, TableRow, TableCell, TextField, Tooltip, Typography } from '@mui/material';
 import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
@@ -1689,14 +1689,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Select>
                                                 </Grid>
                                                 <Grid item>
-                                                    <Button
-                                                        variant="contained"
-                                                        color="primary"
-                                                        onClick={() => document.getElementById('imageUpdate').click()}
-                                                        disabled={!selectedImageName || !selectedImageOwned}
-                                                    >
-                                                        Update image...
-                                                    </Button>
+                                                    <Tooltip title={!selectedImageOwned ? "You must own the image to update." : ""}>
+                                                        <span>
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={() => document.getElementById('imageUpdate').click()}
+                                                                disabled={!selectedImageName || !selectedImageOwned}
+                                                            >
+                                                                Update image...
+                                                            </Button>
+                                                        </span>
+                                                    </Tooltip>
                                                     <input
                                                         type="file"
                                                         id="imageUpdate"
