@@ -42,8 +42,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
     const [schemaString, setSchemaString] = useState('');
+    const [selectedSchemaOwned, setSelectedSchemaOwned] = useState(false);
     const [selectedSchemaName, setSelectedSchemaName] = useState('');
-    const [editedSchemaName, setEditedSchemaName] = useState('');
     const [selectedSchema, setSelectedSchema] = useState('');
     const [agentList, setAgentList] = useState(null);
     const [credentialTab, setCredentialTab] = useState('');
@@ -623,18 +623,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             refreshNames();
             setSelectedSchemaName(name);
-            editSchema(name);
+            selectSchema(name);
         } catch (error) {
             showError(error);
         }
     }
 
-    async function editSchema(schemaName) {
+    async function selectSchema(schemaName) {
         try {
-            const schema = await keymaster.getSchema(schemaName);
-            setSelectedSchema(schema);
-            setEditedSchemaName(schemaName);
-            setSchemaString(JSON.stringify(schema, null, 4));
+            const asset = await keymaster.resolveAsset(schemaName);
+
+            setSelectedSchemaName(schemaName);
+            setSelectedSchemaOwned(asset.isOwned);
+            setSelectedSchema(asset.schema);
+            setSchemaString(JSON.stringify(asset.schema, null, 4));
         } catch (error) {
             showError(error);
         }
@@ -642,8 +644,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function saveSchema() {
         try {
-            await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
-            await editSchema(editedSchemaName);
+            await keymaster.setSchema(selectedSchemaName, JSON.parse(schemaString));
+            await selectSchema(selectedSchemaName);
         } catch (error) {
             showError(error);
         }
@@ -1490,7 +1492,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     value={selectedSchemaName}
                                                     fullWidth
                                                     displayEmpty
-                                                    onChange={(event) => setSelectedSchemaName(event.target.value)}
+                                                    onChange={(event) => selectSchema(event.target.value)}
                                                 >
                                                     <MenuItem value="" disabled>
                                                         Select schema
@@ -1502,30 +1504,34 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     ))}
                                                 </Select>
                                             </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
-                                                    Edit Schema
-                                                </Button>
-                                            </Grid>
                                         </Grid>
                                     }
                                     {selectedSchema &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
-                                                    <p>{`Editing: "${editedSchemaName}"`}</p>
-                                                </Grid>
-                                                <Grid item>
                                                     <textarea
                                                         value={schemaString}
                                                         onChange={(e) => setSchemaString(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                        readOnly={!selectedSchemaOwned}
                                                     />
                                                 </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
-                                                        Save Schema
-                                                    </Button>
+                                                <Grid container direction="row" spacing={1}>
+                                                    <Grid item>
+                                                        <Tooltip title={!selectedSchemaOwned ? "You must own the schema to save." : ""}>
+                                                            <span>
+                                                                <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString || !selectedSchemaOwned}>
+                                                                    Save Schema
+                                                                </Button>
+                                                            </span>
+                                                        </Tooltip>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={() => selectSchema(selectedSchemaName)} disabled={!schemaString || !selectedSchemaOwned}>
+                                                            Revert Schema
+                                                        </Button>
+                                                    </Grid>
                                                 </Grid>
                                             </Grid>
                                         </Box>
