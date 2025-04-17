@@ -1,7 +1,7 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation, GetRecentEventsOptions, GetRecentEventsResult } from '../types.js'
 
 interface DidsRow {
     id: string
@@ -81,6 +81,38 @@ export default class DbSqlite implements GatekeeperDb {
         const id = did.split(':').pop() || '';
         const result = await this.db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
         return result.changes ?? 0;
+    }
+
+    async getSortedEvents(
+        {
+            limit = 50,
+            offset = 0,
+            registry,
+        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const rows = await this.db.all('SELECT id, events FROM dids'); // each row has JSON of events
+        let allEvents: GatekeeperEvent[] = [];
+
+        for (const row of rows) {
+            if (row.events) {
+                const parsed = JSON.parse(row.events) as GatekeeperEvent[];
+                allEvents.push(...parsed);
+            }
+        }
+
+        if (registry) {
+            allEvents = allEvents.filter(e => e.registry === registry);
+        }
+
+        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+        const total = allEvents.length;
+        const events = allEvents.slice(offset, offset + limit);
+
+        return { total, events };
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {

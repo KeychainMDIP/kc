@@ -1,6 +1,13 @@
 import fs from 'fs';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import {
+    JsonDbFile,
+    GatekeeperDb,
+    GatekeeperEvent,
+    GetRecentEventsOptions,
+    GetRecentEventsResult,
+    Operation
+} from '../types.js'
 
 export default class DbJsonCache implements GatekeeperDb {
     private readonly dataFolder: string
@@ -131,6 +138,31 @@ export default class DbJsonCache implements GatekeeperDb {
 
         db.dids[suffix] = events;
         this.writeDb(db);
+    }
+
+    async getSortedEvents(
+        {
+            limit = 50,
+            offset = 0,
+            registry,
+        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        const db = this.loadDb();
+        let allEvents: GatekeeperEvent[] = [];
+
+        for (const suffix of Object.keys(db.dids)) {
+            const events = db.dids[suffix] || [];
+            allEvents.push(...events);
+        }
+
+        if (registry) {
+            allEvents = allEvents.filter(evt => evt.registry === registry);
+        }
+
+        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        const total = allEvents.length;
+        const events = allEvents.slice(offset, offset + limit);
+
+        return { total, events };
     }
 
     async deleteEvents(did: string): Promise<void> {

@@ -11,6 +11,8 @@ import {
     GatekeeperDb,
     GatekeeperInterface,
     GatekeeperEvent,
+    GetRecentEventsOptions,
+    GetRecentEventsResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -466,6 +468,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const did = await this.generateDID(operation);
         const ops = await this.exportDID(did);
+
+        // Add to operation for external apps watching the queue.
+        // Update and delete already have the computed DID.
+        operation.did = did;
 
         // Check to see if we already have this DID in the db
         if (ops.length === 0) {
@@ -1182,5 +1188,9 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     async getJSON(cid: string): Promise<object | null> {
         return this.ipfs.getJSON(cid);
+    }
+
+    async getRecentEvents(options: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        return this.db.getSortedEvents(options);
     }
 }

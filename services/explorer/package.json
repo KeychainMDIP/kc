@@ -1,0 +1,28 @@
+{
+  "name": "mdip-explorer",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "docker": "vite --host 0.0.0.0",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^7.0.2",
+    "@mui/material": "^7.0.2",
+    "@uiw/react-json-view": "^2.0.0-alpha.30",
+    "dotenv": "^16.5.0",
+    "flexsearch": "^0.8.158",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^4.9.0",
+    "vite": "^4.0.0"
+  }
+}

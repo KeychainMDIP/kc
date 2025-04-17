@@ -1,6 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation, GetRecentEventsOptions, GetRecentEventsResult } from '../types.js'
 
 interface DidsDoc {
     id: string
@@ -80,6 +80,34 @@ export default class DbMongo implements GatekeeperDb {
         for (const event of events) {
             await this.addEvent(did, event);
         }
+    }
+
+    async getSortedEvents(
+        {
+            limit = 50,
+            offset = 0,
+            registry,
+        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const docs = await this.db.collection<DidsDoc>('dids').find().toArray();
+
+        let allEvents: GatekeeperEvent[] = [];
+        for (const doc of docs) {
+            allEvents.push(...(doc.events || []));
+        }
+
+        if (registry) {
+            allEvents = allEvents.filter(e => e.registry === registry);
+        }
+
+        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        const total = allEvents.length;
+        const events = allEvents.slice(offset, offset + limit);
+
+        return { total, events };
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
