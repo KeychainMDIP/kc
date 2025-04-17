@@ -40,6 +40,10 @@ function App() {
     const flexIndexRef = useRef<Index | null>(null);
 
     useEffect(() => {
+        if (!isReady) {
+            return;
+        }
+
         flexIndexRef.current = new Index({
             tokenize: "forward",
             cache: true,
@@ -55,7 +59,7 @@ function App() {
             clearInterval(interval);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [isReady]);
 
     async function refreshIndex() {
         if (!flexIndexRef.current || !isReady) {
