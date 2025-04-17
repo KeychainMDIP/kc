@@ -37,6 +37,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [groupName, setGroupName] = useState('');
     const [selectedGroupName, setSelectedGroupName] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
+    const [selectedGroupOwned, setSelectedGroupOwned] = useState(false);
     const [memberDID, setMemberDID] = useState('');
     const [memberDocs, setMemberDocs] = useState('');
     const [schemaList, setSchemaList] = useState(null);
@@ -571,8 +572,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshGroup(groupName) {
         try {
-            const group = await keymaster.getGroup(groupName);
-            setSelectedGroup(group);
+            const asset = await keymaster.resolveAsset(groupName);
+
+            setSelectedGroupName(groupName);
+            setSelectedGroup(asset.group);
+            setSelectedGroupOwned(asset.isOwned);
             setMemberDID('');
             setMemberDocs('');
         } catch (error) {
@@ -1569,7 +1573,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     value={selectedGroupName}
                                                     fullWidth
                                                     displayEmpty
-                                                    onChange={(event) => setSelectedGroupName(event.target.value)}
+                                                    onChange={(event) => refreshGroup(event.target.value)}
                                                 >
                                                     <MenuItem value="" disabled>
                                                         Select group
@@ -1580,14 +1584,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </MenuItem>
                                                     ))}
                                                 </Select>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
-                                                    Edit Group
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                {selectedGroup && `Editing: ${selectedGroup.name}`}
                                             </Grid>
                                         </Grid>
                                     }
@@ -1613,9 +1609,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             </Button>
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID}>
-                                                                Add
-                                                            </Button>
+                                                            <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                <span>
+                                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID || !selectedGroupOwned}>
+                                                                        Add
+                                                                    </Button>
+                                                                </span>
+                                                            </Tooltip>
                                                         </TableCell>
                                                     </TableRow>
                                                     {selectedGroup.members.map((did, index) => (
@@ -1631,9 +1631,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 </Button>
                                                             </TableCell>
                                                             <TableCell>
-                                                                <Button variant="contained" color="primary" onClick={() => removeMember(did)}>
-                                                                    Remove
-                                                                </Button>
+                                                                <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                    <span>
+                                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)} disabled={!selectedGroupOwned}>
+                                                                            Remove
+                                                                        </Button>
+                                                                    </span>
+                                                                </Tooltip>
                                                             </TableCell>
                                                         </TableRow>
                                                     ))}
