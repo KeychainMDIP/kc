@@ -1040,7 +1040,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.resolveDID(actualDid, options);
     }
 
-    async isOwned(did: string): Promise<boolean> {
+    async idInWallet(did: string): Promise<boolean> {
         try {
             await this.fetchIdInfo(did);
             return true;
@@ -1057,7 +1057,7 @@ export default class Keymaster implements KeymasterInterface {
             return {};
         }
 
-        const isOwned = await this.isOwned(doc.didDocument.controller);
+        const isOwned = await this.idInWallet(doc.didDocument.controller);
 
         return {
             ...doc.didDocumentData,
