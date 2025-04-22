@@ -527,14 +527,41 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function resolveName(name) {
         try {
-            const docs = await keymaster.resolveDID(name);
-            setSelectedName(name);
+            const trimmedName = name.trim();
+            const docs = await keymaster.resolveDID(trimmedName);
+            setSelectedName(trimmedName);
             setAliasDocs(JSON.stringify(docs, null, 4));
             const versions = docs.didDocumentMetadata.version;
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
             setAliasDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
 
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function transferName(name) {
+        try {
+            const docs = await keymaster.resolveDID(name);
+
+            if (docs.mdip.type === 'agent') {
+                showAlert("Only asset DIDs may be transferred");
+                return;
+            }
+
+            if (!docs.didDocumentMetadata.isOwned) {
+                showAlert("Only assets you own may be transferred");
+                return;
+            }
+
+            const newController = window.prompt("Transfer asset to name or DID:");
+
+            if (newController) {
+                await keymaster.transferAsset(name, newController);
+                resolveName(name);
+                showAlert(`Transferred ${name} to ${newController}`);
+            }
         } catch (error) {
             showError(error);
         }
@@ -1340,7 +1367,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     label="Name"
                                                     style={{ width: '200px' }}
                                                     value={aliasName}
-                                                    onChange={(e) => setAliasName(e.target.value.trim())}
+                                                    onChange={(e) => setAliasName(e.target.value)}
                                                     fullWidth
                                                     margin="normal"
                                                     inputProps={{ maxLength: 20 }}
@@ -1397,6 +1424,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableCell>
                                                     <Button variant="contained" color="primary" onClick={() => removeName(name)}>
                                                         Remove
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => transferName(name)}>
+                                                        Transfer
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
