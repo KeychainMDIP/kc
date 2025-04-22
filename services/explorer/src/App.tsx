@@ -1,6 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import JsonViewer from "./components/JsonViewer.js";
-import Queue from "./components/Queue.js";
 import Recent from "./components/Recent.js";
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { createTheme, ThemeProvider } from "@mui/material/styles";
@@ -10,8 +9,6 @@ import {
     Box,
     CssBaseline,
     Snackbar,
-    Tab,
-    Tabs,
 } from "@mui/material";
 import Header from "./components/Header.js";
 import { Index } from 'flexsearch';
@@ -35,7 +32,6 @@ function App() {
     });
     const [darkMode, setDarkMode] = useState<boolean>(false);
     const [tabValue, setTabValue] = useState<string>("search");
-    const [operationsSubTab, setOperationsSubTab] = useState<string>("recent");
     const [viewDid, setViewDid] = useState<string>("");
     const flexIndexRef = useRef<Index | null>(null);
 
@@ -110,17 +106,6 @@ function App() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        const storedSubTab = sessionStorage.getItem("mdip-explorer-operations-sub-tab");
-        if (storedSubTab) {
-            setOperationsSubTab(storedSubTab);
-        }
-    }, []);
-
-    useEffect(() => {
-        sessionStorage.setItem("mdip-explorer-operations-sub-tab", operationsSubTab);
-    }, [operationsSubTab]);
-
     const handleSnackbarClose = () => {
         setSnackbar((prev) => ({ ...prev, open: false }));
     };
@@ -189,31 +174,12 @@ function App() {
                                     flexIndex={flexIndexRef.current}
                                 />
                             )}
-                            {tabValue === "operations" && (
-                                <Box>
-                                    <Tabs
-                                        value={operationsSubTab}
-                                        onChange={(event, newValue) => setOperationsSubTab(newValue)}
-                                        sx={{ mb: 2 }}
-                                    >
-                                        <Tab label="Recent" value="recent" />
-                                        <Tab label="Queued" value="queued" />
-                                    </Tabs>
-                                    {operationsSubTab === "recent" && (
-                                        <Recent
-                                            gatekeeper={gatekeeper}
-                                            setError={setError}
-                                            onDidClick={handleViewDid}
-                                        />
-                                    )}
-                                    {operationsSubTab === "queued" && (
-                                        <Queue
-                                            gatekeeper={gatekeeper}
-                                            setError={setError}
-                                            onDidClick={handleViewDid}
-                                        />
-                                    )}
-                                </Box>
+                            {tabValue === "recent" && (
+                                <Recent
+                                    gatekeeper={gatekeeper}
+                                    setError={setError}
+                                    onDidClick={handleViewDid}
+                                />
                             )}
                         </Box>
                     }

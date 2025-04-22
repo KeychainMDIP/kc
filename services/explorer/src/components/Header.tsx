@@ -50,7 +50,7 @@ const Header = (
                 indicatorColor="secondary"
             >
                 <Tab label="Search" value="search" />
-                <Tab label="Events" value="operations" />
+                <Tab label="Recent" value="recent" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>
