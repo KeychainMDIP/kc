@@ -1,24 +1,13 @@
 import fs from 'fs';
-import { InvalidDIDError } from '@mdip/common/errors';
-import {
-    JsonDbFile,
-    GatekeeperDb,
-    GatekeeperEvent,
-    GetRecentEventsOptions,
-    GetRecentEventsResult,
-    Operation
-} from '../types.js'
+import {JsonDbFile} from '../types.js'
+import {AbstractJson} from "./abstract-json.ts";
 
-export default class DbJson implements GatekeeperDb {
-    private readonly dataFolder: string;
-    private readonly dbName: string;
-
+export default class DbJson extends AbstractJson {
     constructor(name: string, folder: string = 'data') {
-        this.dataFolder = folder;
-        this.dbName = `${this.dataFolder}/${name}.json`;
+        super(name, folder);
     }
 
-    private loadDb(): JsonDbFile {
+    protected loadDb(): JsonDbFile {
         try {
             return JSON.parse(fs.readFileSync(this.dbName, 'utf-8'));
         }
@@ -29,7 +18,7 @@ export default class DbJson implements GatekeeperDb {
         }
     }
 
-    private writeDb(db: JsonDbFile): void {
+    protected writeDb(db: JsonDbFile): void {
         if (!fs.existsSync(this.dataFolder)) {
             fs.mkdirSync(this.dataFolder, { recursive: true });
         }
@@ -41,152 +30,5 @@ export default class DbJson implements GatekeeperDb {
         if (fs.existsSync(this.dbName)) {
             fs.rmSync(this.dbName);
         }
-    }
-
-    async addEvent(did: string, event: GatekeeperEvent): Promise<void> {
-        const db = this.loadDb();
-
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
-        const suffix = did.split(':').pop() as string;
-
-        if (Object.keys(db.dids).includes(suffix)) {
-            db.dids[suffix].push(event);
-        }
-        else {
-            db.dids[suffix] = [event];
-        }
-
-        this.writeDb(db);
-    }
-
-    async getEvents(did: string): Promise<GatekeeperEvent[]> {
-        try {
-            const db = this.loadDb();
-            const suffix = did.split(':').pop() as string;
-            const updates = db.dids[suffix];
-
-            if (updates && updates.length > 0) {
-                return updates;
-            }
-            else {
-                return [];
-            }
-        }
-        catch {
-            return [];
-        }
-    }
-
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
-        const db = this.loadDb();
-        const suffix = did.split(':').pop() as string;
-
-        db.dids[suffix] = events;
-        this.writeDb(db);
-    }
-
-    async getSortedEvents(
-        {
-            limit = 50,
-            offset = 0,
-            registry,
-        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        const db = this.loadDb();
-        let allEvents: GatekeeperEvent[] = [];
-
-        for (const suffix of Object.keys(db.dids)) {
-            const events = db.dids[suffix] || [];
-            allEvents.push(...events);
-        }
-
-        if (registry) {
-            allEvents = allEvents.filter(evt => evt.registry === registry);
-        }
-
-        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-        const total = allEvents.length;
-        const events = allEvents.slice(offset, offset + limit);
-
-        return { total, events };
-    }
-
-    async deleteEvents(did: string): Promise<void> {
-        const db = this.loadDb();
-        const suffix = did.split(':').pop() as string;
-
-        if (db.dids[suffix]) {
-            delete db.dids[suffix];
-            this.writeDb(db);
-        }
-    }
-
-    async queueOperation(registry: string, op: Operation): Promise<number> {
-        const db = this.loadDb();
-
-        if (!db.queue) {
-            db.queue = {};
-        }
-
-        if (registry in db.queue) {
-            db.queue[registry].push(op);
-        }
-        else {
-            db.queue[registry] = [op];
-        }
-
-        this.writeDb(db);
-
-        return db.queue[registry].length;
-    }
-
-    async getQueue(registry: string): Promise<Operation[]> {
-        try {
-            const db = this.loadDb();
-            if (!db.queue || !db.queue[registry]) {
-                return []
-            }
-            return db.queue[registry]
-        }
-        catch {
-            return [];
-        }
-    }
-
-    async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {
-        try {
-            const db = this.loadDb();
-
-            if (!db.queue) {
-                return true;
-            }
-
-            const oldQueue = db.queue[registry];
-
-            if (!oldQueue) {
-                return true;
-            }
-
-            const newQueue = oldQueue.filter(item => !batch.some(op => op.signature?.value === item.signature?.value));
-
-            db.queue[registry] = newQueue;
-            this.writeDb(db);
-
-            return true;
-        }
-        catch (error) {
-            return false;
-        }
-    }
-
-    async getAllKeys(): Promise<string[]> {
-        const db = this.loadDb();
-        return Object.keys(db.dids);
     }
 }
