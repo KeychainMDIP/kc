@@ -8,6 +8,7 @@ import {
 import {
     GatekeeperInterface,
     MdipDocument,
+    DocumentMetadata,
     ResolveDIDOptions,
     Operation,
 } from '@mdip/gatekeeper/types';
@@ -1037,10 +1038,20 @@ export default class Keymaster implements KeymasterInterface {
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
-        return this.gatekeeper.resolveDID(actualDid, options);
+        const docs = await this.gatekeeper.resolveDID(actualDid, options);
+        const controller = docs.didDocument?.controller || docs.didDocument?.id;
+        const isOwned = await this.idInWallet(controller);
+
+        // Augment the DID document metadata with the DID ownership status
+        docs.didDocumentMetadata = {
+            ...docs.didDocumentMetadata,
+            isOwned,
+        } as DocumentMetadata & { isOwned?: boolean };
+
+        return docs;
     }
 
-    async idInWallet(did: string): Promise<boolean> {
+    async idInWallet(did?: string): Promise<boolean> {
         try {
             await this.fetchIdInfo(did);
             return true;
@@ -1057,12 +1068,7 @@ export default class Keymaster implements KeymasterInterface {
             return {};
         }
 
-        const isOwned = await this.idInWallet(doc.didDocument.controller);
-
-        return {
-            ...doc.didDocumentData,
-            isOwned,
-        };
+        return doc.didDocumentData;
     }
 
     async updateAsset(
