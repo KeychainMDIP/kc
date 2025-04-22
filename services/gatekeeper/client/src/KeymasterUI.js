@@ -572,11 +572,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshGroup(groupName) {
         try {
-            const asset = await keymaster.resolveAsset(groupName);
+            const docs = await keymaster.resolveDID(groupName);
 
             setSelectedGroupName(groupName);
-            setSelectedGroup(asset.group);
-            setSelectedGroupOwned(asset.isOwned);
+            setSelectedGroup(docs.didDocumentData.group);
+            setSelectedGroupOwned(docs.didDocumentMetadata.isOwned);
             setMemberDID('');
             setMemberDocs('');
         } catch (error) {
@@ -635,12 +635,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectSchema(schemaName) {
         try {
-            const asset = await keymaster.resolveAsset(schemaName);
+            const docs = await keymaster.resolveDID(schemaName);
+            const schema = docs.didDocumentData.schema;
 
             setSelectedSchemaName(schemaName);
-            setSelectedSchemaOwned(asset.isOwned);
-            setSelectedSchema(asset.schema);
-            setSchemaString(JSON.stringify(asset.schema, null, 4));
+            setSelectedSchemaOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedSchema(schema);
+            setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error) {
             showError(error);
         }
@@ -1115,13 +1116,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             const docs = await keymaster.resolveDID(imageName);
             const versions = docs.didDocumentMetadata.version;
-            const asset = await keymaster.resolveAsset(imageName);
+            const image = docs.didDocumentData.image;
 
             setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
-            setSelectedImage(asset.image);
-            setSelectedImageOwned(asset.isOwned);
-            setSelectedImageURL(`/api/v1/cas/data/${asset.image.cid}`)
+            setSelectedImage(image);
+            setSelectedImageOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
             setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
