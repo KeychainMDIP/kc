@@ -20,7 +20,7 @@ const config = {
         '^@mdip/gatekeeper$': '<rootDir>/packages/gatekeeper/src/gatekeeper.ts',
         '^@mdip/gatekeeper/types$': '<rootDir>/packages/gatekeeper/src/types.ts',
         '^@mdip/gatekeeper/client$': '<rootDir>/packages/gatekeeper/src/gatekeeper-client.ts',
-        '^@mdip/gatekeeper/db/(.*)$': '<rootDir>/packages/gatekeeper/src/db/$1',
+        '^@mdip/gatekeeper/db/(.*)$': '<rootDir>/packages/gatekeeper/dist/db/$1',
         '^@mdip/ipfs/helia$': '<rootDir>/packages/ipfs/src/helia-client.ts',
         '^@mdip/ipfs/utils$': '<rootDir>/packages/ipfs/src/utils.ts',
         '^@mdip/keymaster$': '<rootDir>/packages/keymaster/src/keymaster.ts',

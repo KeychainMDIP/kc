@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { JsonDbFile } from '../types.js'
-import { AbstractJson } from "./abstract-json.ts";
+import { AbstractJson } from "./abstract-json.js";
 
 export default class DbJsonCache extends AbstractJson {
     private dbCache: JsonDbFile | null = null;

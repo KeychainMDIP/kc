@@ -14,8 +14,7 @@
     "noUnusedParameters": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "allowJs": true,
-    "allowImportingTsExtensions": true
+    "allowJs": true
   },
   "include": [
     "src/**/*"
