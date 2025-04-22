@@ -469,10 +469,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         const did = await this.generateDID(operation);
         const ops = await this.exportDID(did);
 
-        // Add to operation for external apps watching the queue.
-        // Update and delete already have the computed DID.
-        operation.did = did;
-
         // Check to see if we already have this DID in the db
         if (ops.length === 0) {
             await this.db.addEvent(did, {
