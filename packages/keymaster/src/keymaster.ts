@@ -917,10 +917,31 @@ export default class Keymaster implements KeymasterInterface {
 
     async updateDID(doc: MdipDocument): Promise<boolean> {
         const did = doc.didDocument?.id;
+
         if (!did) {
             throw new InvalidParameterError('doc.didDocument.id');
         }
+
         const current = await this.resolveDID(did);
+
+        // Compare the hashes of the current and updated documents without the metadata
+        const currentHash = this.cipher.hashJSON({
+            didDocument: current.didDocument,
+            didDocumentData: current.didDocumentData,
+            mdip: current.mdip,
+        });
+        const updateHash = this.cipher.hashJSON({
+            didDocument: doc.didDocument,
+            didDocumentData: doc.didDocumentData,
+            mdip: doc.mdip,
+        });
+
+        // If no change, return immediately without updating
+        // Maybe add a force update option later if needed?
+        if (currentHash === updateHash) {
+            return true;
+        }
+
         const previd = current.didDocumentMetadata?.versionId;
 
         const operation: Operation = {

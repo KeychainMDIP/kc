@@ -1027,7 +1027,7 @@ describe('resolveAsset', () => {
 
         expect(asset).toStrictEqual(mockAsset);
     });
-    
+
     it('should return empty asset on invalid DID', async () => {
         mockFs({});
 
@@ -1837,6 +1837,24 @@ describe('updateDID', () => {
         expect(ok).toBe(true);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
         expect(doc2.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should not update an asset DID if no changes', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAnchor = { name: 'mockAnchor', val: 1234 };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        // Changing the order should be ignored
+        doc.didDocumentData = { val: 1234, name: 'mockAnchor' };
+        const ok = await keymaster.updateDID(doc);
+        const doc2 = await keymaster.resolveDID(dataDid);
+
+        expect(ok).toBe(true);
+        expect(doc2.didDocumentData).toStrictEqual(mockAnchor);
+        expect(doc2.didDocumentMetadata!.version).toBe(1);
     });
 
     it('should update an asset DID when current ID is not owner ID', async () => {
