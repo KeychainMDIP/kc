@@ -1011,6 +1011,61 @@ describe('resolveDID', () => {
     });
 });
 
+describe('resolveAsset', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should resolve a new asset', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAsset = { name: 'mockAnchor' };
+        const did = await keymaster.createAsset(mockAsset);
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(asset).toStrictEqual({ ...mockAsset, isOwned: true });
+    });
+
+    it('should return isOwned false when controller not in wallet', async () => {
+        mockFs({});
+
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mockAsset = { name: 'mockAnchor' };
+        const did = await keymaster.createAsset(mockAsset);
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.removeId('Bob');
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(asset).toStrictEqual({ ...mockAsset, isOwned: false });
+    });
+
+    it('should return empty asset on invalid DID', async () => {
+        mockFs({});
+
+        const agentDID = await keymaster.createId('Bob');
+        const asset = await keymaster.resolveAsset(agentDID);
+
+        expect(asset).toStrictEqual({});
+    });
+
+    it('should return empty asset when revoked', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAsset = { name: 'mockAnchor' };
+        const did = await keymaster.createAsset(mockAsset);
+        await keymaster.revokeDID(did);
+
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(asset).toStrictEqual({ });
+    });
+});
+
 describe('rotateKeys', () => {
 
     afterEach(() => {
@@ -4045,7 +4100,7 @@ describe('getGroup', () => {
 
         const group = await keymaster.getGroup(groupDid);
 
-        expect(group).toStrictEqual(oldGroup);
+        expect(group).toStrictEqual({ ...oldGroup, isOwned: true });
     });
 
     it('should return null if non-group DID specified', async () => {
@@ -4382,7 +4437,7 @@ describe('getPoll', () => {
         const did = await keymaster.createAsset(template);
         const poll = await keymaster.getPoll(did);
 
-        expect(poll).toStrictEqual(template);
+        expect(poll).toStrictEqual({ ...template, isOwned: true });
     });
 
     it('should return null if non-poll DID specified', async () => {
@@ -4903,7 +4958,7 @@ describe('getSchema', () => {
         const did = await keymaster.createAsset(mockSchema);
         const schema = await keymaster.getSchema(did);
 
-        expect(schema).toStrictEqual(mockSchema);
+        expect(schema).toStrictEqual({ ...mockSchema, isOwned: true });
     });
 
     it('should throw an exception on get invalid schema', async () => {

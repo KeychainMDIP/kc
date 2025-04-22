@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Paper, Select, Tab, TableContainer, Tabs } from '@mui/material';
-import { Table, TableBody, TableRow, TableCell, TextField, Typography } from '@mui/material';
+import { Box, Button, Grid, MenuItem, Paper, Select, Tab, Tabs, TableContainer } from '@mui/material';
+import { Table, TableBody, TableRow, TableCell, TextField, Tooltip, Typography } from '@mui/material';
 import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
@@ -37,13 +37,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [groupName, setGroupName] = useState('');
     const [selectedGroupName, setSelectedGroupName] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
+    const [selectedGroupOwned, setSelectedGroupOwned] = useState(false);
     const [memberDID, setMemberDID] = useState('');
     const [memberDocs, setMemberDocs] = useState('');
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
     const [schemaString, setSchemaString] = useState('');
+    const [selectedSchemaOwned, setSelectedSchemaOwned] = useState(false);
     const [selectedSchemaName, setSelectedSchemaName] = useState('');
-    const [editedSchemaName, setEditedSchemaName] = useState('');
     const [selectedSchema, setSelectedSchema] = useState('');
     const [agentList, setAgentList] = useState(null);
     const [credentialTab, setCredentialTab] = useState('');
@@ -77,7 +78,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
     const [selectedImage, setSelectedImage] = useState('');
+    const [selectedImageOwned, setSelectedImageOwned] = useState(false);
     const [selectedImageDocs, setSelectedImageDocs] = useState('');
+    const [selectedImageURL, setSelectedImageURL] = useState('');
     const [imageVersion, setImageVersion] = useState(1);
     const [imageVersionMax, setImageVersionMax] = useState(1);
     const [imageVersions, setImageVersions] = useState([]);
@@ -569,8 +572,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshGroup(groupName) {
         try {
-            const group = await keymaster.getGroup(groupName);
-            setSelectedGroup(group);
+            const asset = await keymaster.resolveAsset(groupName);
+
+            setSelectedGroupName(groupName);
+            setSelectedGroup(asset.group);
+            setSelectedGroupOwned(asset.isOwned);
             setMemberDID('');
             setMemberDocs('');
         } catch (error) {
@@ -621,18 +627,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             refreshNames();
             setSelectedSchemaName(name);
-            editSchema(name);
+            selectSchema(name);
         } catch (error) {
             showError(error);
         }
     }
 
-    async function editSchema(schemaName) {
+    async function selectSchema(schemaName) {
         try {
-            const schema = await keymaster.getSchema(schemaName);
-            setSelectedSchema(schema);
-            setEditedSchemaName(schemaName);
-            setSchemaString(JSON.stringify(schema, null, 4));
+            const asset = await keymaster.resolveAsset(schemaName);
+
+            setSelectedSchemaName(schemaName);
+            setSelectedSchemaOwned(asset.isOwned);
+            setSelectedSchema(asset.schema);
+            setSchemaString(JSON.stringify(asset.schema, null, 4));
         } catch (error) {
             showError(error);
         }
@@ -640,8 +648,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function saveSchema() {
         try {
-            await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
-            await editSchema(editedSchemaName);
+            await keymaster.setSchema(selectedSchemaName, JSON.parse(schemaString));
+            await selectSchema(selectedSchemaName);
         } catch (error) {
             showError(error);
         }
@@ -1103,12 +1111,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectImage(imageName) {
         try {
+            setSelectedImageURL('');
+
             const docs = await keymaster.resolveDID(imageName);
             const versions = docs.didDocumentMetadata.version;
+            const asset = await keymaster.resolveAsset(imageName);
 
             setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
-            setSelectedImage(docs.didDocumentData.image);
+            setSelectedImage(asset.image);
+            setSelectedImageOwned(asset.isOwned);
+            setSelectedImageURL(`/api/v1/cas/data/${asset.image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
             setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
@@ -1119,10 +1132,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function selectImageVersion(version) {
         try {
+            setSelectedImageURL('');
+
             const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+            const image = docs.didDocumentData.image;
 
             setSelectedImageDocs(docs);
-            setSelectedImage(docs.didDocumentData.image);
+            setSelectedImage(image);
+            setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(version);
         } catch (error) {
             showError(error);
@@ -1479,7 +1496,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     value={selectedSchemaName}
                                                     fullWidth
                                                     displayEmpty
-                                                    onChange={(event) => setSelectedSchemaName(event.target.value)}
+                                                    onChange={(event) => selectSchema(event.target.value)}
                                                 >
                                                     <MenuItem value="" disabled>
                                                         Select schema
@@ -1491,30 +1508,34 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     ))}
                                                 </Select>
                                             </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => editSchema(selectedSchemaName)} disabled={!selectedSchemaName}>
-                                                    Edit Schema
-                                                </Button>
-                                            </Grid>
                                         </Grid>
                                     }
                                     {selectedSchema &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
-                                                    <p>{`Editing: "${editedSchemaName}"`}</p>
-                                                </Grid>
-                                                <Grid item>
                                                     <textarea
                                                         value={schemaString}
                                                         onChange={(e) => setSchemaString(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                        readOnly={!selectedSchemaOwned}
                                                     />
                                                 </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString}>
-                                                        Save Schema
-                                                    </Button>
+                                                <Grid container direction="row" spacing={1}>
+                                                    <Grid item>
+                                                        <Tooltip title={!selectedSchemaOwned ? "You must own the schema to save." : ""}>
+                                                            <span>
+                                                                <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString || !selectedSchemaOwned}>
+                                                                    Save Schema
+                                                                </Button>
+                                                            </span>
+                                                        </Tooltip>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={() => selectSchema(selectedSchemaName)} disabled={!schemaString || !selectedSchemaOwned}>
+                                                            Revert Schema
+                                                        </Button>
+                                                    </Grid>
                                                 </Grid>
                                             </Grid>
                                         </Box>
@@ -1552,7 +1573,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     value={selectedGroupName}
                                                     fullWidth
                                                     displayEmpty
-                                                    onChange={(event) => setSelectedGroupName(event.target.value)}
+                                                    onChange={(event) => refreshGroup(event.target.value)}
                                                 >
                                                     <MenuItem value="" disabled>
                                                         Select group
@@ -1563,14 +1584,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </MenuItem>
                                                     ))}
                                                 </Select>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => refreshGroup(selectedGroupName)} disabled={!selectedGroupName}>
-                                                    Edit Group
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                {selectedGroup && `Editing: ${selectedGroup.name}`}
                                             </Grid>
                                         </Grid>
                                     }
@@ -1596,9 +1609,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             </Button>
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID}>
-                                                                Add
-                                                            </Button>
+                                                            <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                <span>
+                                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID || !selectedGroupOwned}>
+                                                                        Add
+                                                                    </Button>
+                                                                </span>
+                                                            </Tooltip>
                                                         </TableCell>
                                                     </TableRow>
                                                     {selectedGroup.members.map((did, index) => (
@@ -1614,9 +1631,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 </Button>
                                                             </TableCell>
                                                             <TableCell>
-                                                                <Button variant="contained" color="primary" onClick={() => removeMember(did)}>
-                                                                    Remove
-                                                                </Button>
+                                                                <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                    <span>
+                                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)} disabled={!selectedGroupOwned}>
+                                                                            Remove
+                                                                        </Button>
+                                                                    </span>
+                                                                </Tooltip>
                                                             </TableCell>
                                                         </TableRow>
                                                     ))}
@@ -1678,14 +1699,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Select>
                                                 </Grid>
                                                 <Grid item>
-                                                    <Button
-                                                        variant="contained"
-                                                        color="primary"
-                                                        onClick={() => document.getElementById('imageUpdate').click()}
-                                                        disabled={!selectedImageName}
-                                                    >
-                                                        Update image...
-                                                    </Button>
+                                                    <Tooltip title={!selectedImageOwned ? "You must own the image to update." : ""}>
+                                                        <span>
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={() => document.getElementById('imageUpdate').click()}
+                                                                disabled={!selectedImageName || !selectedImageOwned}
+                                                            >
+                                                                Update image...
+                                                            </Button>
+                                                        </span>
+                                                    </Tooltip>
                                                     <input
                                                         type="file"
                                                         id="imageUpdate"
@@ -1736,7 +1761,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Grid>
                                                     <br />
                                                     <div className="left-pane">
-                                                        <img src={`/api/v1/cas/data/${selectedImage.cid}`} alt={selectedImage.cid} style={{ width: '100%', height: 'auto' }} />
+                                                        <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
                                                     </div>
                                                     <div className="right-pane">
                                                         <TableContainer>

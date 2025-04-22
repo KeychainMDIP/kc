@@ -1040,14 +1040,29 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.resolveDID(actualDid, options);
     }
 
-    async resolveAsset(did: string): Promise<unknown | null> {
+    async idInWallet(did: string): Promise<boolean> {
+        try {
+            await this.fetchIdInfo(did);
+            return true;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
+    async resolveAsset(did: string): Promise<any> {
         const doc = await this.resolveDID(did);
 
-        if (doc.didDocumentData && !doc.didDocumentMetadata?.deactivated) {
-            return doc.didDocumentData;
+        if (!doc?.didDocument?.controller || !doc?.didDocumentData || doc.didDocumentMetadata?.deactivated) {
+            return {};
         }
 
-        return null;
+        const isOwned = await this.idInWallet(doc.didDocument.controller);
+
+        return {
+            ...doc.didDocumentData,
+            isOwned,
+        };
     }
 
     async updateAsset(
