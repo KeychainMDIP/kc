@@ -1,0 +1,174 @@
+#!/usr/bin/expect -f
+# Script to validate that the output of 'kc help' matches expected content
+
+# Set timeout (in seconds)
+set timeout 10
+
+# Define a temporary file to capture output
+set logfile "kc_help_output.log"
+
+# Enable logging to file
+log_file -noappend $logfile
+
+# Run the kc help command
+puts "Running 'kc help' command..."
+spawn kc help
+
+# Wait for completion
+expect eof
+
+# Stop logging
+log_file
+
+# Read the log file into a variable
+set fp [open $logfile r]
+set output [read $fp]
+close $fp
+
+# Define the reference content (exactly as expected)
+set reference {Usage: keychain-cli [options] [command]
+
+Keychain CLI tool
+
+Options:
+  -V, --version                              output the version number
+  -h, --help                                 display help for command
+
+Commands:
+  accept-credential [options] <did>          Save verifiable credential for current ID
+  add-group-member <group> <member>          Add a member to a group
+  add-name <name> <did>                      Add a name for a DID
+  backup-id                                  Backup the current ID to its registry
+  backup-wallet-did                          Backup wallet to encrypted DID and seed bank
+  backup-wallet-file <file>                  Backup wallet to file
+  bind-credential <schema> <subject>         Create bound credential for a user
+  check-wallet                               Validate DIDs in wallet
+  clone-asset [options] <id>                 Clone an asset
+  create-asset [options]                     Create an empty asset
+  create-asset-image [options] <file>        Create an asset from an image file
+  create-asset-json [options] <file>         Create an asset from a JSON file
+  create-challenge [options] [file]          Create a challenge (optionally from a file)
+  create-challenge-cc [options] <did>        Create a challenge from a credential DID
+  create-group [options] <name>              Create a new group
+  create-id <name> [registry]                Create a new decentralized ID
+  create-poll [options] <file>               Create a poll
+  create-poll-template                       Create a poll template
+  create-response <challenge>                Create a response to a challenge
+  create-schema [options] <file>             Create a schema from a file
+  create-schema-template <schema>            Create a template from a schema
+  create-wallet                              Create a new wallet (or show existing wallet)
+  decrypt-did <did>                          Decrypt an encrypted message DID
+  decrypt-json <did>                         Decrypt an encrypted JSON DID
+  encrypt-file <file> <did>                  Encrypt a file for a DID
+  encrypt-message <message> <did>            Encrypt a message for a DID
+  encrypt-wallet                             Encrypt wallet
+  fix-wallet                                 Remove invalid DIDs from the wallet
+  get-asset <id>                             Get asset by name or DID
+  get-credential <did>                       Get credential by DID
+  get-group <did>                            Get group by DID
+  get-name <name>                            Get DID assigned to name
+  get-schema <did>                           Get schema by DID
+  help [command]                             display help for command
+  import-wallet <recovery-phrase>            Create new wallet from a recovery phrase
+  issue-credential <file> [registry] [name]  Sign and encrypt a bound credential file
+  list-assets                                List assets owned by current ID
+  list-credentials                           List credentials by current ID
+  list-groups                                List groups owned by current ID
+  list-ids                                   List IDs and show current ID
+  list-issued                                List issued credentials
+  list-names                                 List DID names (aliases)
+  list-schemas                               List schemas owned by current ID
+  perf-test [N]                              Performance test to create N credentials
+  publish-credential <did>                   Publish the existence of a credential to the current user manifest
+  publish-poll <poll>                        Publish results to poll, hiding ballots
+  recover-id <did>                           Recovers the ID from the DID
+  recover-wallet-did [did]                   Recover wallet from seed bank or encrypted DID
+  remove-group-member <group> <member>       Remove a member from a group
+  remove-id <name>                           Deletes named ID
+  remove-name <name>                         Removes a name for a DID
+  rename-id <oldName> <newName>              Renames the ID
+  resolve-did <did> [confirm]                Return document associated with DID
+  resolve-did-version <did> <version>        Return specified version of document associated with DID
+  resolve-id                                 Resolves the current ID
+  restore-wallet-file <file>                 Restore wallet from backup file
+  reveal-credential <did>                    Reveal a credential to the current user manifest
+  reveal-poll <poll>                         Publish results to poll, revealing ballots
+  revoke-credential <did>                    Revokes a verifiable credential
+  rotate-keys                                Generates new set of keys for current ID
+  set-property <id> <key> [value]            Assign a key-value pair to an asset
+  show-mnemonic                              Show recovery phrase for wallet
+  show-wallet                                Show wallet
+  sign-file <file>                           Sign a JSON file
+  test-group <group> [member]                Determine if a member is in a group
+  transfer-asset <id> <controller>           Transfer asset to a new controller
+  unpublish-credential <did>                 Remove a credential from the current user manifest
+  unpublish-poll <poll>                      Remove results from poll
+  update-asset-image <id> <file>             Update an asset from an image file
+  update-asset-json <id> <file>              Update an asset from a JSON file
+  update-poll <ballot>                       Add a ballot to the poll
+  use-id <name>                              Set the current ID
+  verify-file <file>                         Verify the signature in a JSON file
+  verify-response <response>                 Decrypt and validate a response to a challenge
+  view-poll <poll>                           View poll details
+  vote-poll <poll> <vote> [spoil]            Vote in a poll}
+
+# Clean up the output (remove spawn line, ANSI codes, and normalize whitespace)
+# First remove the spawn line
+regsub {^spawn kc help\r?\n} $output "" output
+# Remove ANSI escape sequences
+regsub -all {\x1b\[[0-9;]*[mK]} $output "" output
+# Normalize CR/LF
+regsub -all {\r\n} $output "\n" output
+regsub -all {\r} $output "\n" output
+# Trim leading/trailing whitespace
+set output [string trim $output]
+set reference [string trim $reference]
+
+# Compare the output with reference
+set output_length [string length $output]
+set reference_length [string length $reference]
+
+puts "Output length: $output_length characters"
+puts "Reference length: $reference_length characters"
+
+if {$output == $reference} {
+    puts "SUCCESS: Output matches reference exactly"
+    puts "Cleaning up temporary file..."
+    file delete $logfile
+    exit 0
+} else {
+    puts "FAILURE: Output does not match reference"
+    
+    # Create comparison files
+    set ref_file "kc_help_reference.txt"
+    set fp [open $ref_file "w"]
+    puts $fp $reference
+    close $fp
+    
+    puts "Saved reference to $ref_file"
+    puts "Log file saved to $logfile"
+    puts "You can compare with: diff -u $logfile $ref_file"
+    
+    # Show the first difference
+    set max_len [expr {min($output_length, $reference_length)}]
+    for {set i 0} {$i < $max_len} {incr i} {
+        set o_char [string index $output $i]
+        set r_char [string index $reference $i]
+        if {$o_char != $r_char} {
+            set context_start [expr {max(0, $i-20)}]
+            set context_end [expr {min($i+20, $max_len)}]
+            
+            set o_context [string range $output $context_start $context_end]
+            set r_context [string range $reference $context_start $context_end]
+            
+            puts "\n❌\nFirst difference at position $i:"
+            puts "\n❌ Output: '$o_char' (ASCII [scan $o_char %c])"
+            puts "\n❌ Reference: '$r_char' (ASCII [scan $r_char %c])"
+            puts "\n❌ Output context: ...$o_context..."
+            puts "\n❌ Reference context: ...$r_context..."
+            break
+        }
+    }
+    
+    exit 1
+}

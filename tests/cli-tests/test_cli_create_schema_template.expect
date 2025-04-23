@@ -120,6 +120,7 @@ set validated_keys {}
         puts "\n✅ Validation Passed: All required keys present, no null values"
     } else {
         puts "\n🔴 Validation Failed: Missing or null values found"
+        exit 1
     }
 }
 

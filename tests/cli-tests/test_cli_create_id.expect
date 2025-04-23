@@ -7,7 +7,7 @@ set timeout 10
 set random_value [expr {int(rand() * 100)}]
 
 # Start the CLI program
-spawn bash kc create-id "$random_value" -r local
+spawn bash kc create-id "$random_value" local
 
 # Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
 expect {
@@ -16,6 +16,7 @@ expect {
     }
     timeout {
         puts "\n❌ Timeout waiting for expected output"
+        exit 1
     }
 }
 

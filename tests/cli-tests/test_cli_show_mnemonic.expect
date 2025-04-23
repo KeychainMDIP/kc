@@ -30,6 +30,7 @@ if {$word_count == 12} {
     puts "\n✅ Valid: The phrase contains exactly 12 words."
 } else {
     puts "\n🔴 Invalid: The phrase contains $word_count words instead of 12."
+    exit 1
 }
 
 # Clean up
