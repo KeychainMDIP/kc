@@ -1097,8 +1097,12 @@ export default class Keymaster implements KeymasterInterface {
         data: Record<string, unknown>
     ): Promise<boolean> {
         const doc = await this.resolveDID(did);
+        const currentData = doc.didDocumentData || {};
 
-        doc.didDocumentData = data;
+        doc.didDocumentData = {
+            ...currentData,
+            ...data
+        };
 
         return this.updateDID(doc);
     }
