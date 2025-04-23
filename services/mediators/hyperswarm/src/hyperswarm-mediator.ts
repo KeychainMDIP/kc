@@ -360,21 +360,27 @@ function newBatch(batch: Operation[]): boolean {
 
 async function addPeer(did: string): Promise<void> {
     const docs = await keymaster.resolveDID(did);
-    const asset = docs.didDocumentData as { node: NodeInfo };
-    const { id, addresses } = asset.node.ipfs;
+    const data = docs.didDocumentData as { node: NodeInfo };
+
+    if (!data?.node || !data.node.ipfs) {
+        return;
+    }
+
+    const { id, addresses } = data.node.ipfs;
 
     if (!id || !addresses) {
         return;
     }
 
     if (id === nodeInfo.ipfs.id) {
+        // A node should never add itself as a peer node
         return;
     }
 
     await ipfs.addPeeringPeer(id, addresses);
 
     knownNodes[did] = {
-        name: asset.node.name,
+        name: data.node.name,
         ipfs: {
             id,
             addresses,
