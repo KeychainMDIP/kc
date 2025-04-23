@@ -41,6 +41,7 @@ expect {
     }
     timeout {
         puts "\n❌ Timeout waiting for expected output"
+        exit 1
     }
 }
 
