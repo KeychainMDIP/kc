@@ -83,15 +83,12 @@ export default class DbSqlite implements GatekeeperDb {
         return result.changes ?? 0;
     }
 
-    async getSortedEvents(
-        {
-            limit = 50,
-            offset = 0,
-            registry,
-        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
+
+        const { limit = 50, offset = 0, registry } = options || {};
 
         const rows = await this.db.all('SELECT id, events FROM dids'); // each row has JSON of events
         let allEvents: GatekeeperEvent[] = [];

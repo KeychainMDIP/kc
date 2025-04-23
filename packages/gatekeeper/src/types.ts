@@ -85,7 +85,7 @@ export interface GatekeeperDb {
     resetDb(): Promise<void | number | JsonDbFile>;
     addEvent(did: string, event: GatekeeperEvent): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;
-    getSortedEvents(options: GetRecentEventsOptions): Promise<GetRecentEventsResult>;
+    getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult>;
     setEvents(did: string, events: GatekeeperEvent[]): Promise<number | void>;
     deleteEvents(did: string): Promise<void | number>;
     getAllKeys(): Promise<string[]>;
@@ -117,7 +117,7 @@ export interface GatekeeperInterface {
     getJSON(cid: string): Promise<object | null>;
     addText(text: string): Promise<string>;
     getText(cid: string): Promise<string | null>;
-    getRecentEvents(options: GetRecentEventsOptions): Promise<GetRecentEventsResult>;
+    getRecentEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult>;
 }
 
 export interface MdipRegistration {

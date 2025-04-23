@@ -66,12 +66,9 @@ export abstract class AbstractJson implements GatekeeperDb {
         this.writeDb(db);
     }
 
-    async getSortedEvents(
-        {
-            limit = 50,
-            offset = 0,
-            registry,
-        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        const { limit = 50, offset = 0, registry } = options || {};
+
         const db = this.loadDb();
         let allEvents: GatekeeperEvent[] = [];
 

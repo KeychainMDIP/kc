@@ -1186,7 +1186,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.ipfs.getJSON(cid);
     }
 
-    async getRecentEvents(options: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+    async getRecentEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
         return this.db.getSortedEvents(options);
     }
 }

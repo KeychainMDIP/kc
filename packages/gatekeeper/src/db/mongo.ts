@@ -82,15 +82,12 @@ export default class DbMongo implements GatekeeperDb {
         }
     }
 
-    async getSortedEvents(
-        {
-            limit = 50,
-            offset = 0,
-            registry,
-        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR);
         }
+
+        const { limit = 50, offset = 0, registry } = options || {};
 
         const docs = await this.db.collection<DidsDoc>('dids').find().toArray();
 

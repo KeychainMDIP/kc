@@ -380,16 +380,16 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async getRecentEvents(options: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        const limit = options.limit ?? 50;
-        const offset = options.offset ?? 0;
+    async getRecentEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+        const { limit = 50, offset = 0, registry } = options || {};
+
         const params = new URLSearchParams({
             limit: limit.toString(),
             offset: offset.toString(),
         });
 
-        if (options.registry) {
-            params.set('registry', options.registry);
+        if (registry) {
+            params.set('registry', registry);
         }
 
         try {

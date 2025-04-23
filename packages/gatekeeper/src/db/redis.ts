@@ -75,15 +75,12 @@ export default class DbRedis implements GatekeeperDb {
         }
     }
 
-    async getSortedEvents(
-        {
-            limit = 50,
-            offset = 0,
-            registry,
-        }: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
+    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR);
         }
+
+        const { limit = 50, offset = 0, registry } = options || {};
 
         const keys = await this.redis.keys(`${this.dbName}/dids/*`);
         let allEvents: GatekeeperEvent[] = [];

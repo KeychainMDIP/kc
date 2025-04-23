@@ -1,7 +1,12 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
+import {
+    Operation,
+    MdipDocument,
+    GetRecentEventsResult,
+    GetRecentEventsOptions
+} from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
@@ -3489,5 +3494,37 @@ describe('getData', () => {
         const data = await gatekeeper.getData(cid);
 
         expect(data).toStrictEqual(mockData);
+    });
+});
+
+
+describe('getRecentEvents', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    const mockData: GetRecentEventsResult = {
+        total: 0,
+        events: [],
+    };
+
+    it('should return empty array', async () => {
+        const options: GetRecentEventsOptions = {
+            registry: "hyperswarm"
+        }
+
+        const results = await gatekeeper.getRecentEvents(options);
+
+        expect(results).toStrictEqual(mockData);
+    });
+
+    it('should return a singe event', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        await gatekeeper.createDID(agentOp);
+        const result = await gatekeeper.getRecentEvents({});
+
+        expect(result.events).toBeDefined();
+        expect(result.total).toBe(1);
     });
 });

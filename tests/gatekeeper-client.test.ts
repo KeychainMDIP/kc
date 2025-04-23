@@ -1,6 +1,7 @@
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
+import {GetRecentEventsOptions, GetRecentEventsResult} from "@mdip/gatekeeper/types";
 
 const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
@@ -805,6 +806,44 @@ describe('getData', () => {
 
         try {
             await gatekeeper.getData(mockCID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getRecentEvents', () => {
+    const mockData: GetRecentEventsResult = {
+        total: 0,
+        events: [],
+    };
+
+    it('should return empty array', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/events/recent?limit=50&offset=0&registry=hyperswarm`)
+            .reply(200, mockData);
+
+        const options: GetRecentEventsOptions = {
+            registry: "hyperswarm"
+        }
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const results = await gatekeeper.getRecentEvents(options);
+
+        expect(results).toStrictEqual(mockData);
+    });
+
+    it('should throw exception on getRecentEvents server error', async () => {
+        nock(GatekeeperURL)
+            .get('/api/v1/events/recent?limit=50&offset=0')
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.getRecentEvents();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
