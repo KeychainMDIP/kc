@@ -1051,6 +1051,54 @@ describe('resolveAsset', () => {
     });
 });
 
+describe('updateAsset', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update an asset', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAsset1 = { name: 'original' };
+        const mockAsset2 = { name: 'updated' };
+        const did = await keymaster.createAsset(mockAsset1);
+        const ok = await keymaster.updateAsset(did, mockAsset2);
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(ok).toBe(true);
+        expect(asset).toStrictEqual(mockAsset2);
+    });
+
+    it('should update an asset with merged data', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAsset1 = { key1: 'val1' };
+        const mockAsset2 = { key2: 'val2' };
+        const did = await keymaster.createAsset(mockAsset1);
+        const ok = await keymaster.updateAsset(did, mockAsset2);
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(ok).toBe(true);
+        expect(asset).toStrictEqual({ key1: 'val1', key2: 'val2' });
+    });
+
+    it('should remove a property when updated to be undefined ', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const mockAsset1 = { key1: 'val1', key2: 'val2' };
+        const mockAsset2 = { key2: undefined };
+        const did = await keymaster.createAsset(mockAsset1);
+        const ok = await keymaster.updateAsset(did, mockAsset2);
+        const asset = await keymaster.resolveAsset(did);
+
+        expect(ok).toBe(true);
+        expect(asset).toStrictEqual({ key1: 'val1' });
+    });
+});
+
 describe('rotateKeys', () => {
 
     afterEach(() => {
