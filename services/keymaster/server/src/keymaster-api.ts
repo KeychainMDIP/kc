@@ -4455,18 +4455,17 @@ process.on('unhandledRejection', (reason, promise) => {
     //console.error('Unhandled rejection caught');
 });
 
-async function waitForCurrentId() {
+async function waitForNodeId() {
     let isReady = false;
-    const currentId = await keymaster.getCurrentId();
 
-    if (!currentId) {
-        return;
+    if (!config.nodeID) {
+        throw new Error('KC_NODE_ID is not set in the configuration.');
     }
 
     while (!isReady) {
         try {
-            console.log(`Resolving current ID: ${currentId}`);
-            const doc = await keymaster.resolveDID(currentId);
+            console.log(`Resolving node ID: ${config.nodeID}`);
+            const doc = await keymaster.resolveDID(config.nodeID);
             console.log(JSON.stringify(doc, null, 4));
             isReady = true;
         }
@@ -4526,10 +4525,10 @@ app.listen(port, async () => {
     console.log(`Keymaster server persisting to ${config.db}`);
 
     try {
-        await waitForCurrentId();
+        await waitForNodeId();
     }
     catch (error) {
-        console.error('Failed to resolve current ID:', error);
+        console.error('Failed to wait for node ID:', error);
     }
 
     serverReady = true;
