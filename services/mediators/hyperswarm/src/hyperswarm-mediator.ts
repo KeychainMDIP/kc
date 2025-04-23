@@ -359,12 +359,8 @@ function newBatch(batch: Operation[]): boolean {
 }
 
 async function addPeer(did: string): Promise<void> {
-    const asset = await keymaster.resolveAsset(did) as { node: NodeInfo };
-
-    if (!asset?.node?.ipfs) {
-        return;
-    }
-
+    const docs = await keymaster.resolveDID(did);
+    const asset = docs.didDocumentData as { node: NodeInfo };
     const { id, addresses } = asset.node.ipfs;
 
     if (!id || !addresses) {
