@@ -94,7 +94,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.maxQueueSize = options.maxQueueSize || 100;
 
         // Only DIDs registered on supported registries will be created by this node
-        this.supportedRegistries = options.registries || ['local'];
+        this.supportedRegistries = options.registries || ['local', 'hyperswarm'];
 
         for (const registry of this.supportedRegistries) {
             if (!ValidRegistries.includes(registry)) {
