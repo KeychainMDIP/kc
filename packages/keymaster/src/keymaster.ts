@@ -8,6 +8,7 @@ import {
 import {
     GatekeeperInterface,
     MdipDocument,
+    DocumentMetadata,
     ResolveDIDOptions,
     Operation,
 } from '@mdip/gatekeeper/types';
@@ -916,10 +917,31 @@ export default class Keymaster implements KeymasterInterface {
 
     async updateDID(doc: MdipDocument): Promise<boolean> {
         const did = doc.didDocument?.id;
+
         if (!did) {
             throw new InvalidParameterError('doc.didDocument.id');
         }
+
         const current = await this.resolveDID(did);
+
+        // Compare the hashes of the current and updated documents without the metadata
+        const currentHash = this.cipher.hashJSON({
+            didDocument: current.didDocument,
+            didDocumentData: current.didDocumentData,
+            mdip: current.mdip,
+        });
+        const updateHash = this.cipher.hashJSON({
+            didDocument: doc.didDocument,
+            didDocumentData: doc.didDocumentData,
+            mdip: doc.mdip,
+        });
+
+        // If no change, return immediately without updating
+        // Maybe add a force update option later if needed?
+        if (currentHash === updateHash) {
+            return true;
+        }
+
         const previd = current.didDocumentMetadata?.versionId;
 
         const operation: Operation = {
@@ -1037,10 +1059,20 @@ export default class Keymaster implements KeymasterInterface {
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
-        return this.gatekeeper.resolveDID(actualDid, options);
+        const docs = await this.gatekeeper.resolveDID(actualDid, options);
+        const controller = docs.didDocument?.controller || docs.didDocument?.id;
+        const isOwned = await this.idInWallet(controller);
+
+        // Augment the DID document metadata with the DID ownership status
+        docs.didDocumentMetadata = {
+            ...docs.didDocumentMetadata,
+            isOwned,
+        } as DocumentMetadata & { isOwned?: boolean };
+
+        return docs;
     }
 
-    async idInWallet(did: string): Promise<boolean> {
+    async idInWallet(did?: string): Promise<boolean> {
         try {
             await this.fetchIdInfo(did);
             return true;
@@ -1057,12 +1089,7 @@ export default class Keymaster implements KeymasterInterface {
             return {};
         }
 
-        const isOwned = await this.idInWallet(doc.didDocument.controller);
-
-        return {
-            ...doc.didDocumentData,
-            isOwned,
-        };
+        return doc.didDocumentData;
     }
 
     async updateAsset(
