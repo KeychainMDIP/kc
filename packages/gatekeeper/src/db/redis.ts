@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation, GetRecentEventsOptions, GetRecentEventsResult } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 
@@ -73,34 +73,6 @@ export default class DbRedis implements GatekeeperDb {
         for (const event of events) {
             await this.addEvent(did, event);
         }
-    }
-
-    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        if (!this.redis) {
-            throw new Error(REDIS_NOT_STARTED_ERROR);
-        }
-
-        const { limit = 50, offset = 0, registry } = options || {};
-
-        const keys = await this.redis.keys(`${this.dbName}/dids/*`);
-        let allEvents: GatekeeperEvent[] = [];
-
-        for (const key of keys) {
-            const eventStrings = await this.redis.lrange(key, 0, -1);
-            const events = eventStrings.map(str => JSON.parse(str) as GatekeeperEvent);
-            allEvents.push(...events);
-        }
-
-        if (registry) {
-            allEvents = allEvents.filter(e => e.registry === registry);
-        }
-
-        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-        const total = allEvents.length;
-        const events = allEvents.slice(offset, offset + limit);
-
-        return { total, events };
     }
 
     private didKey(did: string): string {

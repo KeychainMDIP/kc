@@ -3,8 +3,6 @@ import {
     JsonDbFile,
     GatekeeperDb,
     GatekeeperEvent,
-    GetRecentEventsOptions,
-    GetRecentEventsResult,
     Operation
 } from '../types.js';
 
@@ -64,28 +62,6 @@ export abstract class AbstractJson implements GatekeeperDb {
 
         db.dids[suffix] = events;
         this.writeDb(db);
-    }
-
-    async getSortedEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        const { limit = 50, offset = 0, registry } = options || {};
-
-        const db = this.loadDb();
-        let allEvents: GatekeeperEvent[] = [];
-
-        for (const suffix of Object.keys(db.dids)) {
-            const events = db.dids[suffix] || [];
-            allEvents.push(...events);
-        }
-
-        if (registry) {
-            allEvents = allEvents.filter(evt => evt.registry === registry);
-        }
-
-        allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-        const total = allEvents.length;
-        const events = allEvents.slice(offset, offset + limit);
-
-        return { total, events };
     }
 
     async deleteEvents(did: string): Promise<void> {

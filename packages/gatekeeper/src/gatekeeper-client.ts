@@ -2,8 +2,6 @@ import axios, { AxiosError } from 'axios';
 import {
     GatekeeperInterface,
     GatekeeperEvent,
-    GetRecentEventsOptions,
-    GetRecentEventsResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -377,26 +375,6 @@ export default class GatekeeperClient implements GatekeeperInterface {
                 axiosError.response.data = JSON.parse(errorMessage);
             }
             throwError(axiosError);
-        }
-    }
-
-    async getRecentEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        const { limit = 50, offset = 0, registry } = options || {};
-
-        const params = new URLSearchParams({
-            limit: limit.toString(),
-            offset: offset.toString(),
-        });
-
-        if (registry) {
-            params.set('registry', registry);
-        }
-
-        try {
-            const response = await axios.get(`${this.API}/events/recent?${params.toString()}`);
-            return response.data;
-        } catch (error) {
-            throwError(error);
         }
     }
 }

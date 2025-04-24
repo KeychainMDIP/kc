@@ -1468,61 +1468,6 @@ v1router.post('/events/process', async (req, res) => {
 
 /**
  * @swagger
- * /events/recent:
- *   get:
- *     summary: Retrieve recent DID events with optional registry filter & pagination
- *     description: >
- *       Returns a paginated list of DID events (descending by time).
- *       You can filter by registry, limit how many to return, and offset for pagination.
- *     parameters:
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: How many events to return (default 50).
- *       - in: query
- *         name: offset
- *         schema:
- *           type: integer
- *         description: How many events to skip (default 0).
- *       - in: query
- *         name: registry
- *         schema:
- *           type: string
- *         description: Filter by registry name (e.g. "hyperswarm", "TBTC", etc.). If omitted, returns all registries.
- *     responses:
- *       200:
- *         description: Paginated events + total count
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 total:
- *                   type: number
- *                 events:
- *                   type: array
- *                   items:
- *                     type: object
- *       500:
- *         description: Internal server error
- */
-v1router.get('/events/recent', async (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit as string, 10) || 50;
-        const offset = parseInt(req.query.offset as string, 10) || 0;
-        const registry = req.query.registry ? String(req.query.registry) : undefined;
-
-        const result = await gatekeeper.getRecentEvents({ limit, offset, registry });
-        res.json(result);
-    } catch (error: any) {
-        console.error(error);
-        res.status(500).send(error.toString());
-    }
-});
-
-/**
- * @swagger
  * /cas/json:
  *   post:
  *     summary: Adds a JSON object to the CAS (Content Addressable Storage)

@@ -11,8 +11,6 @@ import {
     GatekeeperDb,
     GatekeeperInterface,
     GatekeeperEvent,
-    GetRecentEventsOptions,
-    GetRecentEventsResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -1184,9 +1182,5 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     async getJSON(cid: string): Promise<object | null> {
         return this.ipfs.getJSON(cid);
-    }
-
-    async getRecentEvents(options?: GetRecentEventsOptions): Promise<GetRecentEventsResult> {
-        return this.db.getSortedEvents(options);
     }
 }

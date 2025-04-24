@@ -40,18 +40,23 @@ function Recent(
 
         async function fetchRecent() {
             try {
-                const offset = page * eventCount;
-                const registryFilter = registry === "All" ? undefined : registry;
+                const dids = (await gatekeeper.getDIDs()) as string[];
+                let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
 
-                const result = await gatekeeper.getRecentEvents({
-                    limit: eventCount,
-                    offset,
-                    registry: registryFilter,
-                });
+                if (registry !== "All") {
+                    allEvents = allEvents.filter((evt) => evt.registry === registry);
+                }
+
+                allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+                const from = page * eventCount;
+                const to = from + eventCount;
+                const pageEvents = allEvents.slice(from, to);
+                const totalCount = allEvents.length;
 
                 if (isMounted) {
-                    setEvents(result.events);
-                    setTotal(result.total);
+                    setEvents(pageEvents);
+                    setTotal(totalCount);
                 }
             } catch (err: any) {
                 if (isMounted) {
@@ -62,7 +67,7 @@ function Recent(
 
         fetchRecent();
 
-        intervalId = setInterval(fetchRecent, 1000);
+        intervalId = setInterval(fetchRecent, 10000);
 
         return () => {
             isMounted = false;
@@ -88,9 +93,9 @@ function Recent(
             <Box sx={{ display: "flex", alignItems: "center", mb: 2, gap: 2 }}>
                 <FormControl size="small" sx={{ minWidth: 120 }}>
                     <Select value={eventCount} onChange={handleCountChange}>
-                        <MenuItem value={50}>50 events</MenuItem>
-                        <MenuItem value={100}>100 events</MenuItem>
-                        <MenuItem value={200}>200 events</MenuItem>
+                        <MenuItem value={50}>50</MenuItem>
+                        <MenuItem value={100}>100</MenuItem>
+                        <MenuItem value={200}>200</MenuItem>
                     </Select>
                 </FormControl>
 
@@ -114,9 +119,7 @@ function Recent(
                         Prev
                     </Button>
                     <Typography>
-                        Page {page + 1} / {totalPages === 0 ? 1 : totalPages}
-                        {"  "}
-                        (total: {total})
+                        Page {page + 1} / {totalPages === 0 ? 1 : totalPages} (total: {total})
                     </Typography>
                     <Button
                         variant="outlined"
