@@ -27,6 +27,7 @@ const config = {
         '^@mdip/keymaster/client$': '<rootDir>/packages/keymaster/src/keymaster-client.ts',
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
         '^\\./typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
+        '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
     },
     testPathIgnorePatterns: [
         "/node_modules/",

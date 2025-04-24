@@ -1,19 +1,13 @@
 import fs from 'fs';
-import { InvalidDIDError } from '@mdip/common/errors';
-import { JsonDbFile, GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { JsonDbFile } from '../types.js'
+import { AbstractJson } from "./abstract-json.js";
 
-export default class DbJsonCache implements GatekeeperDb {
-    private readonly dataFolder: string
-    private readonly dbName: string
-    private dbCache: JsonDbFile | null
-    private saveLoopTimeoutId: NodeJS.Timeout | null
+export default class DbJsonCache extends AbstractJson {
+    private dbCache: JsonDbFile | null = null;
+    private saveLoopTimeoutId: NodeJS.Timeout | null = null;
 
     constructor(name: string, folder: string = 'data') {
-        this.dataFolder = folder;
-        this.dbName = `${this.dataFolder}/${name}.json`;
-        this.dbCache = null;
-        this.saveLoopTimeoutId = null;
-
+        super(name, folder);
         this.loadDb();
     }
 
@@ -41,7 +35,7 @@ export default class DbJsonCache implements GatekeeperDb {
         this.saveLoopTimeoutId = setTimeout(() => this.saveLoop(), 20 * 1000);
     }
 
-    loadDb(): JsonDbFile {
+    protected loadDb(): JsonDbFile {
         if (!this.dbCache) {
             try {
                 const raw = fs.readFileSync(this.dbName, 'utf-8')
@@ -62,7 +56,7 @@ export default class DbJsonCache implements GatekeeperDb {
         return this.dbCache;
     }
 
-    private writeDb(db: JsonDbFile): void {
+    protected writeDb(db: JsonDbFile): void {
         this.dbCache = db
     }
 
@@ -82,125 +76,5 @@ export default class DbJsonCache implements GatekeeperDb {
         }
         this.dbCache = null;
         return this.loadDb();
-    }
-
-    async addEvent(did: string, event: GatekeeperEvent): Promise<void> {
-        const db = this.loadDb();
-
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
-        const suffix = did.split(':').pop() as string;
-
-        if (Object.keys(db.dids).includes(suffix)) {
-            db.dids[suffix].push(event);
-        }
-        else {
-            db.dids[suffix] = [event];
-        }
-
-        this.writeDb(db);
-    }
-
-    async getEvents(did: string): Promise<GatekeeperEvent[]> {
-        let events: GatekeeperEvent[] = []
-
-        try {
-            const db = this.loadDb();
-            const suffix = did.split(':').pop() as string;
-            const updates = db.dids[suffix];
-
-            if (updates && updates.length > 0) {
-                events = updates;
-            }
-        }
-        catch {
-        }
-
-        return JSON.parse(JSON.stringify(events));
-    }
-
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
-        const db = this.loadDb();
-        const suffix = did.split(':').pop() as string;
-
-        db.dids[suffix] = events;
-        this.writeDb(db);
-    }
-
-    async deleteEvents(did: string): Promise<void> {
-        const db = this.loadDb();
-        const suffix = did.split(':').pop() as string;
-
-        if (db.dids[suffix]) {
-            delete db.dids[suffix];
-            this.writeDb(db);
-        }
-    }
-
-    async queueOperation(registry: string, op: Operation): Promise<number> {
-        const db = this.loadDb();
-
-        if (!db.queue) {
-            db.queue = {};
-        }
-
-        if (Object.keys(db.queue).includes(registry)) {
-            db.queue[registry].push(op);
-        }
-        else {
-            db.queue[registry] = [op];
-        }
-
-        this.writeDb(db);
-
-        return db.queue[registry].length;
-    }
-
-    async getQueue(registry: string): Promise<Operation[]> {
-        try {
-            const db = this.loadDb();
-            const queue = db.queue?.[registry];
-            return queue ?? [];
-        }
-        catch {
-            return [];
-        }
-    }
-
-    async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {
-        try {
-            const db = this.loadDb();
-
-            if (!db.queue) {
-                return true;
-            }
-
-            const oldQueue = db.queue[registry];
-
-            if (!oldQueue) {
-                return true;
-            }
-
-            const newQueue = oldQueue.filter(item => !batch.some(op => op.signature?.value === item.signature?.value));
-
-            db.queue[registry] = newQueue;
-            this.writeDb(db);
-
-            return true;
-        }
-        catch (error) {
-            return false;
-        }
-    }
-
-    async getAllKeys(): Promise<string[]> {
-        const db = this.loadDb();
-        return Object.keys(db.dids);
     }
 }

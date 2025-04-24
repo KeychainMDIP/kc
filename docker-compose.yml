@@ -186,3 +186,17 @@ services:
       - gatekeeper
       - keymaster
       - ipfs
+
+  explorer:
+    build:
+      context: .
+      dockerfile: Dockerfile.explorer
+    image: keychainmdip/explorer
+    environment:
+      - VITE_EXPLORER_PORT=3000
+      - VITE_GATEKEEPER_URL=http://localhost:4224
+      - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gatekeeper
