@@ -2814,8 +2814,9 @@ describe('listRegistries', () => {
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         const registries = await gatekeeper.listRegistries();
 
-        expect(registries.length).toBe(1);
+        expect(registries.length).toBe(2);
         expect(registries.includes('local')).toBe(true);
+        expect(registries.includes('hyperswarm')).toBe(true);
     });
 
     it('should return list of configured registries', async () => {

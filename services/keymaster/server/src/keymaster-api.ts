@@ -4462,6 +4462,13 @@ async function waitForNodeId() {
         throw new Error('KC_NODE_ID is not set in the configuration.');
     }
 
+    const ids = await keymaster.listIds();
+
+    if (!ids.includes(config.nodeID)) {
+        await keymaster.createId(config.nodeID!);
+        console.log(`Created node ID '${config.nodeID}'`);
+    }
+
     while (!isReady) {
         try {
             console.log(`Resolving node ID: ${config.nodeID}`);
@@ -4526,10 +4533,9 @@ app.listen(port, async () => {
 
     try {
         await waitForNodeId();
+        serverReady = true;
     }
     catch (error) {
         console.error('Failed to wait for node ID:', error);
     }
-
-    serverReady = true;
 });

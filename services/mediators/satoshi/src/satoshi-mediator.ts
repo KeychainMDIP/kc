@@ -7,7 +7,6 @@ import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
-import { InvalidParameterError } from '@mdip/common/errors';
 import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
 import {GatekeeperEvent, Operation} from '@mdip/gatekeeper/types';
 
@@ -444,34 +443,6 @@ async function waitForChain() {
     return true;
 }
 
-async function waitForNodeID() {
-    let isReady = false;
-
-    while (!isReady) {
-        try {
-            await keymaster.resolveDID(config.nodeID!);
-            console.log(`Using node ID '${config.nodeID}'`);
-            isReady = true;
-        }
-        catch {
-            try {
-                await keymaster.createId(config.nodeID!);
-                console.log(`Created node ID '${config.nodeID}'`);
-                isReady = true;
-            }
-            catch (error: any) {
-                if (error.type === InvalidParameterError.type) {
-                    console.log(`Waiting for gatekeeper to sync...`);
-                }
-            }
-        }
-
-        if (!isReady) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
-        }
-    }
-}
-
 async function main() {
     if (!config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
@@ -537,8 +508,6 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
-
-    await waitForNodeID();
 
     if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);
