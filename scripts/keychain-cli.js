@@ -840,6 +840,24 @@ program
     });
 
 program
+    .command('create-asset-document <file>')
+    .description('Create an asset from a document file')
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
+        try {
+            const { name, registry } = options;
+            const data = fs.readFileSync(file);
+            const filename = file.split('/').pop();
+            const did = await keymaster.createDocument(data, { filename, name, registry });
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('get-asset <id>')
     .description('Get asset by name or DID')
     .action(async (id) => {

@@ -17,6 +17,7 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    CreateFileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
     FixWalletResult,
@@ -76,6 +77,13 @@ export interface Image {
     type: string;
     width: number;
     height: number;
+    bytes: number;
+}
+
+export interface Document {
+    cid: string;
+    type: string;
+    filename: string;
     bytes: number;
 }
 
@@ -741,6 +749,57 @@ export default class Keymaster implements KeymasterInterface {
         try {
             const image = await this.getImage(id);
             return image !== null;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
+    async createDocument(
+        buffer: Buffer,
+        options: CreateFileAssetOptions = {}
+    ): Promise<string> {
+        const filename = options.filename || 'unknown';
+        const type = filename.split('.').pop() || 'unknown';
+        const cid = await this.gatekeeper.addData(buffer);
+        const document: Document = {
+            cid,
+            filename,
+            type,
+            bytes: buffer.length,
+        };
+
+        return this.createAsset({ document }, options);
+    }
+
+    async updateDocument(
+        filename: string,
+        id: string,
+        buffer: Buffer
+    ): Promise<boolean> {
+        const type = filename.split('.').pop() || 'unknown';
+        const cid = await this.gatekeeper.addData(buffer);
+        const document: Document = {
+            cid,
+            filename,
+            type,
+            bytes: buffer.length,
+        };
+
+        return this.updateAsset(id, { document });
+    }
+
+    async getDocument(id: string): Promise<Document | null> {
+        const asset = await this.resolveAsset(id);
+        const castAsset = asset as { document?: Document };
+
+        return castAsset.document ?? null;
+    }
+
+    async testDocument(id: string): Promise<boolean> {
+        try {
+            const document = await this.getDocument(id);
+            return document !== null;
         }
         catch (error) {
             return false;

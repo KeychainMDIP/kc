@@ -56,6 +56,10 @@ export interface CreateAssetOptions {
     name?: string;
 }
 
+export interface CreateFileAssetOptions extends CreateAssetOptions {
+    filename?: string;
+}
+
 export interface EncryptOptions extends CreateAssetOptions {
     encryptForSender?: boolean;
     includeHash?: boolean;

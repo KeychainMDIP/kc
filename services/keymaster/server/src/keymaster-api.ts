@@ -4230,6 +4230,19 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
     }
 });
 
+v1router.post('/documents', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const did = await keymaster.createDocument(data, options);
+
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
 /**
  * @swagger
  * /images/{id}:

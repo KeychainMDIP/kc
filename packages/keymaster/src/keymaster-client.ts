@@ -7,6 +7,7 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    CreateFileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
     FixWalletResult,
@@ -962,6 +963,24 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/images/${id}/test`);
             return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createDocument(
+        data: Buffer,
+        options: CreateFileAssetOptions = {}
+    ): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/documents`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify(options), // Pass options as a custom header
+                }
+            });
+            return response.data.did;
         }
         catch (error) {
             throwError(error);
