@@ -5997,6 +5997,61 @@ describe('updateDocument', () => {
         expect(doc.didDocumentData).toStrictEqual(expected);
         expect(doc.didDocumentMetadata!.version).toBe(2);
     });
+
+    it('should handle case where no filename is provided', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is another first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is another second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2);
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename: 'document',
+                bytes: 31,
+                type: 'unknown',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should handle case where filename has no extension', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is yet another first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is yet another second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+        const filename = 'mockdoc';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name, filename });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2, { filename });
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 35,
+                type: 'unknown',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
 });
 
 describe('getDocument', () => {
