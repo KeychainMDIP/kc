@@ -1047,7 +1047,7 @@ describe('resolveAsset', () => {
 
         const asset = await keymaster.resolveAsset(did);
 
-        expect(asset).toStrictEqual({ });
+        expect(asset).toStrictEqual({});
     });
 });
 
@@ -5856,5 +5856,73 @@ describe('testImage', () => {
 
         const isImage = await keymaster.testImage('mock');
         expect(isImage).toBe(false);
+    });
+});
+
+describe('createDocument', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create DID from document data', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument.txt';
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument, { filename });
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 31,
+                type: 'txt',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+});
+
+describe('updateDocument', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update named DID from document data', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is the first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is the second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+        const filename = 'mockdoc.txt';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name, filename });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2, { filename });
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 27,
+                type: 'txt',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
     });
 });
