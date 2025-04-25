@@ -41,6 +41,7 @@ const Endpoints = {
     polls_vote: '/api/v1/polls/vote',
     polls_update: '/api/v1/polls/update',
     images: '/api/v1/images',
+    documents: '/api/v1/documents',
 };
 
 const mockConsole = {
@@ -2466,6 +2467,133 @@ describe('testImage', () => {
 
         try {
             await keymaster.testImage(mockImageId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('createDocument', () => {
+    const mockDocument = Buffer.from('document data');
+    const mockDID = 'did:example:123456789abcd';
+
+    it('should create an document asset', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.documents)
+            .reply(200, { did: mockDID });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.createDocument(mockDocument);
+
+        expect(did).toBe(mockDID);
+    });
+
+    it('should throw exception on createDocument server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.documents)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createDocument(mockDocument);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('updateDocument', () => {
+    const mockDocument = Buffer.from('document data');
+    const mockDID = 'did:example:923456789abcd';
+
+    it('should update a document asset', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.documents}/${mockDID}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.updateDocument(mockDID, mockDocument);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on updateDocument server error', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.documents}/${mockDID}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.updateDocument(mockDID, mockDocument);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getDocument', () => {
+    const mockDocumentId = 'document1';
+    const mockDocument = { cid: 'mockCID', bytes: 12345, type: 'pdf' };
+
+    it('should get document', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.documents}/${mockDocumentId}`)
+            .reply(200, { document: mockDocument });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const schema = await keymaster.getDocument(mockDocumentId);
+
+        expect(schema).toStrictEqual(mockDocument);
+    });
+
+    it('should throw exception on getImage server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.documents}/${mockDocumentId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getDocument(mockDocumentId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('testImage', () => {
+    const mockDocumentId = 'document1';
+
+    it('should test document', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.documents}/${mockDocumentId}/test`)
+            .reply(200, { test: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.testDocument(mockDocumentId);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on testSchema server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.documents}/${mockDocumentId}/test`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.testDocument(mockDocumentId);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

@@ -4569,8 +4569,8 @@ v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', l
  */
 v1router.get('/documents/:id', async (req, res) => {
     try {
-        const image = await keymaster.getDocument(req.params.id);
-        res.json({ image });
+        const document = await keymaster.getDocument(req.params.id);
+        res.json({ document });
     } catch (error: any) {
         res.status(404).send({ error: error.toString() });
     }

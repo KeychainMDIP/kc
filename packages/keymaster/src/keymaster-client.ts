@@ -1006,4 +1006,24 @@ export default class KeymasterClient implements KeymasterInterface {
             throwError(error);
         }
     }
+
+    async getDocument(id: string): Promise<string> {
+        try {
+            const response = await axios.get(`${this.API}/documents/${id}`);
+            return response.data.document;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testDocument(id: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/documents/${id}/test`);
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
 }
