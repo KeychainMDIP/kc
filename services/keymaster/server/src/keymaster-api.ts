@@ -4392,6 +4392,228 @@ v1router.post('/images/:id/test', async (req, res) => {
 
 /**
  * @swagger
+ * /documents:
+ *   post:
+ *     summary: Upload a binary document and create a DID for it.
+ *     description: >
+ *       Accepts binary data as the request body and creates a DID for the uploaded document. Additional options can be passed via the `X-Options` header.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The binary document data to store as a DID asset.
+ *     parameters:
+ *       - in: header
+ *         name: X-Options
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: >
+ *           A JSON string containing additional options for the document creation process.
+ *           Example: `{"registry":"local","validUntil":"2025-12-31T23:59:59Z"}`
+ *     responses:
+ *       200:
+ *         description: The DID created for the uploaded document.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 did:
+ *                   type: string
+ *                   description: The DID representing the uploaded document.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/documents', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const did = await keymaster.createDocument(data, options);
+
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /documents/{id}:
+ *   put:
+ *     summary: Update an existing binary document.
+ *     description: >
+ *       Updates the binary data of an existing document identified by its DID. Additional options can be passed via the `X-Options` header.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the document to update.
+ *       - in: header
+ *         name: X-Options
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: >
+ *           A JSON string containing additional options for the document update process.
+ *           Example: `{"registry":"local","validUntil":"2025-12-31T23:59:59Z"}`
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *       description: The new binary document data to replace the existing one.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the update was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the update was successful, otherwise `false`.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const ok = await keymaster.updateDocument(req.params.id, data, options);
+
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /documents/{id}:
+ *   get:
+ *     summary: Retrieve a binary document by its DID.
+ *     description: >
+ *       Fetches the binary document data and metadata associated with the specified DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the document to retrieve.
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved the document data and metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 document:
+ *                   type: object
+ *                   description: The document data and metadata.
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       description: The MIME type of the document (e.g., "application/pdf").
+ *                     bytes:
+ *                       type: integer
+ *                       description: The size of the document in bytes.
+ *                     cid:
+ *                       type: string
+ *                       description: The Content Identifier (CID) of the document.
+ *       404:
+ *         description: Document not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating the document was not found.
+ */
+v1router.get('/documents/:id', async (req, res) => {
+    try {
+        const document = await keymaster.getDocument(req.params.id);
+        res.json({ document });
+    } catch (error: any) {
+        res.status(404).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /documents/{id}/test:
+ *   post:
+ *     summary: Test if the specified document is valid.
+ *     description: >
+ *       Checks whether the document associated with the given DID is valid or meets specific criteria.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the document to test.
+ *     responses:
+ *       200:
+ *         description: The result of the test.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 test:
+ *                   type: boolean
+ *                   description: true if the document is valid, otherwise `false`.
+ *       400:
+ *         description: Invalid request or test criteria not met.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the test failed.
+ */
+v1router.post('/documents/:id/test', async (req, res) => {
+    try {
+        const test = await keymaster.testDocument(req.params.id);
+        res.json({ test });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /cas/data/{cid}:
  *   get:
  *     summary: Retrieve data from the CAS (Content Addressable Storage)

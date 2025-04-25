@@ -17,11 +17,14 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
+    FileAsset,
     FixWalletResult,
     Group,
     IDInfo,
+    ImageAsset,
     IssueCredentialsOptions,
     KeymasterInterface,
     Poll,
@@ -69,14 +72,6 @@ export interface EncryptedMessage {
 
 interface PossiblySigned {
     signature?: Signature;
-}
-
-export interface Image {
-    cid: string;
-    type: string;
-    width: number;
-    height: number;
-    bytes: number;
 }
 
 export default class Keymaster implements KeymasterInterface {
@@ -730,9 +725,9 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(id, data);
     }
 
-    async getImage(id: string): Promise<Image | null> {
+    async getImage(id: string): Promise<ImageAsset | null> {
         const asset = await this.resolveAsset(id);
-        const castAsset = asset as { image?: Image };
+        const castAsset = asset as { image?: ImageAsset };
 
         return castAsset.image ?? null;
     }
@@ -741,6 +736,58 @@ export default class Keymaster implements KeymasterInterface {
         try {
             const image = await this.getImage(id);
             return image !== null;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
+    async createDocument(
+        buffer: Buffer,
+        options: FileAssetOptions = {}
+    ): Promise<string> {
+        const filename = options.filename || 'document';
+        const type = filename.includes('.') ? filename.split('.').pop() || 'unknown' : 'unknown';
+        const cid = await this.gatekeeper.addData(buffer);
+        const document: FileAsset = {
+            cid,
+            filename,
+            type,
+            bytes: buffer.length,
+        };
+
+        return this.createAsset({ document }, options);
+    }
+
+    async updateDocument(
+        id: string,
+        buffer: Buffer,
+        options: FileAssetOptions = {}
+    ): Promise<boolean> {
+        const filename = options.filename || 'document';
+        const type = filename.includes('.') ? filename.split('.').pop() || 'unknown' : 'unknown';
+        const cid = await this.gatekeeper.addData(buffer);
+        const document: FileAsset = {
+            cid,
+            filename,
+            type,
+            bytes: buffer.length,
+        };
+
+        return this.updateAsset(id, { document });
+    }
+
+    async getDocument(id: string): Promise<FileAsset | null> {
+        const asset = await this.resolveAsset(id);
+        const castAsset = asset as { document?: FileAsset };
+
+        return castAsset.document ?? null;
+    }
+
+    async testDocument(id: string): Promise<boolean> {
+        try {
+            const document = await this.getDocument(id);
+            return document !== null;
         }
         catch (error) {
             return false;

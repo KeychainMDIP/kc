@@ -1047,7 +1047,7 @@ describe('resolveAsset', () => {
 
         const asset = await keymaster.resolveAsset(did);
 
-        expect(asset).toStrictEqual({ });
+        expect(asset).toStrictEqual({});
     });
 });
 
@@ -5813,7 +5813,7 @@ describe('testImage', () => {
         mockFs.restore();
     });
 
-    it('should return true for agent DID', async () => {
+    it('should return true for image DID', async () => {
         mockFs({});
 
         // Create a small image buffer using sharp
@@ -5833,7 +5833,28 @@ describe('testImage', () => {
         expect(isImage).toBe(true);
     });
 
-    it('should return false for non-agent DID', async () => {
+    it('should return true for image name', async () => {
+        mockFs({});
+
+        // Create a small image buffer using sharp
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+        const name = 'mockImage';
+
+        await keymaster.createId('Bob');
+        await keymaster.createImage(mockImage, { name });
+        const isImage = await keymaster.testImage(name);
+
+        expect(isImage).toBe(true);
+    });
+
+    it('should return false for non-image DID', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
@@ -5856,5 +5877,263 @@ describe('testImage', () => {
 
         const isImage = await keymaster.testImage('mock');
         expect(isImage).toBe(false);
+    });
+});
+
+describe('createDocument', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should create DID from document data', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument.txt';
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument, { filename });
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 31,
+                type: 'txt',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+
+    it('should handle case where no filename is provided', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is another mock binary document.', 'utf-8');
+        const cid = await generateCID(mockDocument);
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename: 'document',
+                bytes: 37,
+                type: 'unknown',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+
+    it('should handle case where filename has no extension', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is another mock document.', 'utf-8');
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument';
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument, { filename });
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 30,
+                type: 'unknown',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+});
+
+describe('updateDocument', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should update named DID from document data', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is the first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is the second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+        const filename = 'mockdoc.txt';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name, filename });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2, { filename });
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 27,
+                type: 'txt',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should handle case where no filename is provided', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is another first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is another second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2);
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename: 'document',
+                bytes: 31,
+                type: 'unknown',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should handle case where filename has no extension', async () => {
+        mockFs({});
+
+        const mockdoc_v1 = Buffer.from('This is yet another first version.', 'utf-8');
+        const mockdoc_v2 = Buffer.from('This is yet another second version.', 'utf-8');
+        const cid = await generateCID(mockdoc_v2);
+        const name = 'mockdoc';
+        const filename = 'mockdoc';
+
+        await keymaster.createId('Bob');
+        await keymaster.createDocument(mockdoc_v1, { name, filename });
+        const ok = await keymaster.updateDocument(name, mockdoc_v2, { filename });
+        const doc = await keymaster.resolveDID(name);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 35,
+                type: 'unknown',
+            }
+        };
+
+        expect(ok).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual(expected);
+        expect(doc.didDocumentMetadata!.version).toBe(2);
+    });
+});
+
+describe('getDocument', () => {
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return the document asset', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument.txt';
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createDocument(mockDocument, { filename });
+        const asset = await keymaster.getDocument(did);
+
+        const document = {
+            cid,
+            filename,
+            bytes: 31,
+            type: 'txt',
+        };
+
+        expect(asset).toStrictEqual(document);
+    });
+});
+
+describe('testDocument', () => {
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should return true for document DID', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is a test document.', 'utf-8');
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createDocument(mockDocument);
+        const isDocument = await keymaster.testDocument(did);
+
+        expect(isDocument).toBe(true);
+    });
+
+    it('should return true for document name', async () => {
+        mockFs({});
+
+        const mockDocument = Buffer.from('This is another test document.', 'utf-8');
+
+        await keymaster.createId('Bob');
+        const name = 'mockDocument';
+        await keymaster.createDocument(mockDocument, { name });
+        const isDocument = await keymaster.testDocument(name);
+
+        expect(isDocument).toBe(true);
+    });
+
+    it('should return false for non-document DID', async () => {
+        mockFs({});
+
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isDocument = await keymaster.testDocument(did);
+
+        expect(isDocument).toBe(false);
+    });
+
+    it('should return false if no DID specified', async () => {
+        mockFs({});
+
+        // @ts-expect-error Testing invalid usage, missing arg
+        const isDocument = await keymaster.testDocument();
+        expect(isDocument).toBe(false);
+    });
+
+    it('should return false if invalid DID specified', async () => {
+        mockFs({});
+
+        const isDocument = await keymaster.testDocument('mock');
+        expect(isDocument).toBe(false);
     });
 });

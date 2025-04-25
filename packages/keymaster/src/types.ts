@@ -2,7 +2,6 @@ import {
     MdipDocument,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
-import {Image} from "./keymaster.js";
 
 export interface EncryptedWallet {
     salt: string
@@ -54,6 +53,10 @@ export interface CreateAssetOptions {
     controller?: string;
     validUntil?: string;
     name?: string;
+}
+
+export interface FileAssetOptions extends CreateAssetOptions {
+    filename?: string;
 }
 
 export interface EncryptOptions extends CreateAssetOptions {
@@ -163,6 +166,21 @@ export interface ViewPollResult {
     results?: PollResults;
 }
 
+export interface BinaryAsset {
+    cid: string;
+    type: string;
+    bytes: number;
+}
+
+export interface ImageAsset extends BinaryAsset {
+    width: number;
+    height: number;
+}
+
+export interface FileAsset extends BinaryAsset {
+    filename: string;
+}
+
 export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {
@@ -265,6 +283,13 @@ export interface KeymasterInterface {
 
     // Images
     createImage(data: Buffer, options?: CreateAssetOptions): Promise<string>;
-    getImage(id: string): Promise<Image | null>;
+    updateImage(did: string, data: Buffer): Promise<boolean>;
+    getImage(id: string): Promise<ImageAsset | null>;
     testImage(id: string): Promise<boolean>;
+
+    // Documents
+    createDocument(data: Buffer, options?: FileAssetOptions): Promise<string>;
+    updateDocument(did: string, data: Buffer, options?: FileAssetOptions): Promise<boolean>;
+    getDocument(id: string): Promise<FileAsset | null>;
+    testDocument(id: string): Promise<boolean>;
 }

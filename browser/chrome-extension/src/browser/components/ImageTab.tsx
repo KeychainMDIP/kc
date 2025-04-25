@@ -3,7 +3,7 @@ import {Box, Button, MenuItem, Select} from "@mui/material";
 import {useWalletContext} from "../../shared/contexts/WalletProvider";
 import {useUIContext} from "../../shared/contexts/UIContext";
 import {useCredentialsContext} from "../../shared/contexts/CredentialsProvider";
-import { Image } from "@mdip/keymaster";
+import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 
@@ -24,7 +24,7 @@ const ImageTab = () => {
     } = useCredentialsContext();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [selectedImageName, setSelectedImageName] = useState<string>('');
-    const [selectedImage, setSelectedImage] = useState<Image | null>(null);
+    const [selectedImage, setSelectedImage] = useState<ImageAsset | null>(null);
     const [selectedImageDocs, setSelectedImageDocs] = useState<MdipDocument | null>(null);
     const [selectedImageDataUrl, setSelectedImageDataUrl] = useState<string>("");
 
