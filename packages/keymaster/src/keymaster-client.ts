@@ -10,8 +10,10 @@ import {
     FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
+    FileAsset,
     FixWalletResult,
     Group,
+    ImageAsset,
     IssueCredentialsOptions,
     KeymasterInterface,
     Poll,
@@ -22,7 +24,6 @@ import {
 } from './types.js'
 
 import axios, { AxiosError } from 'axios';
-import { Image } from "./keymaster.js";
 
 const VERSION = '/api/v1';
 
@@ -950,7 +951,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getImage(id: string): Promise<Image | null> {
+    async getImage(id: string): Promise<ImageAsset | null> {
         try {
             const response = await axios.get(`${this.API}/images/${id}`);
             return response.data.image;
@@ -1007,7 +1008,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getDocument(id: string): Promise<string> {
+    async getDocument(id: string): Promise<FileAsset | null> {
         try {
             const response = await axios.get(`${this.API}/documents/${id}`);
             return response.data.document;
