@@ -166,19 +166,19 @@ export interface ViewPollResult {
     results?: PollResults;
 }
 
-export interface ImageAsset {
+export interface BinaryAsset {
     cid: string;
     type: string;
-    width: number;
-    height: number;
     bytes: number;
 }
 
-export interface FileAsset {
-    cid: string;
-    type: string;
+export interface ImageAsset extends BinaryAsset {
+    width: number;
+    height: number;
+}
+
+export interface FileAsset extends BinaryAsset {
     filename: string;
-    bytes: number;
 }
 
 export type StoredWallet = EncryptedWallet | WalletFile | null;
