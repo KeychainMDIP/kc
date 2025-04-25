@@ -10,7 +10,7 @@ Dependencies:
 - Framework can be installed for MacOSx using Homebrew: https://formulae.brew.sh/formula/expect
 - When starting nodes, use the following command: "./start-node cli"
 - Before running tests, the tests expect the cli commands are accessible by running the "kc" or "admin" command globally.This can be done by adding them to your PATH.
-- Then from /tests, run "./run_cli_tests.sh"
+- Then from /tests, run "./run_cli_tests.sh --local"
 
 * When running without hyperswarm you should set KC_DEFAULT_REGISTRY=local in the .env, otherwise create operations will fail.
 * Tests at this time run only for "local" registry, but will be updated later for others.
