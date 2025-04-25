@@ -760,7 +760,7 @@ export default class Keymaster implements KeymasterInterface {
         options: FileAssetOptions = {}
     ): Promise<string> {
         const filename = options.filename || 'document';
-        const type = filename.split('.').pop() || 'unknown';
+        const type = filename.includes('.') ? filename.split('.').pop() || 'unknown' : 'unknown';
         const cid = await this.gatekeeper.addData(buffer);
         const document: FileAsset = {
             cid,
