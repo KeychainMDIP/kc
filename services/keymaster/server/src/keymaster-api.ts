@@ -4534,7 +4534,7 @@ v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', l
  *             schema:
  *               type: object
  *               properties:
- *                 image:
+ *                 document:
  *                   type: object
  *                   description: The document data and metadata.
  *                   properties:
@@ -4557,15 +4557,6 @@ v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', l
  *                 error:
  *                   type: string
  *                   description: Error message indicating the document was not found.
- *       500:
- *         description: Internal server error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
  */
 v1router.get('/documents/:id', async (req, res) => {
     try {
