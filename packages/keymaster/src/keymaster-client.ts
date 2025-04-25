@@ -993,7 +993,7 @@ export default class KeymasterClient implements KeymasterInterface {
         id: string,
         data: Buffer,
         options: FileAssetOptions = {}
-    ): Promise<string> {
+    ): Promise<boolean> {
         try {
             const response = await axios.put(`${this.API}/documents/${id}`, data, {
                 headers: {

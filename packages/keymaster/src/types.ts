@@ -283,6 +283,13 @@ export interface KeymasterInterface {
 
     // Images
     createImage(data: Buffer, options?: CreateAssetOptions): Promise<string>;
+    updateImage(did: string, data: Buffer): Promise<boolean>;
     getImage(id: string): Promise<ImageAsset | null>;
     testImage(id: string): Promise<boolean>;
+
+    // Documents
+    createDocument(data: Buffer, options?: FileAssetOptions): Promise<string>;
+    updateDocument(did: string, data: Buffer, options?: FileAssetOptions): Promise<boolean>;
+    getDocument(id: string): Promise<FileAsset | null>;
+    testDocument(id: string): Promise<boolean>;
 }
