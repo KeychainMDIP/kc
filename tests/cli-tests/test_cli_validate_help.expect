@@ -45,6 +45,7 @@ Commands:
   check-wallet                               Validate DIDs in wallet
   clone-asset [options] <id>                 Clone an asset
   create-asset [options]                     Create an empty asset
+  create-asset-document [options] <file>     Create an asset from a document file
   create-asset-image [options] <file>        Create an asset from an image file
   create-asset-json [options] <file>         Create an asset from a JSON file
   create-challenge [options] [file]          Create a challenge (optionally from a file)
@@ -103,6 +104,7 @@ Commands:
   transfer-asset <id> <controller>           Transfer asset to a new controller
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
+  update-asset-document <id> <file>          Update an asset from a document file
   update-asset-image <id> <file>             Update an asset from an image file
   update-asset-json <id> <file>              Update an asset from a JSON file
   update-poll <ballot>                       Add a ballot to the poll
@@ -138,17 +140,17 @@ if {$output == $reference} {
     exit 0
 } else {
     puts "FAILURE: Output does not match reference"
-    
+
     # Create comparison files
     set ref_file "kc_help_reference.txt"
     set fp [open $ref_file "w"]
     puts $fp $reference
     close $fp
-    
+
     puts "Saved reference to $ref_file"
     puts "Log file saved to $logfile"
     puts "You can compare with: diff -u $logfile $ref_file"
-    
+
     # Show the first difference
     set max_len [expr {min($output_length, $reference_length)}]
     for {set i 0} {$i < $max_len} {incr i} {
@@ -157,10 +159,10 @@ if {$output == $reference} {
         if {$o_char != $r_char} {
             set context_start [expr {max(0, $i-20)}]
             set context_end [expr {min($i+20, $max_len)}]
-            
+
             set o_context [string range $output $context_start $context_end]
             set r_context [string range $reference $context_start $context_end]
-            
+
             puts "\n❌\nFirst difference at position $i:"
             puts "\n❌ Output: '$o_char' (ASCII [scan $o_char %c])"
             puts "\n❌ Reference: '$r_char' (ASCII [scan $r_char %c])"
@@ -169,6 +171,6 @@ if {$output == $reference} {
             break
         }
     }
-    
+
     exit 1
 }

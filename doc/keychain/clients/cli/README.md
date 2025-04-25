@@ -94,6 +94,7 @@ Commands:
   check-wallet                               Validate DIDs in wallet
   clone-asset [options] <id>                 Clone an asset
   create-asset [options]                     Create an empty asset
+  create-asset-document [options] <file>     Create an asset from a document file
   create-asset-image [options] <file>        Create an asset from an image file
   create-asset-json [options] <file>         Create an asset from a JSON file
   create-challenge [options] [file]          Create a challenge (optionally from a file)
@@ -152,6 +153,7 @@ Commands:
   transfer-asset <id> <controller>           Transfer asset to a new controller
   unpublish-credential <did>                 Remove a credential from the current user manifest
   unpublish-poll <poll>                      Remove results from poll
+  update-asset-document <id> <file>          Update an asset from a document file
   update-asset-image <id> <file>             Update an asset from an image file
   update-asset-json <id> <file>              Update an asset from a JSON file
   update-poll <ballot>                       Add a ballot to the poll
