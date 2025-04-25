@@ -1160,7 +1160,7 @@ describe('cloneAsset', () => {
 });
 
 describe('transferAsset', () => {
-    const mockDID = 'did:example:123456789abcd';
+    const mockDID = 'did:example:124356789abcd';
     const controller = 'did:example:controller';
 
     it('should transfer asset', async () => {
@@ -2458,7 +2458,7 @@ describe('testImage', () => {
         expect(result).toBe(true);
     });
 
-    it('should throw exception on testSchema server error', async () => {
+    it('should throw exception on testImage server error', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.images}/${mockImageId}/test`)
             .reply(500, ServerError);
@@ -2554,7 +2554,7 @@ describe('getDocument', () => {
         expect(schema).toStrictEqual(mockDocument);
     });
 
-    it('should throw exception on getImage server error', async () => {
+    it('should throw exception on getDocument server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.documents}/${mockDocumentId}`)
             .reply(500, ServerError);
@@ -2571,7 +2571,7 @@ describe('getDocument', () => {
     });
 });
 
-describe('testImage', () => {
+describe('testDocument', () => {
     const mockDocumentId = 'document1';
 
     it('should test document', async () => {
@@ -2585,7 +2585,7 @@ describe('testImage', () => {
         expect(result).toBe(true);
     });
 
-    it('should throw exception on testSchema server error', async () => {
+    it('should throw exception on testDocument server error', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.documents}/${mockDocumentId}/test`)
             .reply(500, ServerError);
