@@ -899,6 +899,21 @@ program
     });
 
 program
+    .command('update-asset-document <id> <file>')
+    .description('Update an asset from a document file')
+    .action(async (id, file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const filename = file.split('/').pop();
+            const ok = await keymaster.updateDocument(id, data, { filename });
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('transfer-asset <id> <controller>')
     .description('Transfer asset to a new controller')
     .action(async (id, controller) => {

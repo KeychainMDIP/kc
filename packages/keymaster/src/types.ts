@@ -2,7 +2,7 @@ import {
     MdipDocument,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
-import {Image} from "./keymaster.js";
+import { Image } from "./keymaster.js";
 
 export interface EncryptedWallet {
     salt: string
@@ -56,7 +56,7 @@ export interface CreateAssetOptions {
     name?: string;
 }
 
-export interface CreateFileAssetOptions extends CreateAssetOptions {
+export interface FileAssetOptions extends CreateAssetOptions {
     filename?: string;
 }
 

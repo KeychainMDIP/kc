@@ -17,7 +17,7 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
-    CreateFileAssetOptions,
+    FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
     FixWalletResult,
@@ -80,7 +80,7 @@ export interface Image {
     bytes: number;
 }
 
-export interface Document {
+export interface FileAsset {
     cid: string;
     type: string;
     filename: string;
@@ -757,12 +757,12 @@ export default class Keymaster implements KeymasterInterface {
 
     async createDocument(
         buffer: Buffer,
-        options: CreateFileAssetOptions = {}
+        options: FileAssetOptions = {}
     ): Promise<string> {
-        const filename = options.filename || 'unknown';
+        const filename = options.filename || 'document';
         const type = filename.split('.').pop() || 'unknown';
         const cid = await this.gatekeeper.addData(buffer);
-        const document: Document = {
+        const document: FileAsset = {
             cid,
             filename,
             type,
@@ -773,13 +773,14 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async updateDocument(
-        filename: string,
         id: string,
-        buffer: Buffer
+        buffer: Buffer,
+        options: FileAssetOptions = {}
     ): Promise<boolean> {
+        const filename = options.filename || 'document';
         const type = filename.split('.').pop() || 'unknown';
         const cid = await this.gatekeeper.addData(buffer);
-        const document: Document = {
+        const document: FileAsset = {
             cid,
             filename,
             type,
@@ -789,9 +790,9 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(id, { document });
     }
 
-    async getDocument(id: string): Promise<Document | null> {
+    async getDocument(id: string): Promise<FileAsset | null> {
         const asset = await this.resolveAsset(id);
-        const castAsset = asset as { document?: Document };
+        const castAsset = asset as { document?: FileAsset };
 
         return castAsset.document ?? null;
     }

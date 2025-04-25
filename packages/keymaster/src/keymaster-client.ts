@@ -7,7 +7,7 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
-    CreateFileAssetOptions,
+    FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
     FixWalletResult,
@@ -921,6 +921,7 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/images`, data, {
                 headers: {
+                    // eslint-disable-next-line
                     'Content-Type': 'application/octet-stream',
                     'X-Options': JSON.stringify(options), // Pass options as a custom header
                 }
@@ -971,7 +972,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createDocument(
         data: Buffer,
-        options: CreateFileAssetOptions = {}
+        options: FileAssetOptions = {}
     ): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/documents`, data, {
@@ -981,6 +982,25 @@ export default class KeymasterClient implements KeymasterInterface {
                 }
             });
             return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateDocument(
+        id: string,
+        data: Buffer,
+        options: FileAssetOptions = {}
+    ): Promise<string> {
+        try {
+            const response = await axios.put(`${this.API}/documents/${id}`, data, {
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify(options), // Pass options as a custom header
+                }
+            });
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);

@@ -4243,6 +4243,19 @@ v1router.post('/documents', express.raw({ type: 'application/octet-stream', limi
     }
 });
 
+v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const ok = await keymaster.updateDocument(req.params.id, data, options);
+
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
 /**
  * @swagger
  * /images/{id}:
