@@ -1305,6 +1305,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function downloadDocument() {
+        const link = document.createElement('a');
+        link.href = selectedDocumentURL;
+        link.download = selectedDocument.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link); // Clean up the DOM
+    }
+
     function RegistrySelect() {
         return (
             <Select
@@ -1908,25 +1917,39 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 </Select>
                             </Grid>
                             <Grid item>
-                                <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
-                                    <span>
+                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid item>
+                                        <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
+                                            <span>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    onClick={() => document.getElementById('documentUpdate').click()}
+                                                    disabled={!selectedDocumentName || !selectedDocumentOwned}
+                                                >
+                                                    Update document...
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
+                                        <input
+                                            type="file"
+                                            id="documentUpdate"
+                                            accept=".pdf,.doc,.docx,.txt"
+                                            style={{ display: 'none' }}
+                                            onChange={updateDocument}
+                                        />
+                                    </Grid>
+                                    <Grid item>
                                         <Button
                                             variant="contained"
                                             color="primary"
-                                            onClick={() => document.getElementById('documentUpdate').click()}
-                                            disabled={!selectedDocumentName || !selectedDocumentOwned}
+                                            onClick={() => downloadDocument()}
+                                            disabled={!selectedDocumentName}
                                         >
-                                            Update document...
+                                            Download
                                         </Button>
-                                    </span>
-                                </Tooltip>
-                                <input
-                                    type="file"
-                                    id="documentUpdate"
-                                    accept=".pdf,.doc,.docx,.txt"
-                                    style={{ display: 'none' }}
-                                    onChange={updateDocument}
-                                />
+                                    </Grid>
+                                </Grid>
                             </Grid>
                         </Grid>
                         <p />
