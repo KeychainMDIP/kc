@@ -15,7 +15,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [docsString, setDocsString] = useState(null);
     const [docsVersion, setDocsVersion] = useState(1);
     const [docsVersionMax, setDocsVersionMax] = useState(1);
-    const [docsVersions, setDocsVersions] = useState([]);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [callback, setCallback] = useState(null);
@@ -31,7 +30,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [aliasDocs, setAliasDocs] = useState('');
     const [aliasDocsVersion, setAliasDocsVersion] = useState(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState(1);
-    const [aliasDocsVersions, setAliasDocsVersions] = useState([]);
     const [registries, setRegistries] = useState(null);
     const [groupList, setGroupList] = useState(null);
     const [groupName, setGroupName] = useState('');
@@ -83,7 +81,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedImageURL, setSelectedImageURL] = useState('');
     const [imageVersion, setImageVersion] = useState(1);
     const [imageVersionMax, setImageVersionMax] = useState(1);
-    const [imageVersions, setImageVersions] = useState([]);
     const [documentList, setDocumentList] = useState(null);
     const [selectedDocumentName, setSelectedDocumentName] = useState('');
     const [selectedDocument, setSelectedDocument] = useState('');
@@ -92,7 +89,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedDocumentURL, setSelectedDocumentURL] = useState('');
     const [documentVersion, setDocumentVersion] = useState(1);
     const [documentVersionMax, setDocumentVersionMax] = useState(1);
-    const [documentVersions, setDocumentVersions] = useState([]);
 
     useEffect(() => {
         checkForChallenge();
@@ -140,7 +136,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const versions = docs.didDocumentMetadata.version;
                 setDocsVersion(versions);
                 setDocsVersionMax(versions);
-                setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
 
                 refreshNames();
                 refreshHeld();
@@ -224,7 +219,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const versions = docs.didDocumentMetadata.version;
             setDocsVersion(versions);
             setDocsVersionMax(versions);
-            setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
@@ -560,8 +554,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const versions = docs.didDocumentMetadata.version;
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
-            setAliasDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
-
         } catch (error) {
             showError(error);
         }
@@ -1178,7 +1170,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
-            setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
@@ -1295,7 +1286,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
             setDocumentVersion(versions);
             setDocumentVersionMax(versions);
-            setDocumentVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
@@ -1333,6 +1323,49 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     </MenuItem>
                 ))}
             </Select>
+        );
+    }
+
+    function VersionsNavigator({ version, maxVersion, selectVersion }) {
+        const versions = Array.from({ length: maxVersion }, (_, i) => i + 1);
+
+        return (
+            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(1)} disabled={version === 1}>
+                        First
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(version - 1)} disabled={version === 1}>
+                        Prev
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Select
+                        style={{ width: '150px' }}
+                        value={version}
+                        fullWidth
+                        onChange={(event) => selectVersion(event.target.value)}
+                    >
+                        {versions.map((version, index) => (
+                            <MenuItem value={version} key={index}>
+                                version {version}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(version + 1)} disabled={version === maxVersion}>
+                        Next
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(maxVersion)} disabled={version === maxVersion}>
+                        Last
+                    </Button>
+                </Grid>
+            </Grid>
         );
     }
 
@@ -1391,42 +1424,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 <p />
                 {!widget &&
                     <Box>
-                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                            <Grid item>
-                                <Button variant="contained" color="primary" onClick={() => selectDocsVersion(1)} disabled={docsVersion === 1}>
-                                    First
-                                </Button>
-                            </Grid>
-                            <Grid item>
-                                <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion - 1)} disabled={docsVersion === 1}>
-                                    Prev
-                                </Button>
-                            </Grid>
-                            <Grid item>
-                                <Select
-                                    style={{ width: '150px' }}
-                                    value={docsVersion}
-                                    fullWidth
-                                    onChange={(event) => selectDocsVersion(event.target.value)}
-                                >
-                                    {docsVersions.map((version, index) => (
-                                        <MenuItem value={version} key={index}>
-                                            version {version}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </Grid>
-                            <Grid item>
-                                <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion + 1)} disabled={docsVersion === docsVersionMax}>
-                                    Next
-                                </Button>
-                            </Grid>
-                            <Grid item>
-                                <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersionMax)} disabled={docsVersion === docsVersionMax}>
-                                    Last
-                                </Button>
-                            </Grid>
-                        </Grid>
+                        <VersionsNavigator
+                            version={docsVersion}
+                            maxVersion={docsVersionMax}
+                            selectVersion={selectDocsVersion}
+                        />
                         <br />
                         <textarea
                             value={docsString}
@@ -1521,43 +1523,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     </Table>
                 </TableContainer>
                 <p>{selectedName}</p>
-
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(1)} disabled={aliasDocsVersion === 1}>
-                            First
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion - 1)} disabled={aliasDocsVersion === 1}>
-                            Prev
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Select
-                            style={{ width: '150px' }}
-                            value={aliasDocsVersion}
-                            fullWidth
-                            onChange={(event) => selectAliasDocsVersion(event.target.value)}
-                        >
-                            {aliasDocsVersions.map((version, index) => (
-                                <MenuItem value={version} key={index}>
-                                    version {version}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion + 1)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
-                            Next
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersionMax)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
-                            Last
-                        </Button>
-                    </Grid>
-                </Grid>
+                <VersionsNavigator
+                    version={aliasDocsVersion}
+                    maxVersion={aliasDocsVersionMax}
+                    selectVersion={selectAliasDocsVersion}
+                />
                 <br />
                 <textarea
                     value={aliasDocs}
@@ -1831,44 +1801,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             </Grid>
                         </Grid>
                         <p />
-                        {selectedImage && selectedImageDocs && imageVersions &&
+                        {selectedImage && selectedImageDocs &&
                             <div className="container">
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectImageVersion(1)} disabled={imageVersion === 1}>
-                                            First
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion - 1)} disabled={imageVersion === 1}>
-                                            Prev
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Select
-                                            style={{ width: '150px' }}
-                                            value={imageVersion}
-                                            fullWidth
-                                            onChange={(event) => selectImageVersion(event.target.value)}
-                                        >
-                                            {imageVersions.map((version, index) => (
-                                                <MenuItem value={version} key={index}>
-                                                    version {version}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion + 1)} disabled={imageVersion === imageVersionMax}>
-                                            Next
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersionMax)} disabled={imageVersion === imageVersionMax}>
-                                            Last
-                                        </Button>
-                                    </Grid>
-                                </Grid>
+                                <VersionsNavigator
+                                    version={imageVersion}
+                                    maxVersion={imageVersionMax}
+                                    selectVersion={selectImageVersion}
+                                />
                                 <br />
                                 <div className="left-pane">
                                     <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
@@ -1991,44 +1930,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             </Grid>
                         </Grid>
                         <p />
-                        {selectedDocument && selectedDocumentDocs && documentVersions &&
+                        {selectedDocument && selectedDocumentDocs &&
                             <div className="container">
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(1)} disabled={documentVersion === 1}>
-                                            First
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersion - 1)} disabled={documentVersion === 1}>
-                                            Prev
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Select
-                                            style={{ width: '150px' }}
-                                            value={documentVersion}
-                                            fullWidth
-                                            onChange={(event) => selectDocumentVersion(event.target.value)}
-                                        >
-                                            {documentVersions.map((version, index) => (
-                                                <MenuItem value={version} key={index}>
-                                                    version {version}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersion + 1)} disabled={documentVersion === documentVersionMax}>
-                                            Next
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersionMax)} disabled={documentVersion === documentVersionMax}>
-                                            Last
-                                        </Button>
-                                    </Grid>
-                                </Grid>
+                                <VersionsNavigator
+                                    version={documentVersion}
+                                    maxVersion={documentVersionMax}
+                                    selectVersion={selectDocumentVersion}
+                                />
                                 <br />
                                 <TableContainer>
                                     <Table>
