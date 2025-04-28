@@ -1,0 +1,56 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+# GitHub recommends pinning actions to a commit SHA.
+# To get a newer version, you will need to update the SHA.
+# You can also reference a tag or branch, but the action may change without warning.
+
+name: Build & Test Docker images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_test_images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup env for Testing
+        working-directory: ./tests/cli-tests
+        run: |
+          sudo apt update
+          sudo apt-get install -y expect
+          ./generate_test_env.sh
+          ln -s "$GITHUB_WORKSPACE/kc" /usr/local/bin/kc
+          ln -s "$GITHUB_WORKSPACE/admin" /usr/local/bin/admin
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          sleep 30
+      
+
+      - name: Install Docker Compose
+        run: |
+            sudo curl -L "https://github.com/docker/compose/releases/download/v2.3.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            docker-compose --version
+        continue-on-error: false
+
+      - name: Run Docker-compose
+        run: |
+          docker compose build cli keymaster gatekeeper
+          docker compose up cli keymaster gatekeeper -d --no-build
+          docker ps
+          sleep 30
+      
+      - name: Run cli-tests
+        working-directory: ./tests
+        run: |
+          ./run_cli_tests.sh --ci
+      
+      - name: Teardown Docker
+        run: |
+          docker-compose down
+

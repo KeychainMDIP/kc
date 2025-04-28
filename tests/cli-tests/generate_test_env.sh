@@ -1,0 +1,85 @@
+#!/bin/bash
+
+set -e
+
+# Change to the project root, assuming the script is in ./scripts/
+cd "$(git rev-parse --show-toplevel)"
+
+ENV_FILE=".env"
+
+echo "Generating .env file at project root..."
+
+cat > "$ENV_FILE" <<EOL
+# Auto-generated .env file
+
+# General
+KC_UID=1000
+KC_GID=1000
+KC_NODE_NAME=mdip-quality
+KC_NODE_ID=mdip-quality
+KC_MDIP_PROTOCOL=/MDIP/test
+
+
+# Gatekeeper
+KC_GATEKEEPER_PORT=4224
+KC_GATEKEEPER_DID_PREFIX=did:test
+KC_GATEKEEPER_DB=redis
+KC_GATEKEEPER_REGISTRIES=local
+KC_GATEKEEPER_GC_INTERVAL=60
+KC_GATEKEEPER_STATUS_INTERVAL=1
+
+# Keymaster
+KC_KEYMASTER_PORT=4226
+KC_KEYMASTER_DB=json
+KC_ENCRYPTED_PASSPHRASE=
+KC_WALLET_CACHE=false
+KC_DEFAULT_REGISTRY=local
+
+# CLI
+KC_GATEKEEPER_URL=http://localhost:4224
+KC_KEYMASTER_URL=http://localhost:4226
+
+# Hyperswarm
+KC_HYPR_EXPORT_INTERVAL=2
+KC_MDIP_PROTOCOL=/MDIP/testing
+
+# Bitcoin testnet4 mediator
+KC_TBTC_HOST=localhost
+KC_TBTC_CHAIN=TBTC
+KC_TBTC_NETWORK=testnet
+KC_TBTC_START_BLOCK=38000
+KC_TBTC_PORT=48332
+KC_TBTC_USER=testnet4
+KC_TBTC_PASS=testnet4
+KC_TBTC_WALLET=mdip
+KC_TBTC_IMPORT_INTERVAL=1
+KC_TBTC_EXPORT_INTERVAL=1
+KC_TBTC_FEE_MIN=0.00000200
+KC_TBTC_FEE_MAX=0.00000600
+KC_TBTC_FEE_INC=0
+KC_TBTC_REIMPORT=true
+KC_TBTC_DB=json
+
+# Feathercoin testnet mediator
+KC_TFTC_HOST=localhost
+KC_TFTC_START_BLOCK=0
+KC_TFTC_PORT=19337
+KC_TFTC_USER=feathercoin
+KC_TFTC_PASS=feathercoin
+KC_TFTC_WALLET=mdip
+KC_TFTC_IMPORT_INTERVAL=1
+KC_TFTC_EXPORT_INTERVAL=1
+KC_TFTC_FEE_MIN=0.00000300
+KC_TFTC_FEE_MAX=0.00003000
+KC_TFTC_FEE_INC=0
+KC_TFTC_REIMPORT=true
+KC_TFTC_DB=json
+
+# IPFS mediator
+KC_IPFS_INTERVAL=60
+KC_IPFS_BATCH_SIZE=100
+KC_IPFS_CONCURRENCY=10
+EOL
+
+echo ".env file created with the following content:"
+cat "$ENV_FILE"
