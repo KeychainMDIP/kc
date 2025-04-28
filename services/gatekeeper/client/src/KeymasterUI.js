@@ -84,6 +84,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [imageVersion, setImageVersion] = useState(1);
     const [imageVersionMax, setImageVersionMax] = useState(1);
     const [imageVersions, setImageVersions] = useState([]);
+    const [documentList, setDocumentList] = useState(null);
+    const [selectedDocumentName, setSelectedDocumentName] = useState('');
+    const [selectedDocument, setSelectedDocument] = useState('');
+    const [selectedDocumentOwned, setSelectedDocumentOwned] = useState(false);
+    const [selectedDocumentDocs, setSelectedDocumentDocs] = useState('');
+    const [selectedDocumentURL, setSelectedDocumentURL] = useState('');
+    const [documentVersion, setDocumentVersion] = useState(1);
+    const [documentVersionMax, setDocumentVersionMax] = useState(1);
+    const [documentVersions, setDocumentVersions] = useState([]);
 
     useEffect(() => {
         checkForChallenge();
@@ -451,6 +460,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImageName('');
             setSelectedImage(null);
         }
+
+        const documentList = [];
+
+        for (const name of names) {
+            try {
+                const isDocument = await keymaster.testDocument(name);
+
+                if (isDocument) {
+                    documentList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setDocumentList(documentList);
 
         const agentList = await keymaster.listIds();
 
@@ -1174,6 +1200,121 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function uploadDocument(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+                    // Names have a 32-character limit. Truncating to 26 characters and appending a number if needed.
+                    const nameList = await keymaster.listNames();
+                    let name = file.name.slice(0, 26);
+                    let count = 1;
+
+                    while (name in nameList) {
+                        name = `${file.name.slice(0, 26)} (${count++})`;
+                    }
+
+                    await keymaster.createDocument(buffer, { registry, name, filename: file.name });
+                    showAlert(`Document uploaded successfully: ${name}`);
+                    refreshNames();
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error processing document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function updateDocument(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    await keymaster.updateDocument(selectedDocumentName, buffer, { filename: file.name });
+                    showAlert(`Document updated successfully`);
+                    selectDocument(selectedDocumentName);
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error processing document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function selectDocument(documentName) {
+        try {
+            const docs = await keymaster.resolveDID(documentName);
+            const versions = docs.didDocumentMetadata.version;
+            const document = docs.didDocumentData.document;
+
+            setSelectedDocumentName(documentName);
+            setSelectedDocumentDocs(docs);
+            setSelectedDocument(document);
+            setSelectedDocumentOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
+            setDocumentVersion(versions);
+            setDocumentVersionMax(versions);
+            setDocumentVersions(Array.from({ length: versions }, (_, i) => i + 1));
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function selectDocumentVersion(version) {
+        try {
+            const docs = await keymaster.resolveDID(selectedDocumentName, { atVersion: version });
+            const document = docs.didDocumentData.document;
+
+            setSelectedDocumentDocs(docs);
+            setSelectedDocument(document);
+            setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
+            setDocumentVersion(version);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     function RegistrySelect() {
         return (
             <Select
@@ -1754,7 +1895,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </TableRow>
                                                 <TableRow>
                                                     <TableCell>Version</TableCell>
-                                                    <TableCell>{selectedImageDocs.didDocumentMetadata.version} of {imageVersionMax}</TableCell>
+                                                    <TableCell>{imageVersion} of {imageVersionMax}</TableCell>
                                                 </TableRow>
                                                 <TableRow>
                                                     <TableCell>File size</TableCell>
@@ -1780,6 +1921,161 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         );
     }
 
+    function DocumentsTab() {
+        return (
+            <Box>
+                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                    <Grid item>
+                        <RegistrySelect />
+                    </Grid>
+                    <Grid item>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => document.getElementById('documentUpload').click()}
+                            disabled={!registry}
+                        >
+                            Upload Document...
+                        </Button>
+                        <input
+                            type="file"
+                            id="documentUpload"
+                            accept=".pdf,.doc,.docx,.txt"
+                            style={{ display: 'none' }}
+                            onChange={uploadDocument}
+                        />
+                    </Grid>
+                </Grid>
+                <p />
+                {documentList &&
+                    <Box>
+                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                            <Grid item>
+                                <Select
+                                    style={{ width: '300px' }}
+                                    value={selectedDocumentName}
+                                    fullWidth
+                                    displayEmpty
+                                    onChange={(event) => selectDocument(event.target.value)}
+                                >
+                                    <MenuItem value="" disabled>
+                                        Select document
+                                    </MenuItem>
+                                    {documentList.map((name, index) => (
+                                        <MenuItem value={name} key={index}>
+                                            {name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </Grid>
+                            <Grid item>
+                                <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
+                                    <span>
+                                        <Button
+                                            variant="contained"
+                                            color="primary"
+                                            onClick={() => document.getElementById('documentUpdate').click()}
+                                            disabled={!selectedDocumentName || !selectedDocumentOwned}
+                                        >
+                                            Update document...
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                                <input
+                                    type="file"
+                                    id="documentUpdate"
+                                    accept=".pdf,.doc,.docx,.txt"
+                                    style={{ display: 'none' }}
+                                    onChange={updateDocument}
+                                />
+                            </Grid>
+                        </Grid>
+                        <p />
+                        {selectedDocument && selectedDocumentDocs && documentVersions &&
+                            <div className="container">
+                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(1)} disabled={documentVersion === 1}>
+                                            First
+                                        </Button>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersion - 1)} disabled={documentVersion === 1}>
+                                            Prev
+                                        </Button>
+                                    </Grid>
+                                    <Grid item>
+                                        <Select
+                                            style={{ width: '150px' }}
+                                            value={documentVersion}
+                                            fullWidth
+                                            onChange={(event) => selectDocumentVersion(event.target.value)}
+                                        >
+                                            {documentVersions.map((version, index) => (
+                                                <MenuItem value={version} key={index}>
+                                                    version {version}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersion + 1)} disabled={documentVersion === documentVersionMax}>
+                                            Next
+                                        </Button>
+                                    </Grid>
+                                    <Grid item>
+                                        <Button variant="contained" color="primary" onClick={() => selectDocumentVersion(documentVersionMax)} disabled={documentVersion === documentVersionMax}>
+                                            Last
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                                <br />
+                                <TableContainer>
+                                    <Table>
+                                        <TableBody>
+                                            <TableRow>
+                                                <TableCell>DID</TableCell>
+                                                <TableCell>{selectedDocumentDocs.didDocument.id}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>CID</TableCell>
+                                                <TableCell>{selectedDocument.cid}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Created</TableCell>
+                                                <TableCell>{selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Updated</TableCell>
+                                                <TableCell>{selectedDocumentDocs.didDocumentMetadata.updated || selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Version</TableCell>
+                                                <TableCell>{documentVersion} of {documentVersionMax}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Document name</TableCell>
+                                                <TableCell>{selectedDocument.filename}</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Document size</TableCell>
+                                                <TableCell>{selectedDocument.bytes} bytes</TableCell>
+                                            </TableRow>
+                                            <TableRow>
+                                                <TableCell>Document type</TableCell>
+                                                <TableCell>{selectedDocument.type}</TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </div>
+                        }
+                    </Box>
+                }
+            </Box>
+        );
+    }
+
     function AssetsTab() {
         return (
             <Box>
@@ -1795,6 +2091,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                         <Tab key="schemas" value="schemas" label={'Schemas'} />
                         <Tab key="groups" value="groups" label={'Groups'} />
                         <Tab key="images" value="images" label={'Images'} />
+                        <Tab key="documents" value="documents" label={'Documents'} />
                     </Tabs>
                 </Box>
                 {assetsTab === 'schemas' &&
@@ -1805,6 +2102,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 }
                 {assetsTab === 'images' &&
                     <ImagesTab />
+                }
+                {assetsTab === 'documents' &&
+                    <DocumentsTab />
                 }
             </Box>
         );
