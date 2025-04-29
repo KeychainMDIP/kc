@@ -157,10 +157,12 @@ program
     });
 
 program
-    .command('create-id <name> [registry]')
+    .command('create-id <name>')
     .description('Create a new decentralized ID')
-    .action(async (name, registry) => {
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (name, options) => {
         try {
+            const { registry } = options;
             const did = await keymaster.createId(name, { registry });
             console.log(did);
         }
@@ -437,10 +439,13 @@ program
     });
 
 program
-    .command('issue-credential <file> [registry] [name]')
+    .command('issue-credential <file>')
     .description('Sign and encrypt a bound credential file')
-    .action(async (file, registry, name) => {
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (file, options) => {
         try {
+            const { name, registry } = options;
             const vc = JSON.parse(fs.readFileSync(file).toString());
             const did = await keymaster.issueCredential(vc, { registry, name });
             console.log(did);
