@@ -1,4 +1,6 @@
 #!/bin/bash
+# Capture the first argument (e.g., --ci or --no-ci)
+CI_MODE="$1"
 PASS=()
 FAIL=()
 # Use regular arrays instead of associative arrays
@@ -25,7 +27,7 @@ for f in "${scripts[@]}"; do
   START_TIME=$(date +%s)
   
   # Run the expect script directly with -f flag and show output in real-time
-  /usr/bin/expect -f "$f" 2>&1 | tee /tmp/expect_output.$$
+  /usr/bin/expect -f "$f" -- "$CI_MODE" 2>&1 | tee /tmp/expect_output.$$
   EXIT_CODE=${PIPESTATUS[0]}
   
   # End timer and calculate duration
