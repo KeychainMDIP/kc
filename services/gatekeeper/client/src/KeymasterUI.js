@@ -15,7 +15,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [docsString, setDocsString] = useState(null);
     const [docsVersion, setDocsVersion] = useState(1);
     const [docsVersionMax, setDocsVersionMax] = useState(1);
-    const [docsVersions, setDocsVersions] = useState([]);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
     const [callback, setCallback] = useState(null);
@@ -31,7 +30,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [aliasDocs, setAliasDocs] = useState('');
     const [aliasDocsVersion, setAliasDocsVersion] = useState(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState(1);
-    const [aliasDocsVersions, setAliasDocsVersions] = useState([]);
     const [registries, setRegistries] = useState(null);
     const [groupList, setGroupList] = useState(null);
     const [groupName, setGroupName] = useState('');
@@ -83,7 +81,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedImageURL, setSelectedImageURL] = useState('');
     const [imageVersion, setImageVersion] = useState(1);
     const [imageVersionMax, setImageVersionMax] = useState(1);
-    const [imageVersions, setImageVersions] = useState([]);
+    const [documentList, setDocumentList] = useState(null);
+    const [selectedDocumentName, setSelectedDocumentName] = useState('');
+    const [selectedDocument, setSelectedDocument] = useState('');
+    const [selectedDocumentOwned, setSelectedDocumentOwned] = useState(false);
+    const [selectedDocumentDocs, setSelectedDocumentDocs] = useState('');
+    const [selectedDocumentURL, setSelectedDocumentURL] = useState('');
+    const [documentVersion, setDocumentVersion] = useState(1);
+    const [documentVersionMax, setDocumentVersionMax] = useState(1);
 
     useEffect(() => {
         checkForChallenge();
@@ -131,7 +136,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const versions = docs.didDocumentMetadata.version;
                 setDocsVersion(versions);
                 setDocsVersionMax(versions);
-                setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
 
                 refreshNames();
                 refreshHeld();
@@ -215,7 +219,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const versions = docs.didDocumentMetadata.version;
             setDocsVersion(versions);
             setDocsVersionMax(versions);
-            setDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
@@ -452,6 +455,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImage(null);
         }
 
+        const documentList = [];
+
+        for (const name of names) {
+            try {
+                const isDocument = await keymaster.testDocument(name);
+
+                if (isDocument) {
+                    documentList.push(name);
+                }
+            }
+            catch {
+                continue;
+            }
+        }
+
+        setDocumentList(documentList);
+
         const agentList = await keymaster.listIds();
 
         for (const name of names) {
@@ -534,8 +554,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const versions = docs.didDocumentMetadata.version;
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
-            setAliasDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
-
         } catch (error) {
             showError(error);
         }
@@ -1152,7 +1170,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
-            setImageVersions(Array.from({ length: versions }, (_, i) => i + 1));
         } catch (error) {
             showError(error);
         }
@@ -1174,6 +1191,129 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function uploadDocument(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+                    // Names have a 32-character limit. Truncating to 26 characters and appending a number if needed.
+                    const nameList = await keymaster.listNames();
+                    let name = file.name.slice(0, 26);
+                    let count = 1;
+
+                    while (name in nameList) {
+                        name = `${file.name.slice(0, 26)} (${count++})`;
+                    }
+
+                    await keymaster.createDocument(buffer, { registry, name, filename: file.name });
+                    showAlert(`Document uploaded successfully: ${name}`);
+                    refreshNames();
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error processing document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function updateDocument(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    await keymaster.updateDocument(selectedDocumentName, buffer, { filename: file.name });
+                    showAlert(`Document updated successfully`);
+                    selectDocument(selectedDocumentName);
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error processing document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading image: ${error}`);
+        }
+    }
+
+    async function selectDocument(documentName) {
+        try {
+            const docs = await keymaster.resolveDID(documentName);
+            const versions = docs.didDocumentMetadata.version;
+            const document = docs.didDocumentData.document;
+
+            setSelectedDocumentName(documentName);
+            setSelectedDocumentDocs(docs);
+            setSelectedDocument(document);
+            setSelectedDocumentOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
+            setDocumentVersion(versions);
+            setDocumentVersionMax(versions);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function selectDocumentVersion(version) {
+        try {
+            const docs = await keymaster.resolveDID(selectedDocumentName, { atVersion: version });
+            const document = docs.didDocumentData.document;
+
+            setSelectedDocumentDocs(docs);
+            setSelectedDocument(document);
+            setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
+            setDocumentVersion(version);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function downloadDocument() {
+        const link = document.createElement('a');
+        link.href = selectedDocumentURL;
+        link.download = selectedDocument.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link); // Clean up the DOM
+    }
+
     function RegistrySelect() {
         return (
             <Select
@@ -1192,6 +1332,49 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     </MenuItem>
                 ))}
             </Select>
+        );
+    }
+
+    function VersionsNavigator({ version, maxVersion, selectVersion }) {
+        const versions = Array.from({ length: maxVersion }, (_, i) => i + 1);
+
+        return (
+            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(1)} disabled={version === 1}>
+                        First
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(version - 1)} disabled={version === 1}>
+                        Prev
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Select
+                        style={{ width: '150px' }}
+                        value={version}
+                        fullWidth
+                        onChange={(event) => selectVersion(event.target.value)}
+                    >
+                        {versions.map((version, index) => (
+                            <MenuItem value={version} key={index}>
+                                version {version}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(version + 1)} disabled={version === maxVersion}>
+                        Next
+                    </Button>
+                </Grid>
+                <Grid item>
+                    <Button variant="contained" color="primary" onClick={() => selectVersion(maxVersion)} disabled={version === maxVersion}>
+                        Last
+                    </Button>
+                </Grid>
+            </Grid>
         );
     }
 
@@ -1310,42 +1493,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <p />
                             {!widget &&
                                 <Box>
-                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(1)} disabled={docsVersion === 1}>
-                                                First
-                                            </Button>
-                                        </Grid>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion - 1)} disabled={docsVersion === 1}>
-                                                Prev
-                                            </Button>
-                                        </Grid>
-                                        <Grid item>
-                                            <Select
-                                                style={{ width: '150px' }}
-                                                value={docsVersion}
-                                                fullWidth
-                                                onChange={(event) => selectDocsVersion(event.target.value)}
-                                            >
-                                                {docsVersions.map((version, index) => (
-                                                    <MenuItem value={version} key={index}>
-                                                        version {version}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
-                                        </Grid>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersion + 1)} disabled={docsVersion === docsVersionMax}>
-                                                Next
-                                            </Button>
-                                        </Grid>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={() => selectDocsVersion(docsVersionMax)} disabled={docsVersion === docsVersionMax}>
-                                                Last
-                                            </Button>
-                                        </Grid>
-                                    </Grid>
+                                    <VersionsNavigator
+                                        version={docsVersion}
+                                        maxVersion={docsVersionMax}
+                                        selectVersion={selectDocsVersion}
+                                    />
                                     <br />
                                     <textarea
                                         value={docsString}
@@ -1437,43 +1589,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 </Table>
                             </TableContainer>
                             <p>{selectedName}</p>
-
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(1)} disabled={aliasDocsVersion === 1}>
-                                        First
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion - 1)} disabled={aliasDocsVersion === 1}>
-                                        Prev
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Select
-                                        style={{ width: '150px' }}
-                                        value={aliasDocsVersion}
-                                        fullWidth
-                                        onChange={(event) => selectAliasDocsVersion(event.target.value)}
-                                    >
-                                        {aliasDocsVersions.map((version, index) => (
-                                            <MenuItem value={version} key={index}>
-                                                version {version}
-                                            </MenuItem>
-                                        ))}
-                                    </Select>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersion + 1)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
-                                        Next
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={() => selectAliasDocsVersion(aliasDocsVersionMax)} disabled={aliasDocsVersion === aliasDocsVersionMax}>
-                                        Last
-                                    </Button>
-                                </Grid>
-                            </Grid>
+                            <VersionsNavigator
+                                version={aliasDocsVersion}
+                                maxVersion={aliasDocsVersionMax}
+                                selectVersion={selectAliasDocsVersion}
+                            />
                             <br />
                             <textarea
                                 value={aliasDocs}
@@ -1496,6 +1616,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="schemas" value="schemas" label={'Schemas'} />
                                     <Tab key="groups" value="groups" label={'Groups'} />
                                     <Tab key="images" value="images" label={'Images'} />
+                                    <Tab key="documents" value="documents" label={'Documents'} />
                                 </Tabs>
                             </Box>
                             {assetsTab === 'schemas' &&
@@ -1754,44 +1875,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                             </Grid>
                                             <p />
-                                            {selectedImage && selectedImageDocs && imageVersions &&
+                                            {selectedImage && selectedImageDocs &&
                                                 <div className="container">
-                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(1)} disabled={imageVersion === 1}>
-                                                                First
-                                                            </Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion - 1)} disabled={imageVersion === 1}>
-                                                                Prev
-                                                            </Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Select
-                                                                style={{ width: '150px' }}
-                                                                value={imageVersion}
-                                                                fullWidth
-                                                                onChange={(event) => selectImageVersion(event.target.value)}
-                                                            >
-                                                                {imageVersions.map((version, index) => (
-                                                                    <MenuItem value={version} key={index}>
-                                                                        version {version}
-                                                                    </MenuItem>
-                                                                ))}
-                                                            </Select>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersion + 1)} disabled={imageVersion === imageVersionMax}>
-                                                                Next
-                                                            </Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={() => selectImageVersion(imageVersionMax)} disabled={imageVersion === imageVersionMax}>
-                                                                Last
-                                                            </Button>
-                                                        </Grid>
-                                                    </Grid>
+                                                    <VersionsNavigator
+                                                        version={imageVersion}
+                                                        maxVersion={imageVersionMax}
+                                                        selectVersion={selectImageVersion}
+                                                    />
                                                     <br />
                                                     <div className="left-pane">
                                                         <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
@@ -1836,6 +1926,141 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             </Table>
                                                         </TableContainer>
                                                     </div>
+                                                </div>
+                                            }
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                            {assetsTab === 'documents' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => document.getElementById('documentUpload').click()}
+                                                disabled={!registry}
+                                            >
+                                                Upload Document...
+                                            </Button>
+                                            <input
+                                                type="file"
+                                                id="documentUpload"
+                                                accept=".pdf,.doc,.docx,.txt"
+                                                style={{ display: 'none' }}
+                                                onChange={uploadDocument}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    {documentList &&
+                                        <Box>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Select
+                                                        style={{ width: '300px' }}
+                                                        value={selectedDocumentName}
+                                                        fullWidth
+                                                        displayEmpty
+                                                        onChange={(event) => selectDocument(event.target.value)}
+                                                    >
+                                                        <MenuItem value="" disabled>
+                                                            Select document
+                                                        </MenuItem>
+                                                        {documentList.map((name, index) => (
+                                                            <MenuItem value={name} key={index}>
+                                                                {name}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                        <Grid item>
+                                                            <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
+                                                                <span>
+                                                                    <Button
+                                                                        variant="contained"
+                                                                        color="primary"
+                                                                        onClick={() => document.getElementById('documentUpdate').click()}
+                                                                        disabled={!selectedDocumentName || !selectedDocumentOwned}
+                                                                    >
+                                                                        Update document...
+                                                                    </Button>
+                                                                </span>
+                                                            </Tooltip>
+                                                            <input
+                                                                type="file"
+                                                                id="documentUpdate"
+                                                                accept=".pdf,.doc,.docx,.txt"
+                                                                style={{ display: 'none' }}
+                                                                onChange={updateDocument}
+                                                            />
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={() => downloadDocument()}
+                                                                disabled={!selectedDocumentName}
+                                                            >
+                                                                Download
+                                                            </Button>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                            <p />
+                                            {selectedDocument && selectedDocumentDocs &&
+                                                <div className="container">
+                                                    <VersionsNavigator
+                                                        version={documentVersion}
+                                                        maxVersion={documentVersionMax}
+                                                        selectVersion={selectDocumentVersion}
+                                                    />
+                                                    <br />
+                                                    <TableContainer>
+                                                        <Table>
+                                                            <TableBody>
+                                                                <TableRow>
+                                                                    <TableCell>DID</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocument.id}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>CID</TableCell>
+                                                                    <TableCell>{selectedDocument.cid}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Created</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Updated</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.updated || selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Version</TableCell>
+                                                                    <TableCell>{documentVersion} of {documentVersionMax}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document name</TableCell>
+                                                                    <TableCell>{selectedDocument.filename}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document size</TableCell>
+                                                                    <TableCell>{selectedDocument.bytes} bytes</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document type</TableCell>
+                                                                    <TableCell>{selectedDocument.type}</TableCell>
+                                                                </TableRow>
+                                                            </TableBody>
+                                                        </Table>
+                                                    </TableContainer>
                                                 </div>
                                             }
                                         </Box>
