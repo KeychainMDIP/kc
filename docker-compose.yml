@@ -193,7 +193,7 @@ services:
       dockerfile: Dockerfile.explorer
     image: keychainmdip/explorer
     environment:
-      - VITE_SEARCH_SERVER=3000
+      - VITE_EXPLORER_PORT=3000
       - VITE_GATEKEEPER_URL=http://localhost:4224
       - VITE_SEARCH_SERVER=http://localhost:3001
       - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
