@@ -13,7 +13,7 @@ import { GatekeeperEvent, GatekeeperInterface } from "@mdip/gatekeeper/types";
 import { getTypeStyle, handleCopyDID } from "../shared/utilities.js";
 import ContentCopy from "@mui/icons-material/ContentCopy";
 
-const networksEnv = import.meta.env.EXPLORER_OPERATION_NETWORKS || "hyperswarm";
+const networksEnv = import.meta.env.VITE_OPERATION_NETWORKS || "hyperswarm";
 const knownRegistries: string[] = ["All", ...networksEnv.split(",").map((n: string) => n.trim())];
 if (!knownRegistries.includes("local")) {
     knownRegistries.push("local");

@@ -20,7 +20,7 @@ interface SnackbarState {
     severity: AlertColor;
 }
 
-const gatekeeperUrl = import.meta.env.EXPLORER_GATEKEEPER_URL || 'http://localhost:4224';
+const gatekeeperUrl = import.meta.env.VITE_GATEKEEPER_URL || 'http://localhost:4224';
 
 function App() {
     const [isReady, setIsReady] = useState<boolean>(false);

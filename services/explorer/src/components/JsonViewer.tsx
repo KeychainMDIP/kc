@@ -23,7 +23,7 @@ import ContentCopy from "@mui/icons-material/ContentCopy";
 import { handleCopyDID } from '../shared/utilities.js';
 import axios from "axios";
 
-const searchServerURL = import.meta.env.EXPLORER_SEARCH_SERVER || "http://localhost:3001";
+const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:3001";
 const VERSION = '/api/v1';
 
 function JsonViewer(
