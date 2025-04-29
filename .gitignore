@@ -8,3 +8,5 @@ coverage/
 .idea/
 .vscode/
 dist/
+dids.db-journal
+
