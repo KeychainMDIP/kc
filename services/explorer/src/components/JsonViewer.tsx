@@ -276,6 +276,7 @@ function JsonViewer(
                                 >
                                     <Typography
                                         sx={{
+                                            fontFamily: "Courier, monospace",
                                             textDecoration: "underline",
                                             color: "blue",
                                             cursor: "pointer",
