@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Typography, Switch, Tabs, Tab } from "@mui/material";
 import { DarkMode, LightMode } from "@mui/icons-material";
+import iconInverted from '../static/icon_inverted.png';
 
 interface HeaderProps {
     darkMode: boolean;
@@ -37,7 +38,7 @@ const Header = (
                 </Typography>
                 <Box
                     component="img"
-                    src="src/static/icon_inverted.png"
+                    src={iconInverted}
                     alt="MDIP"
                     sx={{ width: 32, height: 32 }}
                 />
@@ -50,7 +51,7 @@ const Header = (
                 indicatorColor="secondary"
             >
                 <Tab label="Search" value="search" />
-                <Tab label="Recent" value="recent" />
+                <Tab label="Events" value="recent" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>

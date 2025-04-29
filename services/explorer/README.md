@@ -28,10 +28,10 @@ Then edit the `.env` file to set your desired configuration:
 
 ```env
 # The port your explorer will run on
-VITE_EXPLORER_PORT=3000
+EXPLORER_PORT=3000
 
 # URL where your Gatekeeper service is running
-VITE_GATEKEEPER_URL=http://localhost:4224
+EXPLORER_GATEKEEPER_URL=http://localhost:4224
 ```
 
 ### Running the Explorer
@@ -45,10 +45,10 @@ npm start
 This will start the React app locally. Open your browser to view the explorer:
 
 ```
-http://localhost:<VITE_EXPLORER_PORT>
+http://localhost:<EXPLORER_PORT>
 ```
 
-(Replace `<VITE_EXPLORER_PORT>` with the port number you specified in `.env`)
+(Replace `<EXPLORER_PORT>` with the port number you specified in `.env`)
 
 ## Building for Production
 

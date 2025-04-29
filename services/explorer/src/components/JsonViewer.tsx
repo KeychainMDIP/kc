@@ -8,6 +8,7 @@ import JsonView from '@uiw/react-json-view';
 import {
     Box,
     Button,
+    FormControl,
     MenuItem,
     Select,
     TextField,
@@ -20,7 +21,10 @@ import {
 } from "@mdip/gatekeeper/types";
 import ContentCopy from "@mui/icons-material/ContentCopy";
 import { handleCopyDID } from '../shared/utilities.js';
-import { Index } from 'flexsearch';
+import axios from "axios";
+
+const searchServerURL = import.meta.env.EXPLORER_SEARCH_SERVER || "http://localhost:3001";
+const VERSION = '/api/v1';
 
 function JsonViewer(
     {
@@ -28,13 +32,11 @@ function JsonViewer(
         setError,
         viewDid,
         setViewDid,
-        flexIndex,
     }: {
         gatekeeper: GatekeeperInterface;
         setError: (error: any) => void;
         viewDid: string;
         setViewDid: (did: string) => void;
-        flexIndex: Index | null;
     }) {
     const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
@@ -44,6 +46,8 @@ function JsonViewer(
     const [currentDid, setCurrentDid] = useState<string>("");
     const [jsonDID, setJsonDID] = useState<string | undefined>(undefined);
     const [searchResults, setSearchResults] = useState<string[] | null>(null);
+    const [searchPage, setSearchPage] = useState<number>(0);
+    const [searchCount, setSearchCount] = useState<number>(50);
 
     useEffect(() => {
         if (!viewDid) {
@@ -75,6 +79,7 @@ function JsonViewer(
         setFormDid(jsonDID);
         setJsonDID(undefined);
         setSearchResults(null);
+        setSearchPage(0);
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jsonDID]);
@@ -136,17 +141,35 @@ function JsonViewer(
             return;
         }
 
-        if (!flexIndex) {
-            setError("Index not ready.");
-            return;
+        try {
+            const response = await axios.get(`${searchServerURL}${VERSION}/search`, {
+                params: { q: formDid }
+            });
+
+            setSearchResults(response.data);
+            setAliasDocs(undefined);
+            setSearchPage(0);
+        } catch (error: any) {
+            setError(error);
         }
+    }
 
-        setSearchResults(null);
-        setAliasDocs(undefined);
+    let displayedResults: string[] = [];
+    let total = 0;
+    let totalPages = 1;
 
-        const matchedDids = (await flexIndex.search(query)) as string[];
+    if (searchResults) {
+        total = searchResults.length;
+        totalPages = Math.ceil(total / searchCount);
 
-        setSearchResults(matchedDids);
+        const from = searchPage * searchCount;
+        const to = from + searchCount;
+        displayedResults = searchResults.slice(from, to);
+    }
+
+    function handleSearchCountChange(e: any) {
+        setSearchCount(e.target.value);
+        setSearchPage(0);
     }
 
     return (
@@ -205,11 +228,45 @@ function JsonViewer(
 
             {searchResults && (
                 <Box>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+                        {searchResults.length > 0 && (
+                            <FormControl size="small" sx={{ minWidth: 120 }}>
+                                <Select value={searchCount} onChange={handleSearchCountChange}>
+                                    <MenuItem value={50}>50</MenuItem>
+                                    <MenuItem value={100}>100</MenuItem>
+                                    <MenuItem value={200}>200</MenuItem>
+                                </Select>
+                            </FormControl>
+                        )}
+
+                        <Box display="flex" alignItems="center" gap={1}>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                disabled={searchPage === 0}
+                                onClick={() => setSearchPage((p) => p - 1)}
+                            >
+                                Prev
+                            </Button>
+                            <Typography>
+                                Page {searchPage + 1} / {totalPages === 0 ? 1 : totalPages}
+                            </Typography>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                disabled={searchPage + 1 >= totalPages}
+                                onClick={() => setSearchPage((p) => p + 1)}
+                            >
+                                Next
+                            </Button>
+                        </Box>
+                    </Box>
+
                     {searchResults.length === 0 ? (
                         <Typography>No results found.</Typography>
                     ) : (
                         <Box>
-                            {searchResults.map((did) => (
+                            {displayedResults.map((did) => (
                                 <Box
                                     key={did}
                                     display="flex"

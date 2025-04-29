@@ -6,19 +6,20 @@ import {
     Typography,
     Select,
     MenuItem,
-    FormControl
+    FormControl,
+    TextField
 } from "@mui/material";
 import { GatekeeperEvent, GatekeeperInterface } from "@mdip/gatekeeper/types";
 import { getTypeStyle, handleCopyDID } from "../shared/utilities.js";
 import ContentCopy from "@mui/icons-material/ContentCopy";
 
-const networksEnv = import.meta.env.VITE_OPERATION_NETWORKS || "hyperswarm";
+const networksEnv = import.meta.env.EXPLORER_OPERATION_NETWORKS || "hyperswarm";
 const knownRegistries: string[] = ["All", ...networksEnv.split(",").map((n: string) => n.trim())];
 if (!knownRegistries.includes("local")) {
     knownRegistries.push("local");
 }
 
-function Recent(
+function Events(
     {
         gatekeeper,
         setError,
@@ -34,13 +35,38 @@ function Recent(
     const [page, setPage] = useState<number>(0);
     const [registry, setRegistry] = useState<string>("All");
 
+    const [dateFrom, setDateFrom] = useState<string>(() => {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return weekAgo.toISOString().slice(0, 10);
+    });
+    const [dateTo, setDateTo] = useState<string>(() => {
+        return new Date().toISOString().slice(0, 10);
+    });
+
     useEffect(() => {
         let isMounted = true;
         let intervalId: NodeJS.Timeout | undefined;
 
         async function fetchRecent() {
             try {
-                const dids = (await gatekeeper.getDIDs()) as string[];
+                let updatedAfter: string | undefined;
+                let updatedBefore: string | undefined;
+
+                if (dateFrom) {
+                    const fromDate = new Date(`${dateFrom}T00:00:00`);
+                    updatedAfter = fromDate.toISOString();
+                }
+
+                if (dateTo) {
+                    const toDate = new Date(`${dateTo}T23:59:59.999`);
+                    updatedBefore = toDate.toISOString();
+                }
+
+                const dids = (await gatekeeper.getDIDs({
+                    updatedAfter,
+                    updatedBefore
+                })) as string[];
                 let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
 
                 if (registry !== "All") {
@@ -74,7 +100,7 @@ function Recent(
             if (intervalId) clearInterval(intervalId);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [eventCount, page, registry]);
+    }, [eventCount, page, registry, dateFrom, dateTo]);
 
     const handleCountChange = (e: any) => {
         setEventCount(e.target.value);
@@ -83,6 +109,16 @@ function Recent(
 
     const handleRegistryChange = (e: any) => {
         setRegistry(e.target.value);
+        setPage(0);
+    };
+
+    const handleDateFromChange = (e: any) => {
+        setDateFrom(e.target.value);
+        setPage(0);
+    };
+
+    const handleDateToChange = (e: any) => {
+        setDateTo(e.target.value);
         setPage(0);
     };
 
@@ -109,6 +145,24 @@ function Recent(
                     </Select>
                 </FormControl>
 
+                <Box display="flex" alignItems="center" flexDirection="row" sx={{ gap: 0.5 }}>
+                    <TextField
+                        type="date"
+                        size="small"
+                        value={dateFrom}
+                        onChange={handleDateFromChange}
+                    />
+
+                    -
+
+                    <TextField
+                        type="date"
+                        size="small"
+                        value={dateTo}
+                        onChange={handleDateToChange}
+                    />
+                </Box>
+
                 <Box display="flex" alignItems="center" gap={1}>
                     <Button
                         variant="outlined"
@@ -119,7 +173,7 @@ function Recent(
                         Prev
                     </Button>
                     <Typography>
-                        Page {page + 1} / {totalPages === 0 ? 1 : totalPages} (total: {total})
+                        Page {page + 1} / {totalPages === 0 ? 1 : totalPages}
                     </Typography>
                     <Button
                         variant="outlined"
@@ -212,4 +266,4 @@ function Recent(
     );
 }
 
-export default Recent;
+export default Events;
