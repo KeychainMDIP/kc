@@ -1378,1279 +1378,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         );
     }
 
-    function IdentitiesTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Select
-                            style={{ width: '300px' }}
-                            value={selectedId}
-                            fullWidth
-                            onChange={(event) => selectId(event.target.value)}
-                        >
-                            {idList.map((idname, index) => (
-                                <MenuItem value={idname} key={index}>
-                                    {idname}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Grid>
-                </Grid>
-                <p />
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={showCreate}>
-                            Create...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={renameId}>
-                            Rename...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={removeId}>
-                            Remove...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={backupId}>
-                            Backup...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={recoverId}>
-                            Recover...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={rotateKeys}>
-                            Rotate keys
-                        </Button>
-                    </Grid>
-                </Grid>
-                <p />
-                {!widget &&
-                    <Box>
-                        <VersionsNavigator
-                            version={docsVersion}
-                            maxVersion={docsVersionMax}
-                            selectVersion={selectDocsVersion}
-                        />
-                        <br />
-                        <textarea
-                            value={docsString}
-                            readOnly
-                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                        />
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function NamesTab() {
-        return (
-            <Box>
-                <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                    <Table style={{ width: '800px' }}>
-                        <TableBody>
-                            <TableRow>
-                                <TableCell style={{ width: '100%' }}>
-                                    <TextField
-                                        label="Name"
-                                        style={{ width: '200px' }}
-                                        value={aliasName}
-                                        onChange={(e) => setAliasName(e.target.value)}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 20 }}
-                                    />
-                                </TableCell>
-                                <TableCell style={{ width: '100%' }}>
-                                    <TextField
-                                        label="DID"
-                                        style={{ width: '500px' }}
-                                        value={aliasDID}
-                                        onChange={(e) => setAliasDID(e.target.value.trim())}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 80 }}
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
-                                        Resolve
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
-                                        Add
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={cloneAsset} disabled={!aliasName || !aliasDID || !registry}>
-                                        Clone
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <RegistrySelect />
-                                </TableCell>
-                            </TableRow>
-                            {Object.entries(nameList).map(([name, did], index) => (
-                                <TableRow key={index}>
-                                    <TableCell>{name}</TableCell>
-                                    <TableCell>
-                                        <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
-                                            {did}
-                                        </Typography>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
-                                            Resolve
-                                        </Button>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button variant="contained" color="primary" onClick={() => changeName(name, did)}>
-                                            Rename
-                                        </Button>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button variant="contained" color="primary" onClick={() => removeName(name)}>
-                                            Remove
-                                        </Button>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button variant="contained" color="primary" onClick={() => transferName(name)}>
-                                            Transfer
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-                <p>{selectedName}</p>
-                <VersionsNavigator
-                    version={aliasDocsVersion}
-                    maxVersion={aliasDocsVersionMax}
-                    selectVersion={selectAliasDocsVersion}
-                />
-                <br />
-                <textarea
-                    value={aliasDocs}
-                    readOnly
-                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                />
-            </Box>
-        );
-    }
-
-    function SchemasTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <TextField
-                            label="Schema Name"
-                            style={{ width: '300px' }}
-                            value={schemaName}
-                            onChange={(e) => setSchemaName(e.target.value.trim())}
-                            fullWidth
-                            margin="normal"
-                            inputProps={{ maxLength: 30 }}
-                        />
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName || !registry}>
-                            Create Schema
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <RegistrySelect />
-                    </Grid>
-                </Grid>
-                {schemaList &&
-                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                        <Grid item>
-                            <Select
-                                style={{ width: '300px' }}
-                                value={selectedSchemaName}
-                                fullWidth
-                                displayEmpty
-                                onChange={(event) => selectSchema(event.target.value)}
-                            >
-                                <MenuItem value="" disabled>
-                                    Select schema
-                                </MenuItem>
-                                {schemaList.map((name, index) => (
-                                    <MenuItem value={name} key={index}>
-                                        {name}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </Grid>
-                    </Grid>
-                }
-                {selectedSchema &&
-                    <Box>
-                        <Grid container direction="column" spacing={1}>
-                            <Grid item>
-                                <textarea
-                                    value={schemaString}
-                                    onChange={(e) => setSchemaString(e.target.value)}
-                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                    readOnly={!selectedSchemaOwned}
-                                />
-                            </Grid>
-                            <Grid container direction="row" spacing={1}>
-                                <Grid item>
-                                    <Tooltip title={!selectedSchemaOwned ? "You must own the schema to save." : ""}>
-                                        <span>
-                                            <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString || !selectedSchemaOwned}>
-                                                Save Schema
-                                            </Button>
-                                        </span>
-                                    </Tooltip>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={() => selectSchema(selectedSchemaName)} disabled={!schemaString || !selectedSchemaOwned}>
-                                        Revert Schema
-                                    </Button>
-                                </Grid>
-                            </Grid>
-                        </Grid>
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function GroupsTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <TextField
-                            label="Group Name"
-                            style={{ width: '300px' }}
-                            value={groupName}
-                            onChange={(e) => setGroupName(e.target.value.trim())}
-                            fullWidth
-                            margin="normal"
-                            inputProps={{ maxLength: 30 }}
-                        />
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName || !registry}>
-                            Create Group
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <RegistrySelect />
-                    </Grid>
-                </Grid>
-                {groupList &&
-                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                        <Grid item>
-                            <Select
-                                style={{ width: '300px' }}
-                                value={selectedGroupName}
-                                fullWidth
-                                displayEmpty
-                                onChange={(event) => refreshGroup(event.target.value)}
-                            >
-                                <MenuItem value="" disabled>
-                                    Select group
-                                </MenuItem>
-                                {groupList.map((name, index) => (
-                                    <MenuItem value={name} key={index}>
-                                        {name}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </Grid>
-                    </Grid>
-                }
-                {selectedGroup &&
-                    <Box>
-                        <Table style={{ width: '800px' }}>
-                            <TableBody>
-                                <TableRow>
-                                    <TableCell style={{ width: '100%' }}>
-                                        <TextField
-                                            label="DID"
-                                            style={{ width: '500px' }}
-                                            value={memberDID}
-                                            onChange={(e) => setMemberDID(e.target.value.trim())}
-                                            fullWidth
-                                            margin="normal"
-                                            inputProps={{ maxLength: 80 }}
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
-                                            Resolve
-                                        </Button>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
-                                            <span>
-                                                <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID || !selectedGroupOwned}>
-                                                    Add
-                                                </Button>
-                                            </span>
-                                        </Tooltip>
-                                    </TableCell>
-                                </TableRow>
-                                {selectedGroup.members.map((did, index) => (
-                                    <TableRow key={index}>
-                                        <TableCell>
-                                            <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
-                                                {did}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
-                                                Resolve
-                                            </Button>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
-                                                <span>
-                                                    <Button variant="contained" color="primary" onClick={() => removeMember(did)} disabled={!selectedGroupOwned}>
-                                                        Remove
-                                                    </Button>
-                                                </span>
-                                            </Tooltip>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                        <textarea
-                            value={memberDocs}
-                            readOnly
-                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                        />
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function ImagesTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <RegistrySelect />
-                    </Grid>
-                    <Grid item>
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={() => document.getElementById('imageUpload').click()}
-                            disabled={!registry}
-                        >
-                            Upload Image...
-                        </Button>
-                        <input
-                            type="file"
-                            id="imageUpload"
-                            accept="image/*"
-                            style={{ display: 'none' }}
-                            onChange={uploadImage}
-                        />
-                    </Grid>
-                </Grid>
-                <p />
-                {imageList &&
-                    <Box>
-                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                            <Grid item>
-                                <Select
-                                    style={{ width: '300px' }}
-                                    value={selectedImageName}
-                                    fullWidth
-                                    displayEmpty
-                                    onChange={(event) => selectImage(event.target.value)}
-                                >
-                                    <MenuItem value="" disabled>
-                                        Select image
-                                    </MenuItem>
-                                    {imageList.map((name, index) => (
-                                        <MenuItem value={name} key={index}>
-                                            {name}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </Grid>
-                            <Grid item>
-                                <Tooltip title={!selectedImageOwned ? "You must own the image to update." : ""}>
-                                    <span>
-                                        <Button
-                                            variant="contained"
-                                            color="primary"
-                                            onClick={() => document.getElementById('imageUpdate').click()}
-                                            disabled={!selectedImageName || !selectedImageOwned}
-                                        >
-                                            Update image...
-                                        </Button>
-                                    </span>
-                                </Tooltip>
-                                <input
-                                    type="file"
-                                    id="imageUpdate"
-                                    accept="image/*"
-                                    style={{ display: 'none' }}
-                                    onChange={updateImage}
-                                />
-                            </Grid>
-                        </Grid>
-                        <p />
-                        {selectedImage && selectedImageDocs &&
-                            <div className="container">
-                                <VersionsNavigator
-                                    version={imageVersion}
-                                    maxVersion={imageVersionMax}
-                                    selectVersion={selectImageVersion}
-                                />
-                                <br />
-                                <div className="left-pane">
-                                    <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
-                                </div>
-                                <div className="right-pane">
-                                    <TableContainer>
-                                        <Table>
-                                            <TableBody>
-                                                <TableRow>
-                                                    <TableCell>DID</TableCell>
-                                                    <TableCell>{selectedImageDocs.didDocument.id}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>CID</TableCell>
-                                                    <TableCell>{selectedImage.cid}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>Created</TableCell>
-                                                    <TableCell>{selectedImageDocs.didDocumentMetadata.created}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>Updated</TableCell>
-                                                    <TableCell>{selectedImageDocs.didDocumentMetadata.updated || selectedImageDocs.didDocumentMetadata.created}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>Version</TableCell>
-                                                    <TableCell>{imageVersion} of {imageVersionMax}</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>File size</TableCell>
-                                                    <TableCell>{selectedImage.bytes} bytes</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>Image size</TableCell>
-                                                    <TableCell>{selectedImage.width} x {selectedImage.height} pixels</TableCell>
-                                                </TableRow>
-                                                <TableRow>
-                                                    <TableCell>Image type</TableCell>
-                                                    <TableCell>{selectedImage.type}</TableCell>
-                                                </TableRow>
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                </div>
-                            </div>
-                        }
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function DocumentsTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <RegistrySelect />
-                    </Grid>
-                    <Grid item>
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={() => document.getElementById('documentUpload').click()}
-                            disabled={!registry}
-                        >
-                            Upload Document...
-                        </Button>
-                        <input
-                            type="file"
-                            id="documentUpload"
-                            accept=".pdf,.doc,.docx,.txt"
-                            style={{ display: 'none' }}
-                            onChange={uploadDocument}
-                        />
-                    </Grid>
-                </Grid>
-                <p />
-                {documentList &&
-                    <Box>
-                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                            <Grid item>
-                                <Select
-                                    style={{ width: '300px' }}
-                                    value={selectedDocumentName}
-                                    fullWidth
-                                    displayEmpty
-                                    onChange={(event) => selectDocument(event.target.value)}
-                                >
-                                    <MenuItem value="" disabled>
-                                        Select document
-                                    </MenuItem>
-                                    {documentList.map((name, index) => (
-                                        <MenuItem value={name} key={index}>
-                                            {name}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </Grid>
-                            <Grid item>
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
-                                            <span>
-                                                <Button
-                                                    variant="contained"
-                                                    color="primary"
-                                                    onClick={() => document.getElementById('documentUpdate').click()}
-                                                    disabled={!selectedDocumentName || !selectedDocumentOwned}
-                                                >
-                                                    Update document...
-                                                </Button>
-                                            </span>
-                                        </Tooltip>
-                                        <input
-                                            type="file"
-                                            id="documentUpdate"
-                                            accept=".pdf,.doc,.docx,.txt"
-                                            style={{ display: 'none' }}
-                                            onChange={updateDocument}
-                                        />
-                                    </Grid>
-                                    <Grid item>
-                                        <Button
-                                            variant="contained"
-                                            color="primary"
-                                            onClick={() => downloadDocument()}
-                                            disabled={!selectedDocumentName}
-                                        >
-                                            Download
-                                        </Button>
-                                    </Grid>
-                                </Grid>
-                            </Grid>
-                        </Grid>
-                        <p />
-                        {selectedDocument && selectedDocumentDocs &&
-                            <div className="container">
-                                <VersionsNavigator
-                                    version={documentVersion}
-                                    maxVersion={documentVersionMax}
-                                    selectVersion={selectDocumentVersion}
-                                />
-                                <br />
-                                <TableContainer>
-                                    <Table>
-                                        <TableBody>
-                                            <TableRow>
-                                                <TableCell>DID</TableCell>
-                                                <TableCell>{selectedDocumentDocs.didDocument.id}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>CID</TableCell>
-                                                <TableCell>{selectedDocument.cid}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Created</TableCell>
-                                                <TableCell>{selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Updated</TableCell>
-                                                <TableCell>{selectedDocumentDocs.didDocumentMetadata.updated || selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Version</TableCell>
-                                                <TableCell>{documentVersion} of {documentVersionMax}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Document name</TableCell>
-                                                <TableCell>{selectedDocument.filename}</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Document size</TableCell>
-                                                <TableCell>{selectedDocument.bytes} bytes</TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell>Document type</TableCell>
-                                                <TableCell>{selectedDocument.type}</TableCell>
-                                            </TableRow>
-                                        </TableBody>
-                                    </Table>
-                                </TableContainer>
-                            </div>
-                        }
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function AssetsTab() {
-        return (
-            <Box>
-                <Box>
-                    <Tabs
-                        value={assetsTab}
-                        onChange={(event, newTab) => setAssetsTab(newTab)}
-                        indicatorColor="primary"
-                        textColor="primary"
-                        variant="scrollable"
-                        scrollButtons="auto"
-                    >
-                        <Tab key="schemas" value="schemas" label={'Schemas'} />
-                        <Tab key="groups" value="groups" label={'Groups'} />
-                        <Tab key="images" value="images" label={'Images'} />
-                        <Tab key="documents" value="documents" label={'Documents'} />
-                    </Tabs>
-                </Box>
-                {assetsTab === 'schemas' &&
-                    <SchemasTab />
-                }
-                {assetsTab === 'groups' &&
-                    <GroupsTab />
-                }
-                {assetsTab === 'images' &&
-                    <ImagesTab />
-                }
-                {assetsTab === 'documents' &&
-                    <DocumentsTab />
-                }
-            </Box>
-        );
-    }
-
-    function CredentialsHeldTab() {
-        return (
-            <Box>
-                <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                    <Table style={{ width: '800px' }}>
-                        <TableBody>
-                            <TableRow>
-                                <TableCell style={{ width: '100%' }}>
-                                    <TextField
-                                        label="Credential DID"
-                                        style={{ width: '500px' }}
-                                        value={heldDID}
-                                        onChange={(e) => setHeldDID(e.target.value.trim())}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 80 }}
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
-                                        Resolve
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
-                                        Decrypt
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
-                                        Accept
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                            {heldList.map((did, index) => (
-                                <TableRow key={index}>
-                                    <TableCell colSpan={6}>
-                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                            {did}
-                                        </Typography>
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
-                                                    Resolve
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
-                                                    Decrypt
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => removeCredential(did)} disabled={!credentialUnpublished(did)}>
-                                                    Remove
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => publishCredential(did)} disabled={credentialPublished(did)}>
-                                                    Publish
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => revealCredential(did)} disabled={credentialRevealed(did)}>
-                                                    Reveal
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)} disabled={credentialUnpublished(did)}>
-                                                    Unpublish
-                                                </Button>
-                                            </Grid>
-                                        </Grid>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-                <p>{selectedHeld}</p>
-                <textarea
-                    value={heldString}
-                    readOnly
-                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                />
-            </Box>
-        );
-    }
-
-    function IssueCredentialTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Select
-                            style={{ width: '300px' }}
-                            value={credentialSubject}
-                            fullWidth
-                            displayEmpty
-                            onChange={(event) => setCredentialSubject(event.target.value)}
-                        >
-                            <MenuItem value="" disabled>
-                                Select subject
-                            </MenuItem>
-                            {agentList.map((name, index) => (
-                                <MenuItem value={name} key={index}>
-                                    {name}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Grid>
-                    <Grid item>
-                        <Select
-                            style={{ width: '300px' }}
-                            value={credentialSchema}
-                            fullWidth
-                            displayEmpty
-                            onChange={(event) => setCredentialSchema(event.target.value)}
-                        >
-                            <MenuItem value="" disabled>
-                                Select schema
-                            </MenuItem>
-                            {schemaList.map((name, index) => (
-                                <MenuItem value={name} key={index}>
-                                    {name}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={editCredential} disabled={!credentialSubject || !credentialSchema}>
-                            Edit Credential
-                        </Button>
-                    </Grid>
-                </Grid>
-                {credentialString &&
-                    <Box>
-                        <Grid container direction="column" spacing={1}>
-                            <Grid item>
-                                <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
-                            </Grid>
-                            <Grid item>
-                                <textarea
-                                    value={credentialString}
-                                    onChange={(e) => setCredentialString(e.target.value)}
-                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                />
-                            </Grid>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
-                                        Issue Credential
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <RegistrySelect />
-                                </Grid>
-                            </Grid>
-                            {credentialDID &&
-                                <Grid item>
-                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                        {credentialDID}
-                                    </Typography>
-                                </Grid>
-                            }
-                        </Grid>
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function CredentialsIssuedTab() {
-        return (
-            <Box>
-                <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                    <Table style={{ width: '800px' }}>
-                        <TableBody>
-                            {issuedList.map((did, index) => (
-                                <TableRow key={index}>
-                                    <TableCell colSpan={6}>
-                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                            {did}
-                                        </Typography>
-                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => resolveIssued(did)}>
-                                                    Resolve
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => decryptIssued(did)}>
-                                                    Decrypt
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => updateIssued(did)} disabled={did !== selectedIssued || !issuedEdit || issuedString === issuedStringOriginal}>
-                                                    Update
-                                                </Button>
-                                            </Grid>
-                                            <Grid item>
-                                                <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
-                                                    Revoke
-                                                </Button>
-                                            </Grid>
-                                        </Grid>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-                <p>{selectedIssued}</p>
-                {issuedEdit ? (
-                    <textarea
-                        value={issuedString}
-                        onChange={(e) => setIssuedString(e.target.value.trim())}
-                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                    />
-
-                ) : (
-                    <textarea
-                        value={issuedString}
-                        readOnly
-                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                    />
-                )}
-            </Box>
-        );
-    }
-
-    function CredentialsTab() {
-        return (
-            <Box>
-                <Box>
-                    <Tabs
-                        value={credentialTab}
-                        onChange={(event, newTab) => setCredentialTab(newTab)}
-                        indicatorColor="primary"
-                        textColor="primary"
-                        variant="scrollable"
-                        scrollButtons="auto"
-                    >
-                        <Tab key="held" value="held" label={'Held'} />
-                        <Tab key="issue" value="issue" label={'Issue'} />
-                        <Tab key="issued" value="issued" label={'Issued'} />
-                    </Tabs>
-                </Box>
-                {credentialTab === 'held' &&
-                    <CredentialsHeldTab />
-                }
-                {credentialTab === 'issue' &&
-                    <IssueCredentialTab />
-                }
-                {credentialTab === 'issued' &&
-                    <CredentialsIssuedTab />
-                }
-            </Box>
-        );
-    }
-
-    function MessageReceiveTab() {
-        return (
-            <Box>
-                <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                    <Table style={{ width: '800px' }}>
-                        <TableBody>
-                            <TableRow>
-                                <TableCell style={{ width: '100%' }}>
-                                    <TextField
-                                        label="Message DID"
-                                        style={{ width: '500px' }}
-                                        value={messageDID}
-                                        onChange={(e) => setMessageDID(e.target.value.trim())}
-                                        fullWidth
-                                        margin="normal"
-                                        inputProps={{ maxLength: 80 }}
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={() => resolveMessage(messageDID)} disabled={!messageDID}>
-                                        Resolve
-                                    </Button>
-                                </TableCell>
-                                <TableCell>
-                                    <Button variant="contained" color="primary" onClick={() => decryptMessage(messageDID)} disabled={!messageDID}>
-                                        Decrypt
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-                <textarea
-                    value={messageString}
-                    readOnly
-                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                />
-            </Box>
-        );
-    }
-
-    function MessageSendTab() {
-        return (
-            <Box>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Select
-                            style={{ width: '300px' }}
-                            value={messageRecipient}
-                            fullWidth
-                            displayEmpty
-                            onChange={(event) => setMessageRecipient(event.target.value)}
-                        >
-                            <MenuItem value="" disabled>
-                                Select recipient
-                            </MenuItem>
-                            {agentList.map((name, index) => (
-                                <MenuItem value={name} key={index}>
-                                    {name}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Grid>
-                </Grid>
-                <p />
-                {messageRecipient &&
-                    <Box>
-                        <Grid container direction="column" spacing={1}>
-                            <Grid item>
-                                <textarea
-                                    value={sendMessage}
-                                    onChange={(e) => setSendMessage(e.target.value)}
-                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                />
-                            </Grid>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
-                                        Encrypt Message
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <RegistrySelect />
-                                </Grid>
-                            </Grid>
-                            {encryptedDID &&
-                                <Grid item>
-                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                        {encryptedDID}
-                                    </Typography>
-                                </Grid>
-                            }
-                        </Grid>
-                    </Box>
-                }
-            </Box>
-        );
-    }
-
-    function MessagesTab() {
-        return (
-            <Box>
-                <Box>
-                    <Tabs
-                        value={messagesTab}
-                        onChange={(event, newTab) => setMessagesTab(newTab)}
-                        indicatorColor="primary"
-                        textColor="primary"
-                        variant="scrollable"
-                        scrollButtons="auto"
-                    >
-                        <Tab key="receive" value="receive" label={'Receive'} />
-                        <Tab key="send" value="send" label={'Send'} />
-                    </Tabs>
-                </Box>
-                {messagesTab === 'receive' &&
-                    <MessageReceiveTab />
-                }
-                {messagesTab === 'send' &&
-                    <MessageSendTab />
-                }
-            </Box>
-        );
-    }
-
-    function CreateIdTab() {
-        return (
-            <Grid>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <TextField
-                            label="Name"
-                            style={{ width: '300px' }}
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value.trim())}
-                            fullWidth
-                            margin="normal"
-                            inputProps={{ maxLength: 30 }}
-                        />
-                    </Grid>
-                    <Grid item>
-                        <RegistrySelect />
-                    </Grid>
-                </Grid>
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={createId} disabled={!newName || !registry}>
-                            Create
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={cancelCreate} disabled={!saveId}>
-                            Cancel
-                        </Button>
-                    </Grid>
-                </Grid>
-            </Grid>
-        );
-    }
-
-    function AuthTab() {
-        return (
-            <Box>
-                <Table style={{ width: '800px' }}>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell style={{ width: '20%' }}>Challenge</TableCell>
-                            <TableCell style={{ width: '80%' }}>
-                                <TextField
-                                    label=""
-                                    value={challenge}
-                                    onChange={(e) => setChallenge(e.target.value.trim())}
-                                    fullWidth
-                                    margin="normal"
-                                    inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
-                                />
-                                <br />
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={newChallenge}>
-                                            New
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => resolveChallenge(challenge)} disabled={!challenge || challenge === authDID}>
-                                            Resolve
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
-                                            Respond
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={clearChallenge} disabled={!challenge}>
-                                            Clear
-                                        </Button>
-                                    </Grid>
-                                </Grid>
-                            </TableCell>
-                        </TableRow>
-                        <TableRow>
-                            <TableCell style={{ width: '20%' }}>Response</TableCell>
-                            <TableCell style={{ width: '80%' }}>
-                                <TextField
-                                    label=""
-                                    value={response}
-                                    onChange={(e) => setResponse(e.target.value.trim())}
-                                    fullWidth
-                                    margin="normal"
-                                    inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
-                                />
-                                <br />
-                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>
-                                            Decrypt
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={verifyResponse} disabled={!response}>
-                                            Verify
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
-                                            Send
-                                        </Button>
-                                    </Grid>
-                                    <Grid item>
-                                        <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
-                                            Clear
-                                        </Button>
-                                    </Grid>
-                                </Grid>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-                <p>{authDID}</p>
-                <textarea
-                    value={authString}
-                    readOnly
-                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                />
-            </Box>
-        );
-    }
-
-    function WalletTab() {
-        return (
-            <Box>
-                <p />
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={newWallet}>
-                            New...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={importWallet}>
-                            Import...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={backupWallet}>
-                            Backup
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={recoverWallet}>
-                            Recover...
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={checkWallet} disabled={checkingWallet}>
-                            Check...
-                        </Button>
-                    </Grid>
-                </Grid>
-                <p />
-                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                    <Grid item>
-                        {mnemonicString ? (
-                            <Button variant="contained" color="primary" onClick={hideMnemonic}>
-                                Hide Mnemonic
-                            </Button>
-                        ) : (
-                            <Button variant="contained" color="primary" onClick={showMnemonic}>
-                                Show Mnemonic
-                            </Button>
-                        )}
-                    </Grid>
-                    <Grid item>
-                        {walletString ? (
-                            <Button variant="contained" color="primary" onClick={hideWallet}>
-                                Hide Wallet
-                            </Button>
-                        ) : (
-                            <Button variant="contained" color="primary" onClick={showWallet}>
-                                Show Wallet
-                            </Button>
-                        )}
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={downloadWallet}>
-                            Download
-                        </Button>
-                    </Grid>
-                    <Grid item>
-                        <Button variant="contained" color="primary" onClick={uploadWallet}>
-                            Upload...
-                        </Button>
-                    </Grid>
-                </Grid>
-                <p />
-                {encryption && (
-                    <>
-                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                            <Grid item>
-                                {encryption.isWalletEncrypted ? (
-                                    <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
-                                        Decrypt Wallet
-                                    </Button>
-                                ) : (
-                                    <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
-                                        Encrypt Wallet
-                                    </Button>
-                                )}
-                            </Grid>
-                        </Grid>
-                        <p />
-                    </>
-                )}
-                <Box>
-                    <pre>{mnemonicString}</pre>
-                </Box>
-                <Box>
-                    {walletString &&
-                        <textarea
-                            value={walletString}
-                            readonly
-                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                        />
-                    }
-                </Box>
-            </Box>
-        );
-    }
-
     return (
         <div className="App">
             <header className="App-header">
@@ -2713,28 +1440,1199 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 </Box>
                 <Box style={{ width: '90vw' }}>
                     {tab === 'identity' &&
-                        <IdentitiesTab />
+                        <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Select
+                                        style={{ width: '300px' }}
+                                        value={selectedId}
+                                        fullWidth
+                                        onChange={(event) => selectId(event.target.value)}
+                                    >
+                                        {idList.map((idname, index) => (
+                                            <MenuItem value={idname} key={index}>
+                                                {idname}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={showCreate}>
+                                        Create...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={renameId}>
+                                        Rename...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={removeId}>
+                                        Remove...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={backupId}>
+                                        Backup...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={recoverId}>
+                                        Recover...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={rotateKeys}>
+                                        Rotate keys
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            {!widget &&
+                                <Box>
+                                    <VersionsNavigator
+                                        version={docsVersion}
+                                        maxVersion={docsVersionMax}
+                                        selectVersion={selectDocsVersion}
+                                    />
+                                    <br />
+                                    <textarea
+                                        value={docsString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                        </Box>
                     }
                     {tab === 'names' &&
-                        <NamesTab />
+                        <Box>
+                            <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                <Table style={{ width: '800px' }}>
+                                    <TableBody>
+                                        <TableRow>
+                                            <TableCell style={{ width: '100%' }}>
+                                                <TextField
+                                                    label="Name"
+                                                    style={{ width: '200px' }}
+                                                    value={aliasName}
+                                                    onChange={(e) => setAliasName(e.target.value)}
+                                                    fullWidth
+                                                    margin="normal"
+                                                    inputProps={{ maxLength: 20 }}
+                                                />
+                                            </TableCell>
+                                            <TableCell style={{ width: '100%' }}>
+                                                <TextField
+                                                    label="DID"
+                                                    style={{ width: '500px' }}
+                                                    value={aliasDID}
+                                                    onChange={(e) => setAliasDID(e.target.value.trim())}
+                                                    fullWidth
+                                                    margin="normal"
+                                                    inputProps={{ maxLength: 80 }}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={() => resolveName(aliasDID)} disabled={!aliasDID}>
+                                                    Resolve
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={addName} disabled={!aliasName || !aliasDID}>
+                                                    Add
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Button variant="contained" color="primary" onClick={cloneAsset} disabled={!aliasName || !aliasDID || !registry}>
+                                                    Clone
+                                                </Button>
+                                            </TableCell>
+                                            <TableCell>
+                                                <RegistrySelect />
+                                            </TableCell>
+                                        </TableRow>
+                                        {Object.entries(nameList).map(([name, did], index) => (
+                                            <TableRow key={index}>
+                                                <TableCell>{name}</TableCell>
+                                                <TableCell>
+                                                    <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                        {did}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveName(name)}>
+                                                        Resolve
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => changeName(name, did)}>
+                                                        Rename
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => removeName(name)}>
+                                                        Remove
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => transferName(name)}>
+                                                        Transfer
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <p>{selectedName}</p>
+                            <VersionsNavigator
+                                version={aliasDocsVersion}
+                                maxVersion={aliasDocsVersionMax}
+                                selectVersion={selectAliasDocsVersion}
+                            />
+                            <br />
+                            <textarea
+                                value={aliasDocs}
+                                readOnly
+                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                            />
+                        </Box>
                     }
                     {tab === 'assets' &&
-                        <AssetsTab />
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={assetsTab}
+                                    onChange={(event, newTab) => setAssetsTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="schemas" value="schemas" label={'Schemas'} />
+                                    <Tab key="groups" value="groups" label={'Groups'} />
+                                    <Tab key="images" value="images" label={'Images'} />
+                                    <Tab key="documents" value="documents" label={'Documents'} />
+                                </Tabs>
+                            </Box>
+                            {assetsTab === 'schemas' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <TextField
+                                                label="Schema Name"
+                                                style={{ width: '300px' }}
+                                                value={schemaName}
+                                                onChange={(e) => setSchemaName(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 30 }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={createSchema} disabled={!schemaName || !registry}>
+                                                Create Schema
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                    </Grid>
+                                    {schemaList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedSchemaName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => selectSchema(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select schema
+                                                    </MenuItem>
+                                                    {schemaList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                        </Grid>
+                                    }
+                                    {selectedSchema &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={schemaString}
+                                                        onChange={(e) => setSchemaString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                        readOnly={!selectedSchemaOwned}
+                                                    />
+                                                </Grid>
+                                                <Grid container direction="row" spacing={1}>
+                                                    <Grid item>
+                                                        <Tooltip title={!selectedSchemaOwned ? "You must own the schema to save." : ""}>
+                                                            <span>
+                                                                <Button variant="contained" color="primary" onClick={saveSchema} disabled={!schemaString || !selectedSchemaOwned}>
+                                                                    Save Schema
+                                                                </Button>
+                                                            </span>
+                                                        </Tooltip>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={() => selectSchema(selectedSchemaName)} disabled={!schemaString || !selectedSchemaOwned}>
+                                                            Revert Schema
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                            {assetsTab === 'groups' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <TextField
+                                                label="Group Name"
+                                                style={{ width: '300px' }}
+                                                value={groupName}
+                                                onChange={(e) => setGroupName(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 30 }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={createGroup} disabled={!groupName || !registry}>
+                                                Create Group
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                    </Grid>
+                                    {groupList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedGroupName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => refreshGroup(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select group
+                                                    </MenuItem>
+                                                    {groupList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                        </Grid>
+                                    }
+                                    {selectedGroup &&
+                                        <Box>
+                                            <Table style={{ width: '800px' }}>
+                                                <TableBody>
+                                                    <TableRow>
+                                                        <TableCell style={{ width: '100%' }}>
+                                                            <TextField
+                                                                label="DID"
+                                                                style={{ width: '500px' }}
+                                                                value={memberDID}
+                                                                onChange={(e) => setMemberDID(e.target.value.trim())}
+                                                                fullWidth
+                                                                margin="normal"
+                                                                inputProps={{ maxLength: 80 }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
+                                                                Resolve
+                                                            </Button>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                <span>
+                                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID || !selectedGroupOwned}>
+                                                                        Add
+                                                                    </Button>
+                                                                </span>
+                                                            </Tooltip>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                    {selectedGroup.members.map((did, index) => (
+                                                        <TableRow key={index}>
+                                                            <TableCell>
+                                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                                    {did}
+                                                                </Typography>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
+                                                                    Resolve
+                                                                </Button>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
+                                                                    <span>
+                                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)} disabled={!selectedGroupOwned}>
+                                                                            Remove
+                                                                        </Button>
+                                                                    </span>
+                                                                </Tooltip>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                            <textarea
+                                                value={memberDocs}
+                                                readOnly
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                            {assetsTab === 'images' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => document.getElementById('imageUpload').click()}
+                                                disabled={!registry}
+                                            >
+                                                Upload Image...
+                                            </Button>
+                                            <input
+                                                type="file"
+                                                id="imageUpload"
+                                                accept="image/*"
+                                                style={{ display: 'none' }}
+                                                onChange={uploadImage}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    {imageList &&
+                                        <Box>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Select
+                                                        style={{ width: '300px' }}
+                                                        value={selectedImageName}
+                                                        fullWidth
+                                                        displayEmpty
+                                                        onChange={(event) => selectImage(event.target.value)}
+                                                    >
+                                                        <MenuItem value="" disabled>
+                                                            Select image
+                                                        </MenuItem>
+                                                        {imageList.map((name, index) => (
+                                                            <MenuItem value={name} key={index}>
+                                                                {name}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Tooltip title={!selectedImageOwned ? "You must own the image to update." : ""}>
+                                                        <span>
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={() => document.getElementById('imageUpdate').click()}
+                                                                disabled={!selectedImageName || !selectedImageOwned}
+                                                            >
+                                                                Update image...
+                                                            </Button>
+                                                        </span>
+                                                    </Tooltip>
+                                                    <input
+                                                        type="file"
+                                                        id="imageUpdate"
+                                                        accept="image/*"
+                                                        style={{ display: 'none' }}
+                                                        onChange={updateImage}
+                                                    />
+                                                </Grid>
+                                            </Grid>
+                                            <p />
+                                            {selectedImage && selectedImageDocs &&
+                                                <div className="container">
+                                                    <VersionsNavigator
+                                                        version={imageVersion}
+                                                        maxVersion={imageVersionMax}
+                                                        selectVersion={selectImageVersion}
+                                                    />
+                                                    <br />
+                                                    <div className="left-pane">
+                                                        <img src={selectedImageURL} alt={selectedImageName} style={{ width: '100%', height: 'auto' }} />
+                                                    </div>
+                                                    <div className="right-pane">
+                                                        <TableContainer>
+                                                            <Table>
+                                                                <TableBody>
+                                                                    <TableRow>
+                                                                        <TableCell>DID</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocument.id}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>CID</TableCell>
+                                                                        <TableCell>{selectedImage.cid}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Created</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.created}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Updated</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.updated || selectedImageDocs.didDocumentMetadata.created}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Version</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version} of {imageVersionMax}</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>File size</TableCell>
+                                                                        <TableCell>{selectedImage.bytes} bytes</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Image size</TableCell>
+                                                                        <TableCell>{selectedImage.width} x {selectedImage.height} pixels</TableCell>
+                                                                    </TableRow>
+                                                                    <TableRow>
+                                                                        <TableCell>Image type</TableCell>
+                                                                        <TableCell>{selectedImage.type}</TableCell>
+                                                                    </TableRow>
+                                                                </TableBody>
+                                                            </Table>
+                                                        </TableContainer>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                            {assetsTab === 'documents' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                onClick={() => document.getElementById('documentUpload').click()}
+                                                disabled={!registry}
+                                            >
+                                                Upload Document...
+                                            </Button>
+                                            <input
+                                                type="file"
+                                                id="documentUpload"
+                                                accept=".pdf,.doc,.docx,.txt"
+                                                style={{ display: 'none' }}
+                                                onChange={uploadDocument}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    {documentList &&
+                                        <Box>
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Select
+                                                        style={{ width: '300px' }}
+                                                        value={selectedDocumentName}
+                                                        fullWidth
+                                                        displayEmpty
+                                                        onChange={(event) => selectDocument(event.target.value)}
+                                                    >
+                                                        <MenuItem value="" disabled>
+                                                            Select document
+                                                        </MenuItem>
+                                                        {documentList.map((name, index) => (
+                                                            <MenuItem value={name} key={index}>
+                                                                {name}
+                                                            </MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                        <Grid item>
+                                                            <Tooltip title={!selectedDocumentOwned ? "You must own the document to update." : ""}>
+                                                                <span>
+                                                                    <Button
+                                                                        variant="contained"
+                                                                        color="primary"
+                                                                        onClick={() => document.getElementById('documentUpdate').click()}
+                                                                        disabled={!selectedDocumentName || !selectedDocumentOwned}
+                                                                    >
+                                                                        Update document...
+                                                                    </Button>
+                                                                </span>
+                                                            </Tooltip>
+                                                            <input
+                                                                type="file"
+                                                                id="documentUpdate"
+                                                                accept=".pdf,.doc,.docx,.txt"
+                                                                style={{ display: 'none' }}
+                                                                onChange={updateDocument}
+                                                            />
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button
+                                                                variant="contained"
+                                                                color="primary"
+                                                                onClick={() => downloadDocument()}
+                                                                disabled={!selectedDocumentName}
+                                                            >
+                                                                Download
+                                                            </Button>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Grid>
+                                            </Grid>
+                                            <p />
+                                            {selectedDocument && selectedDocumentDocs &&
+                                                <div className="container">
+                                                    <VersionsNavigator
+                                                        version={documentVersion}
+                                                        maxVersion={documentVersionMax}
+                                                        selectVersion={selectDocumentVersion}
+                                                    />
+                                                    <br />
+                                                    <TableContainer>
+                                                        <Table>
+                                                            <TableBody>
+                                                                <TableRow>
+                                                                    <TableCell>DID</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocument.id}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>CID</TableCell>
+                                                                    <TableCell>{selectedDocument.cid}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Created</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Updated</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.updated || selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Version</TableCell>
+                                                                    <TableCell>{documentVersion} of {documentVersionMax}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document name</TableCell>
+                                                                    <TableCell>{selectedDocument.filename}</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document size</TableCell>
+                                                                    <TableCell>{selectedDocument.bytes} bytes</TableCell>
+                                                                </TableRow>
+                                                                <TableRow>
+                                                                    <TableCell>Document type</TableCell>
+                                                                    <TableCell>{selectedDocument.type}</TableCell>
+                                                                </TableRow>
+                                                            </TableBody>
+                                                        </Table>
+                                                    </TableContainer>
+                                                </div>
+                                            }
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                        </Box>
                     }
                     {tab === 'credentials' &&
-                        <CredentialsTab />
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={credentialTab}
+                                    onChange={(event, newTab) => setCredentialTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="held" value="held" label={'Held'} />
+                                    <Tab key="issue" value="issue" label={'Issue'} />
+                                    <Tab key="issued" value="issued" label={'Issued'} />
+                                </Tabs>
+                            </Box>
+                            {credentialTab === 'held' &&
+                                <Box>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                <TableRow>
+                                                    <TableCell style={{ width: '100%' }}>
+                                                        <TextField
+                                                            label="Credential DID"
+                                                            style={{ width: '500px' }}
+                                                            value={heldDID}
+                                                            onChange={(e) => setHeldDID(e.target.value.trim())}
+                                                            fullWidth
+                                                            margin="normal"
+                                                            inputProps={{ maxLength: 80 }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveCredential(heldDID)} disabled={!heldDID}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptCredential(heldDID)} disabled={!heldDID}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={acceptCredential} disabled={!heldDID}>
+                                                            Accept
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                                {heldList.map((did, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell colSpan={6}>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {did}
+                                                            </Typography>
+                                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => resolveCredential(did)}>
+                                                                        Resolve
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => decryptCredential(did)}>
+                                                                        Decrypt
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => removeCredential(did)} disabled={!credentialUnpublished(did)}>
+                                                                        Remove
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => publishCredential(did)} disabled={credentialPublished(did)}>
+                                                                        Publish
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => revealCredential(did)} disabled={credentialRevealed(did)}>
+                                                                        Reveal
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => unpublishCredential(did)} disabled={credentialUnpublished(did)}>
+                                                                        Unpublish
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <p>{selectedHeld}</p>
+                                    <textarea
+                                        value={heldString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                            {credentialTab === 'issue' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSubject}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setCredentialSubject(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select subject
+                                                </MenuItem>
+                                                {agentList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={credentialSchema}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setCredentialSchema(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select schema
+                                                </MenuItem>
+                                                {schemaList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={editCredential} disabled={!credentialSubject || !credentialSchema}>
+                                                Edit Credential
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                    {credentialString &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <p>{`Editing ${credentialSchema} credential for ${credentialSubject}`}</p>
+                                                </Grid>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={credentialString}
+                                                        onChange={(e) => setCredentialString(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                            Issue Credential
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <RegistrySelect />
+                                                    </Grid>
+                                                </Grid>
+                                                {credentialDID &&
+                                                    <Grid item>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {credentialDID}
+                                                        </Typography>
+                                                    </Grid>
+                                                }
+                                            </Grid>
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                            {credentialTab === 'issued' &&
+                                <Box>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                {issuedList.map((did, index) => (
+                                                    <TableRow key={index}>
+                                                        <TableCell colSpan={6}>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {did}
+                                                            </Typography>
+                                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => resolveIssued(did)}>
+                                                                        Resolve
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => decryptIssued(did)}>
+                                                                        Decrypt
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => updateIssued(did)} disabled={did !== selectedIssued || !issuedEdit || issuedString === issuedStringOriginal}>
+                                                                        Update
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
+                                                                        Revoke
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Grid>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <p>{selectedIssued}</p>
+                                    {issuedEdit ? (
+                                        <textarea
+                                            value={issuedString}
+                                            onChange={(e) => setIssuedString(e.target.value.trim())}
+                                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                        />
+
+                                    ) : (
+                                        <textarea
+                                            value={issuedString}
+                                            readOnly
+                                            style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                        />
+                                    )}
+                                </Box>
+                            }
+                        </Box>
                     }
                     {tab === 'messages' &&
-                        <MessagesTab />
+                        <Box>
+                            <Box>
+                                <Tabs
+                                    value={messagesTab}
+                                    onChange={(event, newTab) => setMessagesTab(newTab)}
+                                    indicatorColor="primary"
+                                    textColor="primary"
+                                    variant="scrollable"
+                                    scrollButtons="auto"
+                                >
+                                    <Tab key="receive" value="receive" label={'Receive'} />
+                                    <Tab key="send" value="send" label={'Send'} />
+                                </Tabs>
+                            </Box>
+                            {messagesTab === 'receive' &&
+                                <Box>
+                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                        <Table style={{ width: '800px' }}>
+                                            <TableBody>
+                                                <TableRow>
+                                                    <TableCell style={{ width: '100%' }}>
+                                                        <TextField
+                                                            label="Message DID"
+                                                            style={{ width: '500px' }}
+                                                            value={messageDID}
+                                                            onChange={(e) => setMessageDID(e.target.value.trim())}
+                                                            fullWidth
+                                                            margin="normal"
+                                                            inputProps={{ maxLength: 80 }}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveMessage(messageDID)} disabled={!messageDID}>
+                                                            Resolve
+                                                        </Button>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptMessage(messageDID)} disabled={!messageDID}>
+                                                            Decrypt
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                    <textarea
+                                        value={messageString}
+                                        readOnly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                </Box>
+                            }
+                            {messagesTab === 'send' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <Select
+                                                style={{ width: '300px' }}
+                                                value={messageRecipient}
+                                                fullWidth
+                                                displayEmpty
+                                                onChange={(event) => setMessageRecipient(event.target.value)}
+                                            >
+                                                <MenuItem value="" disabled>
+                                                    Select recipient
+                                                </MenuItem>
+                                                {agentList.map((name, index) => (
+                                                    <MenuItem value={name} key={index}>
+                                                        {name}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                    {messageRecipient &&
+                                        <Box>
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <textarea
+                                                        value={sendMessage}
+                                                        onChange={(e) => setSendMessage(e.target.value)}
+                                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                    />
+                                                </Grid>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
+                                                            Encrypt Message
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <RegistrySelect />
+                                                    </Grid>
+                                                </Grid>
+                                                {encryptedDID &&
+                                                    <Grid item>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {encryptedDID}
+                                                        </Typography>
+                                                    </Grid>
+                                                }
+                                            </Grid>
+                                        </Box>
+                                    }
+                                </Box>
+                            }
+                        </Box>
                     }
                     {tab === 'create' &&
-                        <CreateIdTab />
+                        <Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <TextField
+                                        label="Name"
+                                        style={{ width: '300px' }}
+                                        value={newName}
+                                        onChange={(e) => setNewName(e.target.value.trim())}
+                                        fullWidth
+                                        margin="normal"
+                                        inputProps={{ maxLength: 30 }}
+                                    />
+                                </Grid>
+                                <Grid item>
+                                    <RegistrySelect />
+                                </Grid>
+                            </Grid>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={createId} disabled={!newName || !registry}>
+                                        Create
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={cancelCreate} disabled={!saveId}>
+                                        Cancel
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </Grid>
                     }
                     {tab === 'auth' &&
-                        <AuthTab />
+                        <Box>
+                            <Table style={{ width: '800px' }}>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell style={{ width: '20%' }}>Challenge</TableCell>
+                                        <TableCell style={{ width: '80%' }}>
+                                            <TextField
+                                                label=""
+                                                value={challenge}
+                                                onChange={(e) => setChallenge(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                            />
+                                            <br />
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={newChallenge}>
+                                                        New
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveChallenge(challenge)} disabled={!challenge || challenge === authDID}>
+                                                        Resolve
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={createResponse} disabled={!challenge}>
+                                                        Respond
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={clearChallenge} disabled={!challenge}>
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        </TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell style={{ width: '20%' }}>Response</TableCell>
+                                        <TableCell style={{ width: '80%' }}>
+                                            <TextField
+                                                label=""
+                                                value={response}
+                                                onChange={(e) => setResponse(e.target.value.trim())}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                            />
+                                            <br />
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>
+                                                        Decrypt
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={verifyResponse} disabled={!response}>
+                                                        Verify
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
+                                                        Send
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
+                                                        Clear
+                                                    </Button>
+                                                </Grid>
+                                            </Grid>
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                            <p>{authDID}</p>
+                            <textarea
+                                value={authString}
+                                readOnly
+                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                            />
+                        </Box>
                     }
                     {tab === 'wallet' &&
-                        <WalletTab />
+                        <Box>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={newWallet}>
+                                        New...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={importWallet}>
+                                        Import...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={backupWallet}>
+                                        Backup
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={recoverWallet}>
+                                        Recover...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={checkWallet} disabled={checkingWallet}>
+                                        Check...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    {mnemonicString ? (
+                                        <Button variant="contained" color="primary" onClick={hideMnemonic}>
+                                            Hide Mnemonic
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showMnemonic}>
+                                            Show Mnemonic
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    {walletString ? (
+                                        <Button variant="contained" color="primary" onClick={hideWallet}>
+                                            Hide Wallet
+                                        </Button>
+                                    ) : (
+                                        <Button variant="contained" color="primary" onClick={showWallet}>
+                                            Show Wallet
+                                        </Button>
+                                    )}
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={downloadWallet}>
+                                        Download
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={uploadWallet}>
+                                        Upload...
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                            <p />
+                            {encryption && (
+                                <>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            {encryption.isWalletEncrypted ? (
+                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
+                                                    Decrypt Wallet
+                                                </Button>
+                                            ) : (
+                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
+                                                    Encrypt Wallet
+                                                </Button>
+                                            )}
+                                        </Grid>
+                                    </Grid>
+                                    <p />
+                                </>
+                            )}
+                            <Box>
+                                <pre>{mnemonicString}</pre>
+                            </Box>
+                            <Box>
+                                {walletString &&
+                                    <textarea
+                                        value={walletString}
+                                        readonly
+                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                    />
+                                }
+                            </Box>
+                        </Box>
                     }
                     {tab === 'access' &&
                         <Box>
