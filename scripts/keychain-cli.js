@@ -159,6 +159,7 @@ program
 program
     .command('create-id <name>')
     .description('Create a new decentralized ID')
+    // eslint-disable-next-line
     .option('-r, --registry <registry>', 'registry to use')
     .action(async (name, options) => {
         try {
@@ -659,7 +660,6 @@ program
     .command('create-group <name>')
     .description('Create a new group')
     .requiredOption('-n, --name <name>', 'group name')
-    // eslint-disable-next-line
     .option('-r, --registry <registry>', 'registry to use')
     .action(async (options) => {
         try {
