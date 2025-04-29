@@ -4,21 +4,27 @@ FROM node:18.18.2-bullseye-slim
 # Set the working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json to the working directory
+# Copy packages
 COPY package*.json ./
 COPY packages/ ./packages/
+COPY services/search-server ./search-server/
 
 # Install dependencies
 RUN npm ci
 RUN npm run build
 
-COPY services/explorer ./explorer/
+# Make sure dir is owned by user who will build
+RUN chown -R node:node /app/search-server
 
-WORKDIR /app/explorer
+# Switch to node user
+USER node
+
+WORKDIR /app/search-server
 
 RUN npm i
 
-EXPOSE 3000
+EXPOSE 3001
 
 # Run...
 CMD ["npm", "start"]
+

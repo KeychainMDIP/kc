@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "vite",
-    "docker": "vite --host 0.0.0.0",
+    "start": "npm run build && node server.js",
+    "dev": "vite",
     "build": "vite build"
   },
   "dependencies": {
@@ -13,8 +13,9 @@
     "@mui/icons-material": "^7.0.2",
     "@mui/material": "^7.0.2",
     "@uiw/react-json-view": "^2.0.0-alpha.30",
+    "axios": "^1.9.0",
     "dotenv": "^16.5.0",
-    "flexsearch": "^0.8.158",
+    "express": "^5.1.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },

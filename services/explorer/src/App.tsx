@@ -1,6 +1,6 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import JsonViewer from "./components/JsonViewer.js";
-import Recent from "./components/Recent.js";
+import Events from "./components/Events.js";
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
@@ -11,7 +11,6 @@ import {
     Snackbar,
 } from "@mui/material";
 import Header from "./components/Header.js";
-import { Index } from 'flexsearch';
 
 const gatekeeper = new GatekeeperClient();
 
@@ -33,44 +32,6 @@ function App() {
     const [darkMode, setDarkMode] = useState<boolean>(false);
     const [tabValue, setTabValue] = useState<string>("search");
     const [viewDid, setViewDid] = useState<string>("");
-    const flexIndexRef = useRef<Index | null>(null);
-
-    useEffect(() => {
-        if (!isReady) {
-            return;
-        }
-
-        flexIndexRef.current = new Index({
-            tokenize: "forward",
-            cache: true,
-        });
-
-        refreshIndex();
-
-        const interval = setInterval(() => {
-            refreshIndex();
-        }, 60_000);
-
-        return () => {
-            clearInterval(interval);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isReady]);
-
-    async function refreshIndex() {
-        if (!flexIndexRef.current || !isReady) {
-            return;
-        }
-
-        try {
-            const dids = await gatekeeper.getDIDs() as string[];
-            for (const did of dids) {
-                const doc = await gatekeeper.resolveDID(did);
-                const docString = JSON.stringify(doc);
-                flexIndexRef.current.add(did, docString);
-            }
-        } catch (err) {}
-    }
 
     function handleViewDid(did: string) {
         setViewDid(did);
@@ -117,6 +78,8 @@ function App() {
             await gatekeeper.connect({
                 url: gatekeeperUrl,
                 waitUntilReady: true,
+                intervalSeconds: 5,
+                chatty: true,
             });
 
             interval = setInterval(async () => {
@@ -171,11 +134,10 @@ function App() {
                                     setError={setError}
                                     viewDid={viewDid}
                                     setViewDid={setViewDid}
-                                    flexIndex={flexIndexRef.current}
                                 />
                             )}
                             {tabValue === "recent" && (
-                                <Recent
+                                <Events
                                     gatekeeper={gatekeeper}
                                     setError={setError}
                                     onDidClick={handleViewDid}

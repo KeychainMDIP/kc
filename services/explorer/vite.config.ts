@@ -7,11 +7,12 @@ export default defineConfig(({ mode }) => {
     return {
         plugins: [react()],
         root: './',
+	    base: '/',
         server: {
             port: parseInt(env.VITE_EXPLORER_PORT) || 3000,
         },
         build: {
-            outDir: '../dist',
+            outDir: './dist',
         },
     };
 });
