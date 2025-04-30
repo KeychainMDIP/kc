@@ -657,14 +657,14 @@ program
     });
 
 program
-    .command('create-group <name>')
+    .command('create-group <groupName>')
     .description('Create a new group')
-    .requiredOption('-n, --name <name>', 'group name')
+    .option('-n, --name <name>', 'DID name')
     .option('-r, --registry <registry>', 'registry to use')
-    .action(async (options) => {
+    .action(async (groupName, options) => {
         try {
             const { name, registry } = options;
-            const did = await keymaster.createGroup(name, { registry });
+            const did = await keymaster.createGroup(groupName, { name, registry });
             console.log(did);
         }
         catch (error) {
