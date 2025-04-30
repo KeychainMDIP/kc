@@ -1976,14 +1976,14 @@ export default class Keymaster implements KeymasterInterface {
 
     async createGroup(
         name: string,
-        options: { registry?: string; members?: string[] } = {}
+        options = {}
     ): Promise<string> {
         const group = {
             name: name,
-            members: options.members || []
+            members: []
         };
 
-        return this.createAsset({ group }, { ...options, name });
+        return this.createAsset({ group }, options);
     }
 
     async getGroup(id: string): Promise<Group | null> {
