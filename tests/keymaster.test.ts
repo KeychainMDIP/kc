@@ -3465,13 +3465,14 @@ describe('createGroup', () => {
         expect(doc.didDocumentData).toStrictEqual(expectedGroup);
     });
 
-    it('should create a new named group with with the same DID name', async () => {
+    it('should create a new named group with a different DID name', async () => {
         mockFs({});
 
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
-        await keymaster.createGroup(groupName, { name: groupName });
-        const doc = await keymaster.resolveDID(groupName);
+        const didName = 'mockName';
+        await keymaster.createGroup(groupName, { name: didName });
+        const doc = await keymaster.resolveDID(didName);
 
         const expectedGroup = {
             group: {
