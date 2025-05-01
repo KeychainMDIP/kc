@@ -473,6 +473,7 @@ describe('createDID', () => {
         }
     });
 
+    // eslint-disable-next-line
     it('should throw exception on invalid registry', async () => {
         mockFs({});
 
