@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MDIP Gatekeeper",
   "type": "module",
+  "types": "./dist/types",
   "exports": {
     ".": {
       "import": "./dist/gatekeeper.js",
