@@ -148,6 +148,7 @@ async function importBatch(item: DiscoveredItem): Promise<void> {
                 index: item.index,
                 txid: item.txid,
                 batch: item.did,
+                opidx: i,
             }
         });
     }

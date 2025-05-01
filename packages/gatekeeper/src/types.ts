@@ -3,6 +3,8 @@ import { EcdsaJwkPublic } from '@mdip/cipher/types';
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
     queue?: Record<string, Operation[]>
+    blocks?: Record<string, any>
+    hashes?: Record<string, any>
 }
 
 export interface ImportBatchResult {
@@ -80,6 +82,8 @@ export interface GatekeeperDb {
     queueOperation(registry: string, op: Operation): Promise<number>;
     getQueue(registry: string): Promise<Operation[]>;
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
+    addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean>;
+    getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null>;
 }
 
 export interface GatekeeperInterface {
@@ -112,6 +116,7 @@ export interface MdipRegistration {
     index?: number;
     txid?: string;
     batch?: string;
+    opidx?: number;
 }
 
 export interface Mdip {
@@ -134,6 +139,7 @@ export interface DocumentMetadata {
     confirmed?: boolean;
     deactivated?: boolean;
     deleted?: string;
+    timestamp?: any;
 }
 
 export interface MdipDocument {
@@ -173,4 +179,12 @@ export interface Operation {
     previd?: string;
     did?: string,
     data?: unknown;
+}
+
+export type BlockId = number | string;
+
+export interface BlockInfo {
+    height: number;
+    hash: string;
+    time: number;
 }

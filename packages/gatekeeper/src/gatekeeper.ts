@@ -8,6 +8,8 @@ import {
 } from '@mdip/common/errors';
 import { IPFSClient } from '@mdip/ipfs/types';
 import {
+    BlockId,
+    BlockInfo,
     GatekeeperDb,
     GatekeeperInterface,
     GatekeeperEvent,
@@ -650,6 +652,14 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
             }
 
+            let timestamp;
+
+            if (blockchain) {
+                timestamp = {
+                    blockchain,
+                };
+            }
+
             if (operation.type === 'update') {
                 version += 1;
 
@@ -660,7 +670,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                     canonicalId,
                     versionId,
                     version,
-                    confirmed
+                    confirmed,
+                    timestamp,
                 }
                 if (doc.mdip) {
                     doc.mdip.registration = blockchain || undefined;
@@ -680,7 +691,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                     canonicalId,
                     versionId,
                     version,
-                    confirmed
+                    confirmed,
+                    timestamp,
                 }
                 if (doc.mdip) {
                     doc.mdip.registration = blockchain || undefined;
@@ -1158,6 +1170,22 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         return this.db.clearQueue(registry, events);
+    }
+
+    async getBlock(registry: string, block: BlockId): Promise<BlockInfo | null> {
+        if (!ValidRegistries.includes(registry)) {
+            throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        return this.db.getBlock(registry, block);
+    }
+
+    async addBlock(registry: string, block: BlockInfo): Promise<boolean> {
+        if (!ValidRegistries.includes(registry)) {
+            throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        return this.db.addBlock(registry, block)
     }
 
     async addText(text: string): Promise<string> {

@@ -1,5 +1,7 @@
 import { InvalidDIDError } from '@mdip/common/errors';
 import {
+    BlockId,
+    BlockInfo,
     JsonDbFile,
     GatekeeperDb,
     GatekeeperEvent,
@@ -133,5 +135,60 @@ export abstract class AbstractJson implements GatekeeperDb {
     async getAllKeys(): Promise<string[]> {
         const db = this.loadDb();
         return Object.keys(db.dids);
+    }
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        const db = this.loadDb();
+
+        if (!db.blocks) {
+            db.blocks = {};
+        }
+
+        if (!(registry in db.blocks)) {
+            db.blocks[registry] = {};
+        }
+
+        if (!db.hashes) {
+            db.hashes = {};
+        }
+
+        if (!(registry in db.hashes)) {
+            db.hashes[registry] = {};
+        }
+
+        db.blocks[registry][blockInfo.hash] = blockInfo;
+        db.hashes[registry][blockInfo.height] = blockInfo.hash;
+
+        this.writeDb(db);
+
+        return true;
+    }
+
+    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+        const db = this.loadDb();
+
+        try {
+            let blockHash: string | null = null;
+
+            // If blockId is a number, treat it as a height
+            if (typeof blockId === 'number') {
+                const registryHashes = db.hashes?.[registry];
+                blockHash = registryHashes?.[blockId] || null;
+            } else {
+                // If blockId is a string, treat it as a hash
+                blockHash = blockId;
+            }
+
+            if (!blockHash) {
+                return null;
+            }
+
+            // Retrieve block info by hash
+            const registryBlocks = db.blocks?.[registry];
+            return registryBlocks?.[blockHash] || null;
+        } catch (error) {
+            console.error(`Error getting block: ${error}`);
+            return null;
+        }
     }
 }

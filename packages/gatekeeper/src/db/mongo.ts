@@ -1,6 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 interface DidsDoc {
     id: string
@@ -99,12 +99,12 @@ export default class DbMongo implements GatekeeperDb {
             return [];
         }
     }
-    
+
     async deleteEvents(did: string): Promise<number> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        
+
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -118,7 +118,7 @@ export default class DbMongo implements GatekeeperDb {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        
+
         const rows = await this.db.collection('dids').find().toArray();
         return rows.map(row => row.id);
     }
@@ -150,7 +150,7 @@ export default class DbMongo implements GatekeeperDb {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        
+
         try {
             const row = await this.db.collection('queue').findOne({ id: registry });
             return row?.ops ?? [];
@@ -164,7 +164,7 @@ export default class DbMongo implements GatekeeperDb {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        
+
         try {
             const queueCollection = this.db.collection<QueueDoc>('queue')
             const oldQueueDocument = await queueCollection.findOne({ id: registry });
@@ -186,6 +186,63 @@ export default class DbMongo implements GatekeeperDb {
         catch (error) {
             console.error(error);
             return false;
+        }
+    }
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        try {
+            // Store block info in the "blocks" collection
+            await this.db.collection('blocks').updateOne(
+                { registry, hash: blockInfo.hash },
+                { $set: blockInfo },
+                { upsert: true }
+            );
+
+            // Store block hash by height in the "hashes" collection
+            await this.db.collection('hashes').updateOne(
+                { registry, height: blockInfo.height },
+                { $set: { hash: blockInfo.hash } },
+                { upsert: true }
+            );
+
+            return true;
+        } catch (error) {
+            console.error(`Error adding block: ${error}`);
+            return false;
+        }
+    }
+
+    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        try {
+            let blockHash: string | null = null;
+
+            // If blockId is a number, treat it as a height
+            if (typeof blockId === 'number') {
+                const hashDoc = await this.db.collection('hashes').findOne({ registry, height: blockId });
+                blockHash = hashDoc?.hash || null;
+            } else {
+                // If blockId is a string, treat it as a hash
+                blockHash = blockId;
+            }
+
+            if (!blockHash) {
+                return null;
+            }
+
+            // Retrieve block info by hash
+            const blockDoc = await this.db.collection<BlockInfo>('blocks').findOne({ registry, hash: blockHash });
+            return blockDoc || null;
+        } catch (error) {
+            console.error(`Error getting block: ${error}`);
+            return null;
         }
     }
 }

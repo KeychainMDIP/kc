@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
+import { Operation, MdipDocument, BlockInfo } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
@@ -3490,5 +3490,79 @@ describe('getData', () => {
         const data = await gatekeeper.getData(cid);
 
         expect(data).toStrictEqual(mockData);
+    });
+});
+
+const mockBlock: BlockInfo = {
+    height: 100,
+    hash: 'mockHash',
+    time: 999,
+};
+
+describe('addBlock', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should add a new block', async () => {
+        const ok = await gatekeeper.addBlock('local', mockBlock);
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should throw exception on invalid registry', async () => {
+        try {
+            await gatekeeper.addBlock('mock', mockBlock);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: registry=mock');
+        }
+    });
+});
+
+describe('getBlock', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should get a block by height', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', mockBlock.height);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should get a block by hash', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', mockBlock.hash);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should return null for unknown block', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', 0);
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should throw exception on invalid registry', async () => {
+        try {
+            await gatekeeper.addBlock('local', mockBlock);
+            await gatekeeper.getBlock('mock', mockBlock.height);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: registry=mock');
+        }
     });
 });

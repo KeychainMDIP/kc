@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 
@@ -29,7 +29,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         let cursor = '0';
         let totalDeleted = 0;
         do {
@@ -51,7 +51,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -66,7 +66,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         await this.deleteEvents(did);
 
         // Add new events
@@ -84,7 +84,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         const events = await this.redis.lrange(this.didKey(did), 0, -1);
         return events.map(event => JSON.parse(event));
     }
@@ -93,7 +93,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -105,7 +105,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         const keys = await this.redis.keys(`${this.dbName}/dids/*`);
         // Extract the id part from the key
         return keys.map(key => key.split('/').pop() || '');
@@ -115,7 +115,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         return this.redis.rpush(`${this.dbName}/queue/${registry}`, JSON.stringify(op));
     }
 
@@ -123,7 +123,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         try {
             const ops = await this.redis.lrange(`${this.dbName}/queue/${registry}`, 0, -1);
             return ops.map(op => JSON.parse(op));
@@ -136,7 +136,7 @@ export default class DbRedis implements GatekeeperDb {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
-        
+
         try {
             const ops = await this.getQueue(registry);
             const newOps = ops.filter(op => !batch.some(b => b.signature?.value === op.signature?.value));
@@ -151,6 +151,58 @@ export default class DbRedis implements GatekeeperDb {
         } catch (error) {
             console.error(error);
             return false;
+        }
+    }
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR);
+        }
+
+        try {
+            // Store block info by hash
+            const blockKey = `${this.dbName}/blocks/${registry}/${blockInfo.hash}`;
+            await this.redis.set(blockKey, JSON.stringify(blockInfo));
+
+            // Store block hash by height
+            const heightKey = `${this.dbName}/hashes/${registry}/${blockInfo.height}`;
+            await this.redis.set(heightKey, blockInfo.hash);
+
+            return true;
+        } catch (error) {
+            console.error(`Error adding block: ${error}`);
+            return false;
+        }
+    }
+
+    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR);
+        }
+
+        try {
+            let blockHash: string | null;
+
+            // If blockId is a number, treat it as a height
+            if (typeof blockId === 'number') {
+                const heightKey = `${this.dbName}/hashes/${registry}/${blockId}`;
+                blockHash = await this.redis.get(heightKey);
+            } else {
+                // If blockId is a string, treat it as a hash
+                blockHash = blockId;
+            }
+
+            if (!blockHash) {
+                return null;
+            }
+
+            const blockKey = `${this.dbName}/blocks/${registry}/${blockHash}`;
+            const blockInfo = await this.redis.get(blockKey);
+
+            return blockInfo ? JSON.parse(blockInfo) : null;
+        } catch (error) {
+            console.error(`Error getting block: ${error}`);
+            return null;
         }
     }
 }

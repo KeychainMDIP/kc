@@ -1,7 +1,7 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation } from '../types.js'
+import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 interface DidsRow {
     id: string
@@ -39,6 +39,18 @@ export default class DbSqlite implements GatekeeperDb {
             id TEXT PRIMARY KEY,
             ops TEXT
         )`);
+
+        await this.db.exec(`CREATE TABLE IF NOT EXISTS blocks (
+                registry TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                height INTEGER NOT NULL,
+                time TEXT NOT NULL,
+                txns INTEGER NOT NULL,
+                PRIMARY KEY (registry, hash)
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_height ON blocks (registry, height);
+        `);
     }
 
     async stop(): Promise<void> {
@@ -180,5 +192,56 @@ export default class DbSqlite implements GatekeeperDb {
 
         const rows = await this.db.all('SELECT id FROM dids');
         return rows.map(row => row.id);
+    }
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        try {
+            // Insert or replace the block information
+            await this.db.run(
+                `INSERT OR REPLACE INTO blocks (registry, hash, height, time) VALUES (?, ?, ?, ?, ?)`,
+                registry,
+                blockInfo.hash,
+                blockInfo.height,
+                blockInfo.time,
+            );
+
+            return true;
+        } catch (error) {
+            console.error(`Error adding block: ${error}`);
+            return false;
+        }
+    }
+    
+    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        try {
+            let blockRow: BlockInfo | undefined;
+
+            if (typeof blockId === 'number') {
+                blockRow = await this.db.get<BlockInfo>(
+                    `SELECT * FROM blocks WHERE registry = ? AND height = ?`,
+                    registry,
+                    blockId
+                );
+            } else {
+                blockRow = await this.db.get<BlockInfo>(
+                    `SELECT * FROM blocks WHERE registry = ? AND hash = ?`,
+                    registry,
+                    blockId
+                );
+            }
+
+            return blockRow ?? null; // Convert undefined to null
+        } catch (error) {
+            console.error(`Error getting block: ${error}`);
+            return null;
+        }
     }
 }
