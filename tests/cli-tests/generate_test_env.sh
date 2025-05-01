@@ -5,6 +5,8 @@ set -e
 # Change to the project root, assuming the script is in ./scripts/
 cd "$(git rev-parse --show-toplevel)"
 
+touch .env
+
 ENV_FILE=".env"
 
 echo "Generating .env file at project root..."
@@ -30,7 +32,7 @@ KC_GATEKEEPER_STATUS_INTERVAL=1
 
 # Keymaster
 KC_KEYMASTER_PORT=4226
-KC_KEYMASTER_DB=json
+KC_KEYMASTER_DB=redis
 KC_ENCRYPTED_PASSPHRASE=
 KC_WALLET_CACHE=false
 KC_DEFAULT_REGISTRY=local

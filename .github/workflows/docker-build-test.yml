@@ -28,29 +28,41 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/kc" /usr/local/bin/kc
           ln -s "$GITHUB_WORKSPACE/admin" /usr/local/bin/admin
           echo "/usr/local/bin" >> $GITHUB_PATH
-          sleep 30
       
 
-      - name: Install Docker Compose
+      - name: Run Node
         run: |
-            sudo curl -L "https://github.com/docker/compose/releases/download/v2.3.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            docker-compose --version
-        continue-on-error: false
-
-      - name: Run Docker-compose
-        run: |
-          docker compose build cli keymaster gatekeeper
-          docker compose up cli keymaster gatekeeper -d --no-build
-          docker ps
+          ./start-node-ci cli
+          docker compose ps
           sleep 30
-      
+
+
       - name: Run cli-tests
         working-directory: ./tests
+        env:
+          KC_GATEKEEPER_URL: http://localhost:4224
+          KC_KEYMASTER_URL: http://localhost:4226
         run: |
-          ./run_cli_tests.sh --ci
+          ./run_cli_tests.sh --ci-redis
+        
+
+      - name: Grab logs
+        if: always()
+        run: |
+          docker compose logs --no-color keymaster cli gatekeeper redis > docker-compose-logs.txt
+          cat docker-compose-logs.txt
       
+
       - name: Teardown Docker
         run: |
-          docker-compose down
+          ./stop-node
+      
+          
+      - name: Upload docker logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: docker-compose-logs.txt
+
 

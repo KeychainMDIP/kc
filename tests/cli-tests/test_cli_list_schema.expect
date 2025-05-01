@@ -77,7 +77,7 @@ expect {
 }
 
 foreach {key val} $argv {
-    if {$key == "--ci"} {
+    if {$key == "--ci-json"} {
         # Run docker exec to delete the file
         set result [exec docker exec kc-gatekeeper-1 rm -rf /app/gatekeeper/data/wallet.json]
 
@@ -104,6 +104,12 @@ foreach {key val} $argv {
             puts "File not found: $abs_filepath"
         }
         
+    } elseif {$key == "--ci-redis"} {
+        # Run docker exec to delete the file
+        set result [exec docker compose exec redis redis-cli flushall]
+
+        # Print result
+        puts "Resetted Redis!"
     }
 }
 
