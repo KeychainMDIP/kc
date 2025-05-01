@@ -1172,7 +1172,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.db.clearQueue(registry, events);
     }
 
-    async getBlock(registry: string, block: BlockId): Promise<BlockInfo | null> {
+    async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
         }

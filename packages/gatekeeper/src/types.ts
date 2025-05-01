@@ -83,7 +83,7 @@ export interface GatekeeperDb {
     getQueue(registry: string): Promise<Operation[]>;
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
     addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean>;
-    getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null>;
+    getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null>;
 }
 
 export interface GatekeeperInterface {

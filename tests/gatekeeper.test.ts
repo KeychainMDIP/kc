@@ -3497,7 +3497,13 @@ describe('getData', () => {
 const mockBlock: BlockInfo = {
     height: 100,
     hash: 'mockHash',
-    time: 999,
+    time: 100,
+};
+
+const mockBlock2: BlockInfo = {
+    height: 200,
+    hash: 'mockHash2',
+    time: 200,
 };
 
 describe('addBlock', () => {
@@ -3549,9 +3555,30 @@ describe('getBlock', () => {
         expect(block).toStrictEqual(mockBlock);
     });
 
-    it('should return null for unknown block', async () => {
+    it('should get max height block', async () => {
+        await gatekeeper.addBlock('local', mockBlock2);
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local');
+
+        expect(block).toStrictEqual(mockBlock2);
+    });
+
+    it('should return null when no blocks', async () => {
+        const block = await gatekeeper.getBlock('local');
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should return null for unknown block height', async () => {
         await gatekeeper.addBlock('local', mockBlock);
         const block = await gatekeeper.getBlock('local', 0);
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should return null for unknown block hash', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', 'zero');
 
         expect(block).toStrictEqual(null);
     });

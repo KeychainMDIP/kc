@@ -148,46 +148,38 @@ export abstract class AbstractJson implements GatekeeperDb {
             db.blocks[registry] = {};
         }
 
-        if (!db.hashes) {
-            db.hashes = {};
-        }
-
-        if (!(registry in db.hashes)) {
-            db.hashes[registry] = {};
-        }
-
         db.blocks[registry][blockInfo.hash] = blockInfo;
-        db.hashes[registry][blockInfo.height] = blockInfo.hash;
-
         this.writeDb(db);
 
         return true;
+
     }
 
-    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const db = this.loadDb();
 
         try {
-            let blockHash: string | null = null;
+            const registryBlocks = db.blocks?.[registry] as Record<string, BlockInfo>;
 
-            // If blockId is a number, treat it as a height
-            if (typeof blockId === 'number') {
-                const registryHashes = db.hashes?.[registry];
-                blockHash = registryHashes?.[blockId] || null;
-            } else {
-                // If blockId is a string, treat it as a hash
-                blockHash = blockId;
-            }
-
-            if (!blockHash) {
+            if (!registryBlocks) {
                 return null;
             }
 
-            // Retrieve block info by hash
-            const registryBlocks = db.blocks?.[registry];
-            return registryBlocks?.[blockHash] || null;
+            if (blockId === undefined) {
+                // Find the block with the maximum height
+                const blocks = Object.values(registryBlocks);
+                const maxBlock = blocks.reduce((max, block) => (block.height > max.height ? block : max), blocks[0]);
+                return maxBlock || null;
+            }
+
+            if (typeof blockId === 'number') {
+                // Find the block by height
+                return Object.values(registryBlocks).find(block => block.height === blockId) || null;
+            }
+
+            // Find the block by hash
+            return registryBlocks[blockId] || null;
         } catch (error) {
-            console.error(`Error getting block: ${error}`);
             return null;
         }
     }
