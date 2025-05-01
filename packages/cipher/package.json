@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MDIP cipher lib",
   "type": "module",
+  "types": "./dist/types",
   "exports": {
     "./node": {
       "import": "./dist/cipher-node.js",
