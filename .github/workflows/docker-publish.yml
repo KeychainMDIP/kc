@@ -11,7 +11,7 @@ name: Build & Publish
 
 on:
   push:
-    branches: ['release']
+    branches: ['pre-release']
 
 env:
   REGISTRY: docker.io
@@ -47,19 +47,19 @@ jobs:
         include:
           - dockerfile: Dockerfile.gatekeeper
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:pre-release
           - dockerfile: Dockerfile.keymaster
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:pre-release
           - dockerfile: Dockerfile.hyperswarm
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:pre-release
           - dockerfile: Dockerfile.satoshi
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:pre-release
           - dockerfile: Dockerfile.cli
             tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:release
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:pre-release
     permissions:
       contents: read
       packages: write
@@ -88,7 +88,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             ${{ needs.generate.outputs.CALVER }}
-            release
+            pre-release
 
       - name: Build and push Docker images
         uses: docker/build-push-action@1a162644f9a7e87d8f4b053101d1d9a712edc18c

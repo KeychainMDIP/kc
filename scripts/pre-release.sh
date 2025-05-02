@@ -1,4 +1,4 @@
-git checkout release
+git checkout pre-release
 git pull
 git merge main
 git push
