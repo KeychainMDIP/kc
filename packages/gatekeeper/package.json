@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "types": "./dist/types",
