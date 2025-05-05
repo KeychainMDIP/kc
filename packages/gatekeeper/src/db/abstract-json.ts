@@ -152,35 +152,38 @@ export abstract class AbstractJson implements GatekeeperDb {
         this.writeDb(db);
 
         return true;
-
     }
 
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const db = this.loadDb();
 
-        try {
-            const registryBlocks = db.blocks?.[registry] as Record<string, BlockInfo>;
+        const registryBlocks = db.blocks?.[registry] as Record<string, BlockInfo> | undefined;
+        if (!registryBlocks) return null;
 
-            if (!registryBlocks) {
-                return null;
+        const blockEntries = Object.entries(registryBlocks);
+
+        if (blockEntries.length === 0) return null;
+
+        if (blockId === undefined) {
+            // Get block with max height
+            let maxBlock: BlockInfo | null = null;
+            for (const [, block] of blockEntries) {
+                if (!maxBlock || block.height > maxBlock.height) {
+                    maxBlock = block;
+                }
             }
+            return maxBlock;
+        }
 
-            if (blockId === undefined) {
-                // Find the block with the maximum height
-                const blocks = Object.values(registryBlocks);
-                const maxBlock = blocks.reduce((max, block) => (block.height > max.height ? block : max), blocks[0]);
-                return maxBlock || null;
+        if (typeof blockId === 'number') {
+            // Search for block with matching height
+            for (const [, block] of blockEntries) {
+                if (block.height === blockId) return block;
             }
-
-            if (typeof blockId === 'number') {
-                // Find the block by height
-                return Object.values(registryBlocks).find(block => block.height === blockId) || null;
-            }
-
-            // Find the block by hash
-            return registryBlocks[blockId] || null;
-        } catch (error) {
             return null;
         }
+
+        // Lookup by hash (O(1))
+        return registryBlocks[blockId] || null;
     }
 }

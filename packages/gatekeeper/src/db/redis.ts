@@ -111,12 +111,17 @@ export default class DbRedis implements GatekeeperDb {
         return keys.map(key => key.split('/').pop() || '');
     }
 
+    private queueKey(registry: string): string {
+        return `${this.dbName}/registry/${registry}/queue`;
+    }
+
     async queueOperation(registry: string, op: Operation): Promise<number> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        return this.redis.rpush(`${this.dbName}/queue/${registry}`, JSON.stringify(op));
+        const queueKey = this.queueKey(registry);
+        return this.redis.rpush(queueKey, JSON.stringify(op));
     }
 
     async getQueue(registry: string): Promise<Operation[]> {
@@ -125,7 +130,8 @@ export default class DbRedis implements GatekeeperDb {
         }
 
         try {
-            const ops = await this.redis.lrange(`${this.dbName}/queue/${registry}`, 0, -1);
+            const queueKey = this.queueKey(registry);
+            const ops = await this.redis.lrange(queueKey, 0, -1);
             return ops.map(op => JSON.parse(op));
         } catch {
             return [];
@@ -142,9 +148,10 @@ export default class DbRedis implements GatekeeperDb {
             const newOps = ops.filter(op => !batch.some(b => b.signature?.value === op.signature?.value));
 
             // Clear the current queue and add back the filtered operations
-            await this.redis.del(`${this.dbName}/queue/${registry}`);
+            const queueKey = this.queueKey(registry);
+            await this.redis.del(queueKey);
             if (newOps.length > 0) {
-                await this.redis.rpush(`${this.dbName}/queue/${registry}`, ...newOps.map(op => JSON.stringify(op)));
+                await this.redis.rpush(queueKey, ...newOps.map(op => JSON.stringify(op)));
             }
 
             return true;
@@ -154,28 +161,47 @@ export default class DbRedis implements GatekeeperDb {
         }
     }
 
-    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
-        if (!this.redis) {
-            throw new Error(REDIS_NOT_STARTED_ERROR);
-        }
-
-        try {
-            // Store block info by hash
-            const blockKey = `${this.dbName}/blocks/${registry}/${blockInfo.hash}`;
-            await this.redis.set(blockKey, JSON.stringify(blockInfo));
-
-            // Store block hash by height
-            const heightKey = `${this.dbName}/hashes/${registry}/${blockInfo.height}`;
-            await this.redis.set(heightKey, blockInfo.hash);
-
-            return true;
-        } catch (error) {
-            console.error(`Error adding block: ${error}`);
-            return false;
-        }
+    private blockKey(registry: string, hash: string): string {
+        return `${this.dbName}/registry/${registry}/blocks/${hash}`;
     }
 
-    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+    private heightMapKey(registry: string): string {
+        return `${this.dbName}/registry/${registry}/heightMap`;
+    }
+
+    private maxHeightKey(registry: string): string {
+        return `${this.dbName}/registry/${registry}/maxHeight`;
+    }
+
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        if (!this.redis) throw new Error(REDIS_NOT_STARTED_ERROR);
+        const { hash, height } = blockInfo;
+
+        if (!hash || height == null) {
+            throw new Error(`Invalid blockInfo: ${JSON.stringify(blockInfo)}`);
+        }
+
+        const blockKey = this.blockKey(registry, hash);
+        const heightMapKey = this.heightMapKey(registry);
+        const maxHeightKey = this.maxHeightKey(registry);
+        const maxHeight = await this.redis.get(maxHeightKey);
+        const currentMaxHeight = maxHeight ? parseInt(maxHeight) : -1;
+
+        try {
+            await this.redis.multi()
+                .set(blockKey, JSON.stringify(blockInfo))
+                .hset(heightMapKey, height.toString(), hash)
+                .set(maxHeightKey, Math.max(height, currentMaxHeight))
+                .exec();
+        } catch (error) {
+            return false
+        }
+
+        return true;
+    }
+
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR);
         }
@@ -183,25 +209,27 @@ export default class DbRedis implements GatekeeperDb {
         try {
             let blockHash: string | null;
 
-            // If blockId is a number, treat it as a height
+            if (blockId === undefined) {
+                // No blockId provided → get latest by max height
+                const maxHeightStr = await this.redis.get(this.maxHeightKey(registry));
+                if (!maxHeightStr) return null;
+                blockId = parseInt(maxHeightStr);
+            }
+
             if (typeof blockId === 'number') {
-                const heightKey = `${this.dbName}/hashes/${registry}/${blockId}`;
-                blockHash = await this.redis.get(heightKey);
+                const heightMapKey = this.heightMapKey(registry);
+                blockHash = await this.redis.hget(heightMapKey, blockId.toString());
             } else {
-                // If blockId is a string, treat it as a hash
                 blockHash = blockId;
             }
 
-            if (!blockHash) {
-                return null;
-            }
+            if (!blockHash) return null;
 
-            const blockKey = `${this.dbName}/blocks/${registry}/${blockHash}`;
+            const blockKey = this.blockKey(registry, blockHash);
             const blockInfo = await this.redis.get(blockKey);
 
             return blockInfo ? JSON.parse(blockInfo) : null;
         } catch (error) {
-            console.error(`Error getting block: ${error}`);
             return null;
         }
     }
