@@ -30,6 +30,8 @@ export default class DbMongo implements GatekeeperDb {
         await this.client.connect();
         this.db = this.client.db(this.dbName);
         await this.db.collection('dids').createIndex({ id: 1 });
+        await this.db.collection('blocks').createIndex({ registry: 1, height: -1 });  // for latest and height lookups
+        await this.db.collection('blocks').createIndex({ registry: 1, hash: 1 }, { unique: true });  // for hash lookup
     }
 
     async stop(): Promise<void> {
@@ -202,46 +204,40 @@ export default class DbMongo implements GatekeeperDb {
                 { upsert: true }
             );
 
-            // Store block hash by height in the "hashes" collection
-            await this.db.collection('hashes').updateOne(
-                { registry, height: blockInfo.height },
-                { $set: { hash: blockInfo.hash } },
-                { upsert: true }
-            );
-
             return true;
         } catch (error) {
-            console.error(`Error adding block: ${error}`);
             return false;
         }
     }
 
-    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR);
         }
 
         try {
-            let blockHash: string | null = null;
+            const blocks = this.db.collection<BlockInfo>('blocks');
 
-            // If blockId is a number, treat it as a height
+            let query: Record<string, any>;
+
+            if (blockId === undefined) {
+                // Get block with max height
+                query = { registry };
+                return await blocks
+                    .find(query)
+                    .sort({ height: -1 })
+                    .limit(1)
+                    .next();  // more efficient than toArray()[0]
+            }
+
             if (typeof blockId === 'number') {
-                const hashDoc = await this.db.collection('hashes').findOne({ registry, height: blockId });
-                blockHash = hashDoc?.hash || null;
+                query = { registry, height: blockId };
             } else {
-                // If blockId is a string, treat it as a hash
-                blockHash = blockId;
+                query = { registry, hash: blockId };
             }
 
-            if (!blockHash) {
-                return null;
-            }
-
-            // Retrieve block info by hash
-            const blockDoc = await this.db.collection<BlockInfo>('blocks').findOne({ registry, hash: blockHash });
-            return blockDoc || null;
+            return await blocks.findOne(query);
         } catch (error) {
-            console.error(`Error getting block: ${error}`);
             return null;
         }
     }

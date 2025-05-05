@@ -211,12 +211,11 @@ export default class DbSqlite implements GatekeeperDb {
 
             return true;
         } catch (error) {
-            console.error(`Error adding block: ${error}`);
             return false;
         }
     }
-    
-    async getBlock(registry: string, blockId: BlockId): Promise<BlockInfo | null> {
+
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
@@ -224,7 +223,13 @@ export default class DbSqlite implements GatekeeperDb {
         try {
             let blockRow: BlockInfo | undefined;
 
-            if (typeof blockId === 'number') {
+            if (blockId === undefined) {
+                // Return block with max height
+                blockRow = await this.db.get<BlockInfo>(
+                    `SELECT * FROM blocks WHERE registry = ? ORDER BY height DESC LIMIT 1`,
+                    registry
+                );
+            } else if (typeof blockId === 'number') {
                 blockRow = await this.db.get<BlockInfo>(
                     `SELECT * FROM blocks WHERE registry = ? AND height = ?`,
                     registry,
@@ -238,9 +243,8 @@ export default class DbSqlite implements GatekeeperDb {
                 );
             }
 
-            return blockRow ?? null; // Convert undefined to null
+            return blockRow ?? null;
         } catch (error) {
-            console.error(`Error getting block: ${error}`);
             return null;
         }
     }
