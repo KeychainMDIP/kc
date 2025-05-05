@@ -654,10 +654,24 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             let timestamp;
 
-            if (blockchain) {
-                timestamp = {
-                    blockchain,
-                };
+            if (blockchain && doc.mdip?.registry) {
+                const block = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+
+                if (block) {
+                    timestamp = {
+                        lowerBound: {},
+                        upperBound: {
+                            time: block.time,
+                            blockid: block.hash,
+                            height: block.height,
+                            txid: blockchain.txid,
+                            txidx: blockchain.index,
+                            batchid: blockchain.batch,
+                            opidx: blockchain.opidx,
+                            opid: versionId,
+                        },
+                    };
+                }
             }
 
             if (operation.type === 'update') {
