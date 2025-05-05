@@ -654,22 +654,45 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             let timestamp;
 
-            if (blockchain && doc.mdip?.registry) {
-                const block = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+            if (doc.mdip?.registry) {
+                let lowerBound;
+                let upperBound;
 
-                if (block) {
-                    timestamp = {
-                        lowerBound: {},
-                        upperBound: {
-                            time: block.time,
-                            blockid: block.hash,
-                            height: block.height,
+                if (operation.blockid) {
+                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
+
+                    if (lowerBlock) {
+                        lowerBound = {
+                            time: lowerBlock.time,
+                            timeISO: new Date(lowerBlock.time * 1000).toISOString(),
+                            blockid: lowerBlock.hash,
+                            height: lowerBlock.height,
+                        };
+                    }
+                }
+
+                if (blockchain) {
+                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+
+                    if (upperBlock) {
+                        upperBound = {
+                            time: upperBlock.time,
+                            timeISO: new Date(upperBlock.time * 1000).toISOString(),
+                            blockid: upperBlock.hash,
+                            height: upperBlock.height,
                             txid: blockchain.txid,
                             txidx: blockchain.index,
                             batchid: blockchain.batch,
-                            opidx: blockchain.opidx,
                             opid: versionId,
-                        },
+                            opidx: blockchain.opidx,
+                        };
+                    }
+                }
+
+                if (lowerBound || upperBound) {
+                    timestamp = {
+                        lowerBound,
+                        upperBound,
                     };
                 }
             }
