@@ -1,8 +1,12 @@
 {
   "name": "@mdip/common",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MDIP common",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/types",
   "exports": {
     "./utils": {
       "import": "./dist/utils.js",
@@ -14,6 +18,7 @@
     }
   },
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

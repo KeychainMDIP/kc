@@ -17,6 +17,13 @@ expect {
     }
 }
 
+# Wait for the process to finish and check exit code
+expect eof
+if {[lindex [wait] 3] != 0} {
+    puts "❌ Command failed with non-zero exit code."
+    exit 1
+}
+
 # Validation procedure
 proc validate_wallet_output {output} {
     # Initialize validation tracking
@@ -76,6 +83,11 @@ set validated_keys {}
     }
 }
 
+    if {[validate_wallet_output $output] == 0} {
+        puts "❌ Wallet validation failed. Exiting..."
+        exit 1
+    }
+
 # Clean up
 spawn bash admin reset-db
 expect {
@@ -89,7 +101,7 @@ expect {
 }
 
 foreach {key val} $argv {
-    if {$key == "--ci"} {
+    if {$key == "--ci-json"} {
         # Run docker exec to delete the file
         set result [exec docker exec kc-gatekeeper-1 rm -rf /app/gatekeeper/data/wallet.json]
 
@@ -116,6 +128,12 @@ foreach {key val} $argv {
             puts "File not found: $abs_filepath"
         }
         
+    } elseif {$key == "--ci-redis"} {
+        # Run docker exec to delete the file
+        set result [exec docker compose exec redis redis-cli flushall]
+
+        # Print result
+        puts "Resetted Redis!"
     }
 }
 

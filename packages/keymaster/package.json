@@ -1,8 +1,12 @@
 {
   "name": "@mdip/keymaster",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MDIP Keymaster",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/types",
   "exports": {
     ".": {
       "import": "./dist/keymaster.js",
@@ -58,6 +62,7 @@
     }
   },
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

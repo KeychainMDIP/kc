@@ -7,11 +7,11 @@
 # To get a newer version, you will need to update the SHA.
 # You can also reference a tag or branch, but the action may change without warning.
 
-name: Build & Publish
+name: Build & Publish Release
 
 on:
   push:
-    branches: ['pre-release']
+    tags: ['v*']
 
 env:
   REGISTRY: docker.io
@@ -21,22 +21,17 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     outputs:
-      CALVER: ${{ steps.calculate-calver.outputs.calver }}
       REGISTRY: ${{ env.REGISTRY }}
+      GIT_TAG: ${{ steps.get_tag.outputs.git_tag }}
     steps:
-      - name: Checkout repository
+      - name: Checkout Tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
-      - name: Compute outputs
-        run: |
-          echo "REGISTRY=${{ env.REGISTRY }}" >> $GITHUB_OUTPUT
-
-      - name: Calculate Calver
-        id: calculate-calver
-        run: |
-          calver=$(date +'%Y.%m.%d')
-          echo "calver=$calver" >> $GITHUB_ENV
-          echo "::set-output name=calver::$calver"
+      - name: Get Git tag
+        id: get_tag
+        run: echo "git_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
   build_test_images:
     runs-on: ubuntu-latest
@@ -46,20 +41,16 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile.gatekeeper
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.keymaster
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.hyperswarm
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.satoshi
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.cli
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.GIT_TAG }}
+
     permissions:
       contents: read
       packages: write
@@ -81,14 +72,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            ${{ needs.generate.outputs.CALVER }}
-            pre-release
+          tags: ${{ needs.generate.outputs.GIT_TAG }}
 
       - name: Build and push Docker images
         uses: docker/build-push-action@1a162644f9a7e87d8f4b053101d1d9a712edc18c

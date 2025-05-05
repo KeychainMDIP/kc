@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -e
+source .env
+
+echo $KC_GATEKEEPER_URL
+
+docker compose down
+docker compose build "$@"
+docker compose up -d "$@"
+
+echo "Waiting for all services to be 'Up'..."
+
+MAX_RETRIES=30
+RETRY_INTERVAL=5
+RETRY_COUNT=0
+
+while true; do
+  # Count total services defined
+  TOTAL_SERVICES="6"
+  
+  # Count lines with 'Up' in status
+  UP_COUNT=$(docker compose ps | grep 'Up' | wc -l)
+
+  if [[ "$UP_COUNT" -eq "$TOTAL_SERVICES" ]]; then
+    echo "✅ All containers are 'Up'"
+    break
+  fi
+
+  if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
+    echo "❌ Timed out waiting for containers to be 'Up'"
+    docker compose ps
+    exit 1
+  fi
+
+  echo "⏳ Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+  sleep "$RETRY_INTERVAL"
+  ((RETRY_COUNT++))
+done

@@ -1,8 +1,12 @@
 {
   "name": "@mdip/ipfs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MDIP IPFS lib",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/types",
   "exports": {
     "./helia": {
       "import": "./dist/helia-client.js",
@@ -22,6 +26,7 @@
     }
   },
   "scripts": {
+    "clean": "rm -rf dist",
     "build": "tsc -p tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
