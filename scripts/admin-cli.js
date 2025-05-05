@@ -449,6 +449,18 @@ program
         }
     });
 
+program
+    .command('get-block <registry> [blockHeightOrHash]')
+    .description('Get block info for registry')
+    .action(async (registry, blockHeightOrHash) => {
+        try {
+            const block = await gatekeeper.getBlock(registry, blockHeightOrHash);
+            console.log(JSON.stringify(block, null, 2));
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
 async function run() {
     gatekeeper.connect({ url: gatekeeperURL });
     program.parse(process.argv);

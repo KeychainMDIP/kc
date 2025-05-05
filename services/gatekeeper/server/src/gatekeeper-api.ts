@@ -1713,6 +1713,38 @@ v1router.get('/cas/data/:cid', async (req, res) => {
     }
 });
 
+v1router.get('/block/:registry/latest', async (req, res) => {
+    try {
+        const { registry } = req.params;
+        const block = await gatekeeper.getBlock(registry);
+        res.json(block);
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/block/:registry/:blockId', async (req, res) => {
+    try {
+        const { registry, blockId } = req.params;
+        const parsedBlockId = /^\d+$/.test(blockId) ? parseInt(blockId, 10) : blockId;
+        const block = await gatekeeper.getBlock(registry, parsedBlockId);
+        res.json(block);
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/block/:registry', async (req, res) => {
+    try {
+        const { registry } = req.params;
+        const block = req.body;
+        const ok = await gatekeeper.addBlock(registry, block);
+        res.json(ok);
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
