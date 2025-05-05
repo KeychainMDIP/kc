@@ -990,11 +990,14 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const previd = current.didDocumentMetadata?.versionId;
+        const block = await this.gatekeeper.getBlock(current.mdip!.registry);
+        const blockid = block?.hash;
 
         const operation: Operation = {
             type: "update",
             did,
             previd,
+            blockid,
             doc,
         };
 

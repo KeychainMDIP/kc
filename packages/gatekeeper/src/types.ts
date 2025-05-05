@@ -109,6 +109,8 @@ export interface GatekeeperInterface {
     getJSON(cid: string): Promise<object | null>;
     addText(text: string): Promise<string>;
     getText(cid: string): Promise<string | null>;
+    getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
+    addBlock(registry: string, block: BlockInfo): Promise<boolean>
 }
 
 export interface MdipRegistration {
@@ -179,6 +181,7 @@ export interface Operation {
     previd?: string;
     did?: string,
     data?: unknown;
+    blockid?: string;
 }
 
 export type BlockId = number | string;
