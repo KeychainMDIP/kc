@@ -683,7 +683,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                             txid: blockchain.txid,
                             txidx: blockchain.index,
                             batchid: blockchain.batch,
-                            opid: versionId,
                             opidx: blockchain.opidx,
                         };
                     }
@@ -691,6 +690,8 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 if (lowerBound || upperBound) {
                     timestamp = {
+                        chain: doc.mdip.registry,
+                        opid: versionId,
                         lowerBound,
                         upperBound,
                     };
@@ -710,9 +711,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                     confirmed,
                     timestamp,
                 }
-                if (doc.mdip) {
-                    doc.mdip.registration = blockchain || undefined;
-                }
                 continue;
             }
 
@@ -731,15 +729,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     confirmed,
                     timestamp,
                 }
-                if (doc.mdip) {
-                    doc.mdip.registration = blockchain || undefined;
-                }
             }
         }
 
         if (doc.mdip) {
             // Remove deprecated fields
             delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
+            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
         }
 
         return copyJSON(doc);

@@ -2045,10 +2045,6 @@ describe('processEvents', () => {
 
         expect(response.added).toBe(3);
         expect(response.merged).toBe(0);
-
-        // Also check that blockchain info is added to document metadata for resolveDID coverage...
-        const doc2 = await gatekeeper.resolveDID(did);
-        expect(doc2.mdip!.registration).toStrictEqual(ops[2].blockchain);
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
