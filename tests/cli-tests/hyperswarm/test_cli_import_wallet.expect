@@ -88,6 +88,9 @@ set validated_keys {}
         exit 1
     }
 
+    puts "\n🔍 Output to validate:\n$output"
+    validate_wallet_output $output
+
 # Clean up
 spawn bash admin reset-db
 expect {

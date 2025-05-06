@@ -31,102 +31,58 @@ if {$captured_did eq ""} {
     exit 1
 }
 
-# Start the CLI Test
-spawn bash kc create-schema share/schema/social-media.json testing
+# Use the captured value in another function call
+spawn bash kc add-name qa $captured_did
 
-# Look for the specific DID pattern
+# Backup Id
+spawn bash kc backup-id
 expect {
-    -re "(did:test:\[a-zA-Z0-9]+)" {
-        set captured_did $expect_out(1,string)
-        puts "\n✅ Captured DID: $captured_did"
+    "OK" {
+        send_user "\n✅ Backup Complete!\n"
     }
     timeout {
-        puts "\n❌ Timeout occurred while waiting for output"
-        exit 1
-    }
-    eof {
-        puts "\n❌ End of file reached without finding a match"
+        send_user "\n❌ Backup Failed!.\n"
         exit 1
     }
 }
 
-# Verify the captured DID
-if {$captured_did eq ""} {
-    puts "No DID was captured! \n❌"
-    exit 1
-}
 
-
-# Start the CLI program
-spawn bash -c "kc create-schema-template $captured_did"
-
-# Wait for and capture the full output
+# Remove Id
+spawn bash kc remove-id "$random_value"
 expect {
-    -re "{.*}" {
-        set output $expect_out(0,string)
+    -re "(ID\[a-zA-Z0-9]+)\removed" {
+        send_user "\n✅ ID Removal Complete!\n"
     }
     timeout {
-        puts "Test failed: Timeout waiting for output."
+        send_user "\n❌ ID Removal Failed!.\n"
         exit 1
     }
 }
 
-# Validation procedure
-proc validate_schema_output {output} {
-    # Initialize validation tracking
-    set validation_passed 1
-    set validation_details {}
 
-    # Define exact required keys
-    set required_keys [list \
-        "account" \
-        "service" \
-        "\$schema" \
-    ]
 
-# Detailed validation results for all keys
-set validated_keys {}
+# Check Name
+spawn bash kc recover-id $captured_did
 
-    # Check for presence of each required key
-    foreach key $required_keys {
-        if {[string first "\"$key\":" $output] != -1} {
-            # Check if the key has a non-null value
-            if {![regexp "\"$key\"\\s*:\\s*null" $output]} {
-                lappend validated_keys "\n✅ Key present and not null: $key"
-            } else {
-                lappend validation_details "\n❌ Null value for key: $key"
-                set validation_passed 0
-            }
-        } else {
-            lappend validation_details "\n❌ Missing key: $key"
-            set validation_passed 0
-        }
+expect {
+    # Pass if "$random_value" is found
+    -re "$random_value" {
+        puts "Success, found id in output \n✅"
     }
-
-    # Print out all validation details
-    puts "\nValidation Details:"
     
-    # Print validated keys first
-    foreach detail $validated_keys {
-        puts $detail
-    }
-
-    # Then print any failure details
-    foreach detail $validation_details {
-        puts $detail
-    }
-
-    # Final validation summary
-    if {$validation_passed} {
-        puts "\n✅ Validation Passed: All required keys present, no null values"
-    } else {
-        puts "\n🔴 Validation Failed: Missing or null values found"
+    # Timeout handling
+    timeout {
+        puts "Timeout occurred \n❌"
         exit 1
+    }
+    
+    # Default match (successful case)
+    eof {
+        puts "Process completed successfully \n✅"
+        exit 0
     }
 }
 
-puts "\n🔍 Output to validate:\n$output"
-validate_schema_output $output
 
 # Clean up
 spawn bash admin reset-db
