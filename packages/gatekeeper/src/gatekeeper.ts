@@ -605,53 +605,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         for (const { time, operation, registry, blockchain } of events) {
             const versionId = await this.generateCID(operation);
             const updated = time;
-
-            if (operation.type === 'create') {
-                if (verify) {
-                    const valid = await this.verifyCreateOperation(operation);
-
-                    if (!valid) {
-                        throw new InvalidOperationError('signature');
-                    }
-                }
-
-                doc.didDocumentMetadata = {
-                    created,
-                    canonicalId,
-                    versionId,
-                    version,
-                    confirmed
-                }
-                continue;
-            }
-
-            if (atTime && new Date(time) > new Date(atTime)) {
-                break;
-            }
-
-            if (atVersion && version === atVersion) {
-                break;
-            }
-
-            confirmed = confirmed && doc.mdip?.registry === registry;
-
-            if (confirm && !confirmed) {
-                break;
-            }
-
-            if (verify) {
-                const valid = await this.verifyUpdateOperation(operation, doc);
-
-                if (!valid) {
-                    throw new InvalidOperationError('signature');
-                }
-
-                // TEMP during did:test, operation.previd is optional
-                if (operation.previd && operation.previd !== doc.didDocumentMetadata?.versionId) {
-                    throw new InvalidOperationError('previd');
-                }
-            }
-
             let timestamp;
 
             if (doc.mdip?.registry) {
@@ -695,6 +648,53 @@ export default class Gatekeeper implements GatekeeperInterface {
                         lowerBound,
                         upperBound,
                     };
+                }
+            }
+
+            if (operation.type === 'create') {
+                if (verify) {
+                    const valid = await this.verifyCreateOperation(operation);
+
+                    if (!valid) {
+                        throw new InvalidOperationError('signature');
+                    }
+                }
+
+                doc.didDocumentMetadata = {
+                    created,
+                    canonicalId,
+                    versionId,
+                    version,
+                    confirmed,
+                    timestamp,
+                }
+                continue;
+            }
+
+            if (atTime && new Date(time) > new Date(atTime)) {
+                break;
+            }
+
+            if (atVersion && version === atVersion) {
+                break;
+            }
+
+            confirmed = confirmed && doc.mdip?.registry === registry;
+
+            if (confirm && !confirmed) {
+                break;
+            }
+
+            if (verify) {
+                const valid = await this.verifyUpdateOperation(operation, doc);
+
+                if (!valid) {
+                    throw new InvalidOperationError('signature');
+                }
+
+                // TEMP during did:test, operation.previd is optional
+                if (operation.previd && operation.previd !== doc.didDocumentMetadata?.versionId) {
+                    throw new InvalidOperationError('previd');
                 }
             }
 
