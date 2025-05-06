@@ -202,7 +202,7 @@ export default class DbSqlite implements GatekeeperDb {
         try {
             // Insert or replace the block information
             await this.db.run(
-                `INSERT OR REPLACE INTO blocks (registry, hash, height, time) VALUES (?, ?, ?, ?, ?)`,
+                `INSERT OR REPLACE INTO blocks (registry, hash, height, time) VALUES (?, ?, ?, ?)`,
                 registry,
                 blockInfo.hash,
                 blockInfo.height,

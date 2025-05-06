@@ -2102,7 +2102,7 @@ describe('processEvents', () => {
 
         const doc2 = await gatekeeper.resolveDID(did);
 
-        const exectedTimestamp = {
+        const expectedTimestamp = {
             chain: 'TFTC',
             opid: doc2.didDocumentMetadata!.versionId,
             lowerBound: {
@@ -2122,7 +2122,7 @@ describe('processEvents', () => {
             }
         };
 
-        expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(exectedTimestamp);
+        expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(expectedTimestamp);
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
