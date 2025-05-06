@@ -78,16 +78,19 @@ async function createUpdateOp(
     options: {
         excludePrevid?: boolean;
         mockPrevid?: string;
+        mockBlockid?: string;
     } = {}
 ): Promise<Operation> {
     const { excludePrevid = false, mockPrevid } = options;
     const current = await gatekeeper.resolveDID(did);
     const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
+    const { mockBlockid } = options;
 
     const operation: Operation = {
         type: "update",
         did,
         previd,
+        ...(mockBlockid !== undefined && { blockid: mockBlockid }),
         doc,
     };
 
@@ -2067,6 +2070,59 @@ describe('processEvents', () => {
 
         expect(doc2.didDocumentMetadata!.version).toBe(2);
         expect(doc2.didDocumentMetadata!.confirmed).toBe(true);
+    });
+
+    it('should resolve with timestamp when available', async () => {
+        mockFs({});
+
+        const mockBlock1 = { hash: 'mockBlockid1', height: 100, time: 100 };
+        const mockBlock2 = { hash: 'mockBlockid2', height: 101, time: 101 };
+        await gatekeeper.addBlock('TFTC', mockBlock1);
+        await gatekeeper.addBlock('TFTC', mockBlock2);
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc, { mockBlockid: mockBlock1.hash });
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
+        ops[1].blockchain = {
+            "height": 101,
+            "index": 1,
+            "txid": "mockTxid",
+            "batch": "mockBatch"
+        };
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        const doc2 = await gatekeeper.resolveDID(did);
+
+        const exectedTimestamp = {
+            chain: 'TFTC',
+            opid: doc2.didDocumentMetadata!.versionId,
+            lowerBound: {
+                blockid: mockBlock1.hash,
+                height: mockBlock1.height,
+                time: mockBlock1.time,
+                timeISO: new Date(mockBlock1.time * 1000).toISOString(),
+            },
+            upperBound: {
+                blockid: mockBlock2.hash,
+                height: mockBlock2.height,
+                time: mockBlock2.time,
+                timeISO: new Date(mockBlock2.time * 1000).toISOString(),
+                txid: ops[1].blockchain.txid,
+                txidx: ops[1].blockchain.index,
+                batchid: ops[1].blockchain.batch,
+            }
+        };
+
+        expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(exectedTimestamp);
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
