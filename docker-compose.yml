@@ -3,6 +3,8 @@ services:
     image: mongo:latest
     volumes:
       - ./data/mongodb:/data/db
+    ports:
+      - 127.0.0.1:27017:27017
 
   redis:
     image: redis:latest
@@ -18,7 +20,7 @@ services:
     ports:
       - 4001:4001
       - 4001:4001/udp
-      - 5001:5001
+      - 127.0.0.1:5001:5001
     volumes:
       - ./data/ipfs:/data/ipfs
       - ./share:/export/share

@@ -8,7 +8,7 @@ import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
 import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
-import {GatekeeperEvent, Operation} from '@mdip/gatekeeper/types';
+import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 
 const REGISTRY = config.chain;
 
@@ -93,6 +93,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
         db.blockCount = blockCount;
         db.blocksPending = blockCount - height;
         await saveDb(db);
+        await addBlock(height, blockHash, block.time);
 
     } catch (error) {
         console.error(`Error fetching block: ${error}`);
@@ -128,7 +129,7 @@ async function importBatch(item: DiscoveredItem): Promise<void> {
     }
 
     const asset = await keymaster.resolveAsset(item.did);
-    const queue = (asset as { batch?: Operation[]}).batch || asset;
+    const queue = (asset as { batch?: Operation[] }).batch || asset;
 
     // Skip badly formatted batches
     if (!queue || !Array.isArray(queue) || queue.length === 0) {
@@ -148,6 +149,7 @@ async function importBatch(item: DiscoveredItem): Promise<void> {
                 index: item.index,
                 txid: item.txid,
                 batch: item.did,
+                opidx: i,
             }
         });
     }
@@ -443,6 +445,25 @@ async function waitForChain() {
     return true;
 }
 
+async function addBlock(height: number, hash: string, time: number): Promise<void> {
+    await gatekeeper.addBlock(REGISTRY, { hash, height, time });
+}
+
+async function syncBlocks(): Promise<void> {
+    const latest = await gatekeeper.getBlock(REGISTRY);
+    const currentMax = latest ? latest.height : config.startBlock;
+    const blockCount = await btcClient.getBlockCount();
+
+    console.log(`current block height: ${blockCount}`);
+
+    for (let height = currentMax; height <= blockCount; height++) {
+        const blockHash = await btcClient.getBlockHash(height);
+        const block = await btcClient.getBlock(blockHash);
+        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+        await addBlock(height, blockHash, block.time);
+    }
+}
+
 async function main() {
     if (!config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
@@ -508,6 +529,8 @@ async function main() {
         intervalSeconds: 5,
         chatty: true,
     });
+
+    await syncBlocks();
 
     if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);

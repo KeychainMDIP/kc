@@ -181,6 +181,7 @@ Commands:
   export-batch                                                 Export all events in a batch
   export-did <did>                                             Export DID to file
   export-dids                                                  Export all DIDs
+  get-block <registry> [blockHeightOrHash]                     Get block info for registry
   get-dids [updatedAfter] [updatedBefore] [confirm] [resolve]  Fetch all DIDs
   get-status                                                   Report gatekeeper status
   hash-dids <file>                                             Compute hash of batch

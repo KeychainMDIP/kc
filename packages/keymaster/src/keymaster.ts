@@ -630,10 +630,13 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const id = await this.fetchIdInfo(controller);
+        const block = await this.gatekeeper.getBlock(registry);
+        const blockid = block?.hash;
 
         const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
+            blockid,
             mdip: {
                 version: 1,
                 type: "asset",
@@ -970,18 +973,14 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const current = await this.resolveDID(did);
+        const previd = current.didDocumentMetadata?.versionId;
 
         // Compare the hashes of the current and updated documents without the metadata
-        const currentHash = this.cipher.hashJSON({
-            didDocument: current.didDocument,
-            didDocumentData: current.didDocumentData,
-            mdip: current.mdip,
-        });
-        const updateHash = this.cipher.hashJSON({
-            didDocument: doc.didDocument,
-            didDocumentData: doc.didDocumentData,
-            mdip: doc.mdip,
-        });
+        current.didDocumentMetadata = {};
+        doc.didDocumentMetadata = {};
+
+        const currentHash = this.cipher.hashJSON(current);
+        const updateHash = this.cipher.hashJSON(doc);
 
         // If no change, return immediately without updating
         // Maybe add a force update option later if needed?
@@ -989,12 +988,14 @@ export default class Keymaster implements KeymasterInterface {
             return true;
         }
 
-        const previd = current.didDocumentMetadata?.versionId;
+        const block = await this.gatekeeper.getBlock(current.mdip!.registry);
+        const blockid = block?.hash;
 
         const operation: Operation = {
             type: "update",
             did,
             previd,
+            blockid,
             doc,
         };
 
@@ -1006,11 +1007,14 @@ export default class Keymaster implements KeymasterInterface {
     async revokeDID(did: string): Promise<boolean> {
         const current = await this.resolveDID(did);
         const previd = current.didDocumentMetadata?.versionId;
+        const block = await this.gatekeeper.getBlock(current.mdip!.registry);
+        const blockid = block?.hash;
 
         const operation: Operation = {
             type: "delete",
             did,
             previd,
+            blockid
         };
 
         const controller = current.didDocument?.controller || current.didDocument?.id;
@@ -1246,10 +1250,13 @@ export default class Keymaster implements KeymasterInterface {
         const path = `m/44'/0'/${account}'/0/${index}`;
         const didkey = hdkey.derive(path);
         const keypair = this.cipher.generateJwk(didkey.privateKey!);
+        const block = await this.gatekeeper.getBlock(registry);
+        const blockid = block?.hash;
 
         const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
+            blockid,
             mdip: {
                 version: 1,
                 type: "agent",

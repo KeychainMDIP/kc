@@ -1,5 +1,7 @@
 import { InvalidDIDError } from '@mdip/common/errors';
 import {
+    BlockId,
+    BlockInfo,
     JsonDbFile,
     GatekeeperDb,
     GatekeeperEvent,
@@ -133,5 +135,55 @@ export abstract class AbstractJson implements GatekeeperDb {
     async getAllKeys(): Promise<string[]> {
         const db = this.loadDb();
         return Object.keys(db.dids);
+    }
+
+    async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
+        const db = this.loadDb();
+
+        if (!db.blocks) {
+            db.blocks = {};
+        }
+
+        if (!(registry in db.blocks)) {
+            db.blocks[registry] = {};
+        }
+
+        db.blocks[registry][blockInfo.hash] = blockInfo;
+        this.writeDb(db);
+
+        return true;
+    }
+
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
+        const db = this.loadDb();
+
+        const registryBlocks = db.blocks?.[registry] as Record<string, BlockInfo> | undefined;
+        if (!registryBlocks) return null;
+
+        const blockEntries = Object.entries(registryBlocks);
+
+        if (blockEntries.length === 0) return null;
+
+        if (blockId === undefined) {
+            // Get block with max height
+            let maxBlock: BlockInfo | null = null;
+            for (const [, block] of blockEntries) {
+                if (!maxBlock || block.height > maxBlock.height) {
+                    maxBlock = block;
+                }
+            }
+            return maxBlock;
+        }
+
+        if (typeof blockId === 'number') {
+            // Search for block with matching height
+            for (const [, block] of blockEntries) {
+                if (block.height === blockId) return block;
+            }
+            return null;
+        }
+
+        // Lookup by hash (O(1))
+        return registryBlocks[blockId] || null;
     }
 }

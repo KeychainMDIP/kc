@@ -54,6 +54,7 @@ To create an agent DID, the MDIP client must sign and submit a "create" operatio
         1. `registry`  (from a list of valid registries, e.g. "BTC", "hyperswarm", etc.)
     1. `publicJwk` is the public key in JWK format
     1. `created` time in ISO format
+    1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key corresponding the the public key (this enables the MDIP node to verify that the operation is coming from the owner of the public key)
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
 
@@ -101,6 +102,7 @@ To create an asset DID, the MDIP client must sign and submit a `create` operatio
     1. `controller` specifies the DID of the owner/controller of the new DID
     1. `data` can contain any data in JSON format, as long as it is not empty
     1. `created` time in ISO format
+    1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
 
@@ -147,6 +149,7 @@ A DID Update is a change to any of the documents associated with the DID. To ini
         1. `didDocumentData` the document's data
         1. `mdip` the MDIP protocol spec
     1. `previd` the CID of the previous operation
+    1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller of the DID
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
 
@@ -218,6 +221,7 @@ To revoke a DID, the MDIP client must sign and submit a `delete` operation to th
     1. `type`  must be "delete"
     1. `did` specifies the DID to be deleted
     1. `previd` the CID of the previous operation
+    1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller of the DID
 1. Submit the operation to the MDIP node. For example, with a REST API, post the operation using the `DELETE` method to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
 

@@ -1,5 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import {
+    BlockId,
+    BlockInfo,
     GatekeeperInterface,
     GatekeeperEvent,
     Operation,
@@ -375,6 +377,28 @@ export default class GatekeeperClient implements GatekeeperInterface {
                 axiosError.response.data = JSON.parse(errorMessage);
             }
             throwError(axiosError);
+        }
+    }
+
+    async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
+        try {
+            const url = block
+                ? `${this.API}/block/${registry}/${block}`
+                : `${this.API}/block/${registry}/latest`;
+            const response = await axios.get(url);
+            return response.data;
+        } catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addBlock(registry: string, block: BlockInfo): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/block/${registry}`, block);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
         }
     }
 }

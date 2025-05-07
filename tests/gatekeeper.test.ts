@@ -1,7 +1,7 @@
 import mockFs from 'mock-fs';
 import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
+import { Operation, MdipDocument, BlockInfo } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJson from '@mdip/gatekeeper/db/json';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
@@ -78,16 +78,19 @@ async function createUpdateOp(
     options: {
         excludePrevid?: boolean;
         mockPrevid?: string;
+        mockBlockid?: string;
     } = {}
 ): Promise<Operation> {
     const { excludePrevid = false, mockPrevid } = options;
     const current = await gatekeeper.resolveDID(did);
     const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
+    const { mockBlockid } = options;
 
     const operation: Operation = {
         type: "update",
         did,
         previd,
+        ...(mockBlockid !== undefined && { blockid: mockBlockid }),
         doc,
     };
 
@@ -473,6 +476,7 @@ describe('createDID', () => {
         }
     });
 
+    // eslint-disable-next-line
     it('should throw exception on invalid registry', async () => {
         mockFs({});
 
@@ -2044,10 +2048,6 @@ describe('processEvents', () => {
 
         expect(response.added).toBe(3);
         expect(response.merged).toBe(0);
-
-        // Also check that blockchain info is added to document metadata for resolveDID coverage...
-        const doc2 = await gatekeeper.resolveDID(did);
-        expect(doc2.mdip!.registration).toStrictEqual(ops[2].blockchain);
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
@@ -2070,6 +2070,59 @@ describe('processEvents', () => {
 
         expect(doc2.didDocumentMetadata!.version).toBe(2);
         expect(doc2.didDocumentMetadata!.confirmed).toBe(true);
+    });
+
+    it('should resolve with timestamp when available', async () => {
+        mockFs({});
+
+        const mockBlock1 = { hash: 'mockBlockid1', height: 100, time: 100 };
+        const mockBlock2 = { hash: 'mockBlockid2', height: 101, time: 101 };
+        await gatekeeper.addBlock('TFTC', mockBlock1);
+        await gatekeeper.addBlock('TFTC', mockBlock2);
+
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await createUpdateOp(keypair, did, doc, { mockBlockid: mockBlock1.hash });
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].registry = 'TFTC';
+        ops[1].registry = 'TFTC';
+        ops[1].blockchain = {
+            "height": 101,
+            "index": 1,
+            "txid": "mockTxid",
+            "batch": "mockBatch"
+        };
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        const doc2 = await gatekeeper.resolveDID(did);
+
+        const expectedTimestamp = {
+            chain: 'TFTC',
+            opid: doc2.didDocumentMetadata!.versionId,
+            lowerBound: {
+                blockid: mockBlock1.hash,
+                height: mockBlock1.height,
+                time: mockBlock1.time,
+                timeISO: new Date(mockBlock1.time * 1000).toISOString(),
+            },
+            upperBound: {
+                blockid: mockBlock2.hash,
+                height: mockBlock2.height,
+                time: mockBlock2.time,
+                timeISO: new Date(mockBlock2.time * 1000).toISOString(),
+                txid: ops[1].blockchain.txid,
+                txidx: ops[1].blockchain.index,
+                batchid: ops[1].blockchain.batch,
+            }
+        };
+
+        expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(expectedTimestamp);
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
@@ -3490,5 +3543,106 @@ describe('getData', () => {
         const data = await gatekeeper.getData(cid);
 
         expect(data).toStrictEqual(mockData);
+    });
+});
+
+const mockBlock: BlockInfo = {
+    height: 100,
+    hash: 'mockHash',
+    time: 100,
+};
+
+const mockBlock2: BlockInfo = {
+    height: 200,
+    hash: 'mockHash2',
+    time: 200,
+};
+
+describe('addBlock', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should add a new block', async () => {
+        const ok = await gatekeeper.addBlock('local', mockBlock);
+
+        expect(ok).toStrictEqual(true);
+    });
+
+    it('should throw exception on invalid registry', async () => {
+        try {
+            await gatekeeper.addBlock('mock', mockBlock);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: registry=mock');
+        }
+    });
+});
+
+describe('getBlock', () => {
+    beforeEach(() => {
+        mockFs({});
+    });
+
+    afterEach(() => {
+        mockFs.restore();
+    });
+
+    it('should get a block by height', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', mockBlock.height);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should get a block by hash', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', mockBlock.hash);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should get max height block', async () => {
+        await gatekeeper.addBlock('local', mockBlock2);
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local');
+
+        expect(block).toStrictEqual(mockBlock2);
+    });
+
+    it('should return null when no blocks', async () => {
+        const block = await gatekeeper.getBlock('local');
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should return null for unknown block height', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', 0);
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should return null for unknown block hash', async () => {
+        await gatekeeper.addBlock('local', mockBlock);
+        const block = await gatekeeper.getBlock('local', 'zero');
+
+        expect(block).toStrictEqual(null);
+    });
+
+    it('should throw exception on invalid registry', async () => {
+        try {
+            await gatekeeper.addBlock('local', mockBlock);
+            await gatekeeper.getBlock('mock', mockBlock.height);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: registry=mock');
+        }
     });
 });

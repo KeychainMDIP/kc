@@ -812,3 +812,89 @@ describe('getData', () => {
         }
     });
 });
+
+describe('addBlock', () => {
+    const mockBlock = { hash: 'mockHash', height: 1, time: 1234 };
+    const mockRegistry = 'local';
+
+    it('should add a block', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/block/${mockRegistry}`)
+            .reply(200, 'true');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const ok = await gatekeeper.addBlock(mockRegistry, mockBlock);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on addBlock server error', async () => {
+        nock(GatekeeperURL)
+            .post(`/api/v1/block/${mockRegistry}`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.addBlock(mockRegistry, mockBlock);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getBlock', () => {
+    const mockBlock = { hash: 'mockHash', height: 1, time: 1234 };
+    const mockRegistry = 'local';
+
+    it('should return the latest block', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/block/${mockRegistry}/latest`)
+            .reply(200, mockBlock);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const block = await gatekeeper.getBlock(mockRegistry);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should return the block by hash', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/block/${mockRegistry}/${mockBlock.hash}`)
+            .reply(200, mockBlock);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const block = await gatekeeper.getBlock(mockRegistry, mockBlock.hash);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should return the block by height', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/block/${mockRegistry}/${mockBlock.height}`)
+            .reply(200, mockBlock);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const block = await gatekeeper.getBlock(mockRegistry, mockBlock.height);
+
+        expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should throw exception on getBlock server error', async () => {
+        nock(GatekeeperURL)
+            .get(`/api/v1/block/${mockRegistry}/latest`)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.getBlock(mockRegistry);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});

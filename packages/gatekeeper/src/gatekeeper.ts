@@ -8,6 +8,8 @@ import {
 } from '@mdip/common/errors';
 import { IPFSClient } from '@mdip/ipfs/types';
 import {
+    BlockId,
+    BlockInfo,
     GatekeeperDb,
     GatekeeperInterface,
     GatekeeperEvent,
@@ -603,6 +605,51 @@ export default class Gatekeeper implements GatekeeperInterface {
         for (const { time, operation, registry, blockchain } of events) {
             const versionId = await this.generateCID(operation);
             const updated = time;
+            let timestamp;
+
+            if (doc.mdip?.registry) {
+                let lowerBound;
+                let upperBound;
+
+                if (operation.blockid) {
+                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
+
+                    if (lowerBlock) {
+                        lowerBound = {
+                            time: lowerBlock.time,
+                            timeISO: new Date(lowerBlock.time * 1000).toISOString(),
+                            blockid: lowerBlock.hash,
+                            height: lowerBlock.height,
+                        };
+                    }
+                }
+
+                if (blockchain) {
+                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+
+                    if (upperBlock) {
+                        upperBound = {
+                            time: upperBlock.time,
+                            timeISO: new Date(upperBlock.time * 1000).toISOString(),
+                            blockid: upperBlock.hash,
+                            height: upperBlock.height,
+                            txid: blockchain.txid,
+                            txidx: blockchain.index,
+                            batchid: blockchain.batch,
+                            opidx: blockchain.opidx,
+                        };
+                    }
+                }
+
+                if (lowerBound || upperBound) {
+                    timestamp = {
+                        chain: doc.mdip.registry,
+                        opid: versionId,
+                        lowerBound,
+                        upperBound,
+                    };
+                }
+            }
 
             if (operation.type === 'create') {
                 if (verify) {
@@ -618,7 +665,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                     canonicalId,
                     versionId,
                     version,
-                    confirmed
+                    confirmed,
+                    timestamp,
                 }
                 continue;
             }
@@ -660,10 +708,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                     canonicalId,
                     versionId,
                     version,
-                    confirmed
-                }
-                if (doc.mdip) {
-                    doc.mdip.registration = blockchain || undefined;
+                    confirmed,
+                    timestamp,
                 }
                 continue;
             }
@@ -680,10 +726,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                     canonicalId,
                     versionId,
                     version,
-                    confirmed
-                }
-                if (doc.mdip) {
-                    doc.mdip.registration = blockchain || undefined;
+                    confirmed,
+                    timestamp,
                 }
             }
         }
@@ -691,6 +735,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         if (doc.mdip) {
             // Remove deprecated fields
             delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
+            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
         }
 
         return copyJSON(doc);
@@ -1158,6 +1203,22 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         return this.db.clearQueue(registry, events);
+    }
+
+    async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
+        if (!ValidRegistries.includes(registry)) {
+            throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        return this.db.getBlock(registry, block);
+    }
+
+    async addBlock(registry: string, block: BlockInfo): Promise<boolean> {
+        if (!ValidRegistries.includes(registry)) {
+            throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        return this.db.addBlock(registry, block)
     }
 
     async addText(text: string): Promise<string> {
