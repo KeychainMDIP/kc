@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
     Box,
     Button,
@@ -9,7 +9,7 @@ import {
     FormControl,
     TextField
 } from "@mui/material";
-import { GatekeeperEvent, GatekeeperInterface } from "@mdip/gatekeeper/types";
+import { GatekeeperEvent } from "@mdip/gatekeeper/types";
 import { getTypeStyle, handleCopyDID } from "../shared/utilities.js";
 import ContentCopy from "@mui/icons-material/ContentCopy";
 
@@ -19,88 +19,40 @@ if (!knownRegistries.includes("local")) {
     knownRegistries.push("local");
 }
 
+interface EventsProps {
+    events: GatekeeperEvent[];
+    totalPages: number;
+    eventCount: number;
+    page: number;
+    registry: string;
+    dateFrom: string;
+    dateTo: string;
+    setEventCount: (val: number) => void;
+    setPage: (val: number) => void;
+    setRegistry: (val: string) => void;
+    setDateFrom: (val: string) => void;
+    setDateTo: (val: string) => void;
+    onDidClick: (did: string) => void;
+    setError: (error: any) => void;
+}
+
 function Events(
     {
-        gatekeeper,
-        setError,
-        onDidClick
-    }: {
-        gatekeeper: GatekeeperInterface;
-        setError: (error: any) => void;
-        onDidClick: (did: string) => void;
-    }) {
-    const [events, setEvents] = useState<GatekeeperEvent[]>([]);
-    const [total, setTotal] = useState<number>(0);
-    const [eventCount, setEventCount] = useState<number>(50);
-    const [page, setPage] = useState<number>(0);
-    const [registry, setRegistry] = useState<string>("All");
-
-    const [dateFrom, setDateFrom] = useState<string>(() => {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        return weekAgo.toISOString().slice(0, 10);
-    });
-    const [dateTo, setDateTo] = useState<string>(() => {
-        return new Date().toISOString().slice(0, 10);
-    });
-
-    useEffect(() => {
-        let isMounted = true;
-        let intervalId: NodeJS.Timeout | undefined;
-
-        async function fetchRecent() {
-            try {
-                let updatedAfter: string | undefined;
-                let updatedBefore: string | undefined;
-
-                if (dateFrom) {
-                    const fromDate = new Date(`${dateFrom}T00:00:00`);
-                    updatedAfter = fromDate.toISOString();
-                }
-
-                if (dateTo) {
-                    const toDate = new Date(`${dateTo}T23:59:59.999`);
-                    updatedBefore = toDate.toISOString();
-                }
-
-                const dids = (await gatekeeper.getDIDs({
-                    updatedAfter,
-                    updatedBefore
-                })) as string[];
-                let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
-
-                if (registry !== "All") {
-                    allEvents = allEvents.filter((evt) => evt.registry === registry);
-                }
-
-                allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-                const from = page * eventCount;
-                const to = from + eventCount;
-                const pageEvents = allEvents.slice(from, to);
-                const totalCount = allEvents.length;
-
-                if (isMounted) {
-                    setEvents(pageEvents);
-                    setTotal(totalCount);
-                }
-            } catch (err: any) {
-                if (isMounted) {
-                    setError(err);
-                }
-            }
-        }
-
-        fetchRecent();
-
-        intervalId = setInterval(fetchRecent, 10000);
-
-        return () => {
-            isMounted = false;
-            if (intervalId) clearInterval(intervalId);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [eventCount, page, registry, dateFrom, dateTo]);
+        events,
+        totalPages,
+        eventCount,
+        page,
+        registry,
+        dateFrom,
+        dateTo,
+        setEventCount,
+        setPage,
+        setRegistry,
+        setDateFrom,
+        setDateTo,
+        onDidClick,
+        setError
+    }: EventsProps) {
 
     const handleCountChange = (e: any) => {
         setEventCount(e.target.value);
@@ -121,8 +73,6 @@ function Events(
         setDateTo(e.target.value);
         setPage(0);
     };
-
-    const totalPages = Math.ceil(total / eventCount);
 
     return (
         <Box sx={{ ml: 1, mt: 2 }}>
@@ -168,7 +118,7 @@ function Events(
                         variant="outlined"
                         size="small"
                         disabled={page === 0}
-                        onClick={() => setPage((p) => p - 1)}
+                        onClick={() => setPage(page - 1)}
                     >
                         Prev
                     </Button>
@@ -179,7 +129,7 @@ function Events(
                         variant="outlined"
                         size="small"
                         disabled={page + 1 >= totalPages}
-                        onClick={() => setPage((p) => p + 1)}
+                        onClick={() => setPage(page + 1)}
                     >
                         Next
                     </Button>
