@@ -11,6 +11,7 @@ import {
     Snackbar,
 } from "@mui/material";
 import Header from "./components/Header.js";
+import { GatekeeperEvent } from "@mdip/gatekeeper/types";
 
 const gatekeeper = new GatekeeperClient();
 
@@ -32,6 +33,20 @@ function App() {
     const [darkMode, setDarkMode] = useState<boolean>(false);
     const [tabValue, setTabValue] = useState<string>("search");
     const [viewDid, setViewDid] = useState<string>("");
+    const [events, setEvents] = useState<GatekeeperEvent[]>([]);
+    const [total, setTotal] = useState<number>(0);
+    const [eventCount, setEventCount] = useState<number>(50);
+    const [page, setPage] = useState<number>(0);
+    const [registry, setRegistry] = useState<string>("All");
+
+    const [dateFrom, setDateFrom] = useState<string>(() => {
+        const dayAgo = new Date();
+        dayAgo.setDate(dayAgo.getDate() - 1);
+        return dayAgo.toISOString().slice(0, 10);
+    });
+    const [dateTo, setDateTo] = useState<string>(() => {
+        return new Date().toISOString().slice(0, 10);
+    });
 
     function handleViewDid(did: string) {
         setViewDid(did);
@@ -93,6 +108,71 @@ function App() {
         init();
     }, []);
 
+
+    useEffect(() => {
+        if (!isReady) {
+            return;
+        }
+
+        let isMounted = true;
+        let intervalId: NodeJS.Timeout | undefined;
+
+        async function fetchRecent() {
+            try {
+                let updatedAfter: string | undefined;
+                let updatedBefore: string | undefined;
+
+                if (dateFrom) {
+                    const fromDate = new Date(`${dateFrom}T00:00:00`);
+                    updatedAfter = fromDate.toISOString();
+                }
+
+                if (dateTo) {
+                    const toDate = new Date(`${dateTo}T23:59:59.999`);
+                    updatedBefore = toDate.toISOString();
+                }
+
+                const dids = (await gatekeeper.getDIDs({
+                    updatedAfter,
+                    updatedBefore
+                })) as string[];
+                let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
+
+                if (registry !== "All") {
+                    allEvents = allEvents.filter((evt) => evt.registry === registry);
+                }
+
+                allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+                const from = page * eventCount;
+                const to = from + eventCount;
+                const pageEvents = allEvents.slice(from, to);
+                const totalCount = allEvents.length;
+
+                if (isMounted) {
+                    setEvents(pageEvents);
+                    setTotal(totalCount);
+                }
+            } catch (err: any) {
+                if (isMounted) {
+                    setError(err);
+                }
+            }
+        }
+
+        fetchRecent();
+
+        intervalId = setInterval(fetchRecent, 10000);
+
+        return () => {
+            isMounted = false;
+            if (intervalId) clearInterval(intervalId);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isReady, eventCount, page, registry, dateFrom, dateTo]);
+
+    const totalPages = Math.ceil(total / eventCount);
+
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
@@ -138,9 +218,20 @@ function App() {
                             )}
                             {tabValue === "recent" && (
                                 <Events
-                                    gatekeeper={gatekeeper}
-                                    setError={setError}
+                                    events={events}
+                                    eventCount={eventCount}
+                                    page={page}
+                                    dateFrom={dateFrom}
+                                    dateTo={dateTo}
+                                    registry={registry}
+                                    totalPages={totalPages}
+                                    setEventCount={setEventCount}
+                                    setPage={setPage}
+                                    setRegistry={setRegistry}
+                                    setDateFrom={setDateFrom}
+                                    setDateTo={setDateTo}
                                     onDidClick={handleViewDid}
+                                    setError={setError}
                                 />
                             )}
                         </Box>

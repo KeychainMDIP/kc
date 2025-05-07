@@ -103,6 +103,9 @@ proc validate_did_output {output} {
     }
 }
 
+puts "\n🔍 Output to validate:\n$output"
+validate_did_output $output
+
 # Clean up
 spawn bash admin reset-db
 expect {

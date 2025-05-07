@@ -6,7 +6,18 @@
 set timeout 10
 
 # Start the CLI program for wallet creation
-spawn bash kc "show-wallet"
+spawn bash kc show-wallet
+
+# Wait for and capture the full output
+expect {
+    -re "{.*}" {
+        set output $expect_out(0,string)
+    }
+    timeout {
+        puts "Test failed: Timeout waiting for output."
+        exit 1
+    }
+}
 
 # Null value validation procedure
 proc validate_no_null_values {output} {
@@ -73,6 +84,9 @@ proc validate_no_null_values {output} {
         return 0
     }
 }
+
+puts "\n🔍 Output to validate:\n$output"
+validate_no_null_values $output
 
 # Capture the full output
 set output ""
