@@ -734,6 +734,49 @@ v1router.get('/did/:id', async (req, res) => {
 
 /**
  * @swagger
+ * /did/{id}:
+ *   delete:
+ *     summary: Revoke a DID.
+ *     description: Removes an existing DID from the system, effectively revoking it.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID to revoke.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the DID was successfully revoked.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the DID was successfully revoked, otherwise false.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.delete('/did/:id', async (req, res) => {
+    try {
+        const ok = await keymaster.revokeDID(req.params.id);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /ids/current:
  *   get:
  *     summary: Retrieve the current ID name.

@@ -313,6 +313,19 @@ program
     });
 
 program
+    .command('revoke-did <did>')
+    .description('Permanently revoke a DID')
+    .action(async (did, confirm) => {
+        try {
+            const ok = await keymaster.revokeDID(did);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(`cannot revoke ${did}`);
+        }
+    });
+
+program
     .command('encrypt-message <message> <did>')
     .description('Encrypt a message for a DID')
     .action(async (msg, did) => {

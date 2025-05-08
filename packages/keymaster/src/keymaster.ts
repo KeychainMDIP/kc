@@ -1004,7 +1004,8 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.updateDID(signed);
     }
 
-    async revokeDID(did: string): Promise<boolean> {
+    async revokeDID(id: string): Promise<boolean> {
+        const did = await this.lookupDID(id);
         const current = await this.resolveDID(did);
         const previd = current.didDocumentMetadata?.versionId;
         const block = await this.gatekeeper.getBlock(current.mdip!.registry);

@@ -428,6 +428,16 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async revokeDID(id: string): Promise<boolean> {
+        try {
+            const response = await axios.delete(`${this.API}/did/${id}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async createAsset(
         data: unknown,
         options?: CreateAssetOptions
