@@ -531,6 +531,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function revokeName(name) {
+        try {
+            if (window.confirm(`Are you sure you want to revoke ${name}? This operation cannot be undone.`)) {
+                await keymaster.revokeDID(name);
+                refreshNames();
+                showAlert(`Revoked ${name} can no longer be updated.`);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function changeName(oldName, did) {
         try {
             const newName = window.prompt("Rename DID:");
@@ -1551,7 +1563,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     Clone
                                                 </Button>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell colspan={2}>
                                                 <RegistrySelect />
                                             </TableCell>
                                         </TableRow>
@@ -1576,6 +1588,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableCell>
                                                     <Button variant="contained" color="primary" onClick={() => removeName(name)}>
                                                         Remove
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button variant="contained" color="primary" onClick={() => revokeName(name)}>
+                                                        Revoke
                                                     </Button>
                                                 </TableCell>
                                                 <TableCell>
