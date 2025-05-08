@@ -46,26 +46,19 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile.gatekeeper
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:pre-release
           - dockerfile: Dockerfile.keymaster
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:pre-release
           - dockerfile: Dockerfile.hyperswarm
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:pre-release
           - dockerfile: Dockerfile.satoshi
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:pre-release
           - dockerfile: Dockerfile.cli
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:pre-release
           - dockerfile: Dockerfile.explorer
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:pre-release
           - dockerfile: Dockerfile.search-server
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:pre-release
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:pre-release
     permissions:
       contents: read
       packages: write
