@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Typography, Switch, Tabs, Tab } from "@mui/material";
 import { DarkMode, LightMode } from "@mui/icons-material";
 import iconInverted from '../static/icon_inverted.png';
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface HeaderProps {
     darkMode: boolean;
@@ -16,6 +16,9 @@ const Header = (
     }: HeaderProps
 ) => {
     const navigate = useNavigate();
+    const location = useLocation();
+
+    const currentTab = location.pathname.startsWith("/events") ? "events" : "search";
 
     const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
         navigate("/" + newValue);
@@ -44,7 +47,7 @@ const Header = (
             </Box>
 
             <Tabs
-                value={false}
+                value={currentTab}
                 onChange={handleTabChange}
                 textColor="inherit"
                 indicatorColor="secondary"
