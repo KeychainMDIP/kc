@@ -1563,7 +1563,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     Clone
                                                 </Button>
                                             </TableCell>
-                                            <TableCell colspan={2}>
+                                            <TableCell colSpan={2}>
                                                 <RegistrySelect />
                                             </TableCell>
                                         </TableRow>
