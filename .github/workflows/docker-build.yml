@@ -45,20 +45,19 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile.gatekeeper
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.CALVER }}
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.CALVER }}
           - dockerfile: Dockerfile.keymaster
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.CALVER }}
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.CALVER }}
           - dockerfile: Dockerfile.hyperswarm
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.CALVER }}
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.CALVER }}
           - dockerfile: Dockerfile.satoshi
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:${{ needs.generate.outputs.CALVER }}
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:${{ needs.generate.outputs.CALVER }}
           - dockerfile: Dockerfile.cli
-            tags: |
-              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.CALVER }}
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.explorer
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.search-server
+            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:${{ needs.generate.outputs.CALVER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
