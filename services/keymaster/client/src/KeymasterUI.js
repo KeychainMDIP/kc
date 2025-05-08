@@ -520,23 +520,25 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function removeName(name) {
+    async function resolveName(name) {
         try {
-            if (window.confirm(`Are you sure you want to remove ${name}?`)) {
-                await keymaster.removeName(name);
-                refreshNames();
-            }
+            const trimmedName = name.trim();
+            const docs = await keymaster.resolveDID(trimmedName);
+            setSelectedName(trimmedName);
+            setAliasDocs(JSON.stringify(docs, null, 4));
+            const versions = docs.didDocumentMetadata.version;
+            setAliasDocsVersion(versions);
+            setAliasDocsVersionMax(versions);
         } catch (error) {
             showError(error);
         }
     }
 
-    async function revokeName(name) {
+    async function removeName(name) {
         try {
-            if (window.confirm(`Are you sure you want to revoke ${name}? This operation cannot be undone.`)) {
-                await keymaster.revokeDID(name);
+            if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+                await keymaster.removeName(name);
                 refreshNames();
-                showAlert(`Revoked ${name} can no longer be updated.`);
             }
         } catch (error) {
             showError(error);
@@ -557,15 +559,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function resolveName(name) {
+    async function revokeName(name) {
         try {
-            const trimmedName = name.trim();
-            const docs = await keymaster.resolveDID(trimmedName);
-            setSelectedName(trimmedName);
-            setAliasDocs(JSON.stringify(docs, null, 4));
-            const versions = docs.didDocumentMetadata.version;
-            setAliasDocsVersion(versions);
-            setAliasDocsVersionMax(versions);
+            if (window.confirm(`Are you sure you want to revoke ${name}? This operation cannot be undone.`)) {
+                await keymaster.revokeDID(name);
+                resolveName(name);
+                showAlert(`Revoked ${name} can no longer be updated.`);
+            }
         } catch (error) {
             showError(error);
         }
