@@ -95,6 +95,7 @@ Commands:
   reveal-credential <did>                 Reveal a credential to the current user manifest
   reveal-poll <poll>                      Publish results to poll, revealing ballots
   revoke-credential <did>                 Revokes a verifiable credential
+  revoke-did <did>                        Permanently revoke a DID
   rotate-keys                             Generates new set of keys for current ID
   set-property <id> <key> [value]         Assign a key-value pair to an asset
   show-mnemonic                           Show recovery phrase for wallet
