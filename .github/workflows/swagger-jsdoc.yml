@@ -14,10 +14,10 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
-      - name: Use Node 18.18.2
+      - name: Use Node 18.20.8
         uses: actions/setup-node@v4
         with:
-          node-version: '18.18.2'
+          node-version: '18.20.8'
 
       - name: Install dependencies
         run: npm install
