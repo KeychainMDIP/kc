@@ -1000,6 +1000,37 @@ describe('resolveDID', () => {
     });
 });
 
+describe('revokeDID', () => {
+    const mockDID = 'did:example:1234567890abcdefghi';
+
+    it('should revoke DID', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.did}/${mockDID}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.revokeDID(mockDID);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on revokeDID server error', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.did}/${mockDID}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.revokeDID(mockDID);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('createAsset', () => {
     const mockAsset = { id: 'asset1', data: 'some data' };
     const mockDID = 'did:example:1234567890abcd';
