@@ -9,9 +9,11 @@ import {
     Box,
     CssBaseline,
     Snackbar,
+    Typography,
 } from "@mui/material";
 import Header from "./components/Header.js";
 import { GatekeeperEvent } from "@mdip/gatekeeper/types";
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 
 const gatekeeper = new GatekeeperClient();
 
@@ -31,8 +33,6 @@ function App() {
         severity: "warning",
     });
     const [darkMode, setDarkMode] = useState<boolean>(false);
-    const [tabValue, setTabValue] = useState<string>("search");
-    const [viewDid, setViewDid] = useState<string>("");
     const [events, setEvents] = useState<GatekeeperEvent[]>([]);
     const [total, setTotal] = useState<number>(0);
     const [eventCount, setEventCount] = useState<number>(50);
@@ -48,9 +48,10 @@ function App() {
         return new Date().toISOString().slice(0, 10);
     });
 
+    const navigate = useNavigate();
+
     function handleViewDid(did: string) {
-        setViewDid(did);
-        setTabValue("search");
+        navigate(`/search?did=${encodeURIComponent(did)}`);
     }
 
     const setError = (error: any) => {
@@ -205,35 +206,47 @@ function App() {
                             <Header
                                 handleThemeToggle={handleThemeToggle}
                                 darkMode={darkMode}
-                                tabValue={tabValue}
-                                setTabValue={setTabValue}
                             />
-                            {tabValue === "search" && (
-                                <JsonViewer
-                                    gatekeeper={gatekeeper}
-                                    setError={setError}
-                                    viewDid={viewDid}
-                                    setViewDid={setViewDid}
+                            <Routes>
+                                <Route
+                                    path="/"
+                                    element={<Navigate to="/search" replace />}
                                 />
-                            )}
-                            {tabValue === "recent" && (
-                                <Events
-                                    events={events}
-                                    eventCount={eventCount}
-                                    page={page}
-                                    dateFrom={dateFrom}
-                                    dateTo={dateTo}
-                                    registry={registry}
-                                    totalPages={totalPages}
-                                    setEventCount={setEventCount}
-                                    setPage={setPage}
-                                    setRegistry={setRegistry}
-                                    setDateFrom={setDateFrom}
-                                    setDateTo={setDateTo}
-                                    onDidClick={handleViewDid}
-                                    setError={setError}
+                                <Route
+                                    path="/search"
+                                    element={
+                                        <JsonViewer
+                                            gatekeeper={gatekeeper}
+                                            setError={setError}
+                                        />
+                                    }
                                 />
-                            )}
+                                <Route
+                                    path="/events"
+                                    element={
+                                        <Events
+                                            events={events}
+                                            eventCount={eventCount}
+                                            page={page}
+                                            dateFrom={dateFrom}
+                                            dateTo={dateTo}
+                                            registry={registry}
+                                            totalPages={totalPages}
+                                            setEventCount={setEventCount}
+                                            setPage={setPage}
+                                            setRegistry={setRegistry}
+                                            setDateFrom={setDateFrom}
+                                            setDateTo={setDateTo}
+                                            onDidClick={handleViewDid}
+                                            setError={setError}
+                                        />
+                                    }
+                                />
+                                <Route
+                                    path="*"
+                                    element={<Typography>404 Not Found</Typography>}
+                                />
+                            </Routes>
                         </Box>
                     }
                 </Box>

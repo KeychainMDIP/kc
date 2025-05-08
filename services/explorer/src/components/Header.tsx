@@ -2,24 +2,23 @@ import React from "react";
 import { Box, Typography, Switch, Tabs, Tab } from "@mui/material";
 import { DarkMode, LightMode } from "@mui/icons-material";
 import iconInverted from '../static/icon_inverted.png';
+import { useNavigate } from "react-router-dom";
 
 interface HeaderProps {
     darkMode: boolean;
     handleThemeToggle: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    tabValue: string;
-    setTabValue: (value: string) => void;
 }
 
 const Header = (
     {
         darkMode,
-        handleThemeToggle,
-        tabValue,
-        setTabValue,
+        handleThemeToggle
     }: HeaderProps
 ) => {
+    const navigate = useNavigate();
+
     const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
-        setTabValue(newValue);
+        navigate("/" + newValue);
     };
 
     return (
@@ -45,13 +44,13 @@ const Header = (
             </Box>
 
             <Tabs
-                value={tabValue}
+                value={false}
                 onChange={handleTabChange}
                 textColor="inherit"
                 indicatorColor="secondary"
             >
                 <Tab label="Search" value="search" />
-                <Tab label="Events" value="recent" />
+                <Tab label="Events" value="events" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>

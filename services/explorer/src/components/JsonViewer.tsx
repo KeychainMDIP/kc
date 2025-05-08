@@ -22,6 +22,7 @@ import {
 import ContentCopy from "@mui/icons-material/ContentCopy";
 import { handleCopyDID } from '../shared/utilities.js';
 import axios from "axios";
+import { useSearchParams } from "react-router-dom";
 
 const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:3001";
 const VERSION = '/api/v1';
@@ -30,13 +31,9 @@ function JsonViewer(
     {
         gatekeeper,
         setError,
-        viewDid,
-        setViewDid,
     }: {
         gatekeeper: GatekeeperInterface;
         setError: (error: any) => void;
-        viewDid: string;
-        setViewDid: (did: string) => void;
     }) {
     const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
@@ -44,71 +41,78 @@ function JsonViewer(
     const [aliasDocsVersions, setAliasDocsVersions] = useState<number[] | undefined>(undefined);
     const [formDid, setFormDid] = useState<string>("");
     const [currentDid, setCurrentDid] = useState<string>("");
-    const [jsonDID, setJsonDID] = useState<string | undefined>(undefined);
     const [searchResults, setSearchResults] = useState<string[] | null>(null);
     const [searchPage, setSearchPage] = useState<number>(0);
     const [searchCount, setSearchCount] = useState<number>(50);
+    const [searchParams, setSearchParams] = useSearchParams();
 
     useEffect(() => {
-        if (!viewDid) {
-            return;
+        const didParam = searchParams.get('did');
+        const qParam = searchParams.get('q');
+
+        if (didParam) {
+            doResolveDID(didParam);
+        } else if (qParam) {
+            doSearch(qParam);
+        } else {
+            setSearchResults(null);
+            setAliasDocs(undefined);
         }
-        handleResolveDID(viewDid);
-        setViewDid("");
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewDid]);
+    }, [searchParams]);
 
-    useEffect(() => {
-        if (!jsonDID) {
-            return;
-        }
-
-        setAliasDocsVersions(undefined);
-        setAliasDocs(undefined);
-
-        const populateData = async () => {
-            try {
-                await resolveDID(jsonDID);
-            } catch (error: any) {
-                setError(error);
-            }
-        };
-
-        populateData();
-
-        setFormDid(jsonDID);
-        setJsonDID(undefined);
-        setSearchResults(null);
-        setSearchPage(0);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [jsonDID]);
-
-    async function handleResolveDID(did?: string) {
-        setJsonDID(did || formDid);
-    }
-
-    async function resolveDID(did: string) {
+    async function doResolveDID(did: string) {
         try {
+            setSearchResults(null);
+            setAliasDocs(undefined);
+            setFormDid(did);
+
             const docs = await gatekeeper.resolveDID(did);
             if (!docs.didDocumentMetadata) {
                 setError("Invalid DID");
                 return;
             }
-            const versions = docs.didDocumentMetadata.version;
-
             setAliasDocs(docs);
+
+            const versions = docs.didDocumentMetadata.version;
             if (versions) {
                 setAliasDocsVersion(versions);
                 setAliasDocsVersionMax(versions);
-                setAliasDocsVersions(
-                    Array.from({ length: versions }, (_, i) => i + 1),
-                );
+                setAliasDocsVersions(Array.from({ length: versions }, (_, i) => i + 1));
             }
             setCurrentDid(did);
         } catch (error: any) {
             setError(error);
         }
+    }
+
+    async function doSearch(query: string) {
+        try {
+            setAliasDocs(undefined);
+            setSearchResults(null);
+            setFormDid(query);
+            setSearchPage(0);
+
+            const response = await axios.get(`${searchServerURL}${VERSION}/search`, {
+                params: { q: query }
+            });
+            setSearchResults(response.data);
+        } catch (error: any) {
+            setError(error);
+        }
+    }
+
+    function handleClickDid(did: string) {
+        setSearchParams({ did });
+    }
+
+    function handleResolveDID() {
+        const did = formDid.trim();
+        if (!did) {
+            setError("Please enter a valid DID");
+            return;
+        }
+        setSearchParams({ did });
     }
 
     async function selectAliasDocsVersion(version: number) {
@@ -141,17 +145,7 @@ function JsonViewer(
             return;
         }
 
-        try {
-            const response = await axios.get(`${searchServerURL}${VERSION}/search`, {
-                params: { q: formDid }
-            });
-
-            setSearchResults(response.data);
-            setAliasDocs(undefined);
-            setSearchPage(0);
-        } catch (error: any) {
-            setError(error);
-        }
+        setSearchParams({ q: query });
     }
 
     let displayedResults: string[] = [];
@@ -196,7 +190,7 @@ function JsonViewer(
                 />
                 <Button
                     variant="contained"
-                    onClick={() => handleResolveDID()}
+                    onClick={handleResolveDID}
                     size="small"
                     className="button-right"
                     disabled={!formDid}
@@ -286,7 +280,7 @@ function JsonViewer(
                                             whiteSpace: "nowrap",
                                         }}
                                         title={did}
-                                        onClick={() => handleResolveDID(did)}
+                                        onClick={() => handleClickDid(did)}
                                     >
                                         {did}
                                     </Typography>
@@ -404,7 +398,7 @@ function JsonViewer(
                                             <span
                                                 {...rest}
                                                 style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
-                                                onClick={() => handleResolveDID(value)}
+                                                onClick={() => handleClickDid(value)}
                                             >
                                                 {children}
                                             </span>
