@@ -50,6 +50,7 @@ const gatekeeper = new Gatekeeper({
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
+const DIFrouter = express.Router();
 
 app.use(morgan('dev'));
 app.use(express.json({ limit: '4mb' })); // Sets the JSON payload limit to 4MB
@@ -1879,10 +1880,42 @@ v1router.post('/block/:registry', async (req, res) => {
     }
 });
 
+DIFrouter.get('/1.0/identifier/:did', async (req, res) => {
+   try {
+        const options: ResolveDIDOptions = {};
+        const { atTime, atVersion, confirm, verify } = req.query;
+
+        if (typeof atTime === 'string') {
+            options.atTime = atTime;
+        }
+
+        if (typeof atVersion === 'string') {
+            const parsed = parseInt(atVersion, 10);
+            if (!isNaN(parsed)) {
+                options.atVersion = parsed;
+            }
+        }
+
+        if (confirm) {
+            options.confirm = confirm === 'true';
+        }
+
+        if (verify) {
+            options.verify = verify === 'true';
+        }
+
+        const doc = await gatekeeper.resolveDID(req.params.did, options);
+        res.json(doc);
+   } catch (error: any) {
+        res.status(500).send(error.toString());
+   }
+});
+
 app.use('/api/v1', v1router);
+app.use('/1.0', DIFrouter);
 
 app.use((req, res) => {
-    if (!req.path.startsWith('/api')) {
+    if (!req.path.startsWith('/api') && !req.path.startsWith('/1.0')) {
         res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
     } else {
         console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
