@@ -60,6 +60,12 @@ jobs:
           - dockerfile: Dockerfile.cli
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:pre-release
+          - dockerfile: Dockerfile.explorer
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:pre-release
+          - dockerfile: Dockerfile.search-server
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:pre-release
     permissions:
       contents: read
       packages: write

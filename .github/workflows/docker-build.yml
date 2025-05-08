@@ -59,6 +59,12 @@ jobs:
           - dockerfile: Dockerfile.cli
             tags: |
               ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.explorer
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:${{ needs.generate.outputs.CALVER }}
+          - dockerfile: Dockerfile.search-server
+            tags: |
+              ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:${{ needs.generate.outputs.CALVER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
