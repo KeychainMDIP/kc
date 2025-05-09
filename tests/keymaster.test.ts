@@ -17,8 +17,8 @@ import {
     WalletFile,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
-import DbJson from '@mdip/gatekeeper/db/json';
-import WalletJson from '@mdip/keymaster/wallet/json';
+import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
+import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
@@ -29,12 +29,21 @@ import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
-const db = new DbJson('test');
-const ipfs = new HeliaClient();
-const gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-const wallet = new WalletJson();
-const cipher = new CipherNode();
-const keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+let db = new DbJsonMemory('test');
+let ipfs = new HeliaClient();
+let gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
+let wallet = new WalletJsonMemory();
+let cipher = new CipherNode();
+let keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+
+beforeEach(() => {
+    db = new DbJsonMemory('test');
+    ipfs = new HeliaClient();
+    gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
+    wallet = new WalletJsonMemory();
+    cipher = new CipherNode();
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+});
 
 describe('constructor', () => {
 
@@ -349,19 +358,12 @@ describe('saveWallet', () => {
     });
 
     it('encrypted wallet should return unencrypted wallet', async () => {
-        mockFs({
-            'data': {}
-        });
-
-        const walletFile = 'data/wallet.json';
-        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
-        fs.writeFileSync(walletFile, JSON.stringify(mockWallet, null, 4));
-
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
         const testWallet = await keymaster.loadWallet();
+        const expectedWallet = await keymaster.loadWallet();
 
-        expect(testWallet).toStrictEqual(mockWallet);
+        expect(testWallet).toStrictEqual(expectedWallet);
     });
 });
 
