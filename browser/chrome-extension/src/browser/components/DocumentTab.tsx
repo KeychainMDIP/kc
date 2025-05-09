@@ -1,0 +1,352 @@
+import React, { ChangeEvent, useEffect, useState } from "react";
+import { Box, Button, MenuItem, Select } from "@mui/material";
+import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useUIContext } from "../../shared/contexts/UIContext";
+import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { MdipDocument } from "@mdip/gatekeeper/types";
+import GatekeeperClient from "@mdip/gatekeeper/client";
+import VersionNavigator from "./VersionNavigator";
+
+interface DocumentAsset {
+    cid: string;
+    type: string;
+    bytes: number;
+    filename: string;
+}
+
+const gatekeeper = new GatekeeperClient();
+
+const DocumentTab = () => {
+    const {
+        keymaster,
+        registries,
+        setError,
+        setSuccess,
+    } = useWalletContext();
+    const {
+        refreshNames,
+    } = useUIContext();
+    const {
+        documentList,
+    } = useCredentialsContext();
+    const [registry, setRegistry] = useState<string>("hyperswarm");
+    const [selectedDocumentName, setSelectedDocumentName] = useState<string>("");
+    const [selectedDocument, setSelectedDocument] = useState<DocumentAsset | null>(null);
+    const [selectedDocumentDocs, setSelectedDocumentDocs] = useState<MdipDocument | null>(null);
+    const [selectedDocumentDataUrl, setSelectedDocumentDataUrl] = useState<string>("");
+    const [docVersion, setDocVersion] = useState<number>(1);
+    const [docVersionMax, setDocVersionMax] = useState<number>(1);
+
+    useEffect(() => {
+        const init = async () => {
+            const { gatekeeperUrl } = await chrome.storage.sync.get(["gatekeeperUrl"]);
+            await gatekeeper.connect({ url: gatekeeperUrl });
+        };
+        init();
+    }, []);
+
+    useEffect(() => {
+        if (selectedDocumentName) {
+            refreshDocument(selectedDocumentName);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDocumentName]);
+
+    async function refreshDocument(documentName: string, version?: number) {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            const docs = await keymaster.resolveDID(documentName, version ? { atVersion: version } : {});
+            setSelectedDocumentDocs(docs);
+
+            const currentVersion = docs.didDocumentMetadata?.version ?? 1;
+            setDocVersion(currentVersion);
+
+            if (currentVersion > docVersionMax) {
+                setDocVersionMax(currentVersion);
+            }
+
+            const docAsset = docs.didDocumentData as { document? : DocumentAsset};
+            if (!docAsset.document || !docAsset.document.cid) {
+                setError(`No document data found in version ${currentVersion}`);
+                return;
+            }
+            setSelectedDocument(docAsset.document);
+
+            const raw = await gatekeeper.getData(docAsset.document.cid);
+            if (!raw) {
+                setError(`Could not fetch data for CID: ${docAsset.document.cid}`);
+                return;
+            }
+
+            const base64 = raw.toString("base64");
+            const dataUrl = `data:${docAsset.document.type};base64,${base64}`;
+            setSelectedDocumentDataUrl(dataUrl);
+        } catch (error: any) {
+            setError(error.error || error.message || String(error));
+        }
+    }
+
+    async function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            const fileInput = event.target;
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+
+            const file = fileInput.files[0];
+            fileInput.value = "";
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    if (!e.target || !e.target.result) {
+                        setError("Unexpected file reader result");
+                        return;
+                    }
+                    const arrayBuffer = e.target.result;
+                    let buffer: Buffer;
+                    if (arrayBuffer instanceof ArrayBuffer) {
+                        buffer = Buffer.from(arrayBuffer);
+                    } else {
+                        setError("Unexpected file reader result type");
+                        return;
+                    }
+
+                    const did = await keymaster.createDocument(buffer, {
+                        registry,
+                        filename: file.name,
+                    });
+
+                    const nameList = await keymaster.listNames();
+                    let name = file.name.slice(0, 26);
+                    let count = 1;
+
+                    while (name in nameList) {
+                        name = `${file.name.slice(0, 26)} (${count++})`;
+                    }
+
+                    await keymaster.addName(name, did);
+                    setSuccess(`Document uploaded successfully: ${name}`);
+
+                    await refreshNames();
+                    setSelectedDocumentName(name);
+                } catch (error: any) {
+                    setError(`Error processing document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                setError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error: any) {
+            setError(`Error uploading document: ${error}`);
+        }
+    }
+
+    async function updateDocument(event: ChangeEvent<HTMLInputElement>) {
+        if (!keymaster || !selectedDocumentName) {
+            return;
+        }
+        try {
+            const fileInput = event.target;
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+
+            const file = fileInput.files[0];
+            fileInput.value = "";
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    if (!e.target || !e.target.result) {
+                        setError("Unexpected file reader result");
+                        return;
+                    }
+                    const arrayBuffer = e.target.result;
+                    let buffer: Buffer;
+                    if (arrayBuffer instanceof ArrayBuffer) {
+                        buffer = Buffer.from(arrayBuffer);
+                    } else {
+                        setError("Unexpected file reader result type");
+                        return;
+                    }
+
+                    await keymaster.updateDocument(selectedDocumentName, buffer, {
+                        filename: file.name,
+                    });
+
+                    setSuccess(`Document updated successfully`);
+                    await refreshDocument(selectedDocumentName);
+                } catch (error: any) {
+                    setError(`Error updating document: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                setError(`Error reading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error: any) {
+            setError(`Error uploading document: ${error}`);
+        }
+    }
+
+    function downloadDocument() {
+        if (!selectedDocument || !selectedDocumentDataUrl) {
+            return;
+        }
+
+        const link = document.createElement("a");
+        link.href = selectedDocumentDataUrl;
+        link.download = selectedDocument.filename || "download.bin";
+        link.click();
+    }
+
+    function handleVersionChange(newVer: number) {
+        refreshDocument(selectedDocumentName, newVer);
+    }
+
+    return (
+        <Box>
+            <Box className="flex-box mt-2">
+                <Select
+                    value={
+                        registries.length > 0 && registries.includes(registry)
+                            ? registry
+                            : ""
+                    }
+                    onChange={(e) => setRegistry(e.target.value)}
+                    size="small"
+                    variant="outlined"
+                    className="select-small-left"
+                    sx={{ width: 300 }}
+                    displayEmpty
+                >
+                    {registries.map((r) => (
+                        <MenuItem key={r} value={r}>
+                            {r}
+                        </MenuItem>
+                    ))}
+                </Select>
+
+                <Button
+                    variant="contained"
+                    onClick={() => document.getElementById("documentUpload")!.click()}
+                    size="small"
+                    className="button-right"
+                    disabled={!registry}
+                >
+                    Upload Document
+                </Button>
+                <input
+                    type="file"
+                    id="documentUpload"
+                    accept=".pdf,.doc,.docx,.txt"
+                    style={{ display: "none" }}
+                    onChange={uploadDocument}
+                />
+            </Box>
+
+            {documentList && (
+                <Box>
+                    <Box className="flex-box mt-2">
+                        <Select
+                            value={selectedDocumentName}
+                            onChange={(event) => setSelectedDocumentName(event.target.value)}
+                            size="small"
+                            variant="outlined"
+                            className="select-small-left"
+                            sx={{ width: 300 }}
+                            displayEmpty
+                        >
+                            <MenuItem value="" disabled>
+                                Select document
+                            </MenuItem>
+                            {documentList.map((name, index) => (
+                                <MenuItem value={name} key={index}>
+                                    {name}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                        <Button
+                            variant="contained"
+                            onClick={() => document.getElementById("documentUpdate")!.click()}
+                            size="small"
+                            className="button-center"
+                            disabled={!selectedDocumentName}
+                        >
+                            Update
+                        </Button>
+                        <input
+                            type="file"
+                            id="documentUpdate"
+                            accept=".pdf,.doc,.docx,.txt"
+                            style={{ display: "none" }}
+                            onChange={updateDocument}
+                        />
+                        <Button
+                            variant="contained"
+                            size="small"
+                            onClick={downloadDocument}
+                            className="button-right"
+                            disabled={!selectedDocument || !selectedDocumentDataUrl}
+                        >
+                            Download
+                        </Button>
+                    </Box>
+                    {selectedDocument && selectedDocumentDocs && selectedDocumentDataUrl && (
+                        <Box sx={{ mt: 2 }}>
+                            <VersionNavigator
+                                version={docVersion}
+                                maxVersion={docVersionMax}
+                                onVersionChange={handleVersionChange}
+                            />
+
+                            <Box sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                                <Box>
+                                    <strong>DID:</strong> {selectedDocumentDocs.didDocument!.id}
+                                </Box>
+                                <Box>
+                                    <strong>CID:</strong> {selectedDocument.cid}
+                                </Box>
+                                <Box>
+                                    <strong>Filename:</strong> {selectedDocument.filename}
+                                </Box>
+                                <Box>
+                                    <strong>Created:</strong>{" "}
+                                    {selectedDocumentDocs.didDocumentMetadata!.created}
+                                </Box>
+                                <Box>
+                                    <strong>Updated:</strong>{" "}
+                                    {selectedDocumentDocs.didDocumentMetadata!.updated ||
+                                        selectedDocumentDocs.didDocumentMetadata!.created}
+                                </Box>
+                                <Box>
+                                    <strong>Version:</strong>{" "}
+                                    {selectedDocumentDocs.didDocumentMetadata!.version}
+                                </Box>
+                                <Box>
+                                    <strong>File size:</strong> {selectedDocument.bytes} bytes
+                                </Box>
+                                <Box>
+                                    <strong>Document type:</strong> {selectedDocument.type}
+                                </Box>
+                            </Box>
+                        </Box>
+                    )}
+                </Box>
+            )}
+        </Box>
+    );
+};
+
+export default DocumentTab;

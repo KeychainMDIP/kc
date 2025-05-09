@@ -108,6 +108,7 @@ export function UIProvider(
         setAgentList,
         setSelectedIssued,
         setImageList,
+        setDocumentList,
         setIssuedStringOriginal,
         setIssuedEdit,
         resetCredentialState,
@@ -330,6 +331,21 @@ export function UIProvider(
         }
 
         setImageList(imageList);
+
+        const documentList = [];
+
+        for (const name of names) {
+            try {
+                const isDocument = await keymaster.testDocument(name);
+
+                if (isDocument) {
+                    documentList.push(name);
+                }
+            }
+            catch {}
+        }
+
+        setDocumentList(documentList);
 
         const agents = await keymaster.listIds();
         for (const name of names) {

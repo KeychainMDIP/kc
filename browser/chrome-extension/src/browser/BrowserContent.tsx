@@ -4,6 +4,7 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
     AccountBalanceWallet,
     Badge,
+    Description,
     Groups,
     Image,
     ManageSearch,
@@ -24,6 +25,7 @@ import { useThemeContext } from "../shared/contexts/ContextProviders";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import SchemaTab from "./components/SchemaTab";
 import ImageTab from "./components/ImageTab";
+import DocumentTab from "./components/DocumentTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -52,7 +54,13 @@ function BrowserContent() {
         const urlDoc = urlParams.get("doc");
 
         let initialTab = urlTab || "identities";
-        if (!currentId && (urlTab === "credentials" || urlTab === "groups" || urlTab === "schemas" || urlTab === "images")) {
+        if (!currentId && (
+            urlTab === "credentials" ||
+            urlTab === "groups" ||
+            urlTab === "schemas" ||
+            urlTab === "images" ||
+            urlTab === "documents"
+        )) {
             initialTab = "identities";
             setParamTab(urlTab);
         }
@@ -184,6 +192,16 @@ function BrowserContent() {
                                 )}
                                 {currentId && (
                                     <Tab
+                                        icon={<Description />}
+                                        label={menuOpen ? "Documents" : ""}
+                                        value="documents"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
+                                {currentId && (
+                                    <Tab
                                         icon={<Groups />}
                                         label={menuOpen ? "Groups" : ""}
                                         value="groups"
@@ -239,6 +257,11 @@ function BrowserContent() {
                             {currentId && (
                                 <TabPanel value="images" sx={{ p: 0 }}>
                                     <ImageTab />
+                                </TabPanel>
+                            )}
+                            {currentId && (
+                                <TabPanel value="documents" sx={{ p: 0 }}>
+                                    <DocumentTab />
                                 </TabPanel>
                             )}
                             <TabPanel value="wallet" sx={{ p: 0 }}>
