@@ -11,10 +11,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Use Node 18.20.8
+      - name: Use Node 20.19.1
         uses: actions/setup-node@v4
         with:
-          node-version: '18.20.8'
+          node-version: '20.19.1'
 
       - name: Install root dependencies
         run: npm install
