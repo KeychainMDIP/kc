@@ -1122,17 +1122,27 @@ describe('updateDID', () => {
     });
 
     it('should throw exception on invalid update operation', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+
         try {
-            const keypair = cipher.generateRandomJwk();
-            const agentOp = await createAgentOp(keypair);
-            const did = await gatekeeper.createDID(agentOp);
-            const doc = await gatekeeper.resolveDID(did);
             const updateOp = await createUpdateOp(keypair, did, doc);
             delete updateOp.signature;
             await gatekeeper.updateDID(updateOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('Invalid operation: signature');
+        }
+
+        try {
+            const updateOp = await createUpdateOp(keypair, did, doc);
+            delete updateOp.did;
+            await gatekeeper.updateDID(updateOp);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid operation: missing operation.did');
         }
     });
 

@@ -753,10 +753,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return false;
         }
 
-        const registry = doc.mdip?.registry;
-        if (!registry) {
-            throw new InvalidOperationError('no registry in doc.mdip')
-        }
+        const registry = doc.mdip?.registry || 'missing registry';
 
         // Reject operations with unsupported registries
         if (!this.supportedRegistries.includes(registry)) {
