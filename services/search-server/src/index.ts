@@ -16,7 +16,14 @@ async function main() {
 
     const app = express();
     const v1router = express.Router();
-    app.use(cors());
+
+    const corsOptions = {
+        origin: '*', // Origin needs to be specified with credentials true
+        methods: ['GET'],  // Specify which methods are allowed (e.g., GET, POST)
+        optionsSuccessStatus: 200  // Some legacy browsers choke on 204
+    };
+
+    app.use(cors(corsOptions));
 
     const didDb = await DIDsSQLite.create();
 
