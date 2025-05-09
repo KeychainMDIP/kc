@@ -2772,22 +2772,6 @@ describe('checkDIDs', () => {
         expect(check.total).toBe(3);
         expect(check.byType.invalid).toBe(1);
     });
-
-    // it('should reset a corrupted db', async () => {
-    //     mockFs({});
-
-    //     const keypair = cipher.generateRandomJwk();
-    //     const agentOp = await createAgentOp(keypair);
-    //     const agentDID = await gatekeeper.createDID(agentOp);
-    //     const assetOp = await createAssetOp(agentDID, keypair);
-    //     await gatekeeper.createDID(assetOp);
-
-    //     fs.writeFileSync('data/test.json', "{ dids: {");
-
-    //     const { total } = await gatekeeper.checkDIDs();
-
-    //     expect(total).toBe(0);
-    // });
 });
 
 
