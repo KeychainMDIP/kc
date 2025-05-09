@@ -34,14 +34,14 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@helia/json": "^2.0.0",
+    "@helia/json": "^4.0.3",
     "@helia/unixfs": "^5.0.0",
     "axios": "^1.7.7",
     "blockstore-fs": "^2.0.2",
-    "helia": "^3.0.0",
+    "helia": "^5.3.0",
     "ip": "^2.0.1",
     "kubo-rpc-client": "^5.1.0",
-    "multiformats": "^13.0.0"
+    "multiformats": "^13.3.3"
   },
   "repository": {
     "type": "git",

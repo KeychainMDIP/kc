@@ -7,16 +7,9 @@ import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
 import HDKeyNode from 'hdkey';
-import { webcrypto } from 'node:crypto';
 import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
 import canonicalizeModule from 'canonicalize';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
-
-// node.js 18 and older, requires polyfilling globalThis.crypto
-if (!globalThis.crypto) {
-    // @ts-expect-error: globalThis may not be declared
-    globalThis.crypto = webcrypto
-}
 
 // Polyfill for synchronous signatures
 // Recommendation from https://github.com/paulmillr/noble-secp256k1/blob/main/README.md
