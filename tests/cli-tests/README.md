@@ -15,3 +15,6 @@ Dependencies:
 * When running without hyperswarm you should set KC_DEFAULT_REGISTRY=local in the .env, otherwise create operations will fail.
 * Tests at this time run only for "local" registry, but will be updated later for others.
 * Tests automatically clean up any artifacts it generates in folder and docker. This is done by resetting the wallet when the test is sucessful. If tests, fail data is not deleted so you can debug and inspect. 
+
+
+TEST
