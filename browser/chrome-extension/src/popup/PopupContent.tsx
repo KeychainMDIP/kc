@@ -131,6 +131,7 @@ const PopupContent = () => {
                     <MenuItem onClick={() => handleMenuClick("groups")}>Groups</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("schemas")}>Schemas</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("images")}>Images</MenuItem>
+                    <MenuItem onClick={() => handleMenuClick("documents")}>Documents</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("wallet")}>Wallet</MenuItem>
                     <MenuItem onClick={() => handleMenuClick("settings")}>Settings</MenuItem>
                     <MenuItem>

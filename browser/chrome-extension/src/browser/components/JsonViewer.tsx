@@ -3,13 +3,13 @@ import JsonView from '@uiw/react-json-view';
 import {
     Box,
     Button,
-    MenuItem,
-    Select, TextField,
+    TextField,
     Typography
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import {MdipDocument} from "@mdip/gatekeeper/types";
+import VersionNavigator from "./VersionNavigator";
 
 function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {browserTab: string, browserSubTab?: string, showResolveField?: boolean}) {
     const subTabKey = browserSubTab ?? 'noSubTab';
@@ -18,7 +18,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
-    const [aliasDocsVersions, setAliasDocsVersions] = useState<number[] | undefined>(undefined);
     const [formDid, setFormDid] = useState<string>("");
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
@@ -33,7 +32,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                 setAliasDocs(parsed.aliasDocs);
                 setAliasDocsVersion(parsed.aliasDocsVersion ?? 1);
                 setAliasDocsVersionMax(parsed.aliasDocsVersionMax ?? 1);
-                setAliasDocsVersions(parsed.aliasDocsVersions);
                 setFormDid(parsed.formDid ?? "");
                 setCurrentDid(parsed.currentDid ?? "");
                 setCurrentTitle(parsed.currentTitle ?? "");
@@ -50,7 +48,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             aliasDocs,
             aliasDocsVersion,
             aliasDocsVersionMax,
-            aliasDocsVersions,
             formDid,
             currentDid,
             currentTitle
@@ -60,7 +57,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
         aliasDocs,
         aliasDocsVersion,
         aliasDocsVersionMax,
-        aliasDocsVersions,
         formDid,
         currentDid,
         currentTitle,
@@ -78,7 +74,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             return;
         }
 
-        setAliasDocsVersions(undefined);
         setAliasDocs(undefined);
         setCurrentTitle("");
 
@@ -141,9 +136,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             if (versions) {
                 setAliasDocsVersion(versions);
                 setAliasDocsVersionMax(versions);
-                setAliasDocsVersions(
-                    Array.from({ length: versions }, (_, i) => i + 1),
-                );
             }
             setCurrentDid(did);
         } catch (error: any) {
@@ -212,87 +204,13 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             }
             {aliasDocs && (
                 <Box>
-                    {aliasDocsVersions &&
-                        <Box sx={{ display: "flex", alignItems: "center" }}>
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() => selectAliasDocsVersion(1)}
-                                disabled={aliasDocsVersion === 1}
-                                sx={{
-                                    height: 40,
-                                    borderTopRightRadius: 0,
-                                    borderBottomRightRadius: 0,
-                                }}
-                            >
-                                First
-                            </Button>
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() =>
-                                    selectAliasDocsVersion(aliasDocsVersion - 1)
-                                }
-                                disabled={aliasDocsVersion === 1}
-                                sx={{
-                                    height: 40,
-                                    borderRadius: 0,
-                                }}
-                            >
-                                Prev
-                            </Button>
-                            <Select
-                                style={{ width: "150px", height: "40px" }}
-                                value={aliasDocsVersion}
-                                fullWidth
-                                onChange={(event) =>
-                                    selectAliasDocsVersion(
-                                        event.target.value as number,
-                                    )
-                                }
-                                sx={{
-                                    height: 40,
-                                    borderRadius: 0,
-                                    "& .MuiOutlinedInput-root": {
-                                        borderRadius: 0,
-                                    },
-                                }}
-                            >
-                                {aliasDocsVersions.map((version, index) => (
-                                    <MenuItem value={version} key={index}>
-                                        version {version}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() =>
-                                    selectAliasDocsVersion(aliasDocsVersion + 1)
-                                }
-                                disabled={aliasDocsVersion === aliasDocsVersionMax}
-                                sx={{
-                                    height: 40,
-                                    borderRadius: 0,
-                                }}
-                            >
-                                Next
-                            </Button>
-                            <Button
-                                variant="contained"
-                                color="primary"
-                                onClick={() =>
-                                    selectAliasDocsVersion(aliasDocsVersionMax)
-                                }
-                                disabled={aliasDocsVersion === aliasDocsVersionMax}
-                                sx={{
-                                    height: 40,
-                                    borderTopLeftRadius: 0,
-                                    borderBottomLeftRadius: 0,
-                                }}
-                            >
-                                Last
-                            </Button>
+                    {aliasDocsVersionMax > 1 &&
+                        <Box sx={{ mt: 1 }}>
+                            <VersionNavigator
+                                version={aliasDocsVersion}
+                                maxVersion={aliasDocsVersionMax}
+                                onVersionChange={selectAliasDocsVersion}
+                            />
                         </Box>
                     }
                     <Box sx={{ mt: 2 }}>
