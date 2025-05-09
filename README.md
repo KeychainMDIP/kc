@@ -10,7 +10,7 @@ Details on each command can be found in the [CLI User Manual](https://keychain.o
 Recommended system requirements:
 
 - GNU/Linux OS with [docker](https://www.docker.com/) for containerized operation
-- node 20.19.1 and npm 10.8.2 or newer for manual and local operation
+- node 22.15.0 and npm 10.8.2 or newer for manual and local operation
 - minimum of 8Gb RAM if operating a full trustless node
 
 ```
