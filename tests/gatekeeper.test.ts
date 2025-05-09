@@ -1,5 +1,3 @@
-import mockFs from 'mock-fs';
-import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import { Operation, MdipDocument, BlockInfo } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
@@ -173,13 +171,8 @@ async function createAssetOp(
 
 describe('constructor', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should throw exception on invalid parameters', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage
             new Gatekeeper();
@@ -201,13 +194,8 @@ describe('constructor', () => {
 
 describe('generateDID', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should create DID from operation', async () => {
-        mockFs({});
-
         const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
@@ -223,8 +211,6 @@ describe('generateDID', () => {
     });
 
     it('should create DID from operation with configured prefix', async () => {
-        mockFs({});
-
         const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
@@ -242,8 +228,6 @@ describe('generateDID', () => {
     });
 
     it('should create DID from operation with custom prefix', async () => {
-        mockFs({});
-
         const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
@@ -261,8 +245,6 @@ describe('generateDID', () => {
     });
 
     it('should create same DID from same operation with date included', async () => {
-        mockFs({});
-
         const mockTxn: Operation = {
             type: "create",
             created: new Date().toISOString(),
@@ -280,13 +262,8 @@ describe('generateDID', () => {
 });
 
 describe('generateDoc', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should generate an agent doc from a valid anchor', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.generateDID(agentOp);
@@ -323,8 +300,6 @@ describe('generateDoc', () => {
     });
 
     it('should generate an agent doc with a custom prefix', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { prefix: 'did:custom' });
         const did = await gatekeeper.generateDID(agentOp);
@@ -362,8 +337,6 @@ describe('generateDoc', () => {
     });
 
     it('should generate an asset doc from a valid anchor', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -392,8 +365,6 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip missing from anchor', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         delete agentOp.mdip;
@@ -403,8 +374,6 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip version invalid', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 0 });
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -413,8 +382,6 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip type invalid', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         // @ts-expect-error Testing invalid usage
@@ -425,8 +392,6 @@ describe('generateDoc', () => {
     });
 
     it('should return an empty doc if mdip registry invalid', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mock' });
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -436,13 +401,8 @@ describe('generateDoc', () => {
 });
 
 describe('createDID', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should create DID from agent operation', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
 
@@ -452,8 +412,6 @@ describe('createDID', () => {
     });
 
     it('should create DID for local registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'local' });
 
@@ -463,8 +421,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on invalid version', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 2 });
 
@@ -478,8 +434,6 @@ describe('createDID', () => {
 
     // eslint-disable-next-line
     it('should throw exception on invalid registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
 
@@ -492,8 +446,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on unsupported registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
 
@@ -508,8 +460,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on invalid type', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
         // @ts-expect-error Testing invalid usage
@@ -524,8 +474,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on invalid create agent operation', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage
             await gatekeeper.createDID();
@@ -594,8 +542,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on create op size exceeding limit', async () => {
-        mockFs({});
-
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
@@ -609,8 +555,6 @@ describe('createDID', () => {
     });
 
     it('should create DID from asset operation', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -622,8 +566,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception on invalid create asset operation', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -669,8 +611,6 @@ describe('createDID', () => {
     });
 
     it('should throw exception when registry queue exceeds limit', async () => {
-        mockFs({});
-
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
 
         try {
@@ -688,13 +628,8 @@ describe('createDID', () => {
 
 describe('resolveDID', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should resolve a valid agent DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const opid = await gatekeeper.generateCID(agentOp);
@@ -735,8 +670,6 @@ describe('resolveDID', () => {
     });
 
     it('should resolve a valid agent DID after an update', async () => {
-
-        mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
@@ -783,8 +716,6 @@ describe('resolveDID', () => {
 
     it('should resolve confirmed version when specified', async () => {
 
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
@@ -801,8 +732,6 @@ describe('resolveDID', () => {
     });
 
     it('should resolve verified version after an update', async () => {
-
-        mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
@@ -851,8 +780,6 @@ describe('resolveDID', () => {
 
     it('should resolve unconfirmed version when specified', async () => {
 
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
@@ -898,8 +825,6 @@ describe('resolveDID', () => {
 
     it('should resolve version at specified time', async () => {
 
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -924,8 +849,6 @@ describe('resolveDID', () => {
     });
 
     it('should resolve specified version', async () => {
-
-        mockFs({});
 
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
@@ -952,8 +875,6 @@ describe('resolveDID', () => {
 
     it('should resolve all specified versions', async () => {
 
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -973,8 +894,6 @@ describe('resolveDID', () => {
     });
 
     it('should resolve a valid asset DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -1006,8 +925,6 @@ describe('resolveDID', () => {
     });
 
     it('should not resolve an invalid DID', async () => {
-        mockFs({});
-
         const BadFormat = 'bad format';
 
         try {
@@ -1088,8 +1005,6 @@ describe('resolveDID', () => {
     });
 
     it('should throw an exception on invalid signature in create op', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1108,8 +1023,6 @@ describe('resolveDID', () => {
     });
 
     it('should throw an exception on invalid signature in update op', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1132,8 +1045,6 @@ describe('resolveDID', () => {
     });
 
     it('should throw an exception on invalid operation previd in update op', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1162,13 +1073,8 @@ describe('resolveDID', () => {
 
 describe('updateDID', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should update a valid DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1187,8 +1093,6 @@ describe('updateDID', () => {
     });
 
     it('should increment version with each update', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1206,8 +1110,6 @@ describe('updateDID', () => {
     });
 
     it('should return false if update operation is invalid', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1220,8 +1122,6 @@ describe('updateDID', () => {
     });
 
     it('should throw exception on invalid update operation', async () => {
-        mockFs({});
-
         try {
             const keypair = cipher.generateRandomJwk();
             const agentOp = await createAgentOp(keypair);
@@ -1237,8 +1137,6 @@ describe('updateDID', () => {
     });
 
     it('should throw exception on update op size exceeding limit', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1255,8 +1153,6 @@ describe('updateDID', () => {
     });
 
     it('should verify DID that has been updated multiple times', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1273,8 +1169,6 @@ describe('updateDID', () => {
     });
 
     it('should throw exception when registry queue exceeds limit', async () => {
-        mockFs({});
-
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
 
         const keypair = cipher.generateRandomJwk();
@@ -1298,13 +1192,8 @@ describe('updateDID', () => {
 
 describe('exportDID', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should export a valid DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1316,8 +1205,6 @@ describe('exportDID', () => {
     });
 
     it('should export a valid updated DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1334,8 +1221,6 @@ describe('exportDID', () => {
 
     // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
-        mockFs({});
-
         const ops = await gatekeeper.exportDID('mockDID');
         expect(ops).toStrictEqual([]);
     });
@@ -1343,13 +1228,8 @@ describe('exportDID', () => {
 
 describe('exportDIDs', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should export valid DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1362,8 +1242,6 @@ describe('exportDIDs', () => {
     });
 
     it('should export all DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -1379,8 +1257,6 @@ describe('exportDIDs', () => {
     });
 
     it('should export a DIDs in order requested', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         delete agentOp.mdip!.validUntil;
@@ -1398,8 +1274,6 @@ describe('exportDIDs', () => {
     });
 
     it('should export valid updated DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1417,8 +1291,6 @@ describe('exportDIDs', () => {
 
     // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
-        mockFs({});
-
         const exports = await gatekeeper.exportDIDs(['mockDID']);
         const ops = exports[0];
         expect(ops).toStrictEqual([]);
@@ -1427,13 +1299,8 @@ describe('exportDIDs', () => {
 
 describe('importDIDs', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should import a valid agent DID export', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1448,13 +1315,8 @@ describe('importDIDs', () => {
 
 describe('removeDIDs', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should remove a valid DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1473,8 +1335,6 @@ describe('removeDIDs', () => {
     });
 
     it('should throw an exception if no array specified', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage
             await gatekeeper.removeDIDs();
@@ -1485,15 +1345,11 @@ describe('removeDIDs', () => {
     });
 
     it('should return true if no DID specified remove', async () => {
-        mockFs({});
-
         const ok = await gatekeeper.removeDIDs([]);
         expect(ok).toBe(true);
     });
 
     it('should return true if unknown DIDs specified', async () => {
-        mockFs({});
-
         const ok = await gatekeeper.removeDIDs(['did:test:mock']);
         expect(ok).toBe(true);
     });
@@ -1502,13 +1358,8 @@ describe('removeDIDs', () => {
 describe('exportBatch', () => {
     // local DIDs are excluded from exportBatch so we'll create on hyperswarm
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should export a valid batch', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
@@ -1520,8 +1371,6 @@ describe('exportBatch', () => {
     });
 
     it('should export batch with all DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -1537,8 +1386,6 @@ describe('exportBatch', () => {
     });
 
     it('should export a valid updated batch', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
@@ -1555,8 +1402,6 @@ describe('exportBatch', () => {
 
     // eslint-disable-next-line
     it('should return empty array on an invalid DID', async () => {
-        mockFs({});
-
         const exports = await gatekeeper.exportBatch(['mockDID']);
         expect(exports).toStrictEqual([]);
     });
@@ -1564,13 +1409,8 @@ describe('exportBatch', () => {
 
 describe('importBatch', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should queue a valid agent DID export', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1582,8 +1422,6 @@ describe('importBatch', () => {
     });
 
     it('should report when event already processed', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1598,8 +1436,6 @@ describe('importBatch', () => {
     });
 
     it('should throw an exception on undefined', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage
             await gatekeeper.importBatch();
@@ -1611,8 +1447,6 @@ describe('importBatch', () => {
     });
 
     it('should throw an exception on non-array parameter', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage
             await gatekeeper.importBatch('mock');
@@ -1623,8 +1457,6 @@ describe('importBatch', () => {
     });
 
     it('should throw an exception on an empty array', async () => {
-        mockFs({});
-
         try {
             await gatekeeper.importBatch([]);
             throw new ExpectedExceptionError();
@@ -1634,8 +1466,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on non-transactions', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage
         const response = await gatekeeper.importBatch([1, 2, 3]);
 
@@ -1643,8 +1473,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid event time', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1658,8 +1486,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid operation', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1674,8 +1500,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid operation type', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1689,8 +1513,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on missing created time', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1704,8 +1526,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on missing mdip metadata', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1719,8 +1539,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid mdip version', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1734,8 +1552,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid mdip type', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1750,8 +1566,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid mdip registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1765,8 +1579,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on missing operation signature', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1780,8 +1592,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid operation signature date', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1795,8 +1605,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid operation signature hash', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1810,8 +1618,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid operation signature signer', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1825,8 +1631,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on missing operation key', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1840,8 +1644,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on incorrect controller', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -1857,8 +1659,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid update operation missing doc', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1876,8 +1676,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid update operation missing did', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1895,8 +1693,6 @@ describe('importBatch', () => {
     });
 
     it('should report an error on invalid delete operation', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1917,13 +1713,8 @@ describe('importBatch', () => {
 
 describe('processEvents', () => {
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should import a valid agent DID export', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -1936,8 +1727,6 @@ describe('processEvents', () => {
     });
 
     it('should import a valid asset DID export', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -1952,8 +1741,6 @@ describe('processEvents', () => {
     });
 
     it('should import a valid batch export', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         // create on hyperswarm because exportBatch will not export local DIDs
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
@@ -1971,8 +1758,6 @@ describe('processEvents', () => {
     it('should import a batch export with missing event dids', async () => {
         // This simulates an import from hyperswarm-mediator which receives only operations and creates events without DIDs
         // (TBD revisit whether events should be created with DIDs in advance of import)
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         // create on hyperswarm because exportBatch will not export local DIDs
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
@@ -1997,8 +1782,6 @@ describe('processEvents', () => {
     });
 
     it('should report 0 ops added when DID exists', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -2015,8 +1798,6 @@ describe('processEvents', () => {
     });
 
     it('should update events when DID is imported from its native registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
@@ -2051,8 +1832,6 @@ describe('processEvents', () => {
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
@@ -2073,8 +1852,6 @@ describe('processEvents', () => {
     });
 
     it('should resolve with timestamp when available', async () => {
-        mockFs({});
-
         const mockBlock1 = { hash: 'mockBlockid1', height: 100, time: 100 };
         const mockBlock2 = { hash: 'mockBlockid2', height: 101, time: 101 };
         await gatekeeper.addBlock('TFTC', mockBlock1);
@@ -2126,8 +1903,6 @@ describe('processEvents', () => {
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
@@ -2149,8 +1924,6 @@ describe('processEvents', () => {
     });
 
     it('should report 2 ops imported when DID deleted first', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -2169,8 +1942,6 @@ describe('processEvents', () => {
     });
 
     it('should report N+1 ops imported for N updates', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -2199,8 +1970,6 @@ describe('processEvents', () => {
     });
 
     it('should resolve an imported DID', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -2216,8 +1985,6 @@ describe('processEvents', () => {
     });
 
     it('should handle processing events in any order', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2242,8 +2009,6 @@ describe('processEvents', () => {
     });
 
     it('should handle processing pre-v0.5 event without previd property', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2267,8 +2032,6 @@ describe('processEvents', () => {
     });
 
     it('should handle processing events with unknown previd property', async () => {
-        mockFs({});
-
         const mockPrevid = 'mockPrevid';
 
         const keypair = cipher.generateRandomJwk();
@@ -2295,8 +2058,6 @@ describe('processEvents', () => {
     });
 
     it('should reject events with duplicate previd property', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2340,8 +2101,6 @@ describe('processEvents', () => {
     });
 
     it('should handle a reorg event', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2406,8 +2165,6 @@ describe('processEvents', () => {
     });
 
     it('should handle deferred operation validation when asset ownership changes', async () => {
-        mockFs({});
-
         const keypair1 = cipher.generateRandomJwk();
         const agentOp1 = await createAgentOp(keypair1, { version: 1, registry: 'TFTC' });
         const agentDID1 = await gatekeeper.createDID(agentOp1);
@@ -2457,8 +2214,6 @@ describe('processEvents', () => {
     });
 
     it('should reject events with bad signatures', async () => {
-        mockFs({});
-
         const keypair1 = cipher.generateRandomJwk();
         const agentOp1 = await createAgentOp(keypair1);
         const agentDID1 = await gatekeeper.createDID(agentOp1);
@@ -2491,8 +2246,6 @@ describe('processEvents', () => {
     });
 
     it('should return busy when already proccessing events', async () => {
-        mockFs({});
-
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
         gk.isProcessingEvents = true;
@@ -2502,8 +2255,6 @@ describe('processEvents', () => {
     });
 
     it('should gracefully handle expections', async () => {
-        mockFs({});
-
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
         gk.eventsQueue = null;
@@ -2517,13 +2268,8 @@ describe('processEvents', () => {
 });
 
 describe('getQueue', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should return empty list when no events in queue', async () => {
-        mockFs({});
-
         const registry = 'TFTC';
 
         const queue = await gatekeeper.getQueue(registry);
@@ -2532,8 +2278,6 @@ describe('getQueue', () => {
     });
 
     it('should return single event in queue', async () => {
-        mockFs({});
-
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry });
@@ -2549,8 +2293,6 @@ describe('getQueue', () => {
     });
 
     it('should throw an exception if invalid registry', async () => {
-        mockFs({});
-
         try {
             await gatekeeper.getQueue('mock');
             throw new ExpectedExceptionError();
@@ -2562,13 +2304,8 @@ describe('getQueue', () => {
 });
 
 describe('clearQueue', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should clear non-empty queue', async () => {
-        mockFs({});
-
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry });
@@ -2586,8 +2323,6 @@ describe('clearQueue', () => {
     });
 
     it('should clear only specified events', async () => {
-        mockFs({});
-
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry });
@@ -2620,15 +2355,11 @@ describe('clearQueue', () => {
     });
 
     it('should return true if queue already empty', async () => {
-        mockFs({});
-
         const ok = await gatekeeper.clearQueue('TFTC', []);
         expect(ok).toBe(true);
     });
 
     it('should return true if invalid queue specified', async () => {
-        mockFs({});
-
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry });
@@ -2648,8 +2379,6 @@ describe('clearQueue', () => {
     });
 
     it('should throw an exception if invalid registry', async () => {
-        mockFs({});
-
         try {
             await gatekeeper.clearQueue('mock', []);
             throw new ExpectedExceptionError();
@@ -2660,13 +2389,8 @@ describe('clearQueue', () => {
 });
 
 describe('getDids', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should return all DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2681,8 +2405,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs resolved', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2700,8 +2422,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs confirmed and resolved', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2724,8 +2444,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs unconfirmed and resolved', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2749,8 +2467,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs after specified time', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2774,8 +2490,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs before specified time', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2800,8 +2514,6 @@ describe('getDids', () => {
     });
 
     it('should return all DIDs between specified times', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2828,8 +2540,6 @@ describe('getDids', () => {
     });
 
     it('should resolve all specified DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2857,13 +2567,8 @@ describe('getDids', () => {
 });
 
 describe('listRegistries', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should return list of default valid registries', async () => {
-        mockFs({});
-
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         const registries = await gatekeeper.listRegistries();
 
@@ -2873,8 +2578,6 @@ describe('listRegistries', () => {
     });
 
     it('should return list of configured registries', async () => {
-        mockFs({});
-
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['hyperswarm', 'TFTC'] });
         const registries = await gatekeeper.listRegistries();
 
@@ -2884,8 +2587,6 @@ describe('listRegistries', () => {
     });
 
     it('should return list of inferred registries', async () => {
-        mockFs({});
-
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         await gatekeeper.getQueue('hyperswarm');
         await gatekeeper.getQueue('TFTC');
@@ -2900,8 +2601,6 @@ describe('listRegistries', () => {
     });
 
     it('should return non-redundant list of inferred registries', async () => {
-        mockFs({});
-
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole });
         await gatekeeper.getQueue('hyperswarm');
         await gatekeeper.getQueue('hyperswarm');
@@ -2921,13 +2620,8 @@ describe('listRegistries', () => {
 });
 
 describe('verifyDb', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should verify all DIDs in db', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2943,8 +2637,6 @@ describe('verifyDb', () => {
     });
 
     it('should get same results with cached verifications', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2958,8 +2650,6 @@ describe('verifyDb', () => {
     });
 
     it('should get same results with chatty turned off', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2973,8 +2663,6 @@ describe('verifyDb', () => {
     });
 
     it('should remove invalid DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -2998,8 +2686,6 @@ describe('verifyDb', () => {
     });
 
     it('should remove expired DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -3025,13 +2711,8 @@ describe('verifyDb', () => {
 });
 
 describe('checkDIDs', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should check all DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -3050,8 +2731,6 @@ describe('checkDIDs', () => {
     });
 
     it('should report unconfirmed DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -3078,8 +2757,6 @@ describe('checkDIDs', () => {
     });
 
     it('should report invalid DIDs', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
@@ -3282,21 +2959,14 @@ describe('isValidDID', () => {
 });
 
 describe('Test operation validation errors', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should return false if operation is invalid', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid value
         const result = await gatekeeper.verifyOperation({ type: 'dummy' });
         expect(result).toBe(false);
     });
 
     it('update error with missing didDocument', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -3315,8 +2985,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('update error with missing didDocument', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -3335,8 +3003,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('update error with deactivated didDocumentMetadata', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -3355,8 +3021,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('update error without verificationMethod', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -3375,8 +3039,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('update error with empty verificationMethod', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -3396,8 +3058,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('create error with invalid type', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         const agentOp = await createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
@@ -3416,8 +3076,6 @@ describe('Test operation validation errors', () => {
     });
 
     it('create error with invalid signature', async () => {
-        mockFs({});
-
         const keypair = cipher.generateRandomJwk();
         let agentOp = await createAgentOp(keypair);
         agentOp.mdip!.prefix = "dummy";
@@ -3433,13 +3091,8 @@ describe('Test operation validation errors', () => {
 });
 
 describe('addJSON', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const data = { key: 'mock' };
     const hash = 'z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
@@ -3452,13 +3105,8 @@ describe('addJSON', () => {
 });
 
 describe('getJSON', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const mockData = { key: 'mock' };
 
@@ -3471,13 +3119,8 @@ describe('getJSON', () => {
 });
 
 describe('addText', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const mockData = 'mock text data';
     const hash = 'zb2rhgNGdyFtViUWRk4oYLGrwdkgbt4GnF2s15k3ZujX6w3QW';
@@ -3490,13 +3133,8 @@ describe('addText', () => {
 });
 
 describe('getText', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const mockData = 'mock text data';
 
@@ -3509,13 +3147,8 @@ describe('getText', () => {
 });
 
 describe('addData', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const mockData = Buffer.from('mock data');
     const hash = 'zb2rhYuMKCR7pY51Tzv52NmTW9zYU2P53XFUJitvDwtSpCDhd';
@@ -3528,13 +3161,8 @@ describe('addData', () => {
 });
 
 describe('getData', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     const mockData = Buffer.from('mock data');
 
@@ -3559,13 +3187,8 @@ const mockBlock2: BlockInfo = {
 };
 
 describe('addBlock', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should add a new block', async () => {
         const ok = await gatekeeper.addBlock('local', mockBlock);
@@ -3585,13 +3208,8 @@ describe('addBlock', () => {
 });
 
 describe('getBlock', () => {
-    beforeEach(() => {
-        mockFs({});
-    });
+    beforeEach(() => {    });
 
-    afterEach(() => {
-        mockFs.restore();
-    });
 
     it('should get a block by height', async () => {
         await gatekeeper.addBlock('local', mockBlock);

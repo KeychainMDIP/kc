@@ -1,7 +1,4 @@
-import mockFs from 'mock-fs';
-import fs from 'fs';
 import sharp from 'sharp';
-
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster, {
     EncryptedMessage
@@ -29,16 +26,14 @@ import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
-let db = new DbJsonMemory('test');
-let ipfs = new HeliaClient();
-let gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-let wallet = new WalletJsonMemory();
-let cipher = new CipherNode();
-let keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+let gatekeeper: Gatekeeper;
+let wallet: WalletJsonMemory;
+let cipher: CipherNode;
+let keymaster: Keymaster;
 
 beforeEach(() => {
-    db = new DbJsonMemory('test');
-    ipfs = new HeliaClient();
+    const db = new DbJsonMemory('test');
+    const ipfs = new HeliaClient();
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
@@ -46,14 +41,7 @@ beforeEach(() => {
 });
 
 describe('constructor', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should throw exception on invalid parameters', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing args
             new Keymaster();
@@ -130,14 +118,7 @@ describe('constructor', () => {
 });
 
 describe('loadWallet', () => {
-
-    afterEach(async () => {
-        mockFs.restore();
-    });
-
     it('should create a wallet on first load', async () => {
-        mockFs({});
-
         const wallet = await keymaster.loadWallet();
 
         expect(wallet.seed!.mnemonic.length > 0).toBe(true);
@@ -148,8 +129,6 @@ describe('loadWallet', () => {
     });
 
     it('should return the same wallet on second load', async () => {
-        mockFs({});
-
         const wallet1 = await keymaster.loadWallet();
         const wallet2 = await keymaster.loadWallet();
 
@@ -157,16 +136,12 @@ describe('loadWallet', () => {
     });
 
     it('should return null when loading non-existing encrypted wallet', async () => {
-        mockFs({});
-
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const check_wallet = await wallet_enc.loadWallet();
         expect(check_wallet).toBe(null);
     });
 
     it('should throw exception when passphrase not set', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, no passphrase
         const wallet_enc = new WalletEncrypted(wallet);
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
@@ -180,7 +155,6 @@ describe('loadWallet', () => {
     });
 
     it('should throw exception on load with incorrect passphrase', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         const wallet_enc1 = new WalletEncrypted(wallet, 'passphrase');
         const keymaster1 = new Keymaster({ gatekeeper, wallet: wallet_enc1, cipher });
@@ -198,8 +172,6 @@ describe('loadWallet', () => {
     });
 
     it('should throw exception on encrypted wallet', async () => {
-        mockFs({});
-
         const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
         await keymaster.saveWallet(mockWallet);
 
@@ -212,8 +184,6 @@ describe('loadWallet', () => {
     });
 
     it('should throw exception on corrupted wallet', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, missing salt
         const mockWallet: WalletFile = { counter: 0, ids: {} };
         await keymaster.saveWallet(mockWallet);
@@ -228,13 +198,7 @@ describe('loadWallet', () => {
 });
 
 describe('saveWallet', () => {
-
-    afterEach(async () => {
-        mockFs.restore();
-    });
-
     it('test saving directly on the unencrypted wallet', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await wallet.saveWallet(mockWallet);
@@ -242,7 +206,6 @@ describe('saveWallet', () => {
     });
 
     it('test saving directly on the encrypted wallet', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const ok = await wallet_enc.saveWallet(mockWallet);
@@ -251,7 +214,6 @@ describe('saveWallet', () => {
     });
 
     it('should save a wallet', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await keymaster.saveWallet(mockWallet);
@@ -262,7 +224,6 @@ describe('saveWallet', () => {
     });
 
     it('should ignore overwrite flag if unnecessary', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
 
         const ok = await keymaster.saveWallet(mockWallet, false);
@@ -272,21 +233,7 @@ describe('saveWallet', () => {
         expect(wallet).toStrictEqual(mockWallet);
     });
 
-    it('should handle data folder existing already', async () => {
-        mockFs({
-            data: {}
-        });
-        const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
-
-        const ok = await keymaster.saveWallet(mockWallet);
-        const wallet = await keymaster.loadWallet();
-
-        expect(ok).toBe(true);
-        expect(wallet).toStrictEqual(mockWallet);
-    });
-
     it('should overwrite an existing wallet', async () => {
-        mockFs({});
         const mockWallet1: WalletFile = { seed: {} as Seed, counter: 1, ids: {} };
         const mockWallet2: WalletFile = { seed: {} as Seed, counter: 2, ids: {} };
 
@@ -299,7 +246,6 @@ describe('saveWallet', () => {
     });
 
     it('should not overwrite an existing wallet if specified', async () => {
-        mockFs({});
         const mockWallet1: WalletFile = { seed: {} as Seed, counter: 1, ids: {} };
         const mockWallet2: WalletFile = { seed: {} as Seed, counter: 2, ids: {} };
 
@@ -312,8 +258,6 @@ describe('saveWallet', () => {
     });
 
     it('should overwrite an existing wallet in a loop', async () => {
-        mockFs({});
-
         for (let i = 0; i < 10; i++) {
             const mockWallet: WalletFile = { seed: {} as Seed, counter: i + 1, ids: {} };
 
@@ -326,8 +270,6 @@ describe('saveWallet', () => {
     });
 
     it('should not overwrite an existing wallet if specified', async () => {
-        mockFs({});
-
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher });
 
@@ -343,7 +285,6 @@ describe('saveWallet', () => {
     });
 
     it('wallet should throw when passphrase not set', async () => {
-        mockFs({});
         const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
         // @ts-expect-error Testing invalid usage, no passphrase
         const wallet_enc = new WalletEncrypted(wallet);
@@ -368,14 +309,7 @@ describe('saveWallet', () => {
 });
 
 describe('decryptMnemonic', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return 12 words', async () => {
-        mockFs({});
-
         const wallet = await keymaster.loadWallet();
         const mnemonic = await keymaster.decryptMnemonic();
 
@@ -388,14 +322,7 @@ describe('decryptMnemonic', () => {
 });
 
 describe('updateSeedBank', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should throw error on missing DID', async () => {
-        mockFs({});
-
         const doc: MdipDocument = {};
 
         try {
@@ -409,14 +336,7 @@ describe('updateSeedBank', () => {
 });
 
 describe('newWallet', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should overwrite an existing wallet when allowed', async () => {
-        mockFs({});
-
         const wallet1 = await keymaster.loadWallet();
         await keymaster.newWallet(undefined, true);
         const wallet2 = await keymaster.loadWallet();
@@ -425,8 +345,6 @@ describe('newWallet', () => {
     });
 
     it('should not overwrite an existing wallet by default', async () => {
-        mockFs({});
-
         await keymaster.loadWallet();
 
         try {
@@ -439,8 +357,6 @@ describe('newWallet', () => {
     });
 
     it('should create a wallet from a mnemonic', async () => {
-        mockFs({});
-
         const mnemonic1 = cipher.generateMnemonic();
         await keymaster.newWallet(mnemonic1);
         const mnemonic2 = await keymaster.decryptMnemonic();
@@ -449,8 +365,6 @@ describe('newWallet', () => {
     });
 
     it('should throw exception on invalid mnemonic', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, incorrect argument
             await keymaster.newWallet([]);
@@ -463,13 +377,7 @@ describe('newWallet', () => {
 });
 
 describe('resolveSeedBank', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a deterministic seed bank ID', async () => {
-        mockFs({});
-
         const bank1 = await keymaster.resolveSeedBank();
         const bank2 = await keymaster.resolveSeedBank();
 
@@ -478,14 +386,7 @@ describe('resolveSeedBank', () => {
 });
 
 describe('backupWallet', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return a valid DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.backupWallet();
         const doc = await keymaster.resolveDID(did);
@@ -494,8 +395,6 @@ describe('backupWallet', () => {
     });
 
     it('should store backup in seed bank', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.backupWallet();
         const bank = await keymaster.resolveSeedBank();
@@ -505,14 +404,7 @@ describe('backupWallet', () => {
 });
 
 describe('recoverWallet', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should recover wallet from seed bank', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
         const mnemonic = await keymaster.decryptMnemonic();
@@ -526,8 +418,6 @@ describe('recoverWallet', () => {
     });
 
     it('should recover wallet from backup DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
         const mnemonic = await keymaster.decryptMnemonic();
@@ -541,8 +431,6 @@ describe('recoverWallet', () => {
     });
 
     it('should do nothing if wallet was not backed up', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mnemonic = await keymaster.decryptMnemonic();
 
@@ -554,8 +442,6 @@ describe('recoverWallet', () => {
     });
 
     it('should do nothing if backup DID is invalid', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Bob');
         const mnemonic = await keymaster.decryptMnemonic();
 
@@ -568,14 +454,7 @@ describe('recoverWallet', () => {
 });
 
 describe('createId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a new ID', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const wallet = await keymaster.loadWallet();
@@ -585,8 +464,6 @@ describe('createId', () => {
     });
 
     it('should create a new ID with a Unicode name', async () => {
-        mockFs({});
-
         const name = 'ҽ× ʍɑϲհíղɑ';
         const did = await keymaster.createId(name);
         const wallet = await keymaster.loadWallet();
@@ -596,8 +473,6 @@ describe('createId', () => {
     });
 
     it('should create a new ID on default registry', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
@@ -606,8 +481,6 @@ describe('createId', () => {
     });
 
     it('should create a new ID on customized default registry', async () => {
-        mockFs({});
-
         const defaultRegistry = 'TFTC';
         const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
 
@@ -619,23 +492,18 @@ describe('createId', () => {
     });
 
     it('should throw to create a second ID with the same name', async () => {
-        mockFs({});
-
         const name = 'Bob';
         await keymaster.createId(name);
 
         try {
             await keymaster.createId(name);
             throw new ExpectedExceptionError();
-        } catch (error: any) {
-            // eslint-disable-next-line
+        } catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: name already used');
         }
     });
 
     it('should create a second ID with a different name', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         const did1 = await keymaster.createId(name1);
 
@@ -650,8 +518,6 @@ describe('createId', () => {
     });
 
     it('should not create an ID with an empty name', async () => {
-        mockFs({});
-
         const expectedError = 'Invalid parameter: name must be a non-empty string';
 
         try {
@@ -699,8 +565,6 @@ describe('createId', () => {
     });
 
     it('should not create an ID with a name that is too long', async () => {
-        mockFs({});
-
         try {
             await keymaster.createId('1234567890123456789012345678901234567890');
             throw new ExpectedExceptionError();
@@ -711,8 +575,6 @@ describe('createId', () => {
     });
 
     it('should not create an ID with a name that contains unprintable characters', async () => {
-        mockFs({});
-
         try {
             await keymaster.createId('hello\nworld!');
             throw new ExpectedExceptionError();
@@ -724,14 +586,7 @@ describe('createId', () => {
 });
 
 describe('removeId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should remove an existing ID', async () => {
-        mockFs({});
-
         const name = 'Bob';
         await keymaster.createId(name);
 
@@ -744,8 +599,6 @@ describe('removeId', () => {
     });
 
     it('should throw to remove an non-existent ID', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         const name2 = 'Alice';
 
@@ -761,14 +614,7 @@ describe('removeId', () => {
 });
 
 describe('renameId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should rename an existing ID', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         const name2 = 'Alice';
         const did = await keymaster.createId(name1);
@@ -782,8 +628,6 @@ describe('renameId', () => {
     });
 
     it('should not rename from an non-existent ID', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         const name2 = 'Alice';
 
@@ -796,8 +640,6 @@ describe('renameId', () => {
     });
 
     it('should not rename to an already existing ID', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         await keymaster.createId(name1);
 
@@ -811,14 +653,7 @@ describe('renameId', () => {
 });
 
 describe('setCurrentId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should switch to another ID', async () => {
-        mockFs({});
-
         const name1 = 'Bob';
         await keymaster.createId(name1);
 
@@ -832,8 +667,6 @@ describe('setCurrentId', () => {
     });
 
     it('should not switch to an invalid ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -847,14 +680,7 @@ describe('setCurrentId', () => {
 });
 
 describe('backupId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should backup a new ID', async () => {
-        mockFs({});
-
         const name = 'Bob';
         await keymaster.createId(name);
 
@@ -868,8 +694,6 @@ describe('backupId', () => {
     });
 
     it('should backup a non-current ID', async () => {
-        mockFs({});
-
         const aliceDid = await keymaster.createId('Alice');
         await keymaster.createId('Bob'); // Bob will be current ID
         const ok = await keymaster.backupId('Alice');
@@ -883,14 +707,7 @@ describe('backupId', () => {
 });
 
 describe('recoverId', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should recover an id from backup', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
         let wallet = await keymaster.loadWallet();
@@ -912,8 +729,6 @@ describe('recoverId', () => {
     });
 
     it('should not overwrite an id with the same name', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         await keymaster.backupId();
 
@@ -927,8 +742,6 @@ describe('recoverId', () => {
     });
 
     it('should not recover an id to a different wallet', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         await keymaster.backupId();
 
@@ -946,14 +759,7 @@ describe('recoverId', () => {
 });
 
 describe('testAgent', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true for agent DID', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const isAgent = await keymaster.testAgent(did);
 
@@ -961,8 +767,6 @@ describe('testAgent', () => {
     });
 
     it('should return false for non-agent DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const dataDid = await keymaster.createAsset({ name: 'mockAnchor' });
         const isAgent = await keymaster.testAgent(dataDid);
@@ -971,8 +775,6 @@ describe('testAgent', () => {
     });
 
     it('should raise an exception if no DID specified', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.testAgent();
@@ -984,8 +786,6 @@ describe('testAgent', () => {
     });
 
     it('should raise an exception if invalid DID specified', async () => {
-        mockFs({});
-
         try {
             await keymaster.testAgent('mock');
             throw new ExpectedExceptionError();
@@ -997,14 +797,7 @@ describe('testAgent', () => {
 });
 
 describe('resolveDID', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should resolve a new ID', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const doc = await keymaster.resolveDID(did);
@@ -1014,14 +807,7 @@ describe('resolveDID', () => {
 });
 
 describe('resolveAsset', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should resolve a new asset', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAsset = { name: 'mockAnchor' };
         const did = await keymaster.createAsset(mockAsset);
@@ -1031,8 +817,6 @@ describe('resolveAsset', () => {
     });
 
     it('should return empty asset on invalid DID', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Bob');
         const asset = await keymaster.resolveAsset(agentDID);
 
@@ -1040,8 +824,6 @@ describe('resolveAsset', () => {
     });
 
     it('should return empty asset when revoked', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAsset = { name: 'mockAnchor' };
         const did = await keymaster.createAsset(mockAsset);
@@ -1054,13 +836,7 @@ describe('resolveAsset', () => {
 });
 
 describe('updateAsset', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update an asset', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAsset1 = { name: 'original' };
         const mockAsset2 = { name: 'updated' };
@@ -1073,8 +849,6 @@ describe('updateAsset', () => {
     });
 
     it('should update an asset with merged data', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAsset1 = { key1: 'val1' };
         const mockAsset2 = { key2: 'val2' };
@@ -1087,8 +861,6 @@ describe('updateAsset', () => {
     });
 
     it('should remove a property when updated to be undefined ', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAsset1 = { key1: 'val1', key2: 'val2' };
         const mockAsset2 = { key2: undefined };
@@ -1102,14 +874,7 @@ describe('updateAsset', () => {
 });
 
 describe('rotateKeys', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update DID doc with new keys', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice', { registry: 'local' });
         let doc = await keymaster.resolveDID(alice);
         let vm = doc.didDocument!.verificationMethod![0];
@@ -1129,8 +894,6 @@ describe('rotateKeys', () => {
     });
 
     it('should decrypt messages encrypted with rotating keys', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice', { registry: 'local' });
         const bob = await keymaster.createId('Bob', { registry: 'local' });
         const secrets = [];
@@ -1162,8 +925,6 @@ describe('rotateKeys', () => {
     });
 
     it('should raise an exception if latest version is not confirmed', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice', { registry: 'TFTC' });
         await keymaster.rotateKeys();
 
@@ -1178,14 +939,7 @@ describe('rotateKeys', () => {
 });
 
 describe('addName', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a new name', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const ok = await keymaster.addName('Jack', bob);
         const wallet = await keymaster.loadWallet();
@@ -1195,8 +949,6 @@ describe('addName', () => {
     });
 
     it('should create a Unicode name', async () => {
-        mockFs({});
-
         const name = 'ҽ× ʍɑϲհíղɑ';
 
         const bob = await keymaster.createId('Bob');
@@ -1208,8 +960,6 @@ describe('addName', () => {
     });
 
     it('should not add duplicate name', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -1224,8 +974,6 @@ describe('addName', () => {
     });
 
     it('should not add a name that is same as an ID', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
 
         try {
@@ -1238,8 +986,6 @@ describe('addName', () => {
     });
 
     it('should not add an empty name', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const expectedError = 'Invalid parameter: name must be a non-empty string';
 
@@ -1288,8 +1034,6 @@ describe('addName', () => {
     });
 
     it('should not add a name that is too long', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
 
         try {
@@ -1302,8 +1046,6 @@ describe('addName', () => {
     });
 
     it('should not add a name that contains unprintable characters', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
 
         try {
@@ -1317,14 +1059,7 @@ describe('addName', () => {
 });
 
 describe('getName', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return DID for a new name', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const ok = await keymaster.addName('Jack', bob);
         const did = await keymaster.getName('Jack');
@@ -1334,8 +1069,6 @@ describe('getName', () => {
     });
 
     it('should return null for unknown name', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.getName('Jack');
 
@@ -1343,8 +1076,6 @@ describe('getName', () => {
     });
 
     it('should return null for non-string names', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         // @ts-expect-error Testing invalid usage, missing arg
@@ -1366,14 +1097,7 @@ describe('getName', () => {
 });
 
 describe('removeName', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should remove a valid name', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
 
         await keymaster.addName('Jack', bob);
@@ -1385,8 +1109,6 @@ describe('removeName', () => {
     });
 
     it('should return true if name is missing', async () => {
-        mockFs({});
-
         const ok = await keymaster.removeName('Jack');
 
         expect(ok).toBe(true);
@@ -1394,14 +1116,7 @@ describe('removeName', () => {
 });
 
 describe('listNames', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return current list of wallet names', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
 
         for (let i = 0; i < 10; i++) {
@@ -1418,8 +1133,6 @@ describe('listNames', () => {
     });
 
     it('should return empty list if no names added', async () => {
-        mockFs({});
-
         const names = await keymaster.listNames();
 
         expect(Object.keys(names).length).toBe(0);
@@ -1427,14 +1140,7 @@ describe('listNames', () => {
 });
 
 describe('resolveDID', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should resolve a valid id name', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const doc = await keymaster.resolveDID('Bob');
 
@@ -1442,8 +1148,6 @@ describe('resolveDID', () => {
     });
 
     it('should resolve a valid asset name', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const mockAnchor = { name: 'mockAnchor' };
@@ -1458,8 +1162,6 @@ describe('resolveDID', () => {
     });
 
     it('should throw an exception for invalid name', async () => {
-        mockFs({});
-
         try {
             await keymaster.resolveDID('mock');
             throw new ExpectedExceptionError();
@@ -1470,14 +1172,7 @@ describe('resolveDID', () => {
 });
 
 describe('createAsset', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create DID from an object anchor', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1489,8 +1184,6 @@ describe('createAsset', () => {
     });
 
     it('should create DID from a string anchor', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = "mockAnchor";
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1502,8 +1195,6 @@ describe('createAsset', () => {
     });
 
     it('should create DID from a list anchor', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = [1, 2, 3];
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1515,8 +1206,6 @@ describe('createAsset', () => {
     });
 
     it('should create DID for a different valid ID', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = "mockAnchor";
 
@@ -1531,8 +1220,6 @@ describe('createAsset', () => {
     });
 
     it('should create asset with specified name', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const mockName = 'mockName'
@@ -1545,21 +1232,16 @@ describe('createAsset', () => {
     });
 
     it('should throw an exception if no ID selected', async () => {
-        mockFs({});
-
         try {
             const mockAnchor = { name: 'mockAnchor' };
             await keymaster.createAsset(mockAnchor);
             throw new ExpectedExceptionError();
-        } catch (error: any) {
-            // eslint-disable-next-line
+        } catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Keymaster: No current ID');
         }
     });
 
     it('should throw an exception for an empty string anchor', async () => {
-        mockFs({});
-
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset({}, { name: 'Bob' });
@@ -1570,8 +1252,6 @@ describe('createAsset', () => {
     });
 
     it('should throw an exception for an invalid name', async () => {
-        mockFs({});
-
         try {
             await keymaster.createId('Bob');
             await keymaster.createAsset("");
@@ -1583,14 +1263,7 @@ describe('createAsset', () => {
 });
 
 describe('cloneAsset', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should clone an asset DID', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const mockData = { name: 'mockData' };
         const assetDid = await keymaster.createAsset(mockData);
@@ -1609,8 +1282,6 @@ describe('cloneAsset', () => {
     });
 
     it('should clone an asset name', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockData = { name: 'mockData' };
         const assetDid = await keymaster.createAsset(mockData);
@@ -1627,8 +1298,6 @@ describe('cloneAsset', () => {
     });
 
     it('should clone an empty asset', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const assetDid = await keymaster.createAsset({});
         await keymaster.addName('asset', assetDid);
@@ -1643,8 +1312,6 @@ describe('cloneAsset', () => {
     });
 
     it('should clone a clone', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockData = { name: 'mockData' };
         const assetDid = await keymaster.createAsset(mockData);
@@ -1661,28 +1328,18 @@ describe('cloneAsset', () => {
     });
 
     it('should throw an exception if invalid asset provided', async () => {
-        mockFs({});
-
         try {
             const bob = await keymaster.createId('Bob');
             await keymaster.cloneAsset(bob);
             throw new ExpectedExceptionError();
-        } catch (error: any) {
-            // eslint-disable-next-line
+        } catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: id');
         }
     });
 });
 
 describe('transferAsset', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should transfer an asset DID to an agent DID', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
@@ -1702,8 +1359,6 @@ describe('transferAsset', () => {
     });
 
     it('should transfer an asset name to an agent name', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
@@ -1724,8 +1379,6 @@ describe('transferAsset', () => {
     });
 
     it('should not update if controller does not change', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1739,8 +1392,6 @@ describe('transferAsset', () => {
     });
 
     it('should throw an exception on invalid did', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
 
         try {
@@ -1752,8 +1403,6 @@ describe('transferAsset', () => {
     });
 
     it('should throw if did is an agent', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
 
         try {
@@ -1765,8 +1414,6 @@ describe('transferAsset', () => {
     });
 
     it('should throw an exception on invalid controller', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1780,8 +1427,6 @@ describe('transferAsset', () => {
     });
 
     it('should throw an exception if asset not owned by this wallet', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
@@ -1798,14 +1443,7 @@ describe('transferAsset', () => {
 });
 
 describe('listAssets', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return empty list when no assets', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const assets = await keymaster.listAssets();
 
@@ -1813,8 +1451,6 @@ describe('listAssets', () => {
     });
 
     it('should return assets owned by current ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1824,8 +1460,6 @@ describe('listAssets', () => {
     });
 
     it('should return assets owned by specified ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1839,8 +1473,6 @@ describe('listAssets', () => {
     });
 
     it('should not include ephemeral assets', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const validUntil = new Date();
@@ -1853,13 +1485,7 @@ describe('listAssets', () => {
 });
 
 describe('updateDID', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should throw if doc missing id', async () => {
-        mockFs({});
         const doc: MdipDocument = {};
 
         try {
@@ -1871,8 +1497,6 @@ describe('updateDID', () => {
     });
 
     it('should update an asset DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1890,8 +1514,6 @@ describe('updateDID', () => {
     });
 
     it('should not update an asset DID if no changes', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor', val: 1234 };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1908,8 +1530,6 @@ describe('updateDID', () => {
     });
 
     it('should update an asset DID when current ID is not owner ID', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Alice');
 
@@ -1935,14 +1555,7 @@ describe('updateDID', () => {
 });
 
 describe('revokeDID', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should revoke an asset DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -1957,8 +1570,6 @@ describe('revokeDID', () => {
     });
 
     it('should revoke an asset DID when current ID is not owner ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         await keymaster.createId('Alice');
 
@@ -1980,14 +1591,7 @@ describe('revokeDID', () => {
 });
 
 describe('removeFromOwned', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return false if nothing owned', async () => {
-        mockFs({});
-
         const owner = await keymaster.createId('Alice');
         const ok = await keymaster.removeFromOwned("did:mock", owner);
 
@@ -2006,14 +1610,7 @@ function generateRandomString(length: number) {
 }
 
 describe('encryptMessage', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should encrypt a short message', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
 
@@ -2027,8 +1624,6 @@ describe('encryptMessage', () => {
     });
 
     it('should encrypt a long message', async () => {
-        mockFs({});
-
 
         const name = 'Bob';
         const did = await keymaster.createId(name);
@@ -2044,14 +1639,7 @@ describe('encryptMessage', () => {
 });
 
 describe('decryptMessage', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should decrypt a short message encrypted by same ID', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
 
@@ -2063,8 +1651,6 @@ describe('decryptMessage', () => {
     });
 
     it('should decrypt a short message after rotating keys (confirmed)', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob', { registry: 'local' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
@@ -2076,8 +1662,6 @@ describe('decryptMessage', () => {
     });
 
     it('should decrypt a short message after rotating keys (unconfirmed)', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob', { registry: 'hyperswarm' });
         const msg = 'Hi Bob!';
         await keymaster.rotateKeys();
@@ -2088,8 +1672,6 @@ describe('decryptMessage', () => {
     });
 
     it('should decrypt a short message encrypted by another ID', async () => {
-        mockFs({});
-
         const name1 = 'Alice';
         await keymaster.createId(name1);
 
@@ -2108,8 +1690,6 @@ describe('decryptMessage', () => {
     });
 
     it('should decrypt a long message encrypted by another ID', async () => {
-        mockFs({});
-
         const name1 = 'Alice';
         await keymaster.createId(name1);
 
@@ -2128,8 +1708,6 @@ describe('decryptMessage', () => {
     });
 
     it('should throw an exception on invalid DID', async () => {
-        mockFs({});
-
         const name = await keymaster.createId("Alice");
 
         try {
@@ -2148,14 +1726,7 @@ const mockJson = {
 };
 
 describe('encryptJSON', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should encrypt valid JSON', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         await keymaster.resolveDID(bob);
 
@@ -2166,14 +1737,7 @@ describe('encryptJSON', () => {
 });
 
 describe('decryptJSON', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should decrypt valid JSON', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const did = await keymaster.encryptJSON(mockJson, bob);
         const decipher = await keymaster.decryptJSON(did);
@@ -2183,14 +1747,7 @@ describe('decryptJSON', () => {
 });
 
 describe('addSignature', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should add a signature to the object', async () => {
-        mockFs({});
-
         const name = 'Bob';
         const did = await keymaster.createId(name);
         const hash = cipher.hashMessage(canonicalize(mockJson));
@@ -2201,8 +1758,6 @@ describe('addSignature', () => {
     });
 
     it('should throw an exception if no ID selected', async () => {
-        mockFs({});
-
         try {
             await keymaster.addSignature(mockJson);
             throw new ExpectedExceptionError();
@@ -2212,8 +1767,6 @@ describe('addSignature', () => {
     });
 
     it('should throw an exception if null parameter', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -2227,14 +1780,7 @@ describe('addSignature', () => {
 });
 
 describe('verifySignature', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true for valid signature', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const signed = await keymaster.addSignature(mockJson);
@@ -2244,8 +1790,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for missing signature', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         // @ts-expect-error Testing invalid usage, invalid arg
@@ -2255,8 +1799,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for invalid signature', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const signed = await keymaster.addSignature(mockJson);
@@ -2267,8 +1809,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for missing signer', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const signed = await keymaster.addSignature(mockJson);
@@ -2279,8 +1819,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for invalid hash', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const signed = await keymaster.addSignature(mockJson);
@@ -2291,8 +1829,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for null parameter', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, missing arg
         const isValid = await keymaster.verifySignature();
 
@@ -2300,8 +1836,6 @@ describe('verifySignature', () => {
     });
 
     it('should return false for invalid JSON', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, invalid arg
         const isValid = await keymaster.verifySignature("not JSON");
 
@@ -2309,8 +1843,7 @@ describe('verifySignature', () => {
     });
 });
 
-const mockSchema = {
-    // eslint-disable-next-line
+const mockSchema = {    // eslint-disable-next-line
     "$schema": "http://json-schema.org/draft-07/schema#",
     "properties": {
         "email": {
@@ -2325,14 +1858,7 @@ const mockSchema = {
 };
 
 describe('isVerifiableCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return false for non-object or null', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, calling private func
         const res1 = keymaster.isVerifiableCredential(null);
 
@@ -2345,14 +1871,7 @@ describe('isVerifiableCredential', () => {
 })
 
 describe('bindCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a bound credential', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
 
@@ -2364,8 +1883,6 @@ describe('bindCredential', () => {
     });
 
     it('should create a bound credential with provided default', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
 
@@ -2378,8 +1895,6 @@ describe('bindCredential', () => {
     });
 
     it('should create a bound credential for a different user', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
@@ -2394,14 +1909,7 @@ describe('bindCredential', () => {
 });
 
 describe('issueCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should issue a bound credential when user is issuer', async () => {
-        mockFs({});
-
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(schema, subject);
@@ -2421,8 +1929,6 @@ describe('issueCredential', () => {
     });
 
     it('should bind and issue a credential', async () => {
-        mockFs({});
-
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
         const unboundCredential = await keymaster.createTemplate(schema);
@@ -2446,8 +1952,6 @@ describe('issueCredential', () => {
     });
 
     it('should throw an exception if user is not issuer', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -2468,8 +1972,6 @@ describe('issueCredential', () => {
     });
 
     it('should throw an exception on unbound credential without binding options', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
 
         const schema = await keymaster.createSchema(mockSchema);
@@ -2486,14 +1988,7 @@ describe('issueCredential', () => {
 });
 
 describe('listIssued', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return empty list for new ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const issued = await keymaster.listIssued();
 
@@ -2501,8 +1996,6 @@ describe('listIssued', () => {
     });
 
     it('should return list containing one issued credential', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
@@ -2515,14 +2008,7 @@ describe('listIssued', () => {
 });
 
 describe('updateCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update a valid verifiable credential', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
@@ -2543,8 +2029,6 @@ describe('updateCredential', () => {
     });
 
     it('should throw exception on invalid parameters', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
@@ -2565,8 +2049,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(bob, vc);
             throw new ExpectedExceptionError();
         }
-        catch (error: any) {
-            // eslint-disable-next-line
+        catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
 
@@ -2580,8 +2063,7 @@ describe('updateCredential', () => {
             expect(error.message).toBe('Invalid parameter: did not encrypted JSON');
         }
 
-        try {
-            // Pass cipher DID instead of credential DID
+        try {            // Pass cipher DID instead of credential DID
             const cipherDID = await keymaster.encryptJSON({ bob }, bob);
             await keymaster.updateCredential(cipherDID, vc);
             throw new ExpectedExceptionError();
@@ -2595,8 +2077,7 @@ describe('updateCredential', () => {
             await keymaster.updateCredential(did);
             throw new ExpectedExceptionError();
         }
-        catch (error: any) {
-            // eslint-disable-next-line
+        catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: credential');
         }
 
@@ -2632,14 +2113,7 @@ describe('updateCredential', () => {
 });
 
 describe('revokeCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should revoke a valid verifiable credential', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
@@ -2654,8 +2128,6 @@ describe('revokeCredential', () => {
     });
 
     it('should throw exception if verifiable credential is already revoked', async () => {
-        mockFs({});
-
         const userDid = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, userDid);
@@ -2678,8 +2150,6 @@ describe('revokeCredential', () => {
     });
 
     it('should throw exception if user does not control verifiable credential', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -2704,14 +2174,7 @@ describe('revokeCredential', () => {
 });
 
 describe('acceptCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should add a valid verifiable credential to user wallet', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -2732,8 +2195,6 @@ describe('acceptCredential', () => {
     });
 
     it('should return false if user cannot decrypt credential', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -2751,8 +2212,6 @@ describe('acceptCredential', () => {
     });
 
     it('should return false if user is not the credential subject', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -2772,8 +2231,6 @@ describe('acceptCredential', () => {
     });
 
     it('should return false if the verifiable credential is invalid', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
 
@@ -2789,14 +2246,7 @@ describe('acceptCredential', () => {
 });
 
 describe('createChallenge', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a valid empty challenge', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const did = await keymaster.createChallenge();
         const doc = await keymaster.resolveDID(did);
@@ -2813,8 +2263,6 @@ describe('createChallenge', () => {
     });
 
     it('should create an empty challenge with specified expiry', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const validUntil = '2025-01-01';
         const did = await keymaster.createChallenge({}, { validUntil });
@@ -2827,8 +2275,6 @@ describe('createChallenge', () => {
     });
 
     it('should create a valid challenge', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -2853,8 +2299,6 @@ describe('createChallenge', () => {
     });
 
     it('should throw an exception if challenge spec is invalid', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
 
         try {
@@ -2888,8 +2332,6 @@ describe('createChallenge', () => {
     });
 
     it('should throw an exception if validUntil is not a valid date', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
 
         try {
@@ -2904,14 +2346,7 @@ describe('createChallenge', () => {
 });
 
 describe('createResponse', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a valid response to a simple challenge', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Victor');
@@ -2953,8 +2388,6 @@ describe('createResponse', () => {
     });
 
     it('should throw an exception on invalid challenge', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
 
         try {
@@ -3001,14 +2434,7 @@ describe('createResponse', () => {
 });
 
 describe('verifyResponse', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should verify valid response to empty challenge', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
@@ -3035,8 +2461,6 @@ describe('verifyResponse', () => {
     });
 
     it('should verify a valid response to a single credential challenge', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
@@ -3077,8 +2501,6 @@ describe('verifyResponse', () => {
     });
 
     it('should not verify a invalid response to a single credential challenge', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Carol');
         await keymaster.createId('Victor');
@@ -3113,8 +2535,6 @@ describe('verifyResponse', () => {
     });
 
     it('should verify a response if credential is updated', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
@@ -3160,8 +2580,6 @@ describe('verifyResponse', () => {
     });
 
     it('should demonstrate full workflow with credential revocations', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice', { registry: 'local' });
         const bob = await keymaster.createId('Bob', { registry: 'local' });
         const carol = await keymaster.createId('Carol', { registry: 'local' });
@@ -3268,8 +2686,6 @@ describe('verifyResponse', () => {
     });
 
     it('should raise exception on invalid parameter', async () => {
-        mockFs({});
-
         const alice = await keymaster.createId('Alice');
 
         try {
@@ -3316,14 +2732,7 @@ describe('verifyResponse', () => {
 });
 
 describe('publishCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should reveal a valid credential', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
@@ -3339,8 +2748,6 @@ describe('publishCredential', () => {
     });
 
     it('should publish a valid credential without revealing', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
@@ -3358,8 +2765,6 @@ describe('publishCredential', () => {
     });
 
     it('should throw when did is not a verifiable credential', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const did = await keymaster.encryptJSON(mockJson, bob);
 
@@ -3374,14 +2779,7 @@ describe('publishCredential', () => {
 });
 
 describe('unpublishCredential', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should unpublish a published credential', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
@@ -3397,8 +2795,6 @@ describe('unpublishCredential', () => {
     });
 
     it('should throw an exception when no current ID', async () => {
-        mockFs({});
-
         try {
             await keymaster.unpublishCredential('mock');
             throw new ExpectedExceptionError();
@@ -3409,8 +2805,6 @@ describe('unpublishCredential', () => {
     });
 
     it('should throw an exception when credential invalid', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -3423,8 +2817,6 @@ describe('unpublishCredential', () => {
     });
 
     it('should throw an exception when credential not found', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const credentialDid = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(credentialDid, bob);
@@ -3441,14 +2833,7 @@ describe('unpublishCredential', () => {
 });
 
 describe('createGroup', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a new named group', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3468,8 +2853,6 @@ describe('createGroup', () => {
     });
 
     it('should create a new named group with a different DID name', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const didName = 'mockName';
@@ -3488,14 +2871,7 @@ describe('createGroup', () => {
 });
 
 describe('addGroupMember', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should add a DID member to the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3515,8 +2891,6 @@ describe('addGroupMember', () => {
     });
 
     it('should add a DID alias to the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3538,8 +2912,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add an unknown DID alias to the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3554,8 +2926,6 @@ describe('addGroupMember', () => {
     });
 
     it('should add a DID to a group alias', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3577,8 +2947,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add a DID member to an unknown group alias', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -3593,8 +2961,6 @@ describe('addGroupMember', () => {
     });
 
     it('should add a member to the group only once', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3619,8 +2985,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not increment version when adding a member a 2nd time', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3639,8 +3003,6 @@ describe('addGroupMember', () => {
     });
 
     it('should add multiple members to the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3658,8 +3020,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add a non-DID to the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3710,8 +3070,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add a member to a non-group', async () => {
-        mockFs({});
-
         const agentDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -3756,8 +3114,7 @@ describe('addGroupMember', () => {
             await keymaster.addGroupMember(agentDid, dataDid);
             throw new ExpectedExceptionError();
         }
-        catch (error: any) {
-            // eslint-disable-next-line
+        catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: groupId');
         }
 
@@ -3771,8 +3128,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add a group to itself', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupDid = await keymaster.createGroup('group');
 
@@ -3786,8 +3141,6 @@ describe('addGroupMember', () => {
     });
 
     it('should not add a member that contains group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const group1Did = await keymaster.createGroup('group-1');
         const group2Did = await keymaster.createGroup('group-2');
@@ -3807,14 +3160,7 @@ describe('addGroupMember', () => {
 });
 
 describe('removeGroupMember', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should remove a DID member from a group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3836,8 +3182,6 @@ describe('removeGroupMember', () => {
     });
 
     it('should remove a DID alias from a group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3862,8 +3206,6 @@ describe('removeGroupMember', () => {
     });
 
     it('should be OK to remove a DID that is not in the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3884,8 +3226,6 @@ describe('removeGroupMember', () => {
     });
 
     it('should not increment version when removing a non-existent member', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3902,8 +3242,6 @@ describe('removeGroupMember', () => {
     });
 
     it('should not remove a non-DID from the group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -3954,8 +3292,6 @@ describe('removeGroupMember', () => {
     });
 
     it('should not remove a member from a non-group', async () => {
-        mockFs({});
-
         const agentDid = await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -4024,14 +3360,7 @@ describe('removeGroupMember', () => {
 });
 
 describe('testGroup', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true when member in group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -4045,8 +3374,6 @@ describe('testGroup', () => {
     });
 
     it('should return false when member not in group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -4059,8 +3386,6 @@ describe('testGroup', () => {
     });
 
     it('should return true when testing group only', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
         const groupDid = await keymaster.createGroup(groupName);
@@ -4071,8 +3396,6 @@ describe('testGroup', () => {
     });
 
     it('should return false when testing non-group only', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockData' };
         const dataDid = await keymaster.createAsset(mockAnchor);
@@ -4083,8 +3406,6 @@ describe('testGroup', () => {
     });
 
     it('should return true when testing recursive groups', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const group1Did = await keymaster.createGroup('level-1');
         const group2Did = await keymaster.createGroup('level-2');
@@ -4112,14 +3433,7 @@ describe('testGroup', () => {
 });
 
 describe('getGroup', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return the specified group', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const groupName = 'mock';
         const groupDid = await keymaster.createGroup(groupName);
@@ -4131,8 +3445,6 @@ describe('getGroup', () => {
     });
 
     it('should return null on invalid DID', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const group = (await keymaster.getGroup(did));
 
@@ -4140,8 +3452,6 @@ describe('getGroup', () => {
     });
 
     it('should return old style group (TEMP during did:test)', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const oldGroup = {
             name: 'mock',
@@ -4155,8 +3465,6 @@ describe('getGroup', () => {
     });
 
     it('should return null if non-group DID specified', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Bob');
         const group = await keymaster.getGroup(agentDID);
 
@@ -4164,8 +3472,6 @@ describe('getGroup', () => {
     });
 
     it('should raise an exception if no DID specified', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.getGroup();
@@ -4178,14 +3484,7 @@ describe('getGroup', () => {
 });
 
 describe('listGroups', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return list of groups', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const group1 = await keymaster.createGroup('mock-1');
@@ -4205,14 +3504,7 @@ describe('listGroups', () => {
 });
 
 describe('pollTemplate', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return a poll template', async () => {
-        mockFs({});
-
         const template = await keymaster.pollTemplate();
 
         const expectedTemplate = {
@@ -4229,14 +3521,7 @@ describe('pollTemplate', () => {
 });
 
 describe('createPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a poll from a valid template', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4250,8 +3535,6 @@ describe('createPoll', () => {
     });
 
     it('should not create a poll from an invalid template', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4304,8 +3587,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error: any) {
-            // eslint-disable-next-line
+        catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: poll.options');
         }
 
@@ -4345,8 +3627,7 @@ describe('createPoll', () => {
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
         }
-        catch (error: any) {
-            // eslint-disable-next-line
+        catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
 
@@ -4378,14 +3659,7 @@ describe('createPoll', () => {
 });
 
 describe('testPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true only for a poll DID', async () => {
-        mockFs({});
-
         const agentDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4416,14 +3690,7 @@ describe('testPoll', () => {
 });
 
 describe('listPolls', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return list of polls', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4447,14 +3714,7 @@ describe('listPolls', () => {
 });
 
 describe('getPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return the specified poll', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4468,8 +3728,6 @@ describe('getPoll', () => {
     });
 
     it('should return null on invalid id', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const poll = await keymaster.getPoll(did);
 
@@ -4477,8 +3735,6 @@ describe('getPoll', () => {
     });
 
     it('should return old style poll (TEMP during did:test)', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4492,8 +3748,6 @@ describe('getPoll', () => {
     });
 
     it('should return null if non-poll DID specified', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Bob');
         const group = await keymaster.getPoll(agentDID);
 
@@ -4501,8 +3755,6 @@ describe('getPoll', () => {
     });
 
     it('should raise an exception if no poll DID specified', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.getPoll();
@@ -4515,14 +3767,7 @@ describe('getPoll', () => {
 });
 
 describe('viewPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return a valid view from a new poll', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4549,8 +3794,6 @@ describe('viewPoll', () => {
     });
 
     it('should throw on invalid poll id', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
 
         try {
@@ -4564,14 +3807,7 @@ describe('viewPoll', () => {
 });
 
 describe('votePoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return a valid ballot', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4592,8 +3828,6 @@ describe('votePoll', () => {
     });
 
     it('should allow a spoiled ballot', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4614,8 +3848,6 @@ describe('votePoll', () => {
     });
 
     it('should not return a ballot for an invalid vote', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4635,8 +3867,6 @@ describe('votePoll', () => {
     });
 
     it('should not return a ballot for an ineligible voter', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         const template = await keymaster.pollTemplate();
@@ -4655,8 +3885,6 @@ describe('votePoll', () => {
     });
 
     it('should throw on an invalid poll id', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
 
         try {
@@ -4670,14 +3898,7 @@ describe('votePoll', () => {
 });
 
 describe('updatePoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update poll with valid ballot', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4694,8 +3915,6 @@ describe('updatePoll', () => {
     });
 
     it('should reject non-ballots', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4713,8 +3932,6 @@ describe('updatePoll', () => {
     });
 
     it('should throw on invalid ballot id', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const did = await keymaster.encryptJSON(mockJson, bob);
 
@@ -4728,8 +3945,6 @@ describe('updatePoll', () => {
     });
 
     it('should throw on invalid poll id', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
 
         const ballot = {
@@ -4750,14 +3965,7 @@ describe('updatePoll', () => {
 });
 
 describe('publishPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should publish results to poll', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4799,8 +4007,6 @@ describe('publishPoll', () => {
     });
 
     it('should reveal results to poll', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4825,14 +4031,7 @@ describe('publishPoll', () => {
 });
 
 describe('unpublishPoll', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should remove results from poll', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4851,8 +4050,6 @@ describe('unpublishPoll', () => {
     });
 
     it('should throw when non-owner tries to update pill', async () => {
-        mockFs({});
-
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
@@ -4874,14 +4071,7 @@ describe('unpublishPoll', () => {
 });
 
 describe('createSchema', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create a credential from a schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const did = await keymaster.createSchema(mockSchema);
@@ -4892,8 +4082,6 @@ describe('createSchema', () => {
     });
 
     it('should create a default schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
         const doc = await keymaster.resolveDID(did);
@@ -4915,8 +4103,6 @@ describe('createSchema', () => {
     });
 
     it('should create a simple schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const doc = await keymaster.resolveDID(did);
@@ -4925,22 +4111,17 @@ describe('createSchema', () => {
     });
 
     it('should throw an exception on create invalid schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
             await keymaster.createSchema({ mock: 'not a schema' });
             throw new ExpectedExceptionError();
-        } catch (error: any) {
-            // eslint-disable-next-line
+        } catch (error: any) {            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: schema');
         }
     });
 
     it('should throw an exception on schema missing properties', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -4953,14 +4134,7 @@ describe('createSchema', () => {
 });
 
 describe('listSchemas', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return list of schemas', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         const schema1 = await keymaster.createSchema();
@@ -4978,14 +4152,7 @@ describe('listSchemas', () => {
 });
 
 describe('getSchema', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return the schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema(mockSchema);
         const schema = await keymaster.getSchema(did);
@@ -4994,8 +4161,6 @@ describe('getSchema', () => {
     });
 
     it('should return null on invalid id', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const schema = await keymaster.getSchema(did);
 
@@ -5003,8 +4168,6 @@ describe('getSchema', () => {
     });
 
     it('should return the old style schema (TEMP during did:test)', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createAsset(mockSchema);
         const schema = await keymaster.getSchema(did);
@@ -5013,8 +4176,6 @@ describe('getSchema', () => {
     });
 
     it('should throw an exception on get invalid schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -5027,14 +4188,7 @@ describe('getSchema', () => {
 });
 
 describe('setSchema', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update the schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
         const ok = await keymaster.setSchema(did, mockSchema);
@@ -5045,8 +4199,6 @@ describe('setSchema', () => {
     });
 
     it('should throw an exception on set invalid schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
 
@@ -5060,14 +4212,7 @@ describe('setSchema', () => {
 });
 
 describe('testSchema', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true for a valid schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
         await keymaster.setSchema(did, mockSchema);
@@ -5078,8 +4223,6 @@ describe('testSchema', () => {
     });
 
     it('should return false for a non-schema DID', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Bob');
         const isSchema = await keymaster.testSchema(agentDID);
 
@@ -5087,8 +4230,6 @@ describe('testSchema', () => {
     });
 
     it('should return false for non-schemas', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, missing arg
         let isSchema = await keymaster.testSchema();
         expect(isSchema).toBe(false);
@@ -5115,14 +4256,7 @@ describe('testSchema', () => {
 });
 
 describe('createTemplate', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create template from a valid schema', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createSchema();
         await keymaster.setSchema(did, mockSchema);
@@ -5137,8 +4271,6 @@ describe('createTemplate', () => {
     });
 
     it('should raise an exception when no DID provided', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.createTemplate();
@@ -5150,13 +4282,7 @@ describe('createTemplate', () => {
 });
 
 describe('listRegistries', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return list of valid registries', async () => {
-        mockFs({});
-
         const registries = await keymaster.listRegistries();
 
         expect(registries.includes('local')).toBe(true);
@@ -5204,13 +4330,7 @@ async function setupCredentials() {
 }
 
 describe('checkWallet', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should report no problems with empty wallet', async () => {
-        mockFs({});
-
         const { checked, invalid, deleted } = await keymaster.checkWallet();
 
         expect(checked).toBe(0);
@@ -5219,8 +4339,6 @@ describe('checkWallet', () => {
     });
 
     it('should report no problems with wallet with only one ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
 
         const { checked, invalid, deleted } = await keymaster.checkWallet();
@@ -5231,8 +4349,6 @@ describe('checkWallet', () => {
     });
 
     it('should detect revoked ID', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Alice');
         await keymaster.revokeDID(agentDID);
 
@@ -5244,8 +4360,6 @@ describe('checkWallet', () => {
     });
 
     it('should detect removed DIDs', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Alice');
         const schemaDID = await keymaster.createSchema();
         await keymaster.addName('schema', schemaDID);
@@ -5259,8 +4373,6 @@ describe('checkWallet', () => {
     });
 
     it('should detect invalid DIDs', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.addToOwned('did:test:mock1');
         await keymaster.addToHeld('did:test:mock2');
@@ -5273,8 +4385,6 @@ describe('checkWallet', () => {
     });
 
     it('should detect revoked credentials in wallet', async () => {
-        mockFs({});
-
         const credentials = await setupCredentials();
         await keymaster.addName('credential-0', credentials[0]);
         await keymaster.addName('credential-2', credentials[2]);
@@ -5290,13 +4400,7 @@ describe('checkWallet', () => {
 });
 
 describe('fixWallet', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should report no problems with empty wallet', async () => {
-        mockFs({});
-
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(0);
@@ -5306,8 +4410,6 @@ describe('fixWallet', () => {
     });
 
     it('should report no problems with wallet with only one ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
@@ -5318,8 +4420,6 @@ describe('fixWallet', () => {
     });
 
     it('should remove revoked ID', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Alice');
         await keymaster.revokeDID(agentDID);
 
@@ -5332,8 +4432,6 @@ describe('fixWallet', () => {
     });
 
     it('should remove deleted DIDs', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Alice');
         const schemaDID = await keymaster.createSchema();
         await keymaster.addName('schema', schemaDID);
@@ -5348,8 +4446,6 @@ describe('fixWallet', () => {
     });
 
     it('should remove invalid DIDs', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.addToOwned('did:test:mock1');
         await keymaster.addToHeld('did:test:mock2');
@@ -5363,8 +4459,6 @@ describe('fixWallet', () => {
     });
 
     it('should remove revoked credentials', async () => {
-        mockFs({});
-
         const credentials = await setupCredentials();
         await keymaster.addName('credential-0', credentials[0]);
         await keymaster.addName('credential-2', credentials[2]);
@@ -5381,13 +4475,7 @@ describe('fixWallet', () => {
 });
 
 describe('listCredentials', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('return list of held credentials', async () => {
-        mockFs({});
-
         const expectedCredentials = await setupCredentials();
         const credentials = await keymaster.listCredentials('Carol');
 
@@ -5395,8 +4483,6 @@ describe('listCredentials', () => {
     });
 
     it('return empty list if specified ID holds no credentials', async () => {
-        mockFs({});
-
         await setupCredentials();
         const credentials = await keymaster.listCredentials('Bob');
 
@@ -5404,8 +4490,6 @@ describe('listCredentials', () => {
     });
 
     it('raises an exception if invalid ID specified', async () => {
-        mockFs({});
-
         try {
             await keymaster.listCredentials('mock');
             throw new ExpectedExceptionError();
@@ -5416,13 +4500,7 @@ describe('listCredentials', () => {
 });
 
 describe('getCredential', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('returns decrypted credential for valid DID', async () => {
-        mockFs({});
-
         const credentials = await setupCredentials();
 
         for (const did of credentials) {
@@ -5432,8 +4510,6 @@ describe('getCredential', () => {
     });
 
     it('raises an exception if invalid DID specified', async () => {
-        mockFs({});
-
         try {
             await keymaster.getCredential('mock');
             throw new ExpectedExceptionError();
@@ -5443,8 +4519,6 @@ describe('getCredential', () => {
     });
 
     it('raises an exception if DID specified that is not a credential', async () => {
-        mockFs({});
-
         try {
             const agentDID = await keymaster.createId('Rando');
             await keymaster.getCredential(agentDID);
@@ -5455,8 +4529,6 @@ describe('getCredential', () => {
     });
 
     it('return null if not a verifiable credential', async () => {
-        mockFs({});
-
         const bob = await keymaster.createId('Bob');
         const did = await keymaster.encryptJSON(mockJson, bob);
         const res = await keymaster.getCredential(did);
@@ -5466,13 +4538,7 @@ describe('getCredential', () => {
 });
 
 describe('removeCredential', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('removes specified credential from held credentials list', async () => {
-        mockFs({});
-
         const credentials = await setupCredentials();
 
         const ok1 = await keymaster.removeCredential(credentials[1]);
@@ -5487,8 +4553,6 @@ describe('removeCredential', () => {
     });
 
     it('returns false if DID not previously held', async () => {
-        mockFs({});
-
         const agentDID = await keymaster.createId('Rando');
         const ok = await keymaster.removeCredential(agentDID);
 
@@ -5496,8 +4560,6 @@ describe('removeCredential', () => {
     });
 
     it('raises an exception if no DID specified', async () => {
-        mockFs({});
-
         try {
             // @ts-expect-error Testing invalid usage, missing arg
             await keymaster.removeCredential();
@@ -5508,8 +4570,6 @@ describe('removeCredential', () => {
     });
 
     it('raises an exception if invalid DID specified', async () => {
-        mockFs({});
-
         try {
             await keymaster.removeCredential('mock');
             throw new ExpectedExceptionError();
@@ -5520,13 +4580,7 @@ describe('removeCredential', () => {
 });
 
 describe('listIds', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should list all IDs wallet', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -5543,13 +4597,7 @@ describe('listIds', () => {
 });
 
 describe('getCurrentId', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should list all IDs wallet', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -5562,13 +4610,7 @@ describe('getCurrentId', () => {
 });
 
 describe('setCurrentId', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should set current ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -5581,8 +4623,6 @@ describe('setCurrentId', () => {
     });
 
     it('should throw an exception on invalid ID', async () => {
-        mockFs({});
-
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         await keymaster.createId('Carol');
@@ -5598,14 +4638,7 @@ describe('setCurrentId', () => {
 });
 
 describe('createImage', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create DID from image data', async () => {
-        mockFs({});
-
         const mockImage = await sharp({
             create: {
                 width: 100,
@@ -5636,8 +4669,6 @@ describe('createImage', () => {
     });
 
     it('should throw an exception on invalid image buffer', async () => {
-        mockFs({});
-
         try {
             await keymaster.createImage(Buffer.from('mock'));
             throw new ExpectedExceptionError();
@@ -5648,14 +4679,7 @@ describe('createImage', () => {
 });
 
 describe('updateImage', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update image DID from image data', async () => {
-        mockFs({});
-
         const mockImage = await sharp({
             create: {
                 width: 100,
@@ -5697,8 +4721,6 @@ describe('updateImage', () => {
     });
 
     it('should add image to an empty asset', async () => {
-        mockFs({});
-
         const ownerDid = await keymaster.createId('Bob');
         const dataDid = await keymaster.createAsset({});
 
@@ -5732,8 +4754,6 @@ describe('updateImage', () => {
     });
 
     it('should throw an exception on invalid update image buffer', async () => {
-        mockFs({});
-
         const mockImage = await sharp({
             create: {
                 width: 100,
@@ -5756,14 +4776,7 @@ describe('updateImage', () => {
 });
 
 describe('getImage', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return the image', async () => {
-        mockFs({});
-
         // Create a small image buffer using sharp
         const mockImage = await sharp({
             create: {
@@ -5786,8 +4799,6 @@ describe('getImage', () => {
     });
 
     it('should return null on invalid did', async () => {
-        mockFs({});
-
         const did = await keymaster.createId('Bob');
         const image = await keymaster.getImage(did);
 
@@ -5795,8 +4806,6 @@ describe('getImage', () => {
     });
 
     it('should throw an exception on get invalid image', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
 
         try {
@@ -5809,13 +4818,7 @@ describe('getImage', () => {
 });
 
 describe('testImage', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true for image DID', async () => {
-        mockFs({});
-
         // Create a small image buffer using sharp
         const mockImage = await sharp({
             create: {
@@ -5834,8 +4837,6 @@ describe('testImage', () => {
     });
 
     it('should return true for image name', async () => {
-        mockFs({});
-
         // Create a small image buffer using sharp
         const mockImage = await sharp({
             create: {
@@ -5855,8 +4856,6 @@ describe('testImage', () => {
     });
 
     it('should return false for non-image DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createAsset({ name: 'mockAnchor' });
         const isImage = await keymaster.testImage(did);
@@ -5865,30 +4864,19 @@ describe('testImage', () => {
     });
 
     it('should return false if no DID specified', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, missing arg
         const isImage = await keymaster.testImage();
         expect(isImage).toBe(false);
     });
 
     it('should return false if invalid DID specified', async () => {
-        mockFs({});
-
         const isImage = await keymaster.testImage('mock');
         expect(isImage).toBe(false);
     });
 });
 
 describe('createDocument', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should create DID from document data', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
         const cid = await generateCID(mockDocument);
         const filename = 'mockDocument.txt';
@@ -5913,8 +4901,6 @@ describe('createDocument', () => {
     });
 
     it('should handle case where no filename is provided', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is another mock binary document.', 'utf-8');
         const cid = await generateCID(mockDocument);
 
@@ -5938,8 +4924,6 @@ describe('createDocument', () => {
     });
 
     it('should handle case where filename has no extension', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is another mock document.', 'utf-8');
         const cid = await generateCID(mockDocument);
         const filename = 'mockDocument';
@@ -5965,14 +4949,7 @@ describe('createDocument', () => {
 });
 
 describe('updateDocument', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should update named DID from document data', async () => {
-        mockFs({});
-
         const mockdoc_v1 = Buffer.from('This is the first version.', 'utf-8');
         const mockdoc_v2 = Buffer.from('This is the second version.', 'utf-8');
         const cid = await generateCID(mockdoc_v2);
@@ -5999,8 +4976,6 @@ describe('updateDocument', () => {
     });
 
     it('should handle case where no filename is provided', async () => {
-        mockFs({});
-
         const mockdoc_v1 = Buffer.from('This is another first version.', 'utf-8');
         const mockdoc_v2 = Buffer.from('This is another second version.', 'utf-8');
         const cid = await generateCID(mockdoc_v2);
@@ -6026,8 +5001,6 @@ describe('updateDocument', () => {
     });
 
     it('should handle case where filename has no extension', async () => {
-        mockFs({});
-
         const mockdoc_v1 = Buffer.from('This is yet another first version.', 'utf-8');
         const mockdoc_v2 = Buffer.from('This is yet another second version.', 'utf-8');
         const cid = await generateCID(mockdoc_v2);
@@ -6055,14 +5028,7 @@ describe('updateDocument', () => {
 });
 
 describe('getDocument', () => {
-
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return the document asset', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
         const cid = await generateCID(mockDocument);
         const filename = 'mockDocument.txt';
@@ -6083,13 +5049,7 @@ describe('getDocument', () => {
 });
 
 describe('testDocument', () => {
-    afterEach(() => {
-        mockFs.restore();
-    });
-
     it('should return true for document DID', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is a test document.', 'utf-8');
 
         await keymaster.createId('Bob');
@@ -6100,8 +5060,6 @@ describe('testDocument', () => {
     });
 
     it('should return true for document name', async () => {
-        mockFs({});
-
         const mockDocument = Buffer.from('This is another test document.', 'utf-8');
 
         await keymaster.createId('Bob');
@@ -6113,8 +5071,6 @@ describe('testDocument', () => {
     });
 
     it('should return false for non-document DID', async () => {
-        mockFs({});
-
         await keymaster.createId('Bob');
         const did = await keymaster.createAsset({ name: 'mockAnchor' });
         const isDocument = await keymaster.testDocument(did);
@@ -6123,16 +5079,12 @@ describe('testDocument', () => {
     });
 
     it('should return false if no DID specified', async () => {
-        mockFs({});
-
         // @ts-expect-error Testing invalid usage, missing arg
         const isDocument = await keymaster.testDocument();
         expect(isDocument).toBe(false);
     });
 
     it('should return false if invalid DID specified', async () => {
-        mockFs({});
-
         const isDocument = await keymaster.testDocument('mock');
         expect(isDocument).toBe(false);
     });
