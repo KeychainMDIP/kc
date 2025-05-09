@@ -24,6 +24,10 @@
       "import": "./dist/db/json-cache.js",
       "types": "./dist/types/db/json-cache.d.ts"
     },
+    "./db/json-memory": {
+      "import": "./dist/db/json-memory.js",
+      "types": "./dist/types/db/json-memory.d.ts"
+    },
     "./db/sqlite": {
       "import": "./dist/db/sqlite.js",
       "types": "./dist/types/db/sqlite.d.ts"

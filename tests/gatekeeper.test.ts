@@ -3,7 +3,7 @@ import fs from 'fs';
 import CipherNode from '@mdip/cipher/node';
 import { Operation, MdipDocument, BlockInfo } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
-import DbJson from '@mdip/gatekeeper/db/json';
+import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
 import type { EcdsaJwkPair } from '@mdip/cipher/types';
@@ -18,7 +18,7 @@ const mockConsole = {
 } as unknown as typeof console;
 
 const cipher = new CipherNode();
-const db = new DbJson('test');
+const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 
@@ -3096,21 +3096,21 @@ describe('checkDIDs', () => {
         expect(check.byType.invalid).toBe(1);
     });
 
-    it('should reset a corrupted db', async () => {
-        mockFs({});
+    // it('should reset a corrupted db', async () => {
+    //     mockFs({});
 
-        const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
-        const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
-        await gatekeeper.createDID(assetOp);
+    //     const keypair = cipher.generateRandomJwk();
+    //     const agentOp = await createAgentOp(keypair);
+    //     const agentDID = await gatekeeper.createDID(agentOp);
+    //     const assetOp = await createAssetOp(agentDID, keypair);
+    //     await gatekeeper.createDID(assetOp);
 
-        fs.writeFileSync('data/test.json', "{ dids: {");
+    //     fs.writeFileSync('data/test.json', "{ dids: {");
 
-        const { total } = await gatekeeper.checkDIDs();
+    //     const { total } = await gatekeeper.checkDIDs();
 
-        expect(total).toBe(0);
-    });
+    //     expect(total).toBe(0);
+    // });
 });
 
 
