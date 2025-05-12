@@ -3,16 +3,10 @@ import { Box, Button, MenuItem, Select } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { FileAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
-
-interface DocumentAsset {
-    cid: string;
-    type: string;
-    bytes: number;
-    filename: string;
-}
 
 const gatekeeper = new GatekeeperClient();
 
@@ -31,7 +25,7 @@ const DocumentTab = () => {
     } = useCredentialsContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [selectedDocumentName, setSelectedDocumentName] = useState<string>("");
-    const [selectedDocument, setSelectedDocument] = useState<DocumentAsset | null>(null);
+    const [selectedDocument, setSelectedDocument] = useState<FileAsset | null>(null);
     const [selectedDocumentDocs, setSelectedDocumentDocs] = useState<MdipDocument | null>(null);
     const [selectedDocumentDataUrl, setSelectedDocumentDataUrl] = useState<string>("");
     const [docVersion, setDocVersion] = useState<number>(1);
@@ -67,7 +61,7 @@ const DocumentTab = () => {
                 setDocVersionMax(currentVersion);
             }
 
-            const docAsset = docs.didDocumentData as { document? : DocumentAsset};
+            const docAsset = docs.didDocumentData as { document? : FileAsset};
             if (!docAsset.document || !docAsset.document.cid) {
                 setError(`No document data found in version ${currentVersion}`);
                 return;
