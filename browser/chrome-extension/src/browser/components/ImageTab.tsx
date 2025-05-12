@@ -6,6 +6,7 @@ import {useCredentialsContext} from "../../shared/contexts/CredentialsProvider";
 import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
+import VersionNavigator from "./VersionNavigator";
 
 const gatekeeper = new GatekeeperClient();
 
@@ -28,6 +29,9 @@ const ImageTab = () => {
     const [selectedImageDocs, setSelectedImageDocs] = useState<MdipDocument | null>(null);
     const [selectedImageDataUrl, setSelectedImageDataUrl] = useState<string>("");
 
+    const [imageVersion, setImageVersion] = useState<number>(1);
+    const [imageVersionMax, setImageVersionMax] = useState<number>(1);
+
     useEffect(() => {
         const init = async () => {
             const { gatekeeperUrl } = await chrome.storage.sync.get([
@@ -39,24 +43,42 @@ const ImageTab = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function refreshImage(imageName: string) {
+    useEffect(() => {
+        if (selectedImageName) {
+            refreshImage(selectedImageName);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedImageName]);
+
+    async function refreshImage(name: string, version?: number) {
         if (!keymaster) {
             return;
         }
         try {
-            const image = await keymaster.getImage(imageName);
-            if (!image) {
-                setError(`Image ${imageName} not found`);
-                return;
-            }
-            setSelectedImage(image);
-
-            const docs = await keymaster.resolveDID(imageName);
+            const docs = await keymaster.resolveDID(name, version ? { atVersion: version } : {});
             setSelectedImageDocs(docs);
 
-            const raw = await gatekeeper.getData(image.cid);
+            const currentVersion = docs.didDocumentMetadata?.version ?? 1;
+            setImageVersion(currentVersion);
+            if (currentVersion > imageVersionMax) {
+                setImageVersionMax(currentVersion);
+            }
+
+            const docAsset = docs.didDocumentData as { image? :ImageAsset };
+            if (!docAsset.image || !docAsset.image.cid) {
+                setError(`No image data found in version ${currentVersion}`);
+                return;
+            }
+            setSelectedImage(docAsset.image);
+
+            const raw = await gatekeeper.getData(docAsset.image.cid);
+            if (!raw) {
+                setError(`Could not fetch data for CID: ${docAsset.image.cid}`);
+                return;
+            }
+
             const base64 = raw.toString("base64");
-            const dataUrl = `data:${image.type};base64,${base64}`;
+            const dataUrl = `data:${docAsset.image.type};base64,${base64}`;
             setSelectedImageDataUrl(dataUrl);
         } catch (error: any) {
             setError(error.error || error.message || String(error));
@@ -108,7 +130,6 @@ const ImageTab = () => {
 
                     await refreshNames();
                     setSelectedImageName(name);
-                    await refreshImage(name);
                 } catch (error: any) {
                     setError(`Error processing image: ${error}`);
                 }
@@ -122,6 +143,57 @@ const ImageTab = () => {
         } catch (error: any) {
             setError(`Error uploading image: ${error}`);
         }
+    }
+
+    async function updateImage(event: ChangeEvent<HTMLInputElement>) {
+        if (!keymaster || !selectedImageName) {
+            return;
+        }
+        try {
+            const fileInput = event.target;
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+
+            const file = fileInput.files[0];
+            fileInput.value = "";
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    if (!e.target || !e.target.result) {
+                        setError("Unexpected file reader result");
+                        return;
+                    }
+                    const arrayBuffer = e.target.result;
+                    let buffer: Buffer;
+                    if (arrayBuffer instanceof ArrayBuffer) {
+                        buffer = Buffer.from(arrayBuffer);
+                    } else {
+                        setError("Unexpected file reader result type");
+                        return;
+                    }
+
+                    await keymaster.updateImage(selectedImageName, buffer);
+
+                    setSuccess(`Image updated successfully`);
+                    await refreshImage(selectedImageName);
+                } catch (error: any) {
+                    setError(`Error processing image: ${error}`);
+                }
+            };
+
+            reader.onerror = (err) => {
+                setError(`Error reading file: ${err}`);
+            };
+            reader.readAsArrayBuffer(file);
+        } catch (error: any) {
+            setError(`Error uploading image: ${error}`);
+        }
+    }
+
+    function handleVersionChange(newVer: number) {
+        refreshImage(selectedImageName, newVer);
     }
 
     return (
@@ -187,17 +259,29 @@ const ImageTab = () => {
                         </Select>
                         <Button
                             variant="contained"
-                            onClick={() => refreshImage(selectedImageName)}
+                            onClick={() => document.getElementById("imageUpdate")!.click()}
                             size="small"
                             className="button-right"
                             disabled={!selectedImageName}
                         >
-                            Show Image
+                            Update
                         </Button>
+                        <input
+                            type="file"
+                            id="imageUpdate"
+                            accept="image/*"
+                            style={{ display: "none" }}
+                            onChange={updateImage}
+                        />
                     </Box>
-                    <Box className="flex-box mt-2">
-                        {selectedImage && selectedImageDocs && selectedImageDataUrl &&
-                            <Box display="flex" flexDirection="column" gap={2}>
+                    {selectedImage && selectedImageDocs && selectedImageDataUrl && (
+                        <Box sx={{ mt: 2 }}>
+                            <VersionNavigator
+                                version={imageVersion}
+                                maxVersion={imageVersionMax}
+                                onVersionChange={handleVersionChange}
+                            />
+                            <Box sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
                                 <Box>
                                     <img
                                         src={selectedImageDataUrl}
@@ -234,8 +318,8 @@ const ImageTab = () => {
                                     </Box>
                                 </Box>
                             </Box>
-                        }
-                    </Box>
+                        </Box>
+                    )}
                 </Box>
             }
         </Box>
