@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+docker compose logs -f signet-node signet-mediator
