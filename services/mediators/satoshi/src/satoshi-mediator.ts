@@ -450,17 +450,21 @@ async function addBlock(height: number, hash: string, time: number): Promise<voi
 }
 
 async function syncBlocks(): Promise<void> {
-    const latest = await gatekeeper.getBlock(REGISTRY);
-    const currentMax = latest ? latest.height : config.startBlock;
-    const blockCount = await btcClient.getBlockCount();
+    try {
+        const latest = await gatekeeper.getBlock(REGISTRY);
+        const currentMax = latest ? latest.height : config.startBlock;
+        const blockCount = await btcClient.getBlockCount();
 
-    console.log(`current block height: ${blockCount}`);
+        console.log(`current block height: ${blockCount}`);
 
-    for (let height = currentMax; height <= blockCount; height++) {
-        const blockHash = await btcClient.getBlockHash(height);
-        const block = await btcClient.getBlock(blockHash);
-        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
-        await addBlock(height, blockHash, block.time);
+        for (let height = currentMax; height <= blockCount; height++) {
+            const blockHash = await btcClient.getBlockHash(height);
+            const block = await btcClient.getBlock(blockHash);
+            console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+            await addBlock(height, blockHash, block.time);
+        }
+    } catch (error) {
+        console.error(`Error syncing blocks: ${error}`);
     }
 }
 
