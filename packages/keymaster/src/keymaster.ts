@@ -2638,4 +2638,24 @@ export default class Keymaster implements KeymasterInterface {
 
         return this.updateAsset(pollId, { poll });
     }
+
+    async createGroupVault(options = {}): Promise<string> {
+        const idKeypair = await this.hdKeyPair();
+        const salt = this.cipher.generateRandomSalt();
+        const vaultKeypair = this.cipher.generateRandomJwk();
+        const lockbox = {
+            privateJwk: vaultKeypair.privateJwk,
+            members: [],
+            items: []
+        };
+        const encryptedLockbox = this.cipher.encryptMessage(idKeypair.publicJwk, idKeypair.privateJwk, JSON.stringify(lockbox));
+        const groupVault = {
+            publicJwk: vaultKeypair.publicJwk,
+            salt,
+            lockbox: encryptedLockbox,
+            keys: {}
+        };
+
+        return this.createAsset({ groupVault }, options);
+    }
 }

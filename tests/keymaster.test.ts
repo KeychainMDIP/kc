@@ -5089,3 +5089,14 @@ describe('testDocument', () => {
         expect(isDocument).toBe(false);
     });
 });
+
+
+describe('createGroupVault', () => {
+    it('should return a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const doc = await keymaster.resolveDID(did);
+
+        expect(doc).toBe(true);
+    });
+});
