@@ -5157,8 +5157,8 @@ describe('addGroupVaultMember', () => {
 
 describe('addGroupVaultItem', () => {
     it('should add a new item to the groupVault', async () => {
-        const mockName = 'mockDocument.txt';
-        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        const mockName = 'mockDocument1.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
 
@@ -5169,8 +5169,8 @@ describe('addGroupVaultItem', () => {
 
 describe('getGroupVaultItems', () => {
     it('should return an index of the items in the groupVault', async () => {
-        const mockName = 'mockDocument.txt';
-        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        const mockName = 'mockDocument2.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 2.', 'utf-8');
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
@@ -5185,8 +5185,8 @@ describe('getGroupVaultItems', () => {
 });
 
 describe('getGroupVaultItem', () => {
-    const mockName = 'mockDocument.txt';
-    const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+    const mockName = 'mockVaultItem.txt';
+    const mockDocument = Buffer.from('This is a mock vault document.', 'utf-8');
 
     it('should return an item from the groupVault', async () => {
         await keymaster.createId('Bob');
