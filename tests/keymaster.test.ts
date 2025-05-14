@@ -25,14 +25,25 @@ import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
+let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
 
+beforeAll(async () => {
+    ipfs = new HeliaClient();
+    await ipfs.start();
+});
+
+afterAll(async () => {
+    if (ipfs) {
+        await ipfs.stop();
+    }
+});
+
 beforeEach(() => {
     const db = new DbJsonMemory('test');
-    const ipfs = new HeliaClient();
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
@@ -5145,7 +5156,7 @@ describe('addGroupVaultMember', () => {
 });
 
 describe('addGroupVaultItem', () => {
-    it('should add a new member to the groupVault', async () => {
+    it('should add a new item to the groupVault', async () => {
         const mockName = 'mockDocument.txt';
         const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
         await keymaster.createId('Bob');
@@ -5153,5 +5164,50 @@ describe('addGroupVaultItem', () => {
 
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
         expect(ok).toBe(true);
+    });
+});
+
+describe('getGroupVaultItems', () => {
+    it('should return an index of the items in the groupVault', async () => {
+        const mockName = 'mockDocument.txt';
+        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        const items = await keymaster.getGroupVaultItems(did);
+
+        expect(ok).toBe(true);
+        expect(items).toBeDefined();
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].cid).toBeDefined();
+        expect(items![mockName].bytes).toBe(31);
+    });
+});
+
+describe('getGroupVaultItem', () => {
+    const mockName = 'mockDocument.txt';
+    const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+
+    it('should return an item from the groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        const item = await keymaster.getGroupVaultItem(did, mockName);
+
+        expect(item).toStrictEqual(mockDocument);
+    });
+
+    it('should return an item from the groupVault to a different member', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        await keymaster.setCurrentId('Alice');
+        const item = await keymaster.getGroupVaultItem(did, mockName);
+
+        expect(item).toStrictEqual(mockDocument);
     });
 });

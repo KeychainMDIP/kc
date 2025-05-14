@@ -2640,10 +2640,10 @@ export default class Keymaster implements KeymasterInterface {
 
     async createGroupVault(options = {}): Promise<string> {
         const id = await this.fetchIdInfo();
-        const idKeypair = await this.hdKeyPair();
+        const idKeypair = await this.fetchKeyPair();
         const salt = this.cipher.generateRandomSalt();
         const vaultKeypair = this.cipher.generateRandomJwk();
-        const memberKey = this.cipher.encryptMessage(idKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
+        const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
@@ -2672,40 +2672,9 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
-        const id = await this.fetchIdInfo();
-        const idKeypair = await this.hdKeyPair();
-        const groupVault = await this.getGroupVault(vaultId);
-        if (!groupVault) {
-            throw new InvalidParameterError('vaultId');
-        }
-
-        const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
-        const myVaultKey = groupVault.keys[myMemberId];
-        if (!myVaultKey) {
-            throw new InvalidParameterError('vaultId');
-        }
-
-        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair.privateJwk, myVaultKey);
-        const vaultPrivJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
-
-        const doc = await this.resolveDID(memberId, { confirm: true });
-        // TBD get the right public key here, not just the first one
-        const memberPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!memberPublicJwk) {
-            throw new InvalidParameterError('memberId');
-        }
-
-        const memberKey = this.cipher.encryptMessage(memberPublicJwk, vaultPrivJwk, JSON.stringify(vaultPrivJwk));
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + doc.didDocument!.id);
-        groupVault.keys[memberKeyId] = memberKey;
-
-        return this.updateAsset(vaultId, { groupVault });
-    }
-
     async decryptGroupVault(groupVault: GroupVault) {
         const id = await this.fetchIdInfo();
-        const idKeypair = await this.hdKeyPair();
+        const idKeypair = await this.fetchKeyPair();
 
         const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
         const myVaultKey = groupVault.keys[myMemberId];
@@ -2713,7 +2682,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('vaultId');
         }
 
-        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair.privateJwk, myVaultKey);
+        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
         const itemsString = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
         const items = JSON.parse(itemsString);
@@ -2722,6 +2691,27 @@ export default class Keymaster implements KeymasterInterface {
             privateJwk,
             items,
         };
+    }
+
+    async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const groupVault = await this.getGroupVault(vaultId);
+        if (!groupVault) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const { privateJwk }  = await this.decryptGroupVault(groupVault);
+        const doc = await this.resolveDID(memberId, { confirm: true });
+        // TBD get the right public key here, not just the first one
+        const memberPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!memberPublicJwk) {
+            throw new InvalidParameterError('memberId');
+        }
+
+        const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
+        const memberKeyId = this.cipher.hashMessage(groupVault.salt + doc.didDocument!.id);
+        groupVault.keys[memberKeyId] = memberKey;
+
+        return this.updateAsset(vaultId, { groupVault });
     }
 
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
@@ -2741,5 +2731,37 @@ export default class Keymaster implements KeymasterInterface {
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
         return this.updateAsset(vaultId, { groupVault });
+    }
+
+    async getGroupVaultItems(vaultId: string) {
+        const groupVault = await this.getGroupVault(vaultId);
+        if (!groupVault) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const { items } = await this.decryptGroupVault(groupVault);
+
+        return items;
+    }
+
+    async getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null> {
+        const groupVault = await this.getGroupVault(vaultId);
+
+        if (!groupVault) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
+
+        if (items[name]) {
+            const encryptedData = await this.gatekeeper.getText(items[name].cid);
+
+            if (encryptedData) {
+                const bytes = this.cipher.decryptBytes(groupVault.publicJwk, privateJwk, encryptedData);
+                return Buffer.from(bytes);
+            }
+        }
+
+        return null;
     }
 }
