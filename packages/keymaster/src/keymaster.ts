@@ -23,6 +23,7 @@ import {
     FileAsset,
     FixWalletResult,
     Group,
+    GroupVault,
     IDInfo,
     ImageAsset,
     IssueCredentialsOptions,
@@ -38,7 +39,8 @@ import {
 } from './types.js';
 import {
     Cipher,
-    EcdsaJwkPair
+    EcdsaJwkPair,
+    EcdsaJwkPrivate
 } from '@mdip/cipher/types';
 
 const DefaultSchema = {
@@ -2653,5 +2655,51 @@ export default class Keymaster implements KeymasterInterface {
         };
 
         return this.createAsset({ groupVault }, options);
+    }
+
+    async getGroupVault(id: string): Promise<GroupVault | null> {
+        const asset = await this.resolveAsset(id) as { groupVault?: GroupVault };
+        return asset.groupVault ?? null;
+    }
+
+    async testGroupVault(id: string): Promise<boolean> {
+        try {
+            const groupVault = await this.getGroupVault(id);
+            return groupVault !== null;
+        }
+        catch (error) {
+            return false;
+        }
+    }
+
+    async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const id = await this.fetchIdInfo();
+        const idKeypair = await this.hdKeyPair();
+        const groupVault = await this.getGroupVault(vaultId);
+        if (!groupVault) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
+        const myVaultKey = groupVault.keys[myMemberId];
+        if (!myVaultKey) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair.privateJwk, myVaultKey);
+        const vaultPrivJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
+
+        const doc = await this.resolveDID(memberId, { confirm: true });
+        // TBD get the right public key here, not just the first one
+        const memberPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!memberPublicJwk) {
+            throw new InvalidParameterError('memberId');
+        }
+
+        const memberKey = this.cipher.encryptMessage(memberPublicJwk, vaultPrivJwk, JSON.stringify(vaultPrivJwk));
+        const memberKeyId = this.cipher.hashMessage(groupVault.salt + doc.didDocument!.id);
+        groupVault.keys[memberKeyId] = memberKey;
+
+        return this.updateAsset(vaultId, { groupVault });
     }
 }

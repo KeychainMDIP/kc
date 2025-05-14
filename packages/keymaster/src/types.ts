@@ -1,3 +1,4 @@
+import { EcdsaJwkPublic } from '@mdip/cipher/types';
 import {
     MdipDocument,
     ResolveDIDOptions,
@@ -182,7 +183,7 @@ export interface FileAsset extends BinaryAsset {
 }
 
 export interface GroupVault {
-    publicJwk: any,
+    publicJwk: EcdsaJwkPublic,
     salt: string;
     keys: Record<string, string>;
     items: string,

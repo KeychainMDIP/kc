@@ -5089,9 +5089,8 @@ describe('testDocument', () => {
     });
 });
 
-
 describe('createGroupVault', () => {
-    it('should return a groupVault', async () => {
+    it('should return a new groupVault DID', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
         const doc = await keymaster.resolveDID(did);
@@ -5102,5 +5101,45 @@ describe('createGroupVault', () => {
         expect(data.groupVault!.salt).toBeDefined();
         expect(data.groupVault!.keys).toBeDefined();
         expect(data.groupVault!.items).toBeDefined();
+    });
+});
+
+describe('getGroupVault', () => {
+    it('should return a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const groupVault = await keymaster.getGroupVault(did);
+
+        expect(groupVault).toBeDefined();
+        expect(groupVault!.publicJwk).toBeDefined();
+        expect(groupVault!.salt).toBeDefined();
+        expect(groupVault!.keys).toBeDefined();
+        expect(groupVault!.items).toBeDefined();
+    });
+});
+
+describe('testGroupVault', () => {
+    it('should return true for a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const isGroupVault = await keymaster.testGroupVault(did);
+
+        expect(isGroupVault).toBe(true);
+    });
+});
+
+describe('addGroupVaultMember', () => {
+    it('should add a new member to the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+
+        expect(memberId in groupVault!.keys).toBe(true);
     });
 });
