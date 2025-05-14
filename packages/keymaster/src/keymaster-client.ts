@@ -620,7 +620,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createSchema(
         schema?: unknown,
-        options?: { registry?: string; validUntil?: string }
+        options?: CreateAssetOptions
     ): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/schemas`, { schema, options });
