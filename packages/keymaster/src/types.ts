@@ -239,7 +239,7 @@ export interface KeymasterInterface {
     listGroups(owner?: string): Promise<string[]>;
 
     // Schemas
-    createSchema(schema?: unknown, options?: { registry?: string; validUntil?: string }): Promise<string>;
+    createSchema(schema?: unknown, options?: CreateAssetOptions): Promise<string>;
     getSchema(did: string): Promise<unknown | null>;
     setSchema(did: string, schema: unknown): Promise<boolean>;
     testSchema(did: string): Promise<boolean>;

@@ -2174,10 +2174,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async createSchema(
         schema?: unknown,
-        options: {
-            registry?: string,
-            validUntil?: string
-        } = {}
+        options: CreateAssetOptions = {}
     ): Promise<string> {
         if (!schema) {
             schema = DefaultSchema;
