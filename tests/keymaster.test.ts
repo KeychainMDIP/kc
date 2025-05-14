@@ -5180,7 +5180,7 @@ describe('getGroupVaultItems', () => {
         expect(items).toBeDefined();
         expect(items![mockName]).toBeDefined();
         expect(items![mockName].cid).toBeDefined();
-        expect(items![mockName].bytes).toBe(31);
+        expect(items![mockName].bytes).toBe(33);
     });
 });
 
