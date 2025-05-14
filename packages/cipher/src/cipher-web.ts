@@ -6,7 +6,6 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
-import { randomBytes } from 'crypto';
 import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
 
 // vv Browser specific modifications
@@ -134,6 +133,14 @@ export default class CipherWeb implements Cipher {
     }
 
     generateRandomSalt(): string {
-        return base64url.encode(randomBytes(32));
+        const array = new Uint8Array(32);
+        if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+            window.crypto.getRandomValues(array);
+        } else if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.getRandomValues) {
+            globalThis.crypto.getRandomValues(array);
+        } else {
+            throw new Error('No secure random number generator available.');
+        }
+        return base64url.encode(array);
     }
 }
