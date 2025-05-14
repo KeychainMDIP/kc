@@ -181,6 +181,13 @@ export interface FileAsset extends BinaryAsset {
     filename: string;
 }
 
+export interface GroupVault {
+    publicJwk: any,
+    salt: string;
+    keys: Record<string, string>;
+    items: string,
+}
+
 export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {

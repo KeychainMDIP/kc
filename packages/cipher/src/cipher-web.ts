@@ -6,6 +6,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { managedNonce } from '@noble/ciphers/webcrypto/utils'
 import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
 import { base64url } from 'multiformats/bases/base64';
+import { randomBytes } from 'crypto';
 import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
 
 // vv Browser specific modifications
@@ -122,5 +123,9 @@ export default class CipherWeb implements Cipher {
         const data = chacha.decrypt(cipherdata);
 
         return bytesToUtf8(data);
+    }
+
+    generateRandomSalt(): string {
+        return base64url.encode(randomBytes(32));
     }
 }

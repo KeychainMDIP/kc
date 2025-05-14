@@ -53,4 +53,6 @@ export interface Cipher {
         privKey: EcdsaJwkPrivate,
         ciphertext: string,
     ): string,
+
+    generateRandomSalt(): string,
 }

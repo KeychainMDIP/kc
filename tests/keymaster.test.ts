@@ -6,12 +6,11 @@ import Keymaster, {
 import {
     ChallengeResponse,
     Poll,
-    VerifiableCredential
-} from '@mdip/keymaster/types';
-import {
+    VerifiableCredential,
     EncryptedWallet,
     Seed,
     WalletFile,
+    GroupVault,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
@@ -5087,5 +5086,21 @@ describe('testDocument', () => {
     it('should return false if invalid DID specified', async () => {
         const isDocument = await keymaster.testDocument('mock');
         expect(isDocument).toBe(false);
+    });
+});
+
+
+describe('createGroupVault', () => {
+    it('should return a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const doc = await keymaster.resolveDID(did);
+        const data = doc.didDocumentData as { groupVault?: GroupVault };
+
+        expect(data.groupVault).toBeDefined();
+        expect(data.groupVault!.publicJwk).toBeDefined();
+        expect(data.groupVault!.salt).toBeDefined();
+        expect(data.groupVault!.keys).toBeDefined();
+        expect(data.groupVault!.items).toBeDefined();
     });
 });
