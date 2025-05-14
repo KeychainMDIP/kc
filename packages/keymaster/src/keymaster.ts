@@ -2702,4 +2702,44 @@ export default class Keymaster implements KeymasterInterface {
 
         return this.updateAsset(vaultId, { groupVault });
     }
+
+    async decryptGroupVault(groupVault: GroupVault) {
+        const id = await this.fetchIdInfo();
+        const idKeypair = await this.hdKeyPair();
+
+        const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
+        const myVaultKey = groupVault.keys[myMemberId];
+        if (!myVaultKey) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair.privateJwk, myVaultKey);
+        const privateJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
+        const itemsString = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
+        const items = JSON.parse(itemsString);
+
+        return {
+            privateJwk,
+            items,
+        };
+    }
+
+    async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
+        const groupVault = await this.getGroupVault(vaultId);
+        if (!groupVault) {
+            throw new InvalidParameterError('vaultId');
+        }
+
+        const { privateJwk, items}  = await this.decryptGroupVault(groupVault);
+
+        const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
+        const cid = await this.gatekeeper.addText(encryptedData);
+        items[name] = {
+            cid,
+            bytes: buffer.length,
+        };
+
+        groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        return this.updateAsset(vaultId, { groupVault });
+    }
 }

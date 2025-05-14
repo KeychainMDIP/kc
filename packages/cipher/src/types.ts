@@ -42,6 +42,18 @@ export interface Cipher {
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string,
     verifySig(msgHash: string, sigHex: string, publicJwk: EcdsaJwkPublic): boolean,
 
+    encryptBytes(
+        pubKey: EcdsaJwkPublic,
+        privKey: EcdsaJwkPrivate,
+        data: Uint8Array,
+    ): string,
+
+    decryptBytes(
+        pubKey: EcdsaJwkPublic,
+        privKey: EcdsaJwkPrivate,
+        ciphertext: string,
+    ): Uint8Array,
+
     encryptMessage(
         pubKey: EcdsaJwkPublic,
         privKey: EcdsaJwkPrivate,

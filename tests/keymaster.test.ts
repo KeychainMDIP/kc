@@ -5143,3 +5143,15 @@ describe('addGroupVaultMember', () => {
         expect(memberId in groupVault!.keys).toBe(true);
     });
 });
+
+describe('addGroupVaultItem', () => {
+    it('should add a new member to the groupVault', async () => {
+        const mockName = 'mockDocument.txt';
+        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+    });
+});
