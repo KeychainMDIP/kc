@@ -1108,7 +1108,7 @@ export default class KeymasterClient implements KeymasterInterface {
                     'X-Options': JSON.stringify({ name }), // Pass name as a custom header
                 }
             });
-            return response.data.did;
+            return response.data.ok;
         }
         catch (error) {
             throwError(error);

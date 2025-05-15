@@ -1192,6 +1192,32 @@ program
     });
 
 program
+    .command('add-group-vault-member <id> <member>')
+    .description('Add a member to a group vault')
+    .action(async (id, member) => {
+        try {
+            const ok = await keymaster.addGroupVaultMember(id, member);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('remove-group-vault-member <id> <member>')
+    .description('Remove a member from a group vault')
+    .action(async (id, member) => {
+        try {
+            const ok = await keymaster.removeGroupVaultMember(id, member);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('add-group-vault-item <id> <file>')
     .description('Add an item (file) to a group vault')
     .action(async (id, file) => {
@@ -1199,6 +1225,19 @@ program
             const data = fs.readFileSync(file);
             const name = file.split('/').pop();
             const ok = await keymaster.addGroupVaultItem(id, name, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('remove-group-vault-item <id> <item>')
+    .description('Remove an item from a group vault')
+    .action(async (id, item) => {
+        try {
+            const ok = await keymaster.removeGroupVaultItem(id, item);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
