@@ -303,8 +303,8 @@ export interface KeymasterInterface {
 
     // GroupVaults
     createGroupVault(options?: CreateAssetOptions): Promise<string>;
-    getGroupVault(id: string): Promise<GroupVault>;
-    testGroupVault(id: string): Promise<boolean>;
+    getGroupVault(vaultId: string): Promise<GroupVault>;
+    testGroupVault(vaultId: string): Promise<boolean>;
     addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;

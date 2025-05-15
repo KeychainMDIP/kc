@@ -1163,6 +1163,21 @@ program
         }
     });
 
+program
+    .command('create-group-vault')
+    .description('Create a group vault')
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (options) => {
+        try {
+            const did = await keymaster.createGroupVault(options);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
 async function run() {
     const keymasterURL = process.env.KC_KEYMASTER_URL || 'http://localhost:4226';
 
