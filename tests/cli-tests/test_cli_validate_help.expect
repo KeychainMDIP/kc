@@ -31,8 +31,8 @@ set reference {Usage: keychain-cli [options] [command]
 Keychain CLI tool
 
 Options:
-  -V, --version                           output the version number
-  -h, --help                              display help for command
+  -V, --version                            output the version number
+  -h, --help                               display help for command
 
 Commands:
   accept-credential [options] <did>        Save verifiable credential for current ID
