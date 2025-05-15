@@ -300,4 +300,15 @@ export interface KeymasterInterface {
     updateDocument(did: string, data: Buffer, options?: FileAssetOptions): Promise<boolean>;
     getDocument(id: string): Promise<FileAsset | null>;
     testDocument(id: string): Promise<boolean>;
+
+    // GroupVaults
+    createGroupVault(options?: CreateAssetOptions): Promise<string>;
+    getGroupVault(id: string): Promise<GroupVault>;
+    testGroupVault(id: string): Promise<boolean>;
+    addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
+    removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
+    getGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
+    getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null>;
 }

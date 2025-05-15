@@ -4699,6 +4699,111 @@ v1router.get('/cas/data/:cid', async (req, res) => {
     }
 });
 
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+////////////////////////////////////
+
+v1router.post('/groupVaults', async (req, res) => {
+    try {
+        const did = await keymaster.createGroupVault();
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/groupVaults/:id', async (req, res) => {
+    try {
+        const groupVault = await keymaster.getGroupVault(req.params.id);
+        res.json({ groupVault });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groupVaults/:id/test', async (req, res) => {
+    try {
+        const test = await keymaster.testGroupVault(req.params.id);
+        res.json({ test });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groupVaults/:id/members', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const { memberId } = req.body;
+        const ok = await keymaster.addGroupVaultMember(vaultId, memberId);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.delete('/groupVaults/:id/members/:member', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const memberId = req.params.member;
+        const ok = await keymaster.removeGroupVaultMember(vaultId, memberId);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/groupVaults/:id/items', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const { name } = options;
+        const ok = await keymaster.addGroupVaultItem(vaultId, name, data);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.delete('/groupVaults/:id/items/:name', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const name = req.params.name;
+        const ok = await keymaster.removeGroupVaultItem(vaultId, name);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.get('/groupVaults/:id/items', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const items = await keymaster.getGroupVaultItems(vaultId);
+        res.json({ items });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const itemName = req.params.name;
+        const response = await keymaster.getGroupVaultItem(vaultId, itemName);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

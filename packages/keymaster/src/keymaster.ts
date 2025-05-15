@@ -2638,7 +2638,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(pollId, { poll });
     }
 
-    async createGroupVault(options = {}): Promise<string> {
+    async createGroupVault(options: CreateAssetOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
         const salt = this.cipher.generateRandomSalt();
@@ -2761,7 +2761,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(vaultId, { groupVault });
     }
 
-    async getGroupVaultItems(vaultId: string) {
+    async getGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId);
         const { items } = await this.decryptGroupVault(groupVault);
 
