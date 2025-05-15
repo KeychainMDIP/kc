@@ -10,8 +10,8 @@ const external = [
 
 const config = {
     input: {
-        node: 'dist/esm/cipher-node.js',
-        web: 'dist/esm/cipher-web.js'
+        'cipher-node': 'dist/esm/cipher-node.js',
+        'cipher-web': 'dist/esm/cipher-web.js'
     },
     output: {
         dir: 'dist/cjs',

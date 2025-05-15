@@ -10,8 +10,8 @@ const external = [
 
 const config = {
     input: {
-        helia: 'dist/esm/helia-client.js',
-        kubo: 'dist/esm/kubo-client.js',
+        'helia-client': 'dist/esm/helia-client.js',
+        'kubo-client': 'dist/esm/kubo-client.js',
         utils: 'dist/esm/utils.js'
     },
     output: {
