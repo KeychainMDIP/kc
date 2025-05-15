@@ -4710,8 +4710,7 @@ v1router.get('/cas/data/:cid', async (req, res) => {
 
 v1router.post('/groupVaults', async (req, res) => {
     try {
-        const { options } = req.body;
-        const did = await keymaster.createGroupVault(options);
+        const did = await keymaster.createGroupVault();
         res.json({ did });
     } catch (error: any) {
         res.status(500).send(error.toString());
