@@ -6,69 +6,83 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/types",
   "exports": {
     ".": {
-      "import": "./dist/keymaster.js",
+      "import": "./dist/esm/keymaster.js",
+      "require": "./dist/cjs/keymaster.js",
       "types": "./dist/types/keymaster.d.ts"
     },
     "./client": {
-      "import": "./dist/keymaster-client.js",
+      "import": "./dist/esm/keymaster-client.js",
+      "require": "./dist/cjs/keymaster-client.js",
       "types": "./dist/types/keymaster-client.d.ts"
     },
     "./wallet/json": {
-      "import": "./dist/db/json.js",
+      "import": "./dist/esm/db/json.js",
+      "require": "./dist/cjs/db/json.js",
       "types": "./dist/types/db/json.d.ts"
     },
     "./wallet/json-enc": {
-      "import": "./dist/db/json-enc.js",
+      "import": "./dist/esm/db/json-enc.js",
+      "require": "./dist/cjs/db/json-enc.js",
       "types": "./dist/types/db/json-enc.d.ts"
     },
     "./wallet/json-memory": {
-      "import": "./dist/db/json-memory.js",
+      "import": "./dist/esm/db/json-memory.js",
+      "require": "./dist/cjs/db/json-memory.js",
       "types": "./dist/types/db/json-memory.d.ts"
     },
     "./wallet/redis": {
-      "import": "./dist/db/redis.js",
+      "import": "./dist/esm/db/redis.js",
+      "require": "./dist/cjs/db/redis.js",
       "types": "./dist/types/db/redis.d.ts"
     },
     "./wallet/mongo": {
-      "import": "./dist/db/mongo.js",
+      "import": "./dist/esm/db/mongo.js",
+      "require": "./dist/cjs/db/mongo.js",
       "types": "./dist/types/db/mongo.d.ts"
     },
     "./wallet/sqlite": {
-      "import": "./dist/db/sqlite.js",
+      "import": "./dist/esm/db/sqlite.js",
+      "require": "./dist/cjs/db/sqlite.js",
       "types": "./dist/types/db/sqlite.d.ts"
     },
     "./wallet/cache": {
-      "import": "./dist/db/cache.js",
+      "import": "./dist/esm/db/cache.js",
+      "require": "./dist/cjs/db/cache.js",
       "types": "./dist/types/db/cache.d.ts"
     },
     "./wallet/web": {
-      "import": "./dist/db/web.js",
+      "import": "./dist/esm/db/web.js",
+      "require": "./dist/cjs/db/web.js",
       "types": "./dist/types/db/web.d.ts"
     },
     "./wallet/web-enc": {
-      "import": "./dist/db/web-enc.js",
+      "import": "./dist/esm/db/web-enc.js",
+      "require": "./dist/cjs/db/web-enc.js",
       "types": "./dist/types/db/web-enc.d.ts"
     },
     "./wallet/chrome": {
-      "import": "./dist/db/chrome.js",
+      "import": "./dist/esm/db/chrome.js",
+      "require": "./dist/cjs/db/chrome.js",
       "types": "./dist/types/db/chrome.d.ts"
     },
     "./wallet/typeGuards": {
-      "import": "./dist/db/typeGuards.js",
+      "import": "./dist/esm/db/typeGuards.js",
+      "require": "./dist/cjs/db/typeGuards.js",
       "types": "./dist/types/db/typeGuards.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.ts",
+      "require": "./dist/types/types.d.ts",
       "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc -p tsconfig.json",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:esm": "tsc -p tsconfig.json",
+    "bundle:cjs": "rollup -c rollup.cjs.config.js",
+    "build": "npm run clean && npm run build:esm && npm run bundle:cjs"
   },
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",

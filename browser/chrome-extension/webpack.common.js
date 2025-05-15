@@ -54,16 +54,16 @@ module.exports = {
     resolve: {
         extensions: [".ts", ".tsx", ".js"],
         alias: {
-            "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/dist/cipher-web.js"),
-            "@mdip/common/errors": path.resolve(__dirname, "../../packages/common/dist/errors.js"),
-            "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/dist/gatekeeper-client.js"),
+            "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/dist/esm/cipher-web.js"),
+            "@mdip/common/errors": path.resolve(__dirname, "../../packages/common/dist/esm/errors.js"),
+            "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/dist/esm/gatekeeper-client.js"),
             "@mdip/gatekeeper/types": path.resolve(__dirname, "../../packages/gatekeeper/dist/types/types.d.js"),
-            "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/dist/db/chrome.js"),
-            "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/dist/db/web-enc.js"),
-            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/db/cache.js"),
-            "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/db/typeGuards.js"),
+            "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/chrome.js"),
+            "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/web-enc.js"),
+            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/cache.js"),
+            "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/typeGuards.js"),
             "@mdip/keymaster/types": path.resolve(__dirname, "../../packages/keymaster/dist/types/types.d.js"),
-            "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/dist/keymaster.js"),
+            "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/dist/esm/keymaster.js"),
         },
         fallback: {
             buffer: require.resolve("buffer")
