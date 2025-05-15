@@ -8,7 +8,7 @@ const external = [
     ...Object.keys(pkg.peerDependencies || {})
 ];
 
-export default {
+const config = {
     input: {
         node: 'dist/esm/cipher-node.js',
         web: 'dist/esm/cipher-web.js'
@@ -24,3 +24,5 @@ export default {
         commonjs()
     ]
 };
+
+export default config;

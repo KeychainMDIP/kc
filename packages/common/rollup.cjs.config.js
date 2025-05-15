@@ -8,7 +8,7 @@ const external = [
     ...Object.keys(pkg.peerDependencies || {})
 ];
 
-export default {
+const config = {
     input: {
         utils: 'dist/esm/utils.js',
         errors: 'dist/esm/errors.js'
@@ -24,3 +24,5 @@ export default {
         commonjs()
     ]
 };
+
+export default config;

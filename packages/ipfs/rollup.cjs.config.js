@@ -8,7 +8,7 @@ const external = [
     ...Object.keys(pkg.peerDependencies || {})
 ];
 
-export default {
+const config = {
     input: {
         helia: 'dist/esm/helia-client.js',
         kubo: 'dist/esm/kubo-client.js',
@@ -25,3 +25,5 @@ export default {
         commonjs()
     ]
 };
+
+export default config;

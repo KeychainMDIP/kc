@@ -9,7 +9,7 @@ const external = [
     ...Object.keys(pkg.peerDependencies || {})
 ];
 
-export default {
+const config = {
     input: {
         'gatekeeper': 'dist/esm/gatekeeper.js',
         'gatekeeper-client': 'dist/esm/gatekeeper-client.js',
@@ -34,3 +34,5 @@ export default {
         json()
     ]
 };
+
+export default config;

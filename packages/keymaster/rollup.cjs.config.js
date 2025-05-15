@@ -8,7 +8,7 @@ const external = [
     ...Object.keys(pkg.peerDependencies || {})
 ];
 
-export default {
+const config = {
     input: {
         'keymaster': 'dist/esm/keymaster.js',
         'keymaster-client': 'dist/esm/keymaster-client.js',
@@ -35,3 +35,5 @@ export default {
         commonjs()
     ]
 };
+
+export default config;
