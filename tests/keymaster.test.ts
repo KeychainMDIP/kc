@@ -5208,6 +5208,62 @@ describe('addGroupVaultMember', () => {
     });
 });
 
+describe('removeGroupVaultMember', () => {
+    it('should remove a member from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+
+        expect(memberId in groupVault!.keys).not.toBe(true);
+    });
+
+    it('should not be able to remove owner from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, bob);
+        expect(ok).toBe(false);
+    });
+
+    it('should be OK to remove a non-existent member from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+    });
+
+    it('should throw an exception on invalid member', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        try {
+            await keymaster.removeGroupVaultMember(did, 'bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+
+        try {
+            const asset = await keymaster.createAsset({ name: 'mockAnchor' });
+            await keymaster.removeGroupVaultMember(did, asset);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(InvalidParameterError.type);
+        }
+    });
+});
+
 describe('addGroupVaultItem', () => {
     it('should add a document to the groupVault', async () => {
         const mockName = 'mockDocument1.txt';
@@ -5233,6 +5289,32 @@ describe('addGroupVaultItem', () => {
         const did = await keymaster.createGroupVault();
 
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockImage);
+        expect(ok).toBe(true);
+    });
+});
+
+describe('removeGroupVaultItem', () => {
+    it('should remove a document from the groupVault', async () => {
+        const mockName = 'mockDocument9.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 9.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        const ok = await keymaster.removeGroupVaultItem(did, mockName);
+        const items = await keymaster.getGroupVaultItems(did);
+        expect(ok).toBe(true);
+        expect(items).toStrictEqual({});
+    });
+
+    it('should be OK to remove a non-existest item from the groupVault', async () => {
+        const mockName = 'mockDocument9.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 9.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        const ok = await keymaster.removeGroupVaultItem(did, 'bogus');
         expect(ok).toBe(true);
     });
 });

@@ -2715,6 +2715,27 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(vaultId, { groupVault });
     }
 
+    async removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const groupVault = await this.getGroupVault(vaultId);
+        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        // TBD get the right public key here, not just the first one
+        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        if (!memberPublicJwk) {
+            throw new InvalidParameterError('memberId');
+        }
+
+        // Don't allow removing the group owner
+        const groupDoc = await this.resolveDID(vaultId);
+        if (groupDoc.didDocument!.controller === memberDoc.didDocument!.id) {
+            return false;
+        }
+
+        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDoc.didDocument!.id);
+        delete groupVault.keys[memberKeyId];
+
+        return this.updateAsset(vaultId, { groupVault });
+    }
+
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
@@ -2725,6 +2746,16 @@ export default class Keymaster implements KeymasterInterface {
             cid,
             bytes: buffer.length,
         };
+
+        groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        return this.updateAsset(vaultId, { groupVault });
+    }
+
+    async removeGroupVaultItem(vaultId: string, name: string): Promise<boolean> {
+        const groupVault = await this.getGroupVault(vaultId);
+        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
+
+        delete items[name];
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
         return this.updateAsset(vaultId, { groupVault });
