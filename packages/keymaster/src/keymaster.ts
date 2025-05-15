@@ -2646,7 +2646,8 @@ export default class Keymaster implements KeymasterInterface {
         const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
-        const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
+        const encryptedItems = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
+        const items = await this.gatekeeper.addText(encryptedItems);
         const groupVault = {
             publicJwk: vaultKeypair.publicJwk,
             salt,
@@ -2689,7 +2690,8 @@ export default class Keymaster implements KeymasterInterface {
 
         const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
-        const itemsString = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
+        const encryptedItems = await this.gatekeeper.getText(groupVault.items) || '';
+        const itemsString = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, encryptedItems);
         const items = JSON.parse(itemsString);
 
         return {
@@ -2747,7 +2749,8 @@ export default class Keymaster implements KeymasterInterface {
             bytes: buffer.length,
         };
 
-        groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        const encryptedItems = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        groupVault.items = await this.gatekeeper.addText(encryptedItems);
         return this.updateAsset(vaultId, { groupVault });
     }
 
@@ -2757,7 +2760,8 @@ export default class Keymaster implements KeymasterInterface {
 
         delete items[name];
 
-        groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        const encryptedItems = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        groupVault.items = await this.gatekeeper.addText(encryptedItems);
         return this.updateAsset(vaultId, { groupVault });
     }
 
