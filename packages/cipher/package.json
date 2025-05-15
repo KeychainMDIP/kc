@@ -6,25 +6,28 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/types",
   "exports": {
     "./node": {
-      "import": "./dist/cipher-node.js",
+      "import": "./dist/esm/cipher-node.js",
+      "require": "./dist/cjs/cipher-node.js",
       "types": "./dist/types/cipher-node.d.ts"
     },
     "./web": {
-      "import": "./dist/cipher-web.js",
+      "import": "./dist/esm/cipher-web.js",
+      "require": "./dist/cjs/cipher-web.js",
       "types": "./dist/types/cipher-web.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.ts",
+      "require": "./dist/types/types.d.ts",
       "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc -p tsconfig.json",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:esm": "tsc -p tsconfig.json",
+    "bundle:cjs": "rollup -c rollup.cjs.config.js",
+    "build": "npm run clean && npm run build:esm && npm run bundle:cjs"
   },
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",

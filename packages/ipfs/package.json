@@ -6,29 +6,33 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/types",
   "exports": {
     "./helia": {
-      "import": "./dist/helia-client.js",
+      "import": "./dist/esm/helia-client.js",
+      "require": "./dist/cjs/helia-client.js",
       "types": "./dist/types/helia-client.d.ts"
     },
     "./kubo": {
-      "import": "./dist/kubo-client.js",
+      "import": "./dist/esm/kubo-client.js",
+      "require": "./dist/cjs/kubo-client.js",
       "types": "./dist/types/kubo-client.d.ts"
     },
     "./utils": {
-      "import": "./dist/utils.js",
+      "import": "./dist/esm/utils.js",
+      "require": "./dist/cjs/utils.js",
       "types": "./dist/types/utils.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.js",
+      "require": "./dist/types/types.d.js",
       "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc -p tsconfig.json",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:esm": "tsc -p tsconfig.json",
+    "bundle:cjs": "rollup -c rollup.cjs.config.js",
+    "build": "npm run clean && npm run build:esm && npm run bundle:cjs"
   },
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
