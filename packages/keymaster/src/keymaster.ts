@@ -2657,9 +2657,14 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ groupVault }, options);
     }
 
-    async getGroupVault(id: string): Promise<GroupVault | null> {
-        const asset = await this.resolveAsset(id) as { groupVault?: GroupVault };
-        return asset.groupVault ?? null;
+    async getGroupVault(groupVaultId: string): Promise<GroupVault> {
+        const asset = await this.resolveAsset(groupVaultId) as { groupVault?: GroupVault };
+
+        if (!asset.groupVault) {
+            throw new InvalidParameterError('groupVaultId');
+        }
+
+        return asset.groupVault;
     }
 
     async testGroupVault(id: string): Promise<boolean> {
@@ -2675,11 +2680,11 @@ export default class Keymaster implements KeymasterInterface {
     async decryptGroupVault(groupVault: GroupVault) {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
-
         const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
         const myVaultKey = groupVault.keys[myMemberId];
+
         if (!myVaultKey) {
-            throw new InvalidParameterError('vaultId');
+            throw new InvalidParameterError('groupVault');
         }
 
         const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, myVaultKey);
@@ -2695,11 +2700,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
         const groupVault = await this.getGroupVault(vaultId);
-        if (!groupVault) {
-            throw new InvalidParameterError('vaultId');
-        }
-
-        const { privateJwk }  = await this.decryptGroupVault(groupVault);
+        const { privateJwk } = await this.decryptGroupVault(groupVault);
         const doc = await this.resolveDID(memberId, { confirm: true });
         // TBD get the right public key here, not just the first one
         const memberPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
@@ -2716,11 +2717,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
         const groupVault = await this.getGroupVault(vaultId);
-        if (!groupVault) {
-            throw new InvalidParameterError('vaultId');
-        }
-
-        const { privateJwk, items}  = await this.decryptGroupVault(groupVault);
+        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
@@ -2735,33 +2732,29 @@ export default class Keymaster implements KeymasterInterface {
 
     async getGroupVaultItems(vaultId: string) {
         const groupVault = await this.getGroupVault(vaultId);
-        if (!groupVault) {
-            throw new InvalidParameterError('vaultId');
-        }
-
         const { items } = await this.decryptGroupVault(groupVault);
 
         return items;
     }
 
     async getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null> {
-        const groupVault = await this.getGroupVault(vaultId);
+        try {
+            const groupVault = await this.getGroupVault(vaultId);
+            const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
-        if (!groupVault) {
-            throw new InvalidParameterError('vaultId');
-        }
+            if (items[name]) {
+                const encryptedData = await this.gatekeeper.getText(items[name].cid);
 
-        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
-
-        if (items[name]) {
-            const encryptedData = await this.gatekeeper.getText(items[name].cid);
-
-            if (encryptedData) {
-                const bytes = this.cipher.decryptBytes(groupVault.publicJwk, privateJwk, encryptedData);
-                return Buffer.from(bytes);
+                if (encryptedData) {
+                    const bytes = this.cipher.decryptBytes(groupVault.publicJwk, privateJwk, encryptedData);
+                    return Buffer.from(bytes);
+                }
             }
-        }
 
-        return null;
+            return null;
+        }
+        catch (error) {
+            return null;
+        }
     }
 }
