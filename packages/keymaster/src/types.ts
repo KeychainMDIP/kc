@@ -101,6 +101,7 @@ export interface Challenge {
         schema: string;
         issuers?: string[];
     }[];
+    [key: string]: any;
 }
 
 export interface ChallengeResponse {
