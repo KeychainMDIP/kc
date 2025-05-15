@@ -1183,7 +1183,7 @@ program
     .description('List items in the group vault')
     .action(async (id) => {
         try {
-            const items = await keymaster.getGroupVaultItems(id);
+            const items = await keymaster.listGroupVaultItems(id);
             console.log(JSON.stringify(items, null, 4));
         }
         catch (error) {

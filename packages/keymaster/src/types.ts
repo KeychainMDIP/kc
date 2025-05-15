@@ -309,6 +309,6 @@ export interface KeymasterInterface {
     removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
     removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
-    getGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
+    listGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
     getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null>;
 }

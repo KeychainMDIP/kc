@@ -4786,7 +4786,7 @@ v1router.delete('/groupVaults/:id/items/:name', async (req, res) => {
 v1router.get('/groupVaults/:id/items', async (req, res) => {
     try {
         const vaultId = req.params.id;
-        const items = await keymaster.getGroupVaultItems(vaultId);
+        const items = await keymaster.listGroupVaultItems(vaultId);
         res.json({ items });
     } catch (error: any) {
         res.status(404).send(error.toString());
@@ -4796,8 +4796,8 @@ v1router.get('/groupVaults/:id/items', async (req, res) => {
 v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
     try {
         const vaultId = req.params.id;
-        const itemName = req.params.name;
-        const response = await keymaster.getGroupVaultItem(vaultId, itemName);
+        const name = req.params.name;
+        const response = await keymaster.getGroupVaultItem(vaultId, name);
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
     } catch (error: any) {

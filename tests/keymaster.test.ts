@@ -5302,7 +5302,7 @@ describe('removeGroupVaultItem', () => {
         await keymaster.addGroupVaultItem(did, mockName, mockDocument);
 
         const ok = await keymaster.removeGroupVaultItem(did, mockName);
-        const items = await keymaster.getGroupVaultItems(did);
+        const items = await keymaster.listGroupVaultItems(did);
         expect(ok).toBe(true);
         expect(items).toStrictEqual({});
     });
@@ -5319,14 +5319,14 @@ describe('removeGroupVaultItem', () => {
     });
 });
 
-describe('getGroupVaultItems', () => {
+describe('listGroupVaultItems', () => {
     it('should return an index of the items in the groupVault', async () => {
         const mockName = 'mockDocument2.txt';
         const mockDocument = Buffer.from('This is a mock binary document 2.', 'utf-8');
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
-        const items = await keymaster.getGroupVaultItems(did);
+        const items = await keymaster.listGroupVaultItems(did);
 
         expect(ok).toBe(true);
         expect(items).toBeDefined();

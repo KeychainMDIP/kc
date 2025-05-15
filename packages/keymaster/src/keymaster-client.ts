@@ -1128,7 +1128,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
+    async listGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
         try {
             const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items`);
             return response.data.items;

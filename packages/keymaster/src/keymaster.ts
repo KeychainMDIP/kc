@@ -2761,7 +2761,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(vaultId, { groupVault });
     }
 
-    async getGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
+    async listGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId);
         const { items } = await this.decryptGroupVault(groupVault);
 
