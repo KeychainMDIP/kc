@@ -5307,7 +5307,7 @@ describe('removeGroupVaultItem', () => {
         expect(items).toStrictEqual({});
     });
 
-    it('should be OK to remove a non-existest item from the groupVault', async () => {
+    it('should be OK to remove a non-existent item from the groupVault', async () => {
         const mockName = 'mockDocument9.txt';
         const mockDocument = Buffer.from('This is a mock binary document 9.', 'utf-8');
         await keymaster.createId('Bob');
