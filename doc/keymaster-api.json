@@ -2482,28 +2482,6 @@
                         "type": "string",
                         "format": "date-time",
                         "description": "Optional expiration date/time for ephemeral schemas."
-                      },
-                      "retries": {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Number of times to retry resolution or creation steps if necessary."
-                      },
-                      "delay": {
-                        "type": "integer",
-                        "default": 1000,
-                        "description": "Delay in milliseconds between retries."
-                      },
-                      "encryptForSender": {
-                        "type": "boolean",
-                        "description": "Whether to include an encrypted copy for the sender. Defaults to true if encryption occurs."
-                      },
-                      "includeHash": {
-                        "type": "boolean",
-                        "description": "Whether to embed a hash of the schema in the stored asset. Defaults to false."
-                      },
-                      "controller": {
-                        "type": "string",
-                        "description": "Specifies the ID or DID that will own/control this schema. Defaults to current ID if omitted."
                       }
                     }
                   }
@@ -5602,6 +5580,560 @@
               "application/json": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults": {
+      "post": {
+        "summary": "Create a new group vault.",
+        "description": "Creates a new group vault asset and returns its DID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "options": {
+                    "type": "object",
+                    "description": "Additional options for group vault creation.",
+                    "properties": {
+                      "registry": {
+                        "type": "string",
+                        "description": "The registry in which to create the group vault DID (e.g., \"local\", \"hyperswarm\")."
+                      },
+                      "validUntil": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Optional expiration date/time for the group vault."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The DID of the newly created group vault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "did": {
+                      "type": "string",
+                      "description": "The DID representing the group vault."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}": {
+      "get": {
+        "summary": "Retrieve a group vault by DID.",
+        "description": "Returns the group vault object for the specified DID.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault to retrieve."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The group vault object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groupVault": {
+                      "type": "object",
+                      "properties": {
+                        "publicJwk": {
+                          "type": "object",
+                          "description": "The public JWK for the group vault."
+                        },
+                        "salt": {
+                          "type": "string",
+                          "description": "The salt used for key derivation."
+                        },
+                        "keys": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Encrypted keys for each member."
+                        },
+                        "items": {
+                          "type": "string",
+                          "description": "Encrypted items index."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Group vault not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the group vault could not be retrieved."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}/test": {
+      "post": {
+        "summary": "Test if a DID refers to a valid group vault.",
+        "description": "Checks whether the specified DID or name refers to a valid group vault asset.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID or name of the group vault to test."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indicates whether the asset is recognized as a valid group vault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "test": {
+                      "type": "boolean",
+                      "description": "true if valid group vault, otherwise false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Group vault not found or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the group vault could not be tested."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}/members": {
+      "post": {
+        "summary": "Add a member to a group vault.",
+        "description": "Adds a new member to the specified group vault if the caller has permission.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "memberId": {
+                    "type": "string",
+                    "description": "The DID of the member to add to the group vault."
+                  }
+                },
+                "required": [
+                  "memberId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Indicates whether the member was successfully added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "true if the member was added, otherwise false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Group vault not found, member not found, or caller is not authorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the member could not be added."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}/members/{member}": {
+      "delete": {
+        "summary": "Remove a member from a group vault.",
+        "description": "Removes the specified member from the group vault if the caller has permission.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          },
+          {
+            "in": "path",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the member to remove from the group vault."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indicates whether the member was successfully removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "true if the member was removed, otherwise false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Member not found, group vault not found, or caller is not authorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the member could not be removed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}/items": {
+      "post": {
+        "summary": "Add an item to a group vault.",
+        "description": "Adds a new item (binary data) to the specified group vault. The item name must be provided in the X-Options header as JSON.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          },
+          {
+            "in": "header",
+            "name": "X-Options",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A JSON string containing additional options, including the item name. Example: {\"name\":\"myfile.txt\"}\n"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              },
+              "description": "The binary data to store as an item in the group vault."
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Indicates whether the item was successfully added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "true if the item was added, otherwise false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List all items in a group vault.",
+        "description": "Returns an index of all items stored in the specified group vault.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An object mapping item names to their metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "description": "Metadata for each item (such as CID and byte size)."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Group vault not found or caller is not a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the items could not be listed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groupVaults/{id}/items/{name}": {
+      "delete": {
+        "summary": "Remove an item from a group vault.",
+        "description": "Deletes the specified item from the group vault if the caller has permission.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name of the item to remove from the group vault."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indicates whether the item was successfully removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "true if the item was removed, otherwise false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found, group vault not found, or caller is not a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the item could not be removed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Retrieve an item from a group vault.",
+        "description": "Returns the binary data for a specific item stored in the group vault.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID of the group vault."
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name of the item to retrieve from the group vault."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The binary data of the requested item.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found or caller is not a member of the group vault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message indicating why the item could not be retrieved."
+                    }
+                  }
                 }
               }
             }
