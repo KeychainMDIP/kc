@@ -1178,6 +1178,48 @@ program
         }
     });
 
+program
+    .command('list-group-vault-items <id>')
+    .description('List items in the group vault')
+    .action(async (id) => {
+        try {
+            const items = await keymaster.getGroupVaultItems(id);
+            console.log(JSON.stringify(items, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('add-group-vault-item <id> <file>')
+    .description('Add an item (file) to a group vault')
+    .action(async (id, file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const name = file.split('/').pop();
+            const ok = await keymaster.addGroupVaultItem(id, name, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('get-group-vault-item <id> <item> <file>')
+    .description('Save an item from a group vault to a file')
+    .action(async (id, item, file) => {
+        try {
+            const data = await keymaster.getGroupVaultItem(id, item);
+            fs.writeFileSync(file, data);
+            console.log(`Data written to ${file}`);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
 async function run() {
     const keymasterURL = process.env.KC_KEYMASTER_URL || 'http://localhost:4226';
 
