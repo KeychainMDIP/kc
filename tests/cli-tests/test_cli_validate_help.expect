@@ -79,6 +79,7 @@ Commands:
   list-assets                              List assets owned by current ID
   list-credentials                         List credentials by current ID
   list-group-vault-items <id>              List items in the group vault
+  list-group-vault-members <id>            List members of a group vault
   list-groups                              List groups owned by current ID
   list-ids                                 List IDs and show current ID
   list-issued                              List issued credentials

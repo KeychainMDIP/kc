@@ -2792,6 +2792,39 @@ describe('removeGroupVaultMember', () => {
     });
 });
 
+
+describe('listGroupVaultMembers', () => {
+    const mockVaultId = 'vault8';
+    const mockMembers = { member1: 'member1', member2: 'member2' };
+
+    it('should list vault members', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(200, { members: mockMembers });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const members = await keymaster.listGroupVaultMembers(mockVaultId);
+
+        expect(members).toStrictEqual(mockMembers);
+    });
+
+    it('should throw exception on listGroupVaultMember server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.listGroupVaultMembers(mockVaultId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('addGroupVaultItem', () => {
     const mockVaultId = 'vault4';
     const mockName = 'mockName';

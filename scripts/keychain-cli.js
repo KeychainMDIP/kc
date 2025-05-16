@@ -1218,6 +1218,19 @@ program
     });
 
 program
+    .command('list-group-vault-members <id>')
+    .description('List members of a group vault')
+    .action(async (id) => {
+        try {
+            const members = await keymaster.listGroupVaultMembers(id);
+            console.log(JSON.stringify(members, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('add-group-vault-item <id> <file>')
     .description('Add an item (file) to a group vault')
     .action(async (id, file) => {

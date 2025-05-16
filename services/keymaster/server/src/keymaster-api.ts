@@ -4952,6 +4952,53 @@ v1router.delete('/groupVaults/:id/members/:member', async (req, res) => {
 
 /**
  * @swagger
+ * /groupVaults/{id}/members:
+ *   get:
+ *     summary: List all members of a group vault. (available only to group vault owner)
+ *     description: Returns an object containing all member DIDs of the specified group vault.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *     responses:
+ *       200:
+ *         description: An object containing all member DIDs and their metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                     description: Metadata for each member (e.g., join date).
+ *       404:
+ *         description: Group vault not found or caller is not authorized.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the members could not be listed.
+ */
+v1router.get('/groupVaults/:id/members', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const members = await keymaster.listGroupVaultMembers(vaultId);
+        res.json({ members });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
  * /groupVaults/{id}/items:
  *   post:
  *     summary: Add an item to a group vault.
