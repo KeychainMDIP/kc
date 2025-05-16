@@ -36,11 +36,23 @@ export interface Cipher {
     generateRandomJwk(): EcdsaJwkPair,
     convertJwkToCompressedBytes(jwk: EcdsaJwkPublic): Uint8Array,
 
-    hashMessage(msg: string): string,
+    hashMessage(msg: string | Uint8Array): string,
     hashJSON(obj: unknown): string,
 
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string,
     verifySig(msgHash: string, sigHex: string, publicJwk: EcdsaJwkPublic): boolean,
+
+    encryptBytes(
+        pubKey: EcdsaJwkPublic,
+        privKey: EcdsaJwkPrivate,
+        data: Uint8Array,
+    ): string,
+
+    decryptBytes(
+        pubKey: EcdsaJwkPublic,
+        privKey: EcdsaJwkPrivate,
+        ciphertext: string,
+    ): Uint8Array,
 
     encryptMessage(
         pubKey: EcdsaJwkPublic,
@@ -53,4 +65,6 @@ export interface Cipher {
         privKey: EcdsaJwkPrivate,
         ciphertext: string,
     ): string,
+
+    generateRandomSalt(): string,
 }

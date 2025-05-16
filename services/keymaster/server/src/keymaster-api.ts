@@ -2057,23 +2057,6 @@ v1router.get('/schemas', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: Optional expiration date/time for ephemeral schemas.
- *                   retries:
- *                     type: integer
- *                     default: 0
- *                     description: Number of times to retry resolution or creation steps if necessary.
- *                   delay:
- *                     type: integer
- *                     default: 1000
- *                     description: Delay in milliseconds between retries.
- *                   encryptForSender:
- *                     type: boolean
- *                     description: Whether to include an encrypted copy for the sender. Defaults to true if encryption occurs.
- *                   includeHash:
- *                     type: boolean
- *                     description: Whether to embed a hash of the schema in the stored asset. Defaults to false.
- *                   controller:
- *                     type: string
- *                     description: Specifies the ID or DID that will own/control this schema. Defaults to current ID if omitted.
  *     responses:
  *       200:
  *         description: The DID representing the newly created schema.
@@ -4692,6 +4675,536 @@ v1router.post('/documents/:id/test', async (req, res) => {
 v1router.get('/cas/data/:cid', async (req, res) => {
     try {
         const response = await gatekeeper.getData(req.params.cid);
+        // eslint-disable-next-line
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults:
+ *   post:
+ *     summary: Create a new group vault.
+ *     description: Creates a new group vault asset and returns its DID.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               options:
+ *                 type: object
+ *                 description: Additional options for group vault creation.
+ *                 properties:
+ *                   registry:
+ *                     type: string
+ *                     description: The registry in which to create the group vault DID (e.g., "local", "hyperswarm").
+ *                   validUntil:
+ *                     type: string
+ *                     format: date-time
+ *                     description: Optional expiration date/time for the group vault.
+ *     responses:
+ *       200:
+ *         description: The DID of the newly created group vault.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 did:
+ *                   type: string
+ *                   description: The DID representing the group vault.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/groupVaults', async (req, res) => {
+    try {
+        const { options } = req.body;
+        const did = await keymaster.createGroupVault(options);
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}:
+ *   get:
+ *     summary: Retrieve a group vault by DID.
+ *     description: Returns the group vault object for the specified DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault to retrieve.
+ *     responses:
+ *       200:
+ *         description: The group vault object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 groupVault:
+ *                   type: object
+ *                   properties:
+ *                     publicJwk:
+ *                       type: object
+ *                       description: The public JWK for the group vault.
+ *                     salt:
+ *                       type: string
+ *                       description: The salt used for key derivation.
+ *                     keys:
+ *                       type: object
+ *                       additionalProperties:
+ *                         type: string
+ *                       description: Encrypted keys for each member.
+ *                     items:
+ *                       type: string
+ *                       description: Encrypted items index.
+ *       404:
+ *         description: Group vault not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the group vault could not be retrieved.
+ */
+v1router.get('/groupVaults/:id', async (req, res) => {
+    try {
+        const groupVault = await keymaster.getGroupVault(req.params.id);
+        res.json({ groupVault });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/test:
+ *   post:
+ *     summary: Test if a DID refers to a valid group vault.
+ *     description: Checks whether the specified DID or name refers to a valid group vault asset.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID or name of the group vault to test.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the asset is recognized as a valid group vault.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 test:
+ *                   type: boolean
+ *                   description: true if valid group vault, otherwise false.
+ *       404:
+ *         description: Group vault not found or invalid.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the group vault could not be tested.
+ */
+v1router.post('/groupVaults/:id/test', async (req, res) => {
+    try {
+        const test = await keymaster.testGroupVault(req.params.id);
+        res.json({ test });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/members:
+ *   post:
+ *     summary: Add a member to a group vault.
+ *     description: Adds a new member to the specified group vault if the caller has permission.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *                 description: The DID of the member to add to the group vault.
+ *             required:
+ *               - memberId
+ *     responses:
+ *       200:
+ *         description: Indicates whether the member was successfully added.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the member was added, otherwise false.
+ *       404:
+ *         description: Group vault not found, member not found, or caller is not authorized.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the member could not be added.
+ */
+v1router.post('/groupVaults/:id/members', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const { memberId } = req.body;
+        const ok = await keymaster.addGroupVaultMember(vaultId, memberId);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/members/{member}:
+ *   delete:
+ *     summary: Remove a member from a group vault.
+ *     description: Removes the specified member from the group vault if the caller has permission.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *       - in: path
+ *         name: member
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the member to remove from the group vault.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the member was successfully removed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the member was removed, otherwise false.
+ *       404:
+ *         description: Member not found, group vault not found, or caller is not authorized.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the member could not be removed.
+ */
+v1router.delete('/groupVaults/:id/members/:member', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const memberId = req.params.member;
+        const ok = await keymaster.removeGroupVaultMember(vaultId, memberId);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/members:
+ *   get:
+ *     summary: List all members of a group vault. (available only to group vault owner)
+ *     description: Returns an object containing all member DIDs of the specified group vault.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *     responses:
+ *       200:
+ *         description: An object containing all member DIDs and their metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                     description: Metadata for each member (e.g., join date).
+ *       404:
+ *         description: Group vault not found or caller is not authorized.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the members could not be listed.
+ */
+v1router.get('/groupVaults/:id/members', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const members = await keymaster.listGroupVaultMembers(vaultId);
+        res.json({ members });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/items:
+ *   post:
+ *     summary: Add an item to a group vault.
+ *     description: Adds a new item (binary data) to the specified group vault. The item name must be provided in the X-Options header as JSON.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *       - in: header
+ *         name: X-Options
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: >
+ *           A JSON string containing additional options, including the item name.
+ *           Example: {"name":"myfile.txt"}
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *           description: The binary data to store as an item in the group vault.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the item was successfully added.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the item was added, otherwise false.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/groupVaults/:id/items', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const { name } = options;
+        const ok = await keymaster.addGroupVaultItem(vaultId, name, data);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/items/{name}:
+ *   delete:
+ *     summary: Remove an item from a group vault.
+ *     description: Deletes the specified item from the group vault if the caller has permission.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the item to remove from the group vault.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the item was successfully removed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the item was removed, otherwise false.
+ *       404:
+ *         description: Item not found, group vault not found, or caller is not a member.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the item could not be removed.
+ */
+// eslint-disable-next-line
+v1router.delete('/groupVaults/:id/items/:name', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const name = req.params.name;
+        const ok = await keymaster.removeGroupVaultItem(vaultId, name);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+
+/**
+ * @swagger
+ * /groupVaults/{id}/items:
+ *   get:
+ *     summary: List all items in a group vault.
+ *     description: Returns an index of all items stored in the specified group vault.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *     responses:
+ *       200:
+ *         description: An object mapping item names to their metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 items:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                     description: Metadata for each item (such as CID and byte size).
+ *       404:
+ *         description: Group vault not found or caller is not a member.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the items could not be listed.
+ */
+v1router.get('/groupVaults/:id/items', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const items = await keymaster.listGroupVaultItems(vaultId);
+        res.json({ items });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /groupVaults/{id}/items/{name}:
+ *   get:
+ *     summary: Retrieve an item from a group vault.
+ *     description: Returns the binary data for a specific item stored in the group vault.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the group vault.
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the item to retrieve from the group vault.
+ *     responses:
+ *       200:
+ *         description: The binary data of the requested item.
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Item not found or caller is not a member of the group vault.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   description: Error message indicating why the item could not be retrieved.
+ */
+v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
+    try {
+        const vaultId = req.params.id;
+        const name = req.params.name;
+        const response = await keymaster.getGroupVaultItem(vaultId, name);
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
     } catch (error: any) {

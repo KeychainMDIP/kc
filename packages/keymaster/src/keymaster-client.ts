@@ -13,6 +13,7 @@ import {
     FileAsset,
     FixWalletResult,
     Group,
+    GroupVault,
     ImageAsset,
     IssueCredentialsOptions,
     KeymasterInterface,
@@ -1035,6 +1036,132 @@ export default class KeymasterClient implements KeymasterInterface {
         }
         catch (error) {
             throwError(error);
+        }
+    }
+
+    async createGroupVault(options: CreateAssetOptions = {}): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/groupVaults`, { options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getGroupVault(id: string): Promise<GroupVault> {
+        try {
+            const response = await axios.get(`${this.API}/groupVaults/${id}`);
+            return response.data.groupVault;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async testGroupVault(id: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/groupVaults/${id}/test`);
+            return response.data.test;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addGroupVaultMember(
+        vaultId: string,
+        memberId: string
+    ): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/groupVaults/${vaultId}/members`, { memberId });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeGroupVaultMember(
+        vaultId: string,
+        memberId: string
+    ): Promise<boolean> {
+        try {
+            const response = await axios.delete(`${this.API}/groupVaults/${vaultId}/members/${memberId}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
+        try {
+            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/members`);
+            return response.data.members;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addGroupVaultItem(
+        vaultId: string,
+        name: string,
+        buffer: Buffer
+    ): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/groupVaults/${vaultId}/items`, buffer, {
+                headers: {
+                    // eslint-disable-next-line
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify({ name }), // Pass name as a custom header
+                }
+            });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeGroupVaultItem(
+        vaultId: string,
+        name: string
+    ): Promise<boolean> {
+        try {
+            const response = await axios.delete(`${this.API}/groupVaults/${vaultId}/items/${name}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async listGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
+        try {
+            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items`);
+            return response.data.items;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null> {
+        try {
+            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items/${name}`, {
+                responseType: 'arraybuffer'
+            });
+            return Buffer.from(response.data);
+        } catch (error) {
+            const axiosError = error as AxiosError;
+            if (axiosError.response && axiosError.response.data instanceof Uint8Array) {
+                const textDecoder = new TextDecoder();
+                const errorMessage = textDecoder.decode(axiosError.response.data);
+                axiosError.response.data = JSON.parse(errorMessage);
+            }
+            throwError(axiosError);
         }
     }
 }

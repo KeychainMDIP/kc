@@ -42,6 +42,7 @@ const Endpoints = {
     polls_update: '/api/v1/polls/update',
     images: '/api/v1/images',
     documents: '/api/v1/documents',
+    groupVaults: `/api/v1/groupVaults`,
 };
 
 const mockConsole = {
@@ -2625,6 +2626,327 @@ describe('testDocument', () => {
 
         try {
             await keymaster.testDocument(mockDocumentId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('createGroupVault', () => {
+    const mockDID = 'did:example:123456789gvault';
+
+    it('should create a group vault', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.groupVaults)
+            .reply(200, { did: mockDID });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.createGroupVault();
+
+        expect(did).toBe(mockDID);
+    });
+
+    it('should throw exception on createGroupVault server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.groupVaults)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createGroupVault();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getGroupVault', () => {
+    const mockVaultId = 'vault1';
+    const mockVault = { salt: 'mockSalt', keys: {}, items: 'mockItems' };
+
+    it('should get document', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}`)
+            .reply(200, { groupVault: mockVault });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const vault = await keymaster.getGroupVault(mockVaultId);
+
+        expect(vault).toStrictEqual(mockVault);
+    });
+
+    it('should throw exception on getDocument server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getGroupVault(mockVaultId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('testGroupVault', () => {
+    const mockVaultId = 'vault2';
+
+    it('should test group vault', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/test`)
+            .reply(200, { test: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.testGroupVault(mockVaultId);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on testGroupVault server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/test`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.testGroupVault(mockVaultId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('addGroupVaultMember', () => {
+    const mockVaultId = 'vault3';
+    const mockMember = 'did:example:123456789member';
+
+    it('should add vault member', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.addGroupVaultMember(mockVaultId, mockMember);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on addGroupVaultMember server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.addGroupVaultMember(mockVaultId, mockMember);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('removeGroupVaultMember', () => {
+    const mockVaultId = 'vault4';
+    const mockMember = 'did:example:123456789member2';
+
+    it('should remove vault member', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.removeGroupVaultMember(mockVaultId, mockMember);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on removeGroupVaultMember server error', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.removeGroupVaultMember(mockVaultId, mockMember);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+
+describe('listGroupVaultMembers', () => {
+    const mockVaultId = 'vault8';
+    const mockMembers = { member1: 'member1', member2: 'member2' };
+
+    it('should list vault members', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(200, { members: mockMembers });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const members = await keymaster.listGroupVaultMembers(mockVaultId);
+
+        expect(members).toStrictEqual(mockMembers);
+    });
+
+    it('should throw exception on listGroupVaultMember server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/members`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.listGroupVaultMembers(mockVaultId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('addGroupVaultItem', () => {
+    const mockVaultId = 'vault4';
+    const mockName = 'mockName';
+    const mockBuffer = Buffer.from('mockBuffer');
+
+    it('should add vault item', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.addGroupVaultItem(mockVaultId, mockName, mockBuffer);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on addGroupVaultItem server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.addGroupVaultItem(mockVaultId, mockName, mockBuffer);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('removeGroupVaultItem', () => {
+    const mockVaultId = 'vault5';
+    const mockName = 'mockName';
+
+    it('should remove vault item', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.removeGroupVaultItem(mockVaultId, mockName);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on removeGroupVaultItem server error', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.removeGroupVaultItem(mockVaultId, mockName);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('listGroupVaultItems', () => {
+    const mockVaultId = 'vault6';
+    const mockItems = { item1: 'item1', item2: 'item2' };
+
+    it('should list vault items', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .reply(200, { items: mockItems });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listGroupVaultItems(mockVaultId);
+
+        expect(items).toStrictEqual(mockItems);
+    });
+
+    it('should throw exception on listGroupVaultItems server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.listGroupVaultItems(mockVaultId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getGroupVaultItem', () => {
+    const mockVaultId = 'vault7';
+    const mockName = 'mockName';
+    const mockData = Buffer.from('mockData');
+
+    it('should return group vault item data', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(200, mockData);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(mockData);
+    });
+
+    it('should throw exception on getGroupVaultItem server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getGroupVaultItem(mockVaultId, mockName);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

@@ -6,12 +6,11 @@ import Keymaster, {
 import {
     ChallengeResponse,
     Poll,
-    VerifiableCredential
-} from '@mdip/keymaster/types';
-import {
+    VerifiableCredential,
     EncryptedWallet,
     Seed,
     WalletFile,
+    GroupVault,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
@@ -26,14 +25,25 @@ import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
+let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
 
+beforeAll(async () => {
+    ipfs = new HeliaClient();
+    await ipfs.start();
+});
+
+afterAll(async () => {
+    if (ipfs) {
+        await ipfs.stop();
+    }
+});
+
 beforeEach(() => {
     const db = new DbJsonMemory('test');
-    const ipfs = new HeliaClient();
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
@@ -5086,5 +5096,367 @@ describe('testDocument', () => {
     it('should return false if invalid DID specified', async () => {
         const isDocument = await keymaster.testDocument('mock');
         expect(isDocument).toBe(false);
+    });
+});
+
+describe('createGroupVault', () => {
+    it('should return a new groupVault DID', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const doc = await keymaster.resolveDID(did);
+        const data = doc.didDocumentData as { groupVault?: GroupVault };
+
+        expect(data.groupVault).toBeDefined();
+        expect(data.groupVault!.publicJwk).toBeDefined();
+        expect(data.groupVault!.salt).toBeDefined();
+        expect(data.groupVault!.keys).toBeDefined();
+        expect(data.groupVault!.items).toBeDefined();
+        expect(data.groupVault!.sha256).toStrictEqual(cipher.hashJSON({}));
+    });
+});
+
+describe('getGroupVault', () => {
+    it('should return a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const groupVault = await keymaster.getGroupVault(did);
+
+        expect(groupVault).toBeDefined();
+        expect(groupVault!.publicJwk).toBeDefined();
+        expect(groupVault!.salt).toBeDefined();
+        expect(groupVault!.keys).toBeDefined();
+        expect(groupVault!.items).toBeDefined();
+        expect(groupVault!.sha256).toStrictEqual(cipher.hashJSON({}));
+    });
+
+    it('should throw an exception on get invalid groupVault', async () => {
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.getGroupVault('bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+
+        try {
+            await keymaster.getGroupVault(bob);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(InvalidParameterError.type);
+        }
+    });
+});
+
+describe('testGroupVault', () => {
+    it('should return true for a groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const isGroupVault = await keymaster.testGroupVault(did);
+
+        expect(isGroupVault).toBe(true);
+    });
+
+    it('should return false for an agent', async () => {
+        const bob = await keymaster.createId('Bob');
+        const isGroupVault = await keymaster.testGroupVault(bob);
+
+        expect(isGroupVault).toBe(false);
+    });
+
+    it('should return false for another kind of asset', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const isGroupVault = await keymaster.testGroupVault(did);
+
+        expect(isGroupVault).toBe(false);
+    });
+});
+
+describe('addGroupVaultMember', () => {
+    it('should add a new member to the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+
+        expect(memberId in groupVault!.keys).toBe(true);
+    });
+
+    it('should not be able add owner as a member', async () => {
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultMember(did, bob);
+        expect(ok).toBe(false);
+
+    });
+
+    it('should throw an exception on invalid member', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        try {
+            await keymaster.addGroupVaultMember(did, 'bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+
+        try {
+            const asset = await keymaster.createAsset({ name: 'mockAnchor' });
+            await keymaster.addGroupVaultMember(did, asset);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(InvalidParameterError.type);
+        }
+    });
+});
+
+describe('removeGroupVaultMember', () => {
+    it('should remove a member from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+
+        expect(memberId in groupVault!.keys).not.toBe(true);
+    });
+
+    it('should not be able to remove owner from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, bob);
+        expect(ok).toBe(false);
+    });
+
+    it('should be OK to remove a non-existent member from the groupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+    });
+
+    it('should throw an exception on invalid member', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        try {
+            await keymaster.removeGroupVaultMember(did, 'bogus');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(UnknownIDError.type);
+        }
+
+        try {
+            const asset = await keymaster.createAsset({ name: 'mockAnchor' });
+            await keymaster.removeGroupVaultMember(did, asset);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.type).toBe(InvalidParameterError.type);
+        }
+    });
+});
+
+describe('listGroupVaultMembers', () => {
+    it('should return an empty list of members on creation', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
+    });
+
+    it('should return member list to owner', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, 'Alice');
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(alice in members).toBe(true);
+    });
+
+    it('should return empty list when all members removed', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.removeGroupVaultMember(did, alice);
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
+    });
+
+    it('should not return member list to non-owner', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, 'Alice');
+        await keymaster.setCurrentId('Alice');
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
+    });
+});
+
+describe('addGroupVaultItem', () => {
+    it('should add a document to the groupVault', async () => {
+        const mockName = 'mockDocument1.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+    });
+
+    it('should add an image to the groupVault', async () => {
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+        const mockName = 'vaultImage.png';
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockImage);
+        expect(ok).toBe(true);
+    });
+});
+
+describe('removeGroupVaultItem', () => {
+    it('should remove a document from the groupVault', async () => {
+        const mockName = 'mockDocument9.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 9.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        const ok = await keymaster.removeGroupVaultItem(did, mockName);
+        const items = await keymaster.listGroupVaultItems(did);
+        expect(ok).toBe(true);
+        expect(items).toStrictEqual({});
+    });
+
+    it('should be OK to remove a non-existent item from the groupVault', async () => {
+        const mockName = 'mockDocument9.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 9.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+
+        const ok = await keymaster.removeGroupVaultItem(did, 'bogus');
+        expect(ok).toBe(true);
+    });
+});
+
+describe('listGroupVaultItems', () => {
+    it('should return an index of the items in the groupVault', async () => {
+        const mockName = 'mockDocument2.txt';
+        const mockDocument = Buffer.from('This is a mock binary document 2.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        const items = await keymaster.listGroupVaultItems(did);
+
+        expect(ok).toBe(true);
+        expect(items).toBeDefined();
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].cid).toBeDefined();
+        expect(items![mockName].bytes).toBe(mockDocument.length);
+        expect(items![mockName].sha256).toBe(cipher.hashMessage(mockDocument));
+    });
+});
+
+describe('getGroupVaultItem', () => {
+    const mockDocumentName = 'mockVaultItem.txt';
+    const mockDocument = Buffer.from('This is a mock vault document.', 'utf-8');
+
+    it('should return a document from the groupVault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
+
+        const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
+
+        expect(item).toStrictEqual(mockDocument);
+    });
+
+    it('should return null for unknown item', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
+
+        const item = await keymaster.getGroupVaultItem(did, 'bogus');
+
+        expect(item).toBe(null);
+    });
+
+    it('should return an image from the groupVault', async () => {
+        const mockImageName = 'vaultImage33.png';
+        const mockImage = await sharp({
+            create: {
+                width: 100,
+                height: 100,
+                channels: 3,
+                background: { r: 255, g: 0, b: 0 }
+            }
+        }).png().toBuffer();
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockImageName, mockImage);
+
+        const item = await keymaster.getGroupVaultItem(did, mockImageName);
+
+        expect(item).toStrictEqual(mockImage);
+    });
+
+    it('should return a document from the groupVault to a different member', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
+
+        await keymaster.setCurrentId('Alice');
+        const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
+
+        expect(item).toStrictEqual(mockDocument);
+    });
+
+    it('should return null if caller is not a member', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
+
+        await keymaster.setCurrentId('Alice');
+        const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
+
+        expect(item).toBe(null);
     });
 });

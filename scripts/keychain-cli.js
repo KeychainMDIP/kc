@@ -1163,6 +1163,115 @@ program
         }
     });
 
+program
+    .command('create-group-vault')
+    .description('Create a group vault')
+    .option('-n, --name <name>', 'DID name')
+    .option('-r, --registry <registry>', 'registry to use')
+    .action(async (options) => {
+        try {
+            const did = await keymaster.createGroupVault(options);
+            console.log(did);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('list-group-vault-items <id>')
+    .description('List items in the group vault')
+    .action(async (id) => {
+        try {
+            const items = await keymaster.listGroupVaultItems(id);
+            console.log(JSON.stringify(items, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('add-group-vault-member <id> <member>')
+    .description('Add a member to a group vault')
+    .action(async (id, member) => {
+        try {
+            const ok = await keymaster.addGroupVaultMember(id, member);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('remove-group-vault-member <id> <member>')
+    .description('Remove a member from a group vault')
+    .action(async (id, member) => {
+        try {
+            const ok = await keymaster.removeGroupVaultMember(id, member);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('list-group-vault-members <id>')
+    .description('List members of a group vault')
+    .action(async (id) => {
+        try {
+            const members = await keymaster.listGroupVaultMembers(id);
+            console.log(JSON.stringify(members, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('add-group-vault-item <id> <file>')
+    .description('Add an item (file) to a group vault')
+    .action(async (id, file) => {
+        try {
+            const data = fs.readFileSync(file);
+            const name = file.split('/').pop();
+            const ok = await keymaster.addGroupVaultItem(id, name, data);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('remove-group-vault-item <id> <item>')
+    .description('Remove an item from a group vault')
+    .action(async (id, item) => {
+        try {
+            const ok = await keymaster.removeGroupVaultItem(id, item);
+            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
+    .command('get-group-vault-item <id> <item> <file>')
+    .description('Save an item from a group vault to a file')
+    .action(async (id, item, file) => {
+        try {
+            const data = await keymaster.getGroupVaultItem(id, item);
+            fs.writeFileSync(file, data);
+            console.log(`Data written to ${file}`);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
 async function run() {
     const keymasterURL = process.env.KC_KEYMASTER_URL || 'http://localhost:4226';
 

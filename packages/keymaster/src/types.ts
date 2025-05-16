@@ -1,3 +1,4 @@
+import { EcdsaJwkPublic } from '@mdip/cipher/types';
 import {
     MdipDocument,
     ResolveDIDOptions,
@@ -182,6 +183,15 @@ export interface FileAsset extends BinaryAsset {
     filename: string;
 }
 
+export interface GroupVault {
+    publicJwk: EcdsaJwkPublic,
+    salt: string;
+    members: string;
+    keys: Record<string, string>;
+    items: string,
+    sha256: string,
+}
+
 export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {
@@ -293,4 +303,15 @@ export interface KeymasterInterface {
     updateDocument(did: string, data: Buffer, options?: FileAssetOptions): Promise<boolean>;
     getDocument(id: string): Promise<FileAsset | null>;
     testDocument(id: string): Promise<boolean>;
+
+    // GroupVaults
+    createGroupVault(options?: CreateAssetOptions): Promise<string>;
+    getGroupVault(vaultId: string): Promise<GroupVault>;
+    testGroupVault(vaultId: string): Promise<boolean>;
+    addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
+    removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
+    listGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
+    getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null>;
 }
