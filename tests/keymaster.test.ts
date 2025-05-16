@@ -5189,6 +5189,15 @@ describe('addGroupVaultMember', () => {
         expect(memberId in groupVault!.keys).toBe(true);
     });
 
+    it('should not be able add owner as a member', async () => {
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultMember(did, bob);
+        expect(ok).toBe(false);
+
+    });
+
     it('should throw an exception on invalid member', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5263,6 +5272,51 @@ describe('removeGroupVaultMember', () => {
         } catch (error: any) {
             expect(error.type).toBe(InvalidParameterError.type);
         }
+    });
+});
+
+describe('listGroupVaultMembers', () => {
+    it('should return an empty list of members on creation', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
+    });
+
+    it('should return member list to owner', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, 'Alice');
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(alice in members).toBe(true);
+    });
+
+    it('should return empty list when all members removed', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.removeGroupVaultMember(did, alice);
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
+    });
+
+    it('should not return member list to non-owner', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, 'Alice');
+        await keymaster.setCurrentId('Alice');
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(members).toStrictEqual({});
     });
 });
 

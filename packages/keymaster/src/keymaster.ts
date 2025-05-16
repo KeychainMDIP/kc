@@ -2646,11 +2646,13 @@ export default class Keymaster implements KeymasterInterface {
         const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
+        const members = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const sha256 = this.cipher.hashJSON({});
         const groupVault = {
             publicJwk: vaultKeypair.publicJwk,
             salt,
+            members,
             keys,
             items,
             sha256,
@@ -2686,56 +2688,92 @@ export default class Keymaster implements KeymasterInterface {
         const myVaultKey = groupVault.keys[myMemberId];
 
         if (!myVaultKey) {
-            throw new InvalidParameterError('groupVault');
+            throw new KeymasterError('No access to group vault');
         }
 
         const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
-        const itemsString = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
-        const items = JSON.parse(itemsString);
+
+        let members: Record<string, any> = {};
+        try {
+            const membersJSON = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, groupVault.members);
+            members = JSON.parse(membersJSON);
+        }
+        catch (error) {
+            // Can't decrypt members if not the owner
+        }
+
+        const itemsJSON = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
+        const items = JSON.parse(itemsJSON);
 
         return {
             privateJwk,
+            members,
             items,
         };
     }
 
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const idKeypair = await this.fetchKeyPair();
         const groupVault = await this.getGroupVault(vaultId);
-        const { privateJwk } = await this.decryptGroupVault(groupVault);
-        const doc = await this.resolveDID(memberId, { confirm: true });
+        const { privateJwk, members } = await this.decryptGroupVault(groupVault);
+        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const memberDID = memberDoc.didDocument?.id;
         // TBD get the right public key here, not just the first one
-        const memberPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!memberPublicJwk) {
+        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+
+        if (!memberDID || !memberPublicJwk) {
             throw new InvalidParameterError('memberId');
         }
 
+        // Don't allow adding the vault owner
+        const vaultDoc = await this.resolveDID(vaultId);
+        if (vaultDoc.didDocument!.controller === memberDID) {
+            return false;
+        }
+
+        members[memberDID] = { added: new Date().toISOString() };
+        groupVault.members = this.cipher.encryptMessage(idKeypair!.publicJwk, privateJwk, JSON.stringify(members));
+
         const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + doc.didDocument!.id);
+        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
         groupVault.keys[memberKeyId] = memberKey;
 
         return this.updateAsset(vaultId, { groupVault });
     }
 
     async removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const idKeypair = await this.fetchKeyPair();
         const groupVault = await this.getGroupVault(vaultId);
+        const { privateJwk, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const memberDID = memberDoc.didDocument?.id;
         // TBD get the right public key here, not just the first one
         const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!memberPublicJwk) {
+        if (!memberDID || !memberPublicJwk) {
             throw new InvalidParameterError('memberId');
         }
 
-        // Don't allow removing the group owner
-        const groupDoc = await this.resolveDID(vaultId);
-        if (groupDoc.didDocument!.controller === memberDoc.didDocument!.id) {
+        // Don't allow removing the vault owner
+        const vaultDoc = await this.resolveDID(vaultId);
+        if (vaultDoc.didDocument!.controller === memberDID) {
             return false;
         }
 
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDoc.didDocument!.id);
+        delete members[memberDID];
+        groupVault.members = this.cipher.encryptMessage(idKeypair!.publicJwk, privateJwk, JSON.stringify(members));
+
+        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
         delete groupVault.keys[memberKeyId];
 
         return this.updateAsset(vaultId, { groupVault });
+    }
+
+    async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
+        const groupVault = await this.getGroupVault(vaultId);
+        const { members } = await this.decryptGroupVault(groupVault);
+
+        return members;
     }
 
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
