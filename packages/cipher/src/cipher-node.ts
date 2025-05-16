@@ -74,7 +74,7 @@ export default class CipherNode implements Cipher {
         return new Uint8Array([prefix, ...xBytes]);
     }
 
-    hashMessage(msg: string): string {
+    hashMessage(msg: string | Uint8Array): string {
         const hash = sha256(msg);
         return Buffer.from(hash).toString('hex');
     }

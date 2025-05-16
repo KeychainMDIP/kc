@@ -2647,11 +2647,13 @@ export default class Keymaster implements KeymasterInterface {
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
+        const sha256 = this.cipher.hashJSON({});
         const groupVault = {
             publicJwk: vaultKeypair.publicJwk,
             salt,
             keys,
-            items
+            items,
+            sha256,
         };
 
         return this.createAsset({ groupVault }, options);
@@ -2742,12 +2744,15 @@ export default class Keymaster implements KeymasterInterface {
 
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
+        const sha256 = this.cipher.hashMessage(buffer);
         items[name] = {
             cid,
+            sha256,
             bytes: buffer.length,
         };
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        groupVault.sha256 = this.cipher.hashJSON(items);
         return this.updateAsset(vaultId, { groupVault });
     }
 
@@ -2758,6 +2763,7 @@ export default class Keymaster implements KeymasterInterface {
         delete items[name];
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
+        groupVault.sha256 = this.cipher.hashJSON(items);
         return this.updateAsset(vaultId, { groupVault });
     }
 

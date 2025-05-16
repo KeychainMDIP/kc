@@ -2,7 +2,6 @@ import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import { Seed, WalletFile } from "@mdip/keymaster/types";
-import mock from 'mock-fs';
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };

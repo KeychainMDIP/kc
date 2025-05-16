@@ -187,6 +187,7 @@ export interface GroupVault {
     salt: string;
     keys: Record<string, string>;
     items: string,
+    sha256: string,
 }
 
 export type StoredWallet = EncryptedWallet | WalletFile | null;

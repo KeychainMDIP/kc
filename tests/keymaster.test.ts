@@ -5112,6 +5112,7 @@ describe('createGroupVault', () => {
         expect(data.groupVault!.salt).toBeDefined();
         expect(data.groupVault!.keys).toBeDefined();
         expect(data.groupVault!.items).toBeDefined();
+        expect(data.groupVault!.sha256).toStrictEqual(cipher.hashJSON({}));
     });
 });
 
@@ -5126,6 +5127,7 @@ describe('getGroupVault', () => {
         expect(groupVault!.salt).toBeDefined();
         expect(groupVault!.keys).toBeDefined();
         expect(groupVault!.items).toBeDefined();
+        expect(groupVault!.sha256).toStrictEqual(cipher.hashJSON({}));
     });
 
     it('should throw an exception on get invalid groupVault', async () => {
@@ -5332,7 +5334,8 @@ describe('listGroupVaultItems', () => {
         expect(items).toBeDefined();
         expect(items![mockName]).toBeDefined();
         expect(items![mockName].cid).toBeDefined();
-        expect(items![mockName].bytes).toBe(33);
+        expect(items![mockName].bytes).toBe(mockDocument.length);
+        expect(items![mockName].sha256).toBe(cipher.hashMessage(mockDocument));
     });
 });
 
