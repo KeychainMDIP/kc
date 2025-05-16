@@ -1,4 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, {
+    CSSProperties,
+    ReactNode,
+    useEffect,
+    useState
+} from "react";
 import JsonView from '@uiw/react-json-view';
 import {
     Box,
@@ -219,7 +224,21 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                             shortenTextAfterLength={0}
                         >
                             <JsonView.String
-                                render={({ children, style, ...rest }, { type, value }) => {
+                                render={(
+                                    viewRenderProps: {
+                                        children?: ReactNode;
+                                        style?: CSSProperties;
+                                        [key: string]: any;
+                                    },
+                                    nodeInfo: {
+                                        value?: unknown;
+                                        type: "type" | "value";
+                                        keyName?: string | number;
+                                    }
+                                ) => {
+                                    const { children, style, ...rest } = viewRenderProps;
+                                    const { value, type, keyName } = nodeInfo;
+
                                     if (typeof value === 'string' && value.startsWith('did:') && type === 'value') {
                                         return (
                                             <span
@@ -231,6 +250,34 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                                             </span>
                                         );
                                     }
+
+                                    if (type === 'value' &&
+                                        aliasDocs?.didDocumentMetadata?.timestamp?.chain === "TBTC"
+                                    ) {
+                                        const currentKeyString = String(keyName);
+                                        let url = '';
+
+                                        if (currentKeyString === 'blockid') {
+                                            url = `https://mempool.space/testnet4/block/${value}`;
+                                        } else if (currentKeyString === 'txid') {
+                                            url = `https://mempool.space/testnet4/tx/${value}`;
+                                        }
+
+                                        if (url) {
+                                            return (
+                                                <a
+                                                    href={url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
+                                                >
+                                                    {children}
+                                                </a>
+                                            );
+                                        }
+                                    }
+
+                                    return undefined;
                                 }}
                             />
                         </JsonView>
