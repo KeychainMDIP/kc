@@ -6,49 +6,58 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/types",
   "exports": {
     ".": {
-      "import": "./dist/gatekeeper.js",
+      "import": "./dist/esm/gatekeeper.js",
+      "require": "./dist/cjs/gatekeeper.js",
       "types": "./dist/types/gatekeeper.d.ts"
     },
     "./client": {
-      "import": "./dist/gatekeeper-client.js",
+      "import": "./dist/esm/gatekeeper-client.js",
+      "require": "./dist/cjs/gatekeeper-client.js",
       "types": "./dist/types/gatekeeper-client.d.ts"
     },
     "./db/json": {
-      "import": "./dist/db/json.js",
+      "import": "./dist/esm/db/json.js",
+      "require": "./dist/cjs/db/json.js",
       "types": "./dist/types/db/json.d.ts"
     },
     "./db/json-cache": {
-      "import": "./dist/db/json-cache.js",
+      "import": "./dist/esm/db/json-cache.js",
+      "require": "./dist/cjs/db/json-cache.js",
       "types": "./dist/types/db/json-cache.d.ts"
     },
     "./db/json-memory": {
-      "import": "./dist/db/json-memory.js",
+      "import": "./dist/esm/db/json-memory.js",
+      "require": "./dist/cjs/db/json-memory.js",
       "types": "./dist/types/db/json-memory.d.ts"
     },
     "./db/sqlite": {
-      "import": "./dist/db/sqlite.js",
+      "import": "./dist/esm/db/sqlite.js",
+      "require": "./dist/cjs/db/sqlite.js",
       "types": "./dist/types/db/sqlite.d.ts"
     },
     "./db/redis": {
-      "import": "./dist/db/redis.js",
+      "import": "./dist/esm/db/redis.js",
+      "require": "./dist/cjs/db/redis.js",
       "types": "./dist/types/db/redis.d.ts"
     },
     "./db/mongo": {
-      "import": "./dist/db/mongo.js",
+      "import": "./dist/esm/db/mongo.js",
+      "require": "./dist/cjs/db/mongo.js",
       "types": "./dist/types/db/mongo.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.js",
+      "require": "./dist/types/types.d.js",
       "types": "./dist/types/types.d.ts"
     }
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc -p tsconfig.json",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:esm": "tsc -p tsconfig.json",
+    "bundle:cjs": "rollup -c rollup.cjs.config.js",
+    "build": "npm run clean && npm run build:esm && npm run bundle:cjs"
   },
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
@@ -68,5 +77,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@rollup/plugin-json": "^6.1.0"
   }
 }

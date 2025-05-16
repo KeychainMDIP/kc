@@ -390,10 +390,21 @@ function JsonViewer(
                         >
                             <JsonView.String
                                 render={(
-                                    { children, style, ...rest }: { children: ReactNode, style: CSSProperties, [key: string]: any },
-                                    { type, value }: { type: string, value: string}
+                                    viewRenderProps: {
+                                        children?: ReactNode;
+                                        style?: CSSProperties;
+                                        [key: string]: any;
+                                    },
+                                    nodeInfo: {
+                                        value?: unknown;
+                                        type: "type" | "value";
+                                        keyName?: string | number;
+                                    }
                                 ) => {
-                                    if (value.startsWith('did:') && type === 'value') {
+                                    const { children, style, ...rest } = viewRenderProps;
+                                    const { value, type, keyName } = nodeInfo;
+
+                                    if (typeof value === 'string' && value.startsWith('did:') && type === 'value') {
                                         return (
                                             <span
                                                 {...rest}
@@ -404,6 +415,34 @@ function JsonViewer(
                                             </span>
                                         );
                                     }
+
+                                    if (type === 'value' &&
+                                        aliasDocs?.didDocumentMetadata?.timestamp?.chain === "TBTC"
+                                    ) {
+                                        const currentKeyString = String(keyName);
+                                        let url = '';
+
+                                        if (currentKeyString === 'blockid') {
+                                            url = `https://mempool.space/testnet4/block/${value}`;
+                                        } else if (currentKeyString === 'txid') {
+                                            url = `https://mempool.space/testnet4/tx/${value}`;
+                                        }
+
+                                        if (url) {
+                                            return (
+                                                <a
+                                                    href={url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
+                                                >
+                                                    {children}
+                                                </a>
+                                            );
+                                        }
+                                    }
+
+                                    return undefined;
                                 }}
                             />
                         </JsonView>

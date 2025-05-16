@@ -2321,7 +2321,6 @@ describe('createChallenge', () => {
         }
 
         try {
-            // @ts-expect-error Testing invalid usage, invalid arg
             await keymaster.createChallenge([]);
             throw new ExpectedExceptionError();
         }
