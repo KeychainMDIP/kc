@@ -2779,13 +2779,12 @@ export default class Keymaster implements KeymasterInterface {
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
-
-        name = this.validateName(name);
-
+        const validName = this.validateName(name);
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
         const sha256 = this.cipher.hashMessage(buffer);
-        items[name] = {
+        
+        items[validName] = {
             cid,
             sha256,
             bytes: buffer.length,
