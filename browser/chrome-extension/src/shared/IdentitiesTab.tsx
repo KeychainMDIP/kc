@@ -40,7 +40,7 @@ function IdentitiesTab() {
             setName("");
             requestBrowserRefresh(isBrowser);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     };
 
@@ -63,7 +63,7 @@ function IdentitiesTab() {
             await keymaster.renameId(currentId, name);
             await refreshAll();
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -90,7 +90,7 @@ function IdentitiesTab() {
             await keymaster.removeId(currentId);
             await refreshAll();
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -107,7 +107,7 @@ function IdentitiesTab() {
                 setError(`${currentId} backup failed`);
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -126,7 +126,7 @@ function IdentitiesTab() {
             await refreshAll();
             setSuccess(response + " recovered");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
