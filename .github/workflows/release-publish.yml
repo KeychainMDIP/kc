@@ -41,19 +41,26 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile.gatekeeper
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/gatekeeper
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.keymaster
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/keymaster
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.hyperswarm
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/hyperswarm-mediator
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.satoshi
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/sat-mediator
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.cli
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/cli
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.explorer
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/explorer
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
           - dockerfile: Dockerfile.search-server
-            tags: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server:${{ needs.generate.outputs.GIT_TAG }}
+            image: ${{ needs.generate.outputs.REGISTRY }}/keychainmdip/search-server
+            tag: ${{ needs.generate.outputs.GIT_TAG }}
 
     permissions:
       contents: read
@@ -90,13 +97,16 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           labels: ${{ steps.meta.outputs.labels }}
-          tags: ${{ matrix.tags }}
+          tags: |
+            ${{ matrix.image }}:${{ matrix.tag }}
+            ${{ matrix.image }}:latest
           platforms: linux/amd64,linux/arm64
 
       - name: Run Anchore vulnerability scanner
         uses: anchore/scan-action@v3
         with:
-          image: ${{ matrix.tags }}
+          image: |
+            ${{ matrix.image }}:${{ matrix.tag }}
           fail-build: false
           severity-cutoff: critical
           output-format: table
