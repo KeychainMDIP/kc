@@ -528,6 +528,7 @@ describe('createId', () => {
     });
 
     it('should not create an ID with an empty name', async () => {
+        // eslint-disable-next-line
         const expectedError = 'Invalid parameter: name must be a non-empty string';
 
         try {
@@ -5320,9 +5321,19 @@ describe('listGroupVaultMembers', () => {
 });
 
 describe('addGroupVaultItem', () => {
+    const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+
     it('should add a document to the groupVault', async () => {
         const mockName = 'mockDocument1.txt';
-        const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+    });
+
+    it('should add a document to the groupVault with a unicode name', async () => {
+        const mockName = 'm̾o̾c̾k̾N̾a̾m̾e̾.txt';
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
 
@@ -5345,6 +5356,36 @@ describe('addGroupVaultItem', () => {
 
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockImage);
         expect(ok).toBe(true);
+    });
+
+    it('should not add an item with an empty name', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const expectedError = 'Invalid parameter: name must be a non-empty string';
+
+        try {
+            await keymaster.addGroupVaultItem(did, '', mockDocument);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addGroupVaultItem(did, '    ', mockDocument);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(expectedError);
+        }
+
+        try {
+            await keymaster.addGroupVaultItem(did, "\t\r\n", mockDocument);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(expectedError);
+        }
     });
 });
 
