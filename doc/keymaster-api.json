@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Keymaster API",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Documentation for Keymaster API"
   },
   "paths": {
