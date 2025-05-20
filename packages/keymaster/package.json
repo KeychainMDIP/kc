@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "MDIP Keymaster",
   "type": "module",
   "files": [
