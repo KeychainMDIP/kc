@@ -837,6 +837,26 @@ export default class Keymaster implements KeymasterInterface {
         return await this.createAsset({ encrypted }, options);
     }
 
+    private decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): string  {
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+
+        // Try all private keys for this ID, starting with the most recent and working backward
+        let index = id.index;
+        while (index >= 0) {
+            const path = `m/44'/0'/${id.account}'/0/${index}`;
+            const didkey = hdkey.derive(path);
+            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
+            try {
+                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
+            }
+            catch (error) {
+                index -= 1;
+            }
+        }
+
+        throw new KeymasterError("ID can't decrypt ciphertext");
+    }
+
     async decryptMessage(did: string): Promise<string> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
@@ -859,24 +879,8 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('sender key not found');
         }
 
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
-
-        // Try all private keys for this ID, starting with the most recent and working backward
-        let index = id.index;
-        while (index >= 0) {
-            const path = `m/44'/0'/${id.account}'/0/${index}`;
-            const didkey = hdkey.derive(path);
-            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
-            try {
-                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext!);
-            }
-            catch (error) {
-                index -= 1;
-            }
-        }
-
-        throw new KeymasterError('cannot decrypt');
+        return this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
     }
 
     async encryptJSON(
@@ -2680,26 +2684,6 @@ export default class Keymaster implements KeymasterInterface {
         catch (error) {
             return false;
         }
-    }
-
-    private decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): string  {
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
-
-        // Try all private keys for this ID, starting with the most recent and working backward
-        let index = id.index;
-        while (index >= 0) {
-            const path = `m/44'/0'/${id.account}'/0/${index}`;
-            const didkey = hdkey.derive(path);
-            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
-            try {
-                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
-            }
-            catch (error) {
-                index -= 1;
-            }
-        }
-
-        throw new KeymasterError("can't decrypt");
     }
 
     async decryptGroupVault(groupVault: GroupVault) {
