@@ -5198,6 +5198,25 @@ describe('addGroupVaultMember', () => {
 
     });
 
+    it('should be able to add a new member after key rotation', async () => {
+        const alice = await keymaster.createId('Alice');
+        const charlie = await keymaster.createId('Charlie');
+
+        await keymaster.createId('Bob', { registry: 'local'});
+        const did = await keymaster.createGroupVault({ registry: 'local'});
+
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.rotateKeys();
+        await keymaster.addGroupVaultMember(did, charlie);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        const aliceId = cipher.hashMessage(groupVault!.salt + alice);
+        const charlieId = cipher.hashMessage(groupVault!.salt + charlie);
+
+        expect(aliceId in groupVault!.keys).toBe(true);
+        expect(charlieId in groupVault!.keys).toBe(true);
+    });
+
     it('should throw an exception on invalid member', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5358,6 +5377,20 @@ describe('addGroupVaultItem', () => {
         expect(ok).toBe(true);
     });
 
+    it('should be able to add a new item after key rotation', async () => {
+        await keymaster.createId('Bob', { registry: 'local'});
+        const did = await keymaster.createGroupVault({ registry: 'local'});
+
+        await keymaster.addGroupVaultItem(did, 'item1', mockDocument);
+        await keymaster.rotateKeys();
+        await keymaster.addGroupVaultItem(did, 'item2', mockDocument);
+
+        const items = await keymaster.listGroupVaultItems(did);
+
+        expect(items!['item1'].bytes).toBe(mockDocument.length);
+        expect(items!['item1'].sha256).toBe(items!['item2'].sha256);
+    });
+
     it('should not add an item with an empty name', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5484,6 +5517,22 @@ describe('getGroupVaultItem', () => {
         await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
 
         await keymaster.setCurrentId('Alice');
+        const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
+
+        expect(item).toStrictEqual(mockDocument);
+    });
+
+    it('should return a document from the groupVault after key rotation', async () => {
+        // Need to register on local so key rotation is automatically confirmed
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+        await keymaster.addGroupVaultItem(did, mockDocumentName, mockDocument);
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.rotateKeys();
+
         const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
 
         expect(item).toStrictEqual(mockDocument);
