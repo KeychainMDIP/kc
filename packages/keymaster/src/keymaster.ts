@@ -40,7 +40,8 @@ import {
 import {
     Cipher,
     EcdsaJwkPair,
-    EcdsaJwkPrivate
+    EcdsaJwkPrivate,
+    EcdsaJwkPublic
 } from '@mdip/cipher/types';
 
 const DefaultSchema = {
@@ -2681,7 +2682,28 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
+    private decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): string  {
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+
+        // Try all private keys for this ID, starting with the most recent and working backward
+        let index = id.index;
+        while (index >= 0) {
+            const path = `m/44'/0'/${id.account}'/0/${index}`;
+            const didkey = hdkey.derive(path);
+            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
+            try {
+                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
+            }
+            catch (error) {
+                index -= 1;
+            }
+        }
+
+        throw new KeymasterError("can't decrypt");
+    }
+
     async decryptGroupVault(groupVault: GroupVault) {
+        const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
         const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
@@ -2691,8 +2713,8 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('No access to group vault');
         }
 
-        const privKeyString = this.cipher.decryptMessage(groupVault.publicJwk, idKeypair!.privateJwk, myVaultKey);
-        const privateJwk = JSON.parse(privKeyString) as EcdsaJwkPrivate;
+        const privKeyJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, myVaultKey);
+        const groupVaultPrivateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
         let members: Record<string, any> = {};
         try {
@@ -2703,11 +2725,11 @@ export default class Keymaster implements KeymasterInterface {
             // Can't decrypt members if not the owner
         }
 
-        const itemsJSON = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.items);
+        const itemsJSON = this.cipher.decryptMessage(groupVault.publicJwk, groupVaultPrivateJwk, groupVault.items);
         const items = JSON.parse(itemsJSON);
 
         return {
-            privateJwk,
+            privateJwk: groupVaultPrivateJwk,
             members,
             items,
         };
@@ -2783,7 +2805,7 @@ export default class Keymaster implements KeymasterInterface {
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
         const sha256 = this.cipher.hashMessage(buffer);
-        
+
         items[validName] = {
             cid,
             sha256,
