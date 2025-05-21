@@ -1540,7 +1540,7 @@ describe('updateDID', () => {
         expect(doc2.didDocumentMetadata!.version).toBe(1);
     });
 
-    it('should update an asset DID when current ID is not owner ID', async () => {
+    it('should update an asset DID when owner ID is in the wallet', async () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Alice');
 
@@ -1562,6 +1562,29 @@ describe('updateDID', () => {
         expect(doc2.didDocument!.controller).toBe(bob);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
         expect(doc2.didDocumentMetadata!.version).toBe(2);
+    });
+
+    it('should not update an asset DID when owner ID is not in the wallet', async () => {
+        await keymaster.createId('Bob');
+        await keymaster.createId('Alice');
+        await keymaster.setCurrentId('Bob');
+
+        const mockAnchor = { name: 'mockAnchor' };
+        const dataDid = await keymaster.createAsset(mockAnchor);
+        const doc = await keymaster.resolveDID(dataDid);
+
+        const dataUpdated = { name: 'updated' };
+        doc.didDocumentData = dataUpdated;
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.removeId('Bob');
+
+        try {
+            await keymaster.updateDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Unknown ID');
+        }
     });
 });
 
@@ -5174,6 +5197,49 @@ describe('testGroupVault', () => {
     });
 });
 
+describe('getGroupVaultConfig', () => {
+    it('should return config for owner', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const config = await keymaster.getGroupVaultConfig(did);
+
+        expect(config).toStrictEqual({ secretMembers: false });
+    });
+
+    it('should return empty config for non-owner', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, alice);
+
+        await keymaster.setCurrentId('Alice');
+        const config = await keymaster.getGroupVaultConfig(did);
+
+        expect(config).toStrictEqual({});
+    });
+});
+
+describe('setGroupVaultConfig', () => {
+    it('should return true when set', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const ok = await keymaster.setGroupVaultConfig(did, { secretMembers: true });
+        const config = await keymaster.getGroupVaultConfig(did);
+
+        expect(ok).toBe(true);
+        expect(config).toStrictEqual({ secretMembers: true });
+    });
+
+    it('should return false when no change', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const config = await keymaster.getGroupVaultConfig(did);
+        const ok = await keymaster.setGroupVaultConfig(did, config);
+
+        expect(ok).toBe(false);
+    });
+});
+
 describe('addGroupVaultMember', () => {
     it('should add a new member to the groupVault', async () => {
         const alice = await keymaster.createId('Alice');
@@ -5202,8 +5268,8 @@ describe('addGroupVaultMember', () => {
         const alice = await keymaster.createId('Alice');
         const charlie = await keymaster.createId('Charlie');
 
-        await keymaster.createId('Bob', { registry: 'local'});
-        const did = await keymaster.createGroupVault({ registry: 'local'});
+        await keymaster.createId('Bob', { registry: 'local' });
+        const did = await keymaster.createGroupVault({ registry: 'local' });
 
         await keymaster.addGroupVaultMember(did, alice);
         await keymaster.rotateKeys();
@@ -5326,10 +5392,23 @@ describe('listGroupVaultMembers', () => {
         expect(members).toStrictEqual({});
     });
 
-    it('should not return member list to non-owner', async () => {
+    it('should return member list to members when not secret', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultMember(did, 'Alice');
+        await keymaster.setCurrentId('Alice');
+
+        const members = await keymaster.listGroupVaultMembers(did);
+
+        expect(alice in members).toBe(true);
+    });
+
+    it('should not return member list to members when secret', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
+        await keymaster.setGroupVaultConfig(did, { secretMembers: true });
         await keymaster.addGroupVaultMember(did, 'Alice');
         await keymaster.setCurrentId('Alice');
 
@@ -5378,8 +5457,8 @@ describe('addGroupVaultItem', () => {
     });
 
     it('should be able to add a new item after key rotation', async () => {
-        await keymaster.createId('Bob', { registry: 'local'});
-        const did = await keymaster.createGroupVault({ registry: 'local'});
+        await keymaster.createId('Bob', { registry: 'local' });
+        const did = await keymaster.createGroupVault({ registry: 'local' });
 
         await keymaster.addGroupVaultItem(did, 'item1', mockDocument);
         await keymaster.rotateKeys();
