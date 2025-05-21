@@ -543,7 +543,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createGroup(
         name: string,
-        options?: { registry?: string; members?: string[] }
+        options?: CreateAssetOptions
     ): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/groups`, { name, options });
@@ -841,10 +841,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createPoll(
         poll: Poll,
-        options?: {
-            registry?: string;
-            validUntil?: string
-        }
+        options?: CreateAssetOptions
     ): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/polls`, { poll, options });

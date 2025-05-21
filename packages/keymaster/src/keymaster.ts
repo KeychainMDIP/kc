@@ -1986,7 +1986,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async createGroup(
         name: string,
-        options = {}
+        options: CreateAssetOptions = {}
     ): Promise<string> {
         const group = {
             name: name,
@@ -2285,7 +2285,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async createPoll(
         poll: Poll,
-        options: { registry?: string; validUntil?: string } = {}
+        options: CreateAssetOptions = {}
     ): Promise<string> {
         if (poll.type !== 'poll') {
             throw new InvalidParameterError('poll');

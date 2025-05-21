@@ -242,7 +242,7 @@ export interface KeymasterInterface {
     decryptJSON(did: string): Promise<unknown>;
 
     // Groups
-    createGroup(name: string, options?: { registry?: string; members?: string[] }): Promise<string>;
+    createGroup(name: string, options?: CreateAssetOptions): Promise<string>;
     getGroup(group: string): Promise<Group | null>;
     addGroupMember(group: string, member: string): Promise<boolean>;
     removeGroupMember(group: string, member: string): Promise<boolean>;
@@ -284,7 +284,7 @@ export interface KeymasterInterface {
 
     // Polls
     pollTemplate(): Promise<Poll>;
-    createPoll(poll: Poll, options?: { registry?: string; validUntil?: string }): Promise<string>;
+    createPoll(poll: Poll, options?: CreateAssetOptions): Promise<string>;
     getPoll(pollId: string): Promise<Poll | null>;
     viewPoll(pollId: string): Promise<ViewPollResult>;
     votePoll(pollId: string, vote: number, options?: { spoil?: boolean; registry?: string; validUntil?: string }): Promise<string>;
