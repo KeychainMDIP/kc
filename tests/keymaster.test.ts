@@ -1409,6 +1409,7 @@ describe('transferAsset', () => {
             await keymaster.transferAsset('mockDID', bob);
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line
             expect(error.message).toBe('Unknown ID');
         }
     });
