@@ -5241,6 +5241,7 @@ describe('addGroupVaultMember', () => {
         expect(charlieId in groupVault!.keys).toBe(true);
     });
 
+    // eslint-disable-next-line
     it('should throw an exception if not owner', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5251,6 +5252,7 @@ describe('addGroupVaultMember', () => {
             await keymaster.addGroupVaultMember(did, 'Bob');
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line
             expect(error.message).toBe('Keymaster: Only vault owner can modify the vault');
         }
     });
