@@ -3,54 +3,69 @@
   "version": "1.1.1",
   "description": "MDIP Gatekeeper",
   "type": "module",
+  "module": "./dist/esm/gatekeeper.js",
+  "main": "./dist/cjs/gatekeeper.cjs",
+  "types": "./dist/types/gatekeeper.d.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
       "import": "./dist/esm/gatekeeper.js",
-      "require": "./dist/cjs/gatekeeper.js",
+      "require": "./dist/cjs/gatekeeper.cjs",
       "types": "./dist/types/gatekeeper.d.ts"
     },
     "./client": {
       "import": "./dist/esm/gatekeeper-client.js",
-      "require": "./dist/cjs/gatekeeper-client.js",
+      "require": "./dist/cjs/gatekeeper-client.cjs",
       "types": "./dist/types/gatekeeper-client.d.ts"
     },
     "./db/json": {
       "import": "./dist/esm/db/json.js",
-      "require": "./dist/cjs/db/json.js",
+      "require": "./dist/cjs/db/json.cjs",
       "types": "./dist/types/db/json.d.ts"
     },
     "./db/json-cache": {
       "import": "./dist/esm/db/json-cache.js",
-      "require": "./dist/cjs/db/json-cache.js",
+      "require": "./dist/cjs/db/json-cache.cjs",
       "types": "./dist/types/db/json-cache.d.ts"
     },
     "./db/json-memory": {
       "import": "./dist/esm/db/json-memory.js",
-      "require": "./dist/cjs/db/json-memory.js",
+      "require": "./dist/cjs/db/json-memory.cjs",
       "types": "./dist/types/db/json-memory.d.ts"
     },
     "./db/sqlite": {
       "import": "./dist/esm/db/sqlite.js",
-      "require": "./dist/cjs/db/sqlite.js",
+      "require": "./dist/cjs/db/sqlite.cjs",
       "types": "./dist/types/db/sqlite.d.ts"
     },
     "./db/redis": {
       "import": "./dist/esm/db/redis.js",
-      "require": "./dist/cjs/db/redis.js",
+      "require": "./dist/cjs/db/redis.cjs",
       "types": "./dist/types/db/redis.d.ts"
     },
     "./db/mongo": {
       "import": "./dist/esm/db/mongo.js",
-      "require": "./dist/cjs/db/mongo.js",
+      "require": "./dist/cjs/db/mongo.cjs",
       "types": "./dist/types/db/mongo.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.js",
       "require": "./dist/types/types.d.js",
       "types": "./dist/types/types.d.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "client": ["./dist/types/gatekeeper-client.d.ts"],
+      "db/json": ["./dist/types/db/json.d.ts"],
+      "db/json-cache": ["./dist/types/db/json-cache.d.ts"],
+      "db/json-memory": ["./dist/types/db/json-memory.d.ts"],
+      "db/sqlite": ["./dist/types/db/sqlite.d.ts"],
+      "db/redis": ["./dist/types/db/redis.d.ts"],
+      "db/mongo": ["./dist/types/db/mongo.d.ts"],
+      "types": ["./dist/types/types.d.ts"]
     }
   },
   "scripts": {

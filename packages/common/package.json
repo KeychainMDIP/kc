@@ -9,13 +9,19 @@
   "exports": {
     "./utils": {
       "import": "./dist/esm/utils.js",
-      "require": "./dist/cjs/utils.js",
+      "require": "./dist/cjs/utils.cjs",
       "types": "./dist/types/utils.d.ts"
     },
     "./errors": {
       "import": "./dist/esm/errors.js",
-      "require": "./dist/cjs/errors.js",
+      "require": "./dist/cjs/errors.cjs",
       "types": "./dist/types/errors.d.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "utils": ["./dist/types/utils.d.ts"],
+      "errors": ["./dist/types/errors.d.ts"]
     }
   },
   "scripts": {

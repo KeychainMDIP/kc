@@ -1,0 +1,20 @@
+{
+  "name": "mdip-cjs-demo",
+  "version": "1.0.0",
+  "description": "Minimal CommonJS demo for @mdip packages",
+  "main": "dist/demo.js",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "start": "npm run build && node dist/demo.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
