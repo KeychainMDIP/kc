@@ -45,6 +45,7 @@ const ImageTab = () => {
 
     useEffect(() => {
         if (selectedImageName) {
+            setImageVersionMax(1);
             refreshImage(selectedImageName);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,7 +82,7 @@ const ImageTab = () => {
             const dataUrl = `data:${docAsset.image.type};base64,${base64}`;
             setSelectedImageDataUrl(dataUrl);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

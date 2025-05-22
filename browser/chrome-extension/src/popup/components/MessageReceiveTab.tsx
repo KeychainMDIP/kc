@@ -24,7 +24,7 @@ function MessageReceiveTab({ tabValue }: { tabValue: string }) {
             const message = await keymaster.decryptMessage(did);
             await setReceiveMessage(message);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

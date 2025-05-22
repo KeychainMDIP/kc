@@ -58,7 +58,7 @@ function DIDsTab() {
             await refreshNames();
             requestBrowserRefresh(isBrowser);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -79,7 +79,7 @@ function DIDsTab() {
             await refreshNames();
             requestBrowserRefresh(isBrowser);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
 
         setOpen(false);
@@ -104,7 +104,7 @@ function DIDsTab() {
             await keymaster.removeName(renameOldName);
             await refreshNames();
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     };
 

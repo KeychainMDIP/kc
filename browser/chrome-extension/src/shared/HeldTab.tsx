@@ -46,7 +46,7 @@ function HeldTab() {
                 setWarning("Credential not accepted");
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -58,7 +58,7 @@ function HeldTab() {
             const doc = await keymaster.getCredential(did);
             displayJson(prefix + " Credential", did, doc);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -71,7 +71,7 @@ function HeldTab() {
             await resolveDID();
             await decryptCredential("Publish", did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -84,7 +84,7 @@ function HeldTab() {
             await resolveDID();
             await decryptCredential("Reveal", did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -97,7 +97,7 @@ function HeldTab() {
             await resolveDID();
             await decryptCredential("Unpublish", did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -121,7 +121,7 @@ function HeldTab() {
             await refreshHeld();
             requestBrowserRefresh(isBrowser);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         } finally {
             setOpen(false);
             setLoading(false);

@@ -55,7 +55,7 @@ function IssueTab() {
             setCredentialString(JSON.stringify(credentialBound, null, 4));
             setCredentialDID("");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -71,7 +71,7 @@ function IssueTab() {
             setCredentialDID(did);
             setIssuedList((prevIssuedList) => [...prevIssuedList, did]);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -94,7 +94,7 @@ function IssueTab() {
                 const schemaObject = await keymaster.getSchema(schemaDID);
                 setSchemaObject(schemaObject);
             } catch (error: any) {
-                setError(error.error || error.message || String(error));
+                setError(error);
             }
         }
 
