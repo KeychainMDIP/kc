@@ -2652,11 +2652,11 @@ export default class Keymaster implements KeymasterInterface {
         const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
-        const sha256 = this.cipher.hashJSON({});
         const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
-        const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk;
+        const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk; // If secret, encrypt for the owner only
         const members = this.cipher.encryptMessage(publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
+        const sha256 = this.cipher.hashJSON({});
         const groupVault = {
             publicJwk: vaultKeypair.publicJwk,
             salt,
