@@ -2690,7 +2690,7 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async decryptGroupVault(groupVault: GroupVault) {
+    private async decryptGroupVault(groupVault: GroupVault) {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
         const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
@@ -2742,7 +2742,21 @@ export default class Keymaster implements KeymasterInterface {
         };
     }
 
+    private async checkGroupVaultOwner(vaultId: string): Promise<string> {
+        const id = await this.fetchIdInfo();
+        const vaultDoc = await this.resolveDID(vaultId);
+        const controller = vaultDoc.didDocument?.controller;
+
+        if (controller !== id.did) {
+            throw new KeymasterError('Only vault owner can modify the vault');
+        }
+
+        return controller
+    }
+
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const owner = await this.checkGroupVaultOwner(vaultId);
+
         const idKeypair = await this.fetchKeyPair();
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
@@ -2756,8 +2770,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         // Don't allow adding the vault owner
-        const vaultDoc = await this.resolveDID(vaultId);
-        if (vaultDoc.didDocument!.controller === memberDID) {
+        if (owner === memberDID) {
             return false;
         }
 
@@ -2773,6 +2786,8 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
+        const owner = await this.checkGroupVaultOwner(vaultId);
+
         const idKeypair = await this.fetchKeyPair();
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
@@ -2785,8 +2800,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         // Don't allow removing the vault owner
-        const vaultDoc = await this.resolveDID(vaultId);
-        if (vaultDoc.didDocument!.controller === memberDID) {
+        if (owner === memberDID) {
             return false;
         }
 
@@ -2808,6 +2822,8 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
+        await this.checkGroupVaultOwner(vaultId);
+
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
         const validName = this.validateName(name);
@@ -2827,6 +2843,8 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeGroupVaultItem(vaultId: string, name: string): Promise<boolean> {
+        await this.checkGroupVaultOwner(vaultId);
+
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 

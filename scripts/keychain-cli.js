@@ -1168,6 +1168,7 @@ program
     .description('Create a group vault')
     .option('-n, --name <name>', 'DID name')
     .option('-r, --registry <registry>', 'registry to use')
+    .option('-s, --secretMembers', 'keep member list secret from each other')
     .action(async (options) => {
         try {
             const did = await keymaster.createGroupVault(options);

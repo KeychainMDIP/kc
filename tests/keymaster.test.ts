@@ -5241,6 +5241,20 @@ describe('addGroupVaultMember', () => {
         expect(charlieId in groupVault!.keys).toBe(true);
     });
 
+    it('should throw an exception if not owner', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addGroupVaultMember(did, 'Bob');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Only vault owner can modify the vault');
+        }
+    });
+
     it('should throw an exception on invalid member', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5295,6 +5309,20 @@ describe('removeGroupVaultMember', () => {
 
         const ok = await keymaster.removeGroupVaultMember(did, alice);
         expect(ok).toBe(true);
+    });
+
+    it('should throw an exception if not owner', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.removeGroupVaultMember(did, 'Bob');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Only vault owner can modify the vault');
+        }
     });
 
     it('should throw an exception on invalid member', async () => {
@@ -5427,6 +5455,20 @@ describe('addGroupVaultItem', () => {
         expect(items!['item1'].sha256).toBe(items!['item2'].sha256);
     });
 
+    it('should throw an exception if not owner', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.addGroupVaultItem(did, 'item1', mockDocument);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Only vault owner can modify the vault');
+        }
+    });
+
     it('should not add an item with an empty name', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5481,6 +5523,20 @@ describe('removeGroupVaultItem', () => {
 
         const ok = await keymaster.removeGroupVaultItem(did, 'bogus');
         expect(ok).toBe(true);
+    });
+
+    it('should throw an exception if not owner', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        await keymaster.createId('Alice');
+
+        try {
+            await keymaster.removeGroupVaultItem(did, 'item1');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Only vault owner can modify the vault');
+        }
     });
 });
 
