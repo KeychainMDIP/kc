@@ -193,7 +193,7 @@ export interface GroupVault {
     sha256: string,
 }
 
-export interface GroupVaultConfig {
+export interface GroupVaultOptions extends CreateAssetOptions {
     secretMembers?: boolean;
 }
 

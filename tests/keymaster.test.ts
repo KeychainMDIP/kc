@@ -5198,49 +5198,6 @@ describe('testGroupVault', () => {
     });
 });
 
-describe('getGroupVaultConfig', () => {
-    it('should return config for owner', async () => {
-        await keymaster.createId('Bob');
-        const did = await keymaster.createGroupVault();
-        const config = await keymaster.getGroupVaultConfig(did);
-
-        expect(config).toStrictEqual({ secretMembers: false });
-    });
-
-    it('should return empty config for non-owner', async () => {
-        const alice = await keymaster.createId('Alice');
-        await keymaster.createId('Bob');
-        const did = await keymaster.createGroupVault();
-        await keymaster.addGroupVaultMember(did, alice);
-
-        await keymaster.setCurrentId('Alice');
-        const config = await keymaster.getGroupVaultConfig(did);
-
-        expect(config).toStrictEqual({});
-    });
-});
-
-describe('setGroupVaultConfig', () => {
-    it('should return true when set', async () => {
-        await keymaster.createId('Bob');
-        const did = await keymaster.createGroupVault();
-        const ok = await keymaster.setGroupVaultConfig(did, { secretMembers: true });
-        const config = await keymaster.getGroupVaultConfig(did);
-
-        expect(ok).toBe(true);
-        expect(config).toStrictEqual({ secretMembers: true });
-    });
-
-    it('should return false when no change', async () => {
-        await keymaster.createId('Bob');
-        const did = await keymaster.createGroupVault();
-        const config = await keymaster.getGroupVaultConfig(did);
-        const ok = await keymaster.setGroupVaultConfig(did, config);
-
-        expect(ok).toBe(false);
-    });
-});
-
 describe('addGroupVaultMember', () => {
     it('should add a new member to the groupVault', async () => {
         const alice = await keymaster.createId('Alice');
@@ -5408,8 +5365,7 @@ describe('listGroupVaultMembers', () => {
     it('should not return member list to members when secret', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
-        const did = await keymaster.createGroupVault();
-        await keymaster.setGroupVaultConfig(did, { secretMembers: true });
+        const did = await keymaster.createGroupVault({ secretMembers: true });
         await keymaster.addGroupVaultMember(did, 'Alice');
         await keymaster.setCurrentId('Alice');
 

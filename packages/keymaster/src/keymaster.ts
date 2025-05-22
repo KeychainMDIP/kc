@@ -24,7 +24,7 @@ import {
     FixWalletResult,
     Group,
     GroupVault,
-    GroupVaultConfig,
+    GroupVaultOptions,
     IDInfo,
     ImageAsset,
     IssueCredentialsOptions,
@@ -2644,7 +2644,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(pollId, { poll });
     }
 
-    async createGroupVault(options: CreateAssetOptions = {}): Promise<string> {
+    async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
         const salt = this.cipher.generateRandomSalt();
@@ -2653,11 +2653,8 @@ export default class Keymaster implements KeymasterInterface {
         const memberID = this.cipher.hashMessage(salt + id.did);
         const keys = { [memberID]: memberKey };
         const sha256 = this.cipher.hashJSON({});
-        const defaultConfig = {
-            secretMembers: false
-        };
-        const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(defaultConfig));
-        const publicJwk = defaultConfig.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk;
+        const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
+        const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk;
         const members = this.cipher.encryptMessage(publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const groupVault = {
@@ -2706,7 +2703,7 @@ export default class Keymaster implements KeymasterInterface {
         const privKeyJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
-        let config: GroupVaultConfig = {};
+        let config: GroupVaultOptions = {};
         try {
             const configJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
             config = JSON.parse(configJSON);
@@ -2743,30 +2740,6 @@ export default class Keymaster implements KeymasterInterface {
             members,
             items,
         };
-    }
-
-    async getGroupVaultConfig(groupVaultId: string): Promise<GroupVaultConfig> {
-        const groupVault = await this.getGroupVault(groupVaultId);
-        const { config } = await this.decryptGroupVault(groupVault);
-
-        return config;
-    }
-
-    async setGroupVaultConfig(groupVaultId: string, newConfig: GroupVaultConfig): Promise<boolean> {
-        const idKeypair = await this.fetchKeyPair();
-        const groupVault = await this.getGroupVault(groupVaultId);
-        const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
-
-        if (this.cipher.hashJSON(newConfig) === this.cipher.hashJSON(config)) {
-            return false;
-        }
-
-        groupVault.config = this.cipher.encryptMessage(idKeypair!.publicJwk, privateJwk, JSON.stringify(newConfig));
-
-        const publicJwk = newConfig.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
-        groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
-
-        return this.updateAsset(groupVaultId, { groupVault });
     }
 
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
