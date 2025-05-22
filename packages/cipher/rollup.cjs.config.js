@@ -16,7 +16,9 @@ const config = {
     output: {
         dir: 'dist/cjs',
         format: 'cjs',
-        exports: 'named'
+        exports: 'named',
+        entryFileNames: '[name].cjs',
+        chunkFileNames: '[name]-[hash].cjs'
     },
     external,
     plugins: [

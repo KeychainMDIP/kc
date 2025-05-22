@@ -3,79 +3,99 @@
   "version": "1.1.1",
   "description": "MDIP Keymaster",
   "type": "module",
+  "module": "./dist/esm/keymaster.js",
+  "main": "./dist/cjs/keymaster.cjs",
+  "types": "./dist/types/keymaster.d.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
       "import": "./dist/esm/keymaster.js",
-      "require": "./dist/cjs/keymaster.js",
+      "require": "./dist/cjs/keymaster.cjs",
       "types": "./dist/types/keymaster.d.ts"
     },
     "./client": {
       "import": "./dist/esm/keymaster-client.js",
-      "require": "./dist/cjs/keymaster-client.js",
+      "require": "./dist/cjs/keymaster-client.cjs",
       "types": "./dist/types/keymaster-client.d.ts"
     },
     "./wallet/json": {
       "import": "./dist/esm/db/json.js",
-      "require": "./dist/cjs/db/json.js",
+      "require": "./dist/cjs/db/json.cjs",
       "types": "./dist/types/db/json.d.ts"
     },
     "./wallet/json-enc": {
       "import": "./dist/esm/db/json-enc.js",
-      "require": "./dist/cjs/db/json-enc.js",
+      "require": "./dist/cjs/db/json-enc.cjs",
       "types": "./dist/types/db/json-enc.d.ts"
     },
     "./wallet/json-memory": {
       "import": "./dist/esm/db/json-memory.js",
-      "require": "./dist/cjs/db/json-memory.js",
+      "require": "./dist/cjs/db/json-memory.cjs",
       "types": "./dist/types/db/json-memory.d.ts"
     },
     "./wallet/redis": {
       "import": "./dist/esm/db/redis.js",
-      "require": "./dist/cjs/db/redis.js",
+      "require": "./dist/cjs/db/redis.cjs",
       "types": "./dist/types/db/redis.d.ts"
     },
     "./wallet/mongo": {
       "import": "./dist/esm/db/mongo.js",
-      "require": "./dist/cjs/db/mongo.js",
+      "require": "./dist/cjs/db/mongo.cjs",
       "types": "./dist/types/db/mongo.d.ts"
     },
     "./wallet/sqlite": {
       "import": "./dist/esm/db/sqlite.js",
-      "require": "./dist/cjs/db/sqlite.js",
+      "require": "./dist/cjs/db/sqlite.cjs",
       "types": "./dist/types/db/sqlite.d.ts"
     },
     "./wallet/cache": {
       "import": "./dist/esm/db/cache.js",
-      "require": "./dist/cjs/db/cache.js",
+      "require": "./dist/cjs/db/cache.cjs",
       "types": "./dist/types/db/cache.d.ts"
     },
     "./wallet/web": {
       "import": "./dist/esm/db/web.js",
-      "require": "./dist/cjs/db/web.js",
+      "require": "./dist/cjs/db/web.cjs",
       "types": "./dist/types/db/web.d.ts"
     },
     "./wallet/web-enc": {
       "import": "./dist/esm/db/web-enc.js",
-      "require": "./dist/cjs/db/web-enc.js",
+      "require": "./dist/cjs/db/web-enc.cjs",
       "types": "./dist/types/db/web-enc.d.ts"
     },
     "./wallet/chrome": {
       "import": "./dist/esm/db/chrome.js",
-      "require": "./dist/cjs/db/chrome.js",
+      "require": "./dist/cjs/db/chrome.cjs",
       "types": "./dist/types/db/chrome.d.ts"
     },
     "./wallet/typeGuards": {
       "import": "./dist/esm/db/typeGuards.js",
-      "require": "./dist/cjs/db/typeGuards.js",
+      "require": "./dist/cjs/db/typeGuards.cjs",
       "types": "./dist/types/db/typeGuards.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.ts",
       "require": "./dist/types/types.d.ts",
       "types": "./dist/types/types.d.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "client": ["./dist/types/keymaster-client.d.ts"],
+      "wallet/json": ["./dist/types/db/json.d.ts"],
+      "wallet/json-enc": ["./dist/types/db/json-enc.d.ts"],
+      "wallet/json-memory": ["./dist/types/db/json-memory.d.ts"],
+      "wallet/redis": ["./dist/types/db/redis.d.ts"],
+      "wallet/mongo": ["./dist/types/db/mongo.d.ts"],
+      "wallet/sqlite": ["./dist/types/db/sqlite.d.ts"],
+      "wallet/cache": ["./dist/types/db/cache.d.ts"],
+      "wallet/web": ["./dist/types/db/web.d.ts"],
+      "wallet/web-enc": ["./dist/types/db/web-enc.d.ts"],
+      "wallet/chrome": ["./dist/types/db/chrome.d.ts"],
+      "wallet/typeGuards": ["./dist/types/db/typeGuards.d.ts"],
+      "types": ["./dist/types/types.d.ts"]
     }
   },
   "scripts": {
