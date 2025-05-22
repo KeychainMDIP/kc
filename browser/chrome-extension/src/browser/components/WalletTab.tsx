@@ -130,7 +130,7 @@ const WalletTab = () => {
                 setShowFixModal(true);
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
         setCheckingWallet(false);
     }
@@ -151,7 +151,7 @@ const WalletTab = () => {
             clearJsonWallet();
             setMnemonicString("");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -177,7 +177,7 @@ const WalletTab = () => {
                 await wipeAndClose();
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
 
         setOpen(false);
@@ -194,7 +194,7 @@ const WalletTab = () => {
             const response = await keymaster.decryptMnemonic();
             setMnemonicString(response);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -218,7 +218,7 @@ const WalletTab = () => {
                 });
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -285,7 +285,7 @@ const WalletTab = () => {
 
             URL.revokeObjectURL(url);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -318,7 +318,7 @@ const WalletTab = () => {
             await keymaster.backupWallet();
             setSuccess("Wallet backup successful");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

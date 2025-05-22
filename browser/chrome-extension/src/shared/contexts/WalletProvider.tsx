@@ -111,10 +111,11 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         severity: "warning",
     });
 
-    const setError = (error: string) => {
+    const setError = (error: any) => {
+        const errorMessage = error.error || error.message || String(error);
         setSnackbar({
             open: true,
-            message: error,
+            message: errorMessage,
             severity: "error",
         });
     };
@@ -276,7 +277,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             const docs = await keymaster.resolveDID(id.did);
             setManifest((docs.didDocumentData as {manifest?: Record<string, unknown>}).manifest);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

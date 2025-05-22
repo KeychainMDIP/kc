@@ -44,7 +44,7 @@ const DropDownID = () => {
             await resetCurrentID();
             requestBrowserRefresh(isBrowser);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

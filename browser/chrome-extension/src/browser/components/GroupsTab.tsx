@@ -58,7 +58,7 @@ const GroupsTab = () => {
             setSelectedGroupName(name);
             await refreshGroup(name);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -78,7 +78,7 @@ const GroupsTab = () => {
                 });
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -97,7 +97,7 @@ const GroupsTab = () => {
                 });
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -109,7 +109,7 @@ const GroupsTab = () => {
             await keymaster.addGroupMember(selectedGroupName, did);
             await refreshGroup(selectedGroupName);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -121,7 +121,7 @@ const GroupsTab = () => {
             await keymaster.removeGroupMember(selectedGroupName, removeDID);
             await refreshGroup(selectedGroupName);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
         if (removeDID === jsonDID) {
             setJsonDID('');
