@@ -388,15 +388,21 @@ async function addPeer(did: string): Promise<void> {
     };
 }
 
+const badPeers: Record<string, number> = {};
+
 async function syncPeers(peers: string[]): Promise<void> {
     for (const did of peers) {
         if (!(did in knownNodes)) {
             try {
                 await addPeer(did);
-                console.log(`added peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
+                console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
             }
             catch (error) {
-                console.error(`Error adding peer: ${did}`, error);
+                if (!(did in badPeers)) {
+                    // Store time of first error so we can later implement a retry mechanism
+                    badPeers[did] = Date.now();
+                    console.error(`Error adding IPFS peer: ${did}`, error);
+                }
                 continue;
             }
         }
