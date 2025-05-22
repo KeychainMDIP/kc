@@ -36,7 +36,7 @@ const SchemaTab = ()=> {
             await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
             await editSchema(editedSchemaName);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
             return;
         }
         setSuccess("Schema saved");
@@ -52,7 +52,7 @@ const SchemaTab = ()=> {
             setEditedSchemaName(schemaName);
             setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -76,7 +76,7 @@ const SchemaTab = ()=> {
             setSelectedSchemaName(name);
             await editSchema(name);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

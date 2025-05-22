@@ -95,7 +95,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                     await resolveDID(did);
                 }
             } catch (error: any) {
-                setError(error.error || error.message || String(error));
+                setError(error);
             }
         };
 
@@ -144,7 +144,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             }
             setCurrentDid(did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -159,7 +159,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             });
             setAliasDocs(docs);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

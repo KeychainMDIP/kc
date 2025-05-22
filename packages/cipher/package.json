@@ -9,18 +9,25 @@
   "exports": {
     "./node": {
       "import": "./dist/esm/cipher-node.js",
-      "require": "./dist/cjs/cipher-node.js",
+      "require": "./dist/cjs/cipher-node.cjs",
       "types": "./dist/types/cipher-node.d.ts"
     },
     "./web": {
       "import": "./dist/esm/cipher-web.js",
-      "require": "./dist/cjs/cipher-web.js",
+      "require": "./dist/cjs/cipher-web.cjs",
       "types": "./dist/types/cipher-web.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.ts",
       "require": "./dist/types/types.d.ts",
       "types": "./dist/types/types.d.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "node": ["./dist/types/cipher-node.d.ts"],
+      "web": ["./dist/types/cipher-web.d.ts"],
+      "types": ["./dist/types/types.d.ts"]
     }
   },
   "scripts": {

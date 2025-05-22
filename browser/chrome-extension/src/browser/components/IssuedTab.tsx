@@ -59,7 +59,7 @@ function IssuedTab() {
             setIssuedString(issued);
             setIssuedEdit(true);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -72,7 +72,7 @@ function IssuedTab() {
             await keymaster.updateCredential(did, credential);
             await decryptIssued(did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -99,7 +99,7 @@ function IssuedTab() {
                 }
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
 
         setOpen(false);

@@ -41,6 +41,7 @@ const DocumentTab = () => {
 
     useEffect(() => {
         if (selectedDocumentName) {
+            setDocVersionMax(1);
             refreshDocument(selectedDocumentName);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,7 +79,7 @@ const DocumentTab = () => {
             const dataUrl = `data:${docAsset.document.type};base64,${base64}`;
             setSelectedDocumentDataUrl(dataUrl);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

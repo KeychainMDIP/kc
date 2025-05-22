@@ -257,7 +257,7 @@ export function UIProvider(
             const heldList = await keymaster.listCredentials();
             setHeldList(heldList);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -270,7 +270,7 @@ export function UIProvider(
             setIssuedList(issuedList);
             setIssuedString("");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -388,7 +388,7 @@ export function UIProvider(
             const docData = docs.didDocumentData as {manifest?: Record<string, unknown>};
             setManifest(docData.manifest);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -451,7 +451,7 @@ export function UIProvider(
 
             wipeState()
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
             return false;
         }
 
@@ -527,7 +527,7 @@ export function UIProvider(
                 await refreshCurrentID();
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

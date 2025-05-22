@@ -58,7 +58,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
             );
             await setEncryptedDID(did);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 

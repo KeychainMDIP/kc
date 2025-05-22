@@ -9,23 +9,31 @@
   "exports": {
     "./helia": {
       "import": "./dist/esm/helia-client.js",
-      "require": "./dist/cjs/helia-client.js",
+      "require": "./dist/cjs/helia-client.cjs",
       "types": "./dist/types/helia-client.d.ts"
     },
     "./kubo": {
       "import": "./dist/esm/kubo-client.js",
-      "require": "./dist/cjs/kubo-client.js",
+      "require": "./dist/cjs/kubo-client.cjs",
       "types": "./dist/types/kubo-client.d.ts"
     },
     "./utils": {
       "import": "./dist/esm/utils.js",
-      "require": "./dist/cjs/utils.js",
+      "require": "./dist/cjs/utils.cjs",
       "types": "./dist/types/utils.d.ts"
     },
     "./types": {
       "import": "./dist/types/types.d.js",
-      "require": "./dist/types/types.d.js",
+      "require": "./dist/types/types.d.cjs",
       "types": "./dist/types/types.d.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "helia": ["./dist/types/helia-client.d.ts"],
+      "kubo": ["./dist/types/kubo-client.d.ts"],
+      "utils": ["./dist/types/utils.d.ts"],
+      "types": ["./dist/types/types.d.ts"]
     }
   },
   "scripts": {

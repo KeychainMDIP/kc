@@ -36,7 +36,7 @@ function AuthTab() {
             await setChallenge(challenge);
             await resolveChallenge(challenge);
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -49,7 +49,7 @@ function AuthTab() {
             await setAuthDID(did);
             openBrowserWindow({ title: "Resolve Challenge", did, contents });
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -73,7 +73,7 @@ function AuthTab() {
                 await setDisableSendResponse(false);
             }
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -90,7 +90,7 @@ function AuthTab() {
             await setAuthDID(did);
             openBrowserWindow({ title: "Decrypt Response", did, contents });
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -108,7 +108,7 @@ function AuthTab() {
             }
         } catch (error: any) {
             console.error(error);
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
@@ -122,7 +122,7 @@ function AuthTab() {
             await axios.post(callback, { response });
             await setCallback("");
         } catch (error: any) {
-            setError(error.error || error.message || String(error));
+            setError(error);
         }
     }
 
