@@ -1,6 +1,23 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Paper, Select, Tab, Tabs, TableContainer } from '@mui/material';
-import { Table, TableBody, TableRow, TableCell, TextField, Tooltip, Typography } from '@mui/material';
+import { useEffect, useState } from 'react';
+import {
+    Box,
+    Button,
+    Grid,
+    MenuItem,
+    Paper,
+    Select,
+    Tab,
+    Tabs,
+    TableContainer,
+    Table,
+    TableBody,
+    TableRow,
+    TableCell,
+    TextField,
+    Tooltip,
+    Typography
+} from '@mui/material';
+import Autocomplete from '@mui/material/Autocomplete';
 import {
     AccountBalanceWallet,
     Article,
@@ -2214,14 +2231,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableBody>
                                                     <TableRow>
                                                         <TableCell style={{ width: '100%' }}>
-                                                            <TextField
-                                                                label="Name or DID"
-                                                                style={{ width: '500px' }}
+                                                            <Autocomplete
+                                                                freeSolo
+                                                                options={agentList || []} // array of options, e.g. DIDs or names
                                                                 value={vaultMember}
-                                                                onChange={(e) => setVaultMember(e.target.value)}
-                                                                fullWidth
-                                                                margin="normal"
-                                                                inputProps={{ maxLength: 80 }}
+                                                                onChange={(event, newValue) => setVaultMember(newValue)}
+                                                                onInputChange={(event, newInputValue) => setVaultMember(newInputValue)}
+                                                                renderInput={(params) => (
+                                                                    <TextField
+                                                                        {...params}
+                                                                        label="Name or DID"
+                                                                        style={{ width: '500px' }}
+                                                                        margin="normal"
+                                                                        inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                                        fullWidth
+                                                                    />
+                                                                )}
                                                             />
                                                         </TableCell>
                                                         <TableCell>
@@ -2287,7 +2312,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     scrollButtons="auto"
                                 >
                                     <Tab key="held" value="held" label={'Held'} icon={<LibraryBooks />} />
-                                    <Tab key="issue" value="issue" label={'Issue'}  icon={<LibraryAdd />}/>
+                                    <Tab key="issue" value="issue" label={'Issue'} icon={<LibraryAdd />} />
                                     <Tab key="issued" value="issued" label={'Issued'} icon={<LibraryAddCheck />} />
                                 </Tabs>
                             </Box>
