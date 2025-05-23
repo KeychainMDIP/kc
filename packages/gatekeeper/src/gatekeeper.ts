@@ -10,9 +10,12 @@ import { IPFSClient } from '@mdip/ipfs/types';
 import {
     BlockId,
     BlockInfo,
+    CheckDIDsOptions,
     GatekeeperDb,
     GatekeeperInterface,
     GatekeeperEvent,
+    GatekeeperOptions,
+    ImportEventsResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -25,27 +28,6 @@ import {
 } from './types.js';
 import canonicalizeModule from 'canonicalize';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
-
-export interface GatekeeperOptions {
-    db: GatekeeperDb,
-    ipfs: IPFSClient,
-    console?: typeof console,
-    didPrefix?: string,
-    maxOpBytes?: number,
-    maxQueueSize?: number,
-    registries?: string[],
-}
-
-export interface CheckDIDsOptions {
-    chatty?: boolean;
-    dids?: string[];
-}
-
-export interface ImportEventsResult {
-    added: number;
-    merged: number;
-    rejected: number;
-}
 
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];

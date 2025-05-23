@@ -13,7 +13,11 @@ npm install @mdip/ipfs
 ### basic use
 
 ```js
+// Import using subpaths
 import HeliaClient from '@mdip/ipfs/helia';
+
+// Non-subpath import
+import { HeliaClient } from '@mdip/ipfs';
 
 const ipfs = new HeliaClient();
 

@@ -1,5 +1,6 @@
-import { EcdsaJwkPublic } from '@mdip/cipher/types';
+import {Cipher, EcdsaJwkPublic} from '@mdip/cipher/types';
 import {
+    GatekeeperInterface,
     MdipDocument,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
@@ -202,6 +203,43 @@ export type StoredWallet = EncryptedWallet | WalletFile | null;
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
     loadWallet(): Promise<StoredWallet>
+}
+
+export interface KeymasterOptions {
+    gatekeeper: GatekeeperInterface;
+    wallet: WalletBase;
+    cipher: Cipher;
+    defaultRegistry?: string;
+    maxNameLength?: number;
+}
+
+export interface EncryptedMessage {
+    sender: string;
+    created: string;
+    cipher_hash?: string | null;
+    cipher_sender?: string | null;
+    cipher_receiver?: string | null;
+}
+
+export interface PossiblySigned {
+    signature?: Signature;
+}
+
+export interface KeymasterClientOptions {
+    url?: string;
+    console?: any;
+    waitUntilReady?: boolean;
+    intervalSeconds?: number;
+    chatty?: boolean;
+    becomeChattyAfter?: number;
+    maxRetries?: number;
+}
+
+export interface WaitUntilReadyOptions {
+    intervalSeconds?: number;
+    chatty?: boolean;
+    becomeChattyAfter?: number;
+    maxRetries?: number;
 }
 
 export interface KeymasterInterface {

@@ -10,6 +10,8 @@ const external = [
 
 const config = {
     input: {
+        'index': 'dist/esm/index.js',
+        'node': 'dist/esm/node.js',
         'helia-client': 'dist/esm/helia-client.js',
         'kubo-client': 'dist/esm/kubo-client.js',
         utils: 'dist/esm/utils.js'

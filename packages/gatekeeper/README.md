@@ -21,8 +21,12 @@ The library must be configured by calling the start function with one of the sup
 - redis - @mdip/gatekeeper/db/redis
 
 ```js
-import Gatekeeper from '@mdip/gatekeeper/types';
+// Import using subpaths
+import Gatekeeper from '@mdip/gatekeeper';
 import DbRedis from '@mdip/gatekeeper/db/redis';
+
+// Non-subpath imports
+import Gatekeeper, { DbRedis } from '@mdip/gatekeeper';
 
 const db_redis = new DbRedis('mdip-test');
 await db_redis.start();
@@ -38,7 +42,11 @@ console.log(JSON.stringify(docs, null, 4));
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 
 ```js
+// Import using subpaths
 import GatekeeperClient from '@mdip/gatekeeper/client';
+
+// Non-subpath imports
+import { GatekeeperClient } from '@mdip/gatekeeper';
 
 // Try connecting to the gatekeeper service every second,
 // and start reporting (chatty) if not connected after 5 attempts

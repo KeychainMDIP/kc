@@ -10,6 +10,7 @@ const external = [
 
 const config = {
     input: {
+        'index': 'dist/esm/index.js',
         utils: 'dist/esm/utils.js',
         errors: 'dist/esm/errors.js'
     },

@@ -1,10 +1,9 @@
 import sharp from 'sharp';
 import Gatekeeper from '@mdip/gatekeeper';
-import Keymaster, {
-    EncryptedMessage
-} from '@mdip/keymaster';
+import Keymaster from '@mdip/keymaster';
 import {
     ChallengeResponse,
+    EncryptedMessage,
     Poll,
     VerifiableCredential,
     EncryptedWallet,

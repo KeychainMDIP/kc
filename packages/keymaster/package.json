@@ -3,17 +3,27 @@
   "version": "1.1.1",
   "description": "MDIP Keymaster",
   "type": "module",
-  "module": "./dist/esm/keymaster.js",
-  "main": "./dist/cjs/keymaster.cjs",
-  "types": "./dist/types/keymaster.d.ts",
+  "module": "./dist/esm/index.js",
+  "main": "./dist/cjs/index.cjs",
+  "types": "./dist/types/index.d.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "import": "./dist/esm/keymaster.js",
-      "require": "./dist/cjs/keymaster.cjs",
-      "types": "./dist/types/keymaster.d.ts"
+      "browser": {
+        "import": "./dist/esm/index.js",
+        "types": "./dist/types/index.d.ts"
+      },
+      "node": {
+        "import": "./dist/esm/node.js",
+        "require": "./dist/cjs/node.cjs",
+        "types": "./dist/types/node.d.ts"
+      },
+      "default": {
+        "import": "./dist/esm/node.js",
+        "types": "./dist/types/node.d.ts"
+      }
     },
     "./client": {
       "import": "./dist/esm/keymaster-client.js",

@@ -11,6 +11,8 @@ const external = [
 
 const config = {
     input: {
+        'index': 'dist/esm/index.js',
+        'node': 'dist/esm/node.js',
         'gatekeeper': 'dist/esm/gatekeeper.js',
         'gatekeeper-client': 'dist/esm/gatekeeper-client.js',
         'db/json': 'dist/esm/db/json.js',
