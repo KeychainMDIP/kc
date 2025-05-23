@@ -3,9 +3,9 @@
   "version": "1.1.1",
   "description": "MDIP cipher lib",
   "type": "module",
-  "main": "./dist/cjs/cipher-node.cjs",
-  "module": "./dist/esm/cipher-node.js",
-  "types": "./dist/types/cipher-node.d.ts",
+  "main": "./dist/cjs/cipher-web.cjs",
+  "module": "./dist/esm/cipher-web.js",
+  "types": "./dist/types/cipher-web.d.ts",
   "files": [
     "dist"
   ],
