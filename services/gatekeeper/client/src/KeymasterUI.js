@@ -384,19 +384,61 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setAliasDID('');
         setAliasDocs('');
 
+        const docList = {};
+        const agentList = await keymaster.listIds();
         const groupList = [];
+        const schemaList = [];
+        const imageList = [];
+        const documentList = [];
+        const vaultList = [];
 
         for (const name of names) {
             try {
-                const isGroup = await keymaster.testGroup(name);
+                const doc = await keymaster.resolveDID(name);
+                const data = doc.didDocumentData;
 
-                if (isGroup) {
+                docList[name] = doc;
+
+                if (doc.mdip.type === 'agent') {
+                    agentList.push(name);
+                    continue;
+                }
+
+                if (data.group) {
                     groupList.push(name);
+                    continue;
+                }
+
+                if (data.schema) {
+                    schemaList.push(name);
+                    continue;
+                }
+
+                if (data.image) {
+                    imageList.push(name);
+                    continue;
+                }
+
+                if (data.document) {
+                    documentList.push(name);
+                    continue;
+                }
+
+                if (data.groupVault) {
+                    vaultList.push(name);
+                    continue;
                 }
             }
             catch {
                 continue;
             }
+        }
+
+        setAgentList(agentList);
+
+        if (!agentList.includes(credentialSubject)) {
+            setCredentialSubject('');
+            setCredentialString('');
         }
 
         setGroupList(groupList);
@@ -404,21 +446,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         if (!groupList.includes(selectedGroupName)) {
             setSelectedGroupName('');
             setSelectedGroup(null);
-        }
-
-        const schemaList = [];
-
-        for (const name of names) {
-            try {
-                const isSchema = await keymaster.testSchema(name);
-
-                if (isSchema) {
-                    schemaList.push(name);
-                }
-            }
-            catch {
-                continue;
-            }
         }
 
         setSchemaList(schemaList);
@@ -433,21 +460,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setCredentialString('');
         }
 
-        const imageList = [];
-
-        for (const name of names) {
-            try {
-                const isImage = await keymaster.testImage(name);
-
-                if (isImage) {
-                    imageList.push(name);
-                }
-            }
-            catch {
-                continue;
-            }
-        }
-
         setImageList(imageList);
 
         if (!imageList.includes(selectedImageName)) {
@@ -455,44 +467,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImage(null);
         }
 
-        const documentList = [];
-
-        for (const name of names) {
-            try {
-                const isDocument = await keymaster.testDocument(name);
-
-                if (isDocument) {
-                    documentList.push(name);
-                }
-            }
-            catch {
-                continue;
-            }
-        }
-
         setDocumentList(documentList);
-
-        const agentList = await keymaster.listIds();
-
-        for (const name of names) {
-            try {
-                const isAgent = await keymaster.testAgent(name);
-
-                if (isAgent) {
-                    agentList.push(name);
-                }
-            }
-            catch {
-                continue;
-            }
-        }
-
-        setAgentList(agentList);
-
-        if (!agentList.includes(credentialSubject)) {
-            setCredentialSubject('');
-            setCredentialString('');
-        }
     }
 
     async function addName() {
