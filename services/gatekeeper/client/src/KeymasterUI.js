@@ -1,6 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Grid, MenuItem, Paper, Select, Tab, Tabs, TableContainer } from '@mui/material';
 import { Table, TableBody, TableRow, TableCell, TextField, Tooltip, Typography } from '@mui/material';
+import {
+    AccountBalanceWallet,
+    Article,
+    Badge,
+    Groups,
+    Image,
+    Key,
+    LibraryAdd,
+    LibraryAddCheck,
+    LibraryBooks,
+    List,
+    Message,
+    MarkunreadMailbox,
+    PermIdentity,
+    Schema,
+    Send,
+    Token,
+} from "@mui/icons-material";
 import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
@@ -1399,30 +1417,30 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                         scrollButtons="auto"
                     >
                         {currentId &&
-                            <Tab key="identity" value="identity" label={'Identities'} />
+                            <Tab key="identity" value="identity" label={'Identities'} icon={<PermIdentity />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="names" value="names" label={'DIDs'} />
+                            <Tab key="names" value="names" label={'DIDs'} icon={<List />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="assets" value="assets" label={'Assets'} />
+                            <Tab key="assets" value="assets" label={'Assets'} icon={<Token />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="credentials" value="credentials" label={'Credentials'} />
+                            <Tab key="credentials" value="credentials" label={'Credentials'} icon={<Badge />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="messages" value="messages" label={'Messages'} />
+                            <Tab key="messages" value="messages" label={'Messages'} icon={<Message />} />
                         }
                         {currentId &&
-                            <Tab key="auth" value="auth" label={'Auth'} />
+                            <Tab key="auth" value="auth" label={'Auth'} icon={<Key />} />
                         }
                         {currentId && accessGranted &&
                             <Tab key="access" value="access" label={'Access'} />
                         }
                         {!currentId &&
-                            <Tab key="create" value="create" label={'Create ID'} />
+                            <Tab key="create" value="create" label={'Create ID'} icon={<PermIdentity />} />
                         }
-                        <Tab key="wallet" value="wallet" label={'Wallet'} />
+                        <Tab key="wallet" value="wallet" label={'Wallet'} icon={<AccountBalanceWallet />} />
                     </Tabs>
                 </Box>
                 <Box style={{ width: '90vw' }}>
@@ -1605,10 +1623,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     variant="scrollable"
                                     scrollButtons="auto"
                                 >
-                                    <Tab key="schemas" value="schemas" label={'Schemas'} />
-                                    <Tab key="groups" value="groups" label={'Groups'} />
-                                    <Tab key="images" value="images" label={'Images'} />
-                                    <Tab key="documents" value="documents" label={'Documents'} />
+                                    <Tab key="schemas" value="schemas" label={'Schemas'} icon={<Schema />} />
+                                    <Tab key="groups" value="groups" label={'Groups'} icon={<Groups />} />
+                                    <Tab key="images" value="images" label={'Images'} icon={<Image />} />
+                                    <Tab key="documents" value="documents" label={'Documents'} icon={<Article />} />
                                 </Tabs>
                             </Box>
                             {assetsTab === 'schemas' &&
@@ -2072,9 +2090,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     variant="scrollable"
                                     scrollButtons="auto"
                                 >
-                                    <Tab key="held" value="held" label={'Held'} />
-                                    <Tab key="issue" value="issue" label={'Issue'} />
-                                    <Tab key="issued" value="issued" label={'Issued'} />
+                                    <Tab key="held" value="held" label={'Held'} icon={<LibraryBooks />} />
+                                    <Tab key="issue" value="issue" label={'Issue'}  icon={<LibraryAdd />}/>
+                                    <Tab key="issued" value="issued" label={'Issued'} icon={<LibraryAddCheck />} />
                                 </Tabs>
                             </Box>
                             {credentialTab === 'held' &&
@@ -2311,8 +2329,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     variant="scrollable"
                                     scrollButtons="auto"
                                 >
-                                    <Tab key="receive" value="receive" label={'Receive'} />
-                                    <Tab key="send" value="send" label={'Send'} />
+                                    <Tab key="receive" value="receive" label={'Receive'} icon={<MarkunreadMailbox />} />
+                                    <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
                             {messagesTab === 'receive' &&
