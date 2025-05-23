@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import {
     Box,
     Button,
+    FormControl,
+    FormLabel,
     Grid,
     MenuItem,
     Paper,
@@ -42,7 +44,6 @@ import { Buffer } from 'buffer';
 import './App.css';
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
-
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -131,7 +132,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedVault, setSelectedVault] = useState('');
     const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
     const [vaultMember, setVaultMember] = useState('');
-    const [vaultMemberDocs, setVaultMemberDocs] = useState('');
 
     useEffect(() => {
         checkForChallenge();
@@ -1378,7 +1378,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedVaultName(vaultName);
             setSelectedVaultOwned(docs.didDocumentMetadata.isOwned);
             setVaultMember('');
-            setVaultMemberDocs('');
 
             const vaultMembers = await keymaster.listGroupVaultMembers(vaultName);
             const vaultItems = await keymaster.listGroupVaultItems(vaultName);
@@ -1387,15 +1386,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const items = Object.keys(vaultItems);
 
             setSelectedVault({ members, vaultMembers, items, vaultItems });
-        } catch (error) {
-            showError(error);
-        }
-    }
-
-    async function resolveVaultMember(did) {
-        try {
-            const docs = await keymaster.resolveDID(did);
-            setVaultMemberDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
             showError(error);
         }
@@ -2226,75 +2216,68 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </Grid>
                                     }
                                     {selectedVault &&
-                                        <Box>
-                                            <Table style={{ width: '800px' }}>
-                                                <TableBody>
-                                                    <TableRow>
-                                                        <TableCell style={{ width: '100%' }}>
-                                                            <Autocomplete
-                                                                freeSolo
-                                                                options={agentList || []} // array of options, e.g. DIDs or names
-                                                                value={vaultMember}
-                                                                onChange={(event, newValue) => setVaultMember(newValue)}
-                                                                onInputChange={(event, newInputValue) => setVaultMember(newInputValue)}
-                                                                renderInput={(params) => (
-                                                                    <TextField
-                                                                        {...params}
-                                                                        label="Name or DID"
-                                                                        style={{ width: '500px' }}
-                                                                        margin="normal"
-                                                                        inputProps={{ ...params.inputProps, maxLength: 80 }}
-                                                                        fullWidth
-                                                                    />
-                                                                )}
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Button variant="contained" color="primary" onClick={() => resolveVaultMember(vaultMember)} disabled={!vaultMember}>
-                                                                Resolve
-                                                            </Button>
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
-                                                                <span>
-                                                                    <Button variant="contained" color="primary" onClick={() => addVaultMember(vaultMember)} disabled={!vaultMember || !selectedVaultOwned}>
-                                                                        Add
-                                                                    </Button>
-                                                                </span>
-                                                            </Tooltip>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                    {selectedVault.members.map((did, index) => (
-                                                        <TableRow key={index}>
-                                                            <TableCell>
-                                                                <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
-                                                                    {did}
-                                                                </Typography>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <Button variant="contained" color="primary" onClick={() => resolveVaultMember(did)}>
-                                                                    Resolve
-                                                                </Button>
+                                        <FormControl component="fieldset" style={{ width: '100%' }}>
+                                            <FormLabel component="legend">Vault Members</FormLabel>
+                                            <Box sx={{ border: 1, borderColor: 'grey.400', borderRadius: 1, p: 2 }}>
+                                                Vault Members are the DIDs that can access the vault.
+                                                <Table style={{ width: '800px' }}>
+                                                    <TableBody>
+                                                        <TableRow>
+                                                            <TableCell style={{ width: '100%' }}>
+                                                                <Autocomplete
+                                                                    freeSolo
+                                                                    options={agentList || []} // array of options, e.g. DIDs or names
+                                                                    value={vaultMember}
+                                                                    onChange={(event, newValue) => setVaultMember(newValue)}
+                                                                    onInputChange={(event, newInputValue) => setVaultMember(newInputValue)}
+                                                                    renderInput={(params) => (
+                                                                        <TextField
+                                                                            {...params}
+                                                                            label="Name or DID"
+                                                                            style={{ width: '500px' }}
+                                                                            margin="normal"
+                                                                            inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                                            fullWidth
+                                                                        />
+                                                                    )}
+                                                                />
                                                             </TableCell>
                                                             <TableCell>
                                                                 <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
                                                                     <span>
-                                                                        <Button variant="contained" color="primary" onClick={() => removeVaultMember(did)} disabled={!selectedVaultOwned}>
-                                                                            Remove
+                                                                        <Button variant="contained" color="primary" onClick={() => addVaultMember(vaultMember)} disabled={!vaultMember || !selectedVaultOwned}>
+                                                                            Add
                                                                         </Button>
                                                                     </span>
                                                                 </Tooltip>
                                                             </TableCell>
                                                         </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                            <textarea
-                                                value={vaultMemberDocs}
-                                                readOnly
-                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                            />
-                                        </Box>
+                                                        {selectedVault.members.map((did, index) => (
+                                                            <TableRow key={index}>
+                                                                <TableCell>
+                                                                    <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                                        {did}
+                                                                    </Typography>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
+                                                                        <span>
+                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultMember(did)} disabled={!selectedVaultOwned}>
+                                                                                Remove
+                                                                            </Button>
+                                                                        </span>
+                                                                    </Tooltip>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </Box>
+                                            <FormLabel component="legend">Vault Items</FormLabel>
+                                            <Box sx={{ border: 1, borderColor: 'grey.400', borderRadius: 1, p: 2 }}>
+                                                Vault Items are data encrypted for members only.
+                                            </Box>
+                                        </FormControl>
                                     }
                                 </Box>
                             }
