@@ -1,11 +1,12 @@
 {
-  "name": "kc-app",
+  "name": "keymaster-client",
   "version": "1.1.1",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
-    "@mui/material": "^5.13.3",
+    "@mui/icons-material": "^6.4.11",
+    "@mui/material": "^6.4.11",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
