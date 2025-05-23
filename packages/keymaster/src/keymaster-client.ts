@@ -16,11 +16,13 @@ import {
     GroupVault,
     ImageAsset,
     IssueCredentialsOptions,
+    KeymasterClientOptions,
     KeymasterInterface,
     Poll,
     StoredWallet,
     VerifiableCredential,
     ViewPollResult,
+    WaitUntilReadyOptions,
     WalletFile,
 } from './types.js'
 
@@ -34,23 +36,6 @@ function throwError(error: AxiosError | any): never {
     }
 
     throw error;
-}
-
-export interface KeymasterClientOptions {
-    url?: string;
-    console?: any;
-    waitUntilReady?: boolean;
-    intervalSeconds?: number;
-    chatty?: boolean;
-    becomeChattyAfter?: number;
-    maxRetries?: number;
-}
-
-export interface WaitUntilReadyOptions {
-    intervalSeconds?: number;
-    chatty?: boolean;
-    becomeChattyAfter?: number;
-    maxRetries?: number;
 }
 
 export default class KeymasterClient implements KeymasterInterface {

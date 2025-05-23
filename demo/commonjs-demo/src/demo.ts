@@ -1,43 +1,54 @@
-import Keymaster from '@mdip/keymaster';
-import GatekeeperClient from '@mdip/gatekeeper/client';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
-import CipherNode from '@mdip/cipher/node';
+// Subpath import example
+// import Keymaster from '@mdip/keymaster';
+// import KeymasterClient from '@mdip/keymaster/client';
+// import GatekeeperClient from '@mdip/gatekeeper/client';
+// import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
+// import CipherNode from '@mdip/cipher/node';
+
+// If your build does not support subpaths import use the following example
+import Keymaster, { KeymasterClient, WalletJsonMemory } from '@mdip/keymaster';
+import { GatekeeperClient } from '@mdip/gatekeeper';
+import CipherNode from '@mdip/cipher';
 
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const GATEKEEPER_SERVICE_URL = process.env.GATEKEEPER_SERVICE_URL || 'http://localhost:4224';
-
 async function main() {
-    const gatekeeperClient = new GatekeeperClient();
-    try {
+    let keymaster: any;
+
+    if (process.env.KEYMASTER_SERVICE_URL) {
+        keymaster = new KeymasterClient();
+        await keymaster.connect({
+            url: process.env.KEYMASTER_SERVICE_URL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+    } else {
+        const GATEKEEPER_SERVICE_URL = process.env.GATEKEEPER_SERVICE_URL || 'http://localhost:4224';
+        const gatekeeperClient = new GatekeeperClient();
         await gatekeeperClient.connect({
             url: GATEKEEPER_SERVICE_URL,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true
         });
-        console.log('Successfully connected to Gatekeeper service.');
-    } catch (error) {
-        console.error(`Failed to connect to Gatekeeper service at ${GATEKEEPER_SERVICE_URL}:`, error);
-        process.exit(1);
+
+        const wallet = new WalletJsonMemory();
+        const cipher = new CipherNode();
+
+        keymaster = new Keymaster({
+            gatekeeper: gatekeeperClient,
+            wallet,
+            cipher
+        });
     }
-
-    const wallet = new WalletJsonMemory();
-    const cipher = new CipherNode();
-
-    const keymaster = new Keymaster({
-        gatekeeper: gatekeeperClient,
-        wallet,
-        cipher,
-        defaultRegistry: 'local'
-    });
 
     try {
         const uniqueIdName = `user_${Date.now()}`;
 
-        const userDID = await keymaster.createId(uniqueIdName);
+        const userDID = await keymaster.createId(uniqueIdName, { registry: 'local' });
         console.log('Created User DID:', userDID);
 
         const didDocument = await keymaster.resolveDID(userDID);

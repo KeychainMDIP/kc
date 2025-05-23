@@ -3,10 +3,29 @@
   "version": "1.1.1",
   "description": "MDIP cipher lib",
   "type": "module",
+  "main": "./dist/cjs/cipher-node.cjs",
+  "module": "./dist/esm/cipher-node.js",
+  "types": "./dist/types/cipher-node.d.ts",
   "files": [
     "dist"
   ],
   "exports": {
+    ".": {
+      "browser": {
+        "import": "./dist/esm/cipher-web.js",
+        "require": "./dist/cjs/cipher-web.cjs",
+        "types": "./dist/types/cipher-web.d.ts"
+      },
+      "node": {
+        "import": "./dist/esm/cipher-node.js",
+        "require": "./dist/cjs/cipher-node.cjs",
+        "types": "./dist/types/cipher-node.d.ts"
+      },
+      "default": {
+        "import": "./dist/esm/cipher-node.js",
+        "types": "./dist/types/cipher-node.d.ts"
+      }
+    },
     "./node": {
       "import": "./dist/esm/cipher-node.js",
       "require": "./dist/cjs/cipher-node.cjs",
