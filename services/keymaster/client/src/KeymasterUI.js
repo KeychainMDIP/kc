@@ -1,6 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Button, Grid, MenuItem, Paper, Select, Tab, Tabs, TableContainer } from '@mui/material';
-import { Table, TableBody, TableRow, TableCell, TextField, Tooltip, Typography } from '@mui/material';
+import { useEffect, useState } from 'react';
+import {
+    Box,
+    Button,
+    FormControl,
+    FormLabel,
+    Grid,
+    MenuItem,
+    Paper,
+    Select,
+    Tab,
+    Tabs,
+    TableContainer,
+    Table,
+    TableBody,
+    TableRow,
+    TableCell,
+    TextField,
+    Tooltip,
+    Typography
+} from '@mui/material';
+import Autocomplete from '@mui/material/Autocomplete';
 import {
     AccountBalanceWallet,
     Article,
@@ -12,6 +31,7 @@ import {
     LibraryAddCheck,
     LibraryBooks,
     List,
+    Lock,
     Message,
     MarkunreadMailbox,
     PermIdentity,
@@ -24,7 +44,6 @@ import { Buffer } from 'buffer';
 import './App.css';
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
-
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -54,8 +73,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedGroupName, setSelectedGroupName] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
     const [selectedGroupOwned, setSelectedGroupOwned] = useState(false);
-    const [memberDID, setMemberDID] = useState('');
-    const [memberDocs, setMemberDocs] = useState('');
+    const [groupMember, setGroupMember] = useState('');
+    const [groupMemberDocs, setGroupMemberDocs] = useState('');
     const [schemaList, setSchemaList] = useState(null);
     const [schemaName, setSchemaName] = useState('');
     const [schemaString, setSchemaString] = useState('');
@@ -107,6 +126,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedDocumentURL, setSelectedDocumentURL] = useState('');
     const [documentVersion, setDocumentVersion] = useState(1);
     const [documentVersionMax, setDocumentVersionMax] = useState(1);
+    const [vaultList, setVaultList] = useState(null);
+    const [vaultName, setVaultName] = useState('');
+    const [selectedVaultName, setSelectedVaultName] = useState('');
+    const [selectedVault, setSelectedVault] = useState('');
+    const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
+    const [vaultMember, setVaultMember] = useState('');
+    const [docList, setDocList] = useState({});
 
     useEffect(() => {
         checkForChallenge();
@@ -183,6 +209,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setMessageRecipient('');
             setMessageDID('');
             setEncryptedDID('');
+            setSelectedImageName('');
+            setSelectedDocumentName('');
+            setSelectedVaultName('');
+            setSelectedVault(null);
         } catch (error) {
             showError(error);
         }
@@ -452,6 +482,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             }
         }
 
+        setDocList(docList);
         setAgentList(agentList);
 
         if (!agentList.includes(credentialSubject)) {
@@ -486,6 +517,21 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
 
         setDocumentList(documentList);
+
+        setVaultList(vaultList);
+
+        if (!vaultList.includes(selectedVaultName)) {
+            setSelectedVaultName('');
+            setSelectedVault(null);
+        }
+    }
+
+    function getDID(name) {
+        if (name in docList) {
+            return docList[name].didDocument.id;
+        }
+
+        return '';
     }
 
     async function addName() {
@@ -627,23 +673,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedGroupName(groupName);
             setSelectedGroup(docs.didDocumentData.group);
             setSelectedGroupOwned(docs.didDocumentMetadata.isOwned);
-            setMemberDID('');
-            setMemberDocs('');
+            setGroupMember('');
+            setGroupMemberDocs('');
         } catch (error) {
             showError(error);
         }
     }
 
-    async function resolveMember(did) {
+    async function resolveGroupMember(did) {
         try {
             const docs = await keymaster.resolveDID(did);
-            setMemberDocs(JSON.stringify(docs, null, 4));
+            setGroupMemberDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
             showError(error);
         }
     }
 
-    async function addMember(did) {
+    async function addGroupMember(did) {
         try {
             await keymaster.addGroupMember(selectedGroupName, did);
             refreshGroup(selectedGroupName);
@@ -652,7 +698,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function removeMember(did) {
+    async function removeGroupMember(did) {
         try {
             if (window.confirm(`Remove member from ${selectedGroupName}?`)) {
                 await keymaster.removeGroupMember(selectedGroupName, did);
@@ -1227,7 +1273,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     refreshNames();
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    showError(`Error processing document: ${error}`);
+                    showError(`Error processing file: ${error}`);
                 }
             };
 
@@ -1237,7 +1283,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            showError(`Error uploading image: ${error}`);
+            showError(`Error uploading file: ${error}`);
         }
     }
 
@@ -1274,7 +1320,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            showError(`Error uploading image: ${error}`);
+            showError(`Error uploading file: ${error}`);
         }
     }
 
@@ -1317,6 +1363,139 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link); // Clean up the DOM
+    }
+
+    async function createVault() {
+        try {
+            if (vaultName in nameList) {
+                alert(`${vaultName} already in use`);
+                return;
+            }
+
+            const name = vaultName;
+            setVaultName('');
+
+            await keymaster.createGroupVault({ registry, name });
+
+            refreshNames();
+            setSelectedVaultName(name);
+            refreshVault(name);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function refreshVault(vaultName) {
+        try {
+            const docs = await keymaster.resolveDID(vaultName);
+
+            setSelectedVaultName(vaultName);
+            setSelectedVaultOwned(docs.didDocumentMetadata.isOwned);
+            setVaultMember('');
+
+            const vaultMembers = await keymaster.listGroupVaultMembers(vaultName);
+            const vaultItems = await keymaster.listGroupVaultItems(vaultName);
+
+            const members = Object.keys(vaultMembers);
+            const items = Object.keys(vaultItems);
+
+            setSelectedVault({ members, vaultMembers, items, vaultItems });
+        } catch (error) {
+            setSelectedVault(null)
+            showError(error);
+        }
+    }
+
+    async function addVaultMember(did) {
+        try {
+            await keymaster.addGroupVaultMember(selectedVaultName, did);
+            refreshVault(selectedVaultName);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function removeVaultMember(did) {
+        try {
+            if (window.confirm(`Remove member from ${selectedVaultName}?`)) {
+                await keymaster.removeGroupVaultMember(selectedVaultName, did);
+                refreshVault(selectedVaultName);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function uploadVaultItem(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    const ok = await keymaster.addGroupVaultItem(selectedVaultName, file.name, buffer);
+
+                    if (ok) {
+                        showAlert(`Item uploaded successfully: ${file.name}`);
+                        refreshVault(selectedVaultName);
+                    } else {
+                        showAlert(`Error uploading file: ${file.name}`);
+                    }
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error uploading file: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error uploading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading file: ${error}`);
+        }
+    }
+
+    async function downloadVaultItem(name) {
+        try {
+            const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
+
+            // Create a Blob from the buffer
+            const blob = new Blob([buffer]);
+            // Create a temporary link to trigger the download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = name; // Use the item name as the filename
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function removeVaultItem(name) {
+        try {
+            if (window.confirm(`Remove item from ${selectedVaultName}?`)) {
+                await keymaster.removeGroupVaultItem(selectedVaultName, name);
+                refreshVault(selectedVaultName);
+            }
+        } catch (error) {
+            showError(error);
+        }
     }
 
     function RegistrySelect() {
@@ -1627,6 +1806,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="groups" value="groups" label={'Groups'} icon={<Groups />} />
                                     <Tab key="images" value="images" label={'Images'} icon={<Image />} />
                                     <Tab key="documents" value="documents" label={'Documents'} icon={<Article />} />
+                                    <Tab key="vaults" value="vaults" label={'Vaults'} icon={<Lock />} />
                                 </Tabs>
                             </Box>
                             {assetsTab === 'schemas' &&
@@ -1671,6 +1851,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </MenuItem>
                                                     ))}
                                                 </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedSchemaName)}
+                                                </Typography>
                                             </Grid>
                                         </Grid>
                                     }
@@ -1749,6 +1934,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     ))}
                                                 </Select>
                                             </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedGroupName)}
+                                                </Typography>
+                                            </Grid>
                                         </Grid>
                                     }
                                     {selectedGroup &&
@@ -1758,24 +1948,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <TableRow>
                                                         <TableCell style={{ width: '100%' }}>
                                                             <TextField
-                                                                label="DID"
+                                                                label="Name or DID"
                                                                 style={{ width: '500px' }}
-                                                                value={memberDID}
-                                                                onChange={(e) => setMemberDID(e.target.value.trim())}
+                                                                value={groupMember}
+                                                                onChange={(e) => setGroupMember(e.target.value.trim())}
                                                                 fullWidth
                                                                 margin="normal"
                                                                 inputProps={{ maxLength: 80 }}
                                                             />
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Button variant="contained" color="primary" onClick={() => resolveMember(memberDID)} disabled={!memberDID}>
+                                                            <Button variant="contained" color="primary" onClick={() => resolveGroupMember(groupMember)} disabled={!groupMember}>
                                                                 Resolve
                                                             </Button>
                                                         </TableCell>
                                                         <TableCell>
                                                             <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
                                                                 <span>
-                                                                    <Button variant="contained" color="primary" onClick={() => addMember(memberDID)} disabled={!memberDID || !selectedGroupOwned}>
+                                                                    <Button variant="contained" color="primary" onClick={() => addGroupMember(groupMember)} disabled={!groupMember || !selectedGroupOwned}>
                                                                         Add
                                                                     </Button>
                                                                 </span>
@@ -1790,14 +1980,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 </Typography>
                                                             </TableCell>
                                                             <TableCell>
-                                                                <Button variant="contained" color="primary" onClick={() => resolveMember(did)}>
+                                                                <Button variant="contained" color="primary" onClick={() => resolveGroupMember(did)}>
                                                                     Resolve
                                                                 </Button>
                                                             </TableCell>
                                                             <TableCell>
                                                                 <Tooltip title={!selectedGroupOwned ? "You must own the group to edit." : ""}>
                                                                     <span>
-                                                                        <Button variant="contained" color="primary" onClick={() => removeMember(did)} disabled={!selectedGroupOwned}>
+                                                                        <Button variant="contained" color="primary" onClick={() => removeGroupMember(did)} disabled={!selectedGroupOwned}>
                                                                             Remove
                                                                         </Button>
                                                                     </span>
@@ -1808,7 +1998,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </TableBody>
                                             </Table>
                                             <textarea
-                                                value={memberDocs}
+                                                value={groupMemberDocs}
                                                 readOnly
                                                 style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                             />
@@ -2077,6 +2267,179 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     }
                                 </Box>
                             }
+                            {assetsTab === 'vaults' &&
+                                <Box>
+                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                        <Grid item>
+                                            <TextField
+                                                label="Vault Name"
+                                                style={{ width: '300px' }}
+                                                value={vaultName}
+                                                onChange={(e) => setVaultName(e.target.value)}
+                                                fullWidth
+                                                margin="normal"
+                                                inputProps={{ maxLength: 30 }}
+                                            />
+                                        </Grid>
+                                        <Grid item>
+                                            <Button variant="contained" color="primary" onClick={createVault} disabled={!vaultName || !registry}>
+                                                Create Vault
+                                            </Button>
+                                        </Grid>
+                                        <Grid item>
+                                            <RegistrySelect />
+                                        </Grid>
+                                    </Grid>
+                                    {vaultList &&
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={selectedVaultName}
+                                                    fullWidth
+                                                    displayEmpty
+                                                    onChange={(event) => refreshVault(event.target.value)}
+                                                >
+                                                    <MenuItem value="" disabled>
+                                                        Select vault
+                                                    </MenuItem>
+                                                    {vaultList.map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedVaultName)}
+                                                </Typography>
+                                            </Grid>
+                                        </Grid>
+                                    }
+                                    {selectedVault &&
+                                        <FormControl component="fieldset" style={{ width: '100%' }}>
+                                            <FormLabel component="legend">Vault Members</FormLabel>
+                                            <Box sx={{ border: 1, borderColor: 'grey.400', borderRadius: 1, p: 2 }}>
+                                                Vault Members are the DIDs that can access the vault.
+                                                <Table style={{ width: '800px' }}>
+                                                    <TableBody>
+                                                        <TableRow>
+                                                            <TableCell style={{ width: '100%' }}>
+                                                                <Autocomplete
+                                                                    freeSolo
+                                                                    options={agentList || []} // array of options, e.g. DIDs or names
+                                                                    value={vaultMember}
+                                                                    onChange={(event, newValue) => setVaultMember(newValue)}
+                                                                    onInputChange={(event, newInputValue) => setVaultMember(newInputValue)}
+                                                                    renderInput={(params) => (
+                                                                        <TextField
+                                                                            {...params}
+                                                                            label="Name or DID"
+                                                                            style={{ width: '500px' }}
+                                                                            margin="normal"
+                                                                            inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                                            fullWidth
+                                                                        />
+                                                                    )}
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
+                                                                    <span>
+                                                                        <Button variant="contained" color="primary" onClick={() => addVaultMember(vaultMember)} disabled={!vaultMember || !selectedVaultOwned}>
+                                                                            Add
+                                                                        </Button>
+                                                                    </span>
+                                                                </Tooltip>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        {selectedVault.members.map((did, index) => (
+                                                            <TableRow key={index}>
+                                                                <TableCell>
+                                                                    <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
+                                                                        {did}
+                                                                    </Typography>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
+                                                                        <span>
+                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultMember(did)} disabled={!selectedVaultOwned}>
+                                                                                Remove
+                                                                            </Button>
+                                                                        </span>
+                                                                    </Tooltip>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </Box>
+                                            <FormLabel component="legend">Vault Items</FormLabel>
+                                            <Box sx={{ border: 1, borderColor: 'grey.400', borderRadius: 1, p: 2 }}>
+                                                Vault Items are data encrypted for members only.
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                    </Grid>
+                                                </Grid>
+                                                <Table style={{ width: '800px' }}>
+                                                    <TableBody>
+                                                        <TableRow>
+                                                            <TableCell>
+                                                                Name
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                Size (bytes)
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={() => document.getElementById('vaultItemUpload').click()}
+                                                                >
+                                                                    Upload...
+                                                                </Button>
+                                                                <input
+                                                                    type="file"
+                                                                    id="vaultItemUpload"
+                                                                    style={{ display: 'none' }}
+                                                                    onChange={uploadVaultItem}
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                        {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
+                                                            <TableRow key={index}>
+                                                                <TableCell>
+                                                                    {name}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    {item.bytes}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Button variant="contained" color="primary" onClick={() => downloadVaultItem(name)}>
+                                                                        Download
+                                                                    </Button>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
+                                                                        <span>
+                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultItem(name)} disabled={!selectedVaultOwned}>
+                                                                                Remove
+                                                                            </Button>
+                                                                        </span>
+                                                                    </Tooltip>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </Box>
+                                        </FormControl>
+                                    }
+                                </Box>
+                            }
                         </Box>
                     }
                     {tab === 'credentials' &&
@@ -2091,7 +2454,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     scrollButtons="auto"
                                 >
                                     <Tab key="held" value="held" label={'Held'} icon={<LibraryBooks />} />
-                                    <Tab key="issue" value="issue" label={'Issue'}  icon={<LibraryAdd />}/>
+                                    <Tab key="issue" value="issue" label={'Issue'} icon={<LibraryAdd />} />
                                     <Tab key="issued" value="issued" label={'Issued'} icon={<LibraryAddCheck />} />
                                 </Tabs>
                             </Box>
