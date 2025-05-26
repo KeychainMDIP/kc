@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import {
     BlockId,
     BlockInfo,
@@ -14,6 +14,10 @@ import {
     ProcessEventsResult,
     VerifyDbResult,
 } from './types.js';
+
+const axios =
+    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+    (axiosModule as AxiosInstance);
 
 const VERSION = '/api/v1';
 

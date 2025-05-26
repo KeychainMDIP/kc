@@ -26,7 +26,11 @@ import {
     WalletFile,
 } from './types.js'
 
-import axios, { AxiosError } from 'axios';
+import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
+
+const axios =
+    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+    (axiosModule as AxiosInstance);
 
 const VERSION = '/api/v1';
 
