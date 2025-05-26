@@ -212,7 +212,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedImageName('');
             setSelectedDocumentName('');
             setSelectedVaultName('');
-            setSelectedVault({});
+            setSelectedVault(null);
         } catch (error) {
             showError(error);
         }
@@ -1401,6 +1401,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             setSelectedVault({ members, vaultMembers, items, vaultItems });
         } catch (error) {
+            setSelectedVault(null)
             showError(error);
         }
     }
@@ -2379,23 +2380,35 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 Vault Items are data encrypted for members only.
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button
-                                                            variant="contained"
-                                                            color="primary"
-                                                            onClick={() => document.getElementById('vaultItemUpload').click()}
-                                                        >
-                                                            Upload File...
-                                                        </Button>
-                                                        <input
-                                                            type="file"
-                                                            id="vaultItemUpload"
-                                                            style={{ display: 'none' }}
-                                                            onChange={uploadVaultItem}
-                                                        />
                                                     </Grid>
                                                 </Grid>
                                                 <Table style={{ width: '800px' }}>
                                                     <TableBody>
+                                                        <TableRow>
+                                                            <TableCell>
+                                                                Name
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                Size (bytes)
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={() => document.getElementById('vaultItemUpload').click()}
+                                                                >
+                                                                    Upload...
+                                                                </Button>
+                                                                <input
+                                                                    type="file"
+                                                                    id="vaultItemUpload"
+                                                                    style={{ display: 'none' }}
+                                                                    onChange={uploadVaultItem}
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell>
+                                                            </TableCell>
+                                                        </TableRow>
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
