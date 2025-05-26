@@ -132,6 +132,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedVault, setSelectedVault] = useState('');
     const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
     const [vaultMember, setVaultMember] = useState('');
+    const [docList, setDocList] = useState({});
 
     useEffect(() => {
         checkForChallenge();
@@ -208,6 +209,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setMessageRecipient('');
             setMessageDID('');
             setEncryptedDID('');
+            setSelectedImageName('');
+            setSelectedDocumentName('');
+            setSelectedVaultName('');
+            setSelectedVault({});
         } catch (error) {
             showError(error);
         }
@@ -477,6 +482,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             }
         }
 
+        setDocList(docList);
         setAgentList(agentList);
 
         if (!agentList.includes(credentialSubject)) {
@@ -518,6 +524,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedVaultName('');
             setSelectedVault(null);
         }
+    }
+
+    function getDID(name) {
+        if (name in docList) {
+            return docList[name].didDocument.id;
+        }
+
+        return '';
     }
 
     async function addName() {
@@ -1837,6 +1851,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     ))}
                                                 </Select>
                                             </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedSchemaName)}
+                                                </Typography>
+                                            </Grid>
                                         </Grid>
                                     }
                                     {selectedSchema &&
@@ -1913,6 +1932,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </MenuItem>
                                                     ))}
                                                 </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedGroupName)}
+                                                </Typography>
                                             </Grid>
                                         </Grid>
                                     }
@@ -2284,6 +2308,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </MenuItem>
                                                     ))}
                                                 </Select>
+                                            </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {getDID(selectedVaultName)}
+                                                </Typography>
                                             </Grid>
                                         </Grid>
                                     }
