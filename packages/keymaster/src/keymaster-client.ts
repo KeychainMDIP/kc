@@ -25,6 +25,7 @@ import {
 } from './types.js'
 
 import axios, { AxiosError } from 'axios';
+import { Buffer } from 'buffer';
 
 const VERSION = '/api/v1';
 
