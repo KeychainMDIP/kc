@@ -1259,7 +1259,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     refreshNames();
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
-                    showError(`Error processing document: ${error}`);
+                    showError(`Error processing file: ${error}`);
                 }
             };
 
@@ -1269,7 +1269,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            showError(`Error uploading image: ${error}`);
+            showError(`Error uploading file: ${error}`);
         }
     }
 
@@ -1306,7 +1306,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             reader.readAsArrayBuffer(file);
         } catch (error) {
-            showError(`Error uploading image: ${error}`);
+            showError(`Error uploading file: ${error}`);
         }
     }
 
@@ -1404,6 +1404,78 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             if (window.confirm(`Remove member from ${selectedVaultName}?`)) {
                 await keymaster.removeGroupVaultMember(selectedVaultName, did);
+                refreshVault(selectedVaultName);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function uploadVaultItem(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    const ok = await keymaster.addGroupVaultItem(selectedVaultName, file.name, buffer);
+
+                    if (ok) {
+                        showAlert(`Item uploaded successfully: ${file.name}`);
+                        refreshVault(selectedVaultName);
+                    } else {
+                        showAlert(`Error uploading file: ${file.name}`);
+                    }
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error uploading file: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error uploading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading file: ${error}`);
+        }
+    }
+
+    async function downloadVaultItem(name) {
+        try {
+            const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
+
+            // Create a Blob from the buffer
+            const blob = new Blob([buffer]);
+            // Create a temporary link to trigger the download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = name; // Use the item name as the filename
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function removeVaultItem(name) {
+        try {
+            if (window.confirm(`Remove item from ${selectedVaultName}?`)) {
+                await keymaster.removeGroupVaultItem(selectedVaultName, name);
                 refreshVault(selectedVaultName);
             }
         } catch (error) {
@@ -2276,6 +2348,51 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <FormLabel component="legend">Vault Items</FormLabel>
                                             <Box sx={{ border: 1, borderColor: 'grey.400', borderRadius: 1, p: 2 }}>
                                                 Vault Items are data encrypted for members only.
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button
+                                                            variant="contained"
+                                                            color="primary"
+                                                            onClick={() => document.getElementById('vaultItemUpload').click()}
+                                                        >
+                                                            Upload File...
+                                                        </Button>
+                                                        <input
+                                                            type="file"
+                                                            id="vaultItemUpload"
+                                                            style={{ display: 'none' }}
+                                                            onChange={uploadVaultItem}
+                                                        />
+                                                    </Grid>
+                                                </Grid>
+                                                <Table style={{ width: '800px' }}>
+                                                    <TableBody>
+                                                        {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
+                                                            <TableRow key={index}>
+                                                                <TableCell>
+                                                                    {name}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    {item.bytes}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Button variant="contained" color="primary" onClick={() => downloadVaultItem(name)}>
+                                                                        Download
+                                                                    </Button>
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
+                                                                        <span>
+                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultItem(name)} disabled={!selectedVaultOwned}>
+                                                                                Remove
+                                                                            </Button>
+                                                                        </span>
+                                                                    </Tooltip>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </Box>
                                         </FormControl>
                                     }
