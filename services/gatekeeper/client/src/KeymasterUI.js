@@ -1472,6 +1472,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
 
+            if (!buffer) {
+                showError(`Item ${name} not found in vault ${selectedVaultName}`);
+                return;
+            }
+
             // Create a Blob from the buffer
             const blob = new Blob([buffer]);
             // Create a temporary link to trigger the download
