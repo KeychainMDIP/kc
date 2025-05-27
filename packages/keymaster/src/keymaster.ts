@@ -2630,7 +2630,10 @@ export default class Keymaster implements KeymasterInterface {
     async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
-        const version = 1;
+        // version defaults to 1. To make version undefined (unit testing), set options.version to 0
+        const version = typeof options.version === 'undefined'
+            ? 1
+            : (typeof options.version === 'number' && options.version === 1 ? options.version : undefined);
         const salt = this.cipher.generateRandomSalt();
         const vaultKeypair = this.cipher.generateRandomJwk();
         const keys = {};

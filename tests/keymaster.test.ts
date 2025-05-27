@@ -5237,6 +5237,22 @@ describe('addGroupVaultMember', () => {
         expect(Object.keys(groupVault.keys).length).toBe(3);
     });
 
+    it('should trigger a version upgrade', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ version: 0 });
+
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        await keymaster.setCurrentId('Alice');
+        const members = await keymaster.listGroupVaultMembers(did);
+        expect(alice in members).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        expect(groupVault.version).toBe(1);
+    });
+
     // eslint-disable-next-line
     it('should throw an exception if not owner', async () => {
         await keymaster.createId('Bob');

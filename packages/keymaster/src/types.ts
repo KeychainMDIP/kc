@@ -185,7 +185,7 @@ export interface FileAsset extends BinaryAsset {
 }
 
 export interface GroupVault {
-    version: number;
+    version?: number;
     publicJwk: EcdsaJwkPublic;
     salt: string;
     config: string;
@@ -197,6 +197,7 @@ export interface GroupVault {
 
 export interface GroupVaultOptions extends CreateAssetOptions {
     secretMembers?: boolean;
+    version?: number;
 }
 
 export type StoredWallet = EncryptedWallet | WalletFile | null;
