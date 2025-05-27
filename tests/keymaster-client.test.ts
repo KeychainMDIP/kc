@@ -2938,6 +2938,17 @@ describe('getGroupVaultItem', () => {
         expect(data).toStrictEqual(mockData);
     });
 
+    it('should return null when missing data', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(200);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(null);
+    });
+
     it('should throw exception on getGroupVaultItem server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)

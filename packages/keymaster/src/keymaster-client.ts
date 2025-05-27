@@ -1152,7 +1152,7 @@ export default class KeymasterClient implements KeymasterInterface {
                 responseType: 'arraybuffer'
             });
 
-            if (!response.data) {
+            if (!response.data || (Buffer.isBuffer(response.data) && response.data.length === 0)) {
                 return null;
             }
 
