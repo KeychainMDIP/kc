@@ -2949,6 +2949,17 @@ describe('getGroupVaultItem', () => {
         expect(data).toStrictEqual(null);
     });
 
+    it('should return null on 404 not found', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .reply(404);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(null);
+    });
+
     it('should throw exception on getGroupVaultItem server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
