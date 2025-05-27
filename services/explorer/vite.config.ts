@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
         root: './',
 	    base: '/',
         server: {
-            port: parseInt(env.VITE_EXPLORER_PORT) || 3000,
+            port: parseInt(env.VITE_EXPLORER_PORT) || 4000,
         },
         build: {
             outDir: './dist',

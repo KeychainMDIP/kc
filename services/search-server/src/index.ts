@@ -9,7 +9,7 @@ dotenv.config();
 
 async function main() {
     const {
-        SEARCH_SERVER_PORT = 3001,
+        SEARCH_SERVER_PORT = 4002,
         SEARCH_SERVER_GATEKEEPER_URL = 'http://localhost:4224',
         SEARCH_SERVER_REFRESH_INTERVAL_MS = 60000
     } = process.env;
@@ -74,7 +74,7 @@ async function main() {
 
     app.use('/api/v1', v1router);
 
-    const port = Number(SEARCH_SERVER_PORT) || 3001;
+    const port = Number(SEARCH_SERVER_PORT) || 4002;
     app.listen(port, () => {
         console.log(`Listening on port ${port}`);
     });

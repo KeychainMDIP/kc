@@ -23,7 +23,7 @@ Then edit the `.env` file to set your desired configuration:
 
 ```env
 # The port the server will run on
-SEARCH_SERVER_PORT=3001
+SEARCH_SERVER_PORT=4002
 
 # URL where your Gatekeeper service is running
 SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224

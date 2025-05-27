@@ -23,7 +23,7 @@ WORKDIR /app/search-server
 
 RUN npm i
 
-EXPOSE 3001
+EXPOSE 4002
 
 # Run...
 CMD ["npm", "start"]

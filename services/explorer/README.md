@@ -28,7 +28,7 @@ Then edit the `.env` file to set your desired configuration:
 
 ```env
 # The port your explorer will run on
-VITE_EXPLORER_PORT=3000
+VITE_EXPLORER_PORT=4000
 
 # URL where your Gatekeeper service is running
 VITE_GATEKEEPER_URL=http://localhost:4224
