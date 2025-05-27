@@ -16,16 +16,22 @@ import {
     GroupVault,
     ImageAsset,
     IssueCredentialsOptions,
+    KeymasterClientOptions,
     KeymasterInterface,
     Poll,
     StoredWallet,
     VerifiableCredential,
     ViewPollResult,
+    WaitUntilReadyOptions,
     WalletFile,
 } from './types.js'
 
-import axios, { AxiosError } from 'axios';
 import { Buffer } from 'buffer';
+import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
+
+const axios =
+    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+    (axiosModule as AxiosInstance);
 
 const VERSION = '/api/v1';
 
@@ -35,23 +41,6 @@ function throwError(error: AxiosError | any): never {
     }
 
     throw error;
-}
-
-export interface KeymasterClientOptions {
-    url?: string;
-    console?: any;
-    waitUntilReady?: boolean;
-    intervalSeconds?: number;
-    chatty?: boolean;
-    becomeChattyAfter?: number;
-    maxRetries?: number;
-}
-
-export interface WaitUntilReadyOptions {
-    intervalSeconds?: number;
-    chatty?: boolean;
-    becomeChattyAfter?: number;
-    maxRetries?: number;
 }
 
 export default class KeymasterClient implements KeymasterInterface {

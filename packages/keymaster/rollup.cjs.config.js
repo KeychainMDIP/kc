@@ -10,6 +10,8 @@ const external = [
 
 const config = {
     input: {
+        'index': 'dist/esm/index.js',
+        'node': 'dist/esm/node.js',
         'keymaster': 'dist/esm/keymaster.js',
         'keymaster-client': 'dist/esm/keymaster-client.js',
         'db/json': 'dist/esm/db/json.js',

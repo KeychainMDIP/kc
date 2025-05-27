@@ -17,6 +17,7 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    EncryptedMessage,
     FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
@@ -29,8 +30,10 @@ import {
     ImageAsset,
     IssueCredentialsOptions,
     KeymasterInterface,
+    KeymasterOptions,
     Poll,
     PollResults,
+    PossiblySigned,
     Signature,
     StoredWallet,
     VerifiableCredential,
@@ -57,26 +60,6 @@ const DefaultSchema = {
         "propertyName"
     ]
 };
-
-export interface KeymasterOptions {
-    gatekeeper: GatekeeperInterface;
-    wallet: WalletBase;
-    cipher: Cipher;
-    defaultRegistry?: string;
-    maxNameLength?: number;
-}
-
-export interface EncryptedMessage {
-    sender: string;
-    created: string;
-    cipher_hash?: string | null;
-    cipher_sender?: string | null;
-    cipher_receiver?: string | null;
-}
-
-interface PossiblySigned {
-    signature?: Signature;
-}
 
 export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
