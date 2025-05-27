@@ -1140,9 +1140,20 @@ export default class KeymasterClient implements KeymasterInterface {
             const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items/${name}`, {
                 responseType: 'arraybuffer'
             });
+
+            if (!response.data || (Buffer.isBuffer(response.data) && response.data.length === 0)) {
+                return null;
+            }
+
             return Buffer.from(response.data);
         } catch (error) {
             const axiosError = error as AxiosError;
+
+            // Return null for 404 Not Found
+            if (axiosError.response && axiosError.response.status === 404) {
+                return null;
+            }
+
             if (axiosError.response && axiosError.response.data instanceof Uint8Array) {
                 const textDecoder = new TextDecoder();
                 const errorMessage = textDecoder.decode(axiosError.response.data);
