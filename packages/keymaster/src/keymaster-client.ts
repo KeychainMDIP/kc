@@ -26,6 +26,7 @@ import {
     WalletFile,
 } from './types.js'
 
+import { Buffer } from 'buffer';
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 
 const axios =
