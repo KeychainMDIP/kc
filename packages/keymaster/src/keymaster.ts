@@ -2700,9 +2700,11 @@ export default class Keymaster implements KeymasterInterface {
         const privateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
         let config: GroupVaultOptions = {};
+        let isOwner = false;
         try {
             const configJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
             config = JSON.parse(configJSON);
+            isOwner = true;
         }
         catch (error) {
             // Can't decrypt config if not the owner
@@ -2731,6 +2733,7 @@ export default class Keymaster implements KeymasterInterface {
         const items = JSON.parse(itemsJSON);
 
         return {
+            isOwner,
             privateJwk,
             config,
             members,
@@ -2763,7 +2766,7 @@ export default class Keymaster implements KeymasterInterface {
         groupVault.keys[memberKeyId] = memberKey;
     }
 
-    private async checkVaultVersion(groupVault: GroupVault): Promise<void> {
+    private async checkVaultVersion(vaultId: string, groupVault: GroupVault): Promise<void> {
         if (groupVault.version === 1) {
             return;
         }
@@ -2780,6 +2783,8 @@ export default class Keymaster implements KeymasterInterface {
             for (const memberDID of Object.keys(members)) {
                 await this.addMemberKey(groupVault, memberDID, privateJwk);
             }
+
+            await this.updateAsset(vaultId, { groupVault });
             return;
         }
 
@@ -2804,8 +2809,6 @@ export default class Keymaster implements KeymasterInterface {
         if (owner === memberDID) {
             return false;
         }
-
-        await this.checkVaultVersion(groupVault);
 
         members[memberDID] = { added: new Date().toISOString() };
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
@@ -2834,8 +2837,6 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
-        await this.checkVaultVersion(groupVault);
-
         delete members[memberDID];
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
@@ -2848,7 +2849,11 @@ export default class Keymaster implements KeymasterInterface {
 
     async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId);
-        const { members } = await this.decryptGroupVault(groupVault);
+        const { members, isOwner } = await this.decryptGroupVault(groupVault);
+
+        if (isOwner) {
+            await this.checkVaultVersion(vaultId, groupVault);
+        }
 
         return members;
     }
@@ -2857,8 +2862,6 @@ export default class Keymaster implements KeymasterInterface {
         await this.checkGroupVaultOwner(vaultId);
 
         const groupVault = await this.getGroupVault(vaultId);
-        await this.checkVaultVersion(groupVault);
-
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
         const validName = this.validateName(name);
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
@@ -2880,8 +2883,6 @@ export default class Keymaster implements KeymasterInterface {
         await this.checkGroupVaultOwner(vaultId);
 
         const groupVault = await this.getGroupVault(vaultId);
-        await this.checkVaultVersion(groupVault);
-
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
         delete items[name];
