@@ -2630,17 +2630,17 @@ export default class Keymaster implements KeymasterInterface {
     async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
+        const version = 1;
         const salt = this.cipher.generateRandomSalt();
         const vaultKeypair = this.cipher.generateRandomJwk();
-        const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
-        const memberID = this.cipher.hashMessage(salt + id.did);
-        const keys = { [memberID]: memberKey };
+        const keys = {};
         const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
         const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk; // If secret, encrypt for the owner only
         const members = this.cipher.encryptMessage(publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const sha256 = this.cipher.hashJSON({});
         const groupVault = {
+            version,
             publicJwk: vaultKeypair.publicJwk,
             salt,
             config,
@@ -2650,6 +2650,7 @@ export default class Keymaster implements KeymasterInterface {
             sha256,
         };
 
+        await this.addMemberKey(groupVault, id.did, vaultKeypair.privateJwk);
         return this.createAsset({ groupVault }, options);
     }
 
@@ -2673,10 +2674,19 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
+    private generateSaltedId(groupVault: GroupVault, memberDID: string): string {
+        if (!groupVault.version) {
+            return this.cipher.hashMessage(groupVault.salt + memberDID);
+        }
+
+        const suffix = memberDID.split(':').pop() as string;
+        return this.cipher.hashMessage(groupVault.salt + suffix);
+    }
+
     private async decryptGroupVault(groupVault: GroupVault) {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
-        const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
+        const myMemberId = this.generateSaltedId(groupVault, id.did);
         const myVaultKey = groupVault.keys[myMemberId];
 
         if (!myVaultKey) {
@@ -2737,6 +2747,42 @@ export default class Keymaster implements KeymasterInterface {
         return controller
     }
 
+    private async addMemberKey(groupVault: GroupVault, memberDID: string, privateJwk: EcdsaJwkPrivate): Promise<void> {
+        const memberDoc = await this.resolveDID(memberDID, { confirm: true });
+        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+
+        if (!memberPublicJwk) {
+            throw new InvalidParameterError('memberDID');
+        }
+
+        const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
+        const memberKeyId = this.generateSaltedId(groupVault, memberDID);
+        groupVault.keys[memberKeyId] = memberKey;
+    }
+
+    private async checkVaultVersion(groupVault: GroupVault): Promise<void> {
+        if (groupVault.version === 1) {
+            return;
+        }
+
+        if (!groupVault.version) {
+            const id = await this.fetchIdInfo();
+            const { privateJwk, members } = await this.decryptGroupVault(groupVault);
+
+            groupVault.version = 1;
+            groupVault.keys = {};
+
+            await this.addMemberKey(groupVault, id.did, privateJwk);
+
+            for (const memberDID of Object.keys(members)) {
+                await this.addMemberKey(groupVault, memberDID, privateJwk);
+            }
+            return;
+        }
+
+        throw new KeymasterError('Unsupported group vault version');
+    }
+
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
         const owner = await this.checkGroupVaultOwner(vaultId);
 
@@ -2744,11 +2790,10 @@ export default class Keymaster implements KeymasterInterface {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
-        const memberDID = memberDoc.didDocument?.id;
-        // TBD get the right public key here, not just the first one
-        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
+        const memberDID = memberDoc.didDocument!.id;
+        const isAgent = memberDoc?.mdip?.type === 'agent';
 
-        if (!memberDID || !memberPublicJwk) {
+        if (!memberDID || !isAgent) {
             throw new InvalidParameterError('memberId');
         }
 
@@ -2757,14 +2802,13 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
+        await this.checkVaultVersion(groupVault);
+
         members[memberDID] = { added: new Date().toISOString() };
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
-        const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
-        groupVault.keys[memberKeyId] = memberKey;
-
+        await this.addMemberKey(groupVault, memberDID, privateJwk);
         return this.updateAsset(vaultId, { groupVault });
     }
 
@@ -2776,9 +2820,9 @@ export default class Keymaster implements KeymasterInterface {
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
         const memberDID = memberDoc.didDocument?.id;
-        // TBD get the right public key here, not just the first one
-        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!memberDID || !memberPublicJwk) {
+        const isAgent = memberDoc?.mdip?.type === 'agent';
+
+        if (!memberDID || !isAgent) {
             throw new InvalidParameterError('memberId');
         }
 
@@ -2787,11 +2831,13 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
+        await this.checkVaultVersion(groupVault);
+
         delete members[memberDID];
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
+        const memberKeyId = this.generateSaltedId(groupVault, memberDID);
         delete groupVault.keys[memberKeyId];
 
         return this.updateAsset(vaultId, { groupVault });
@@ -2808,6 +2854,8 @@ export default class Keymaster implements KeymasterInterface {
         await this.checkGroupVaultOwner(vaultId);
 
         const groupVault = await this.getGroupVault(vaultId);
+        await this.checkVaultVersion(groupVault);
+
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
         const validName = this.validateName(name);
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
@@ -2829,6 +2877,8 @@ export default class Keymaster implements KeymasterInterface {
         await this.checkGroupVaultOwner(vaultId);
 
         const groupVault = await this.getGroupVault(vaultId);
+        await this.checkVaultVersion(groupVault);
+
         const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
         delete items[name];

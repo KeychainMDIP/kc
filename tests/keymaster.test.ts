@@ -5131,6 +5131,7 @@ describe('createGroupVault', () => {
         const data = doc.didDocumentData as { groupVault?: GroupVault };
 
         expect(data.groupVault).toBeDefined();
+        expect(data.groupVault!.version).toBe(1);
         expect(data.groupVault!.publicJwk).toBeDefined();
         expect(data.groupVault!.salt).toBeDefined();
         expect(data.groupVault!.keys).toBeDefined();
@@ -5146,6 +5147,7 @@ describe('getGroupVault', () => {
         const groupVault = await keymaster.getGroupVault(did);
 
         expect(groupVault).toBeDefined();
+        expect(groupVault!.version).toBe(1);
         expect(groupVault!.publicJwk).toBeDefined();
         expect(groupVault!.salt).toBeDefined();
         expect(groupVault!.keys).toBeDefined();
@@ -5207,9 +5209,7 @@ describe('addGroupVaultMember', () => {
         expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const memberId = cipher.hashMessage(groupVault!.salt + alice);
-
-        expect(memberId in groupVault!.keys).toBe(true);
+        expect(Object.keys(groupVault.keys).length).toBe(2);
     });
 
     it('should not be able add owner as a member', async () => {
@@ -5218,7 +5218,6 @@ describe('addGroupVaultMember', () => {
 
         const ok = await keymaster.addGroupVaultMember(did, bob);
         expect(ok).toBe(false);
-
     });
 
     it('should be able to add a new member after key rotation', async () => {
@@ -5230,14 +5229,12 @@ describe('addGroupVaultMember', () => {
 
         await keymaster.addGroupVaultMember(did, alice);
         await keymaster.rotateKeys();
-        await keymaster.addGroupVaultMember(did, charlie);
+
+        const ok = await keymaster.addGroupVaultMember(did, charlie);
+        expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const aliceId = cipher.hashMessage(groupVault!.salt + alice);
-        const charlieId = cipher.hashMessage(groupVault!.salt + charlie);
-
-        expect(aliceId in groupVault!.keys).toBe(true);
-        expect(charlieId in groupVault!.keys).toBe(true);
+        expect(Object.keys(groupVault.keys).length).toBe(3);
     });
 
     // eslint-disable-next-line
@@ -5288,9 +5285,20 @@ describe('removeGroupVaultMember', () => {
         expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+        expect(Object.keys(groupVault.keys).length).toBe(1);
+    });
 
-        expect(memberId in groupVault!.keys).not.toBe(true);
+    it('should remove a member from the groupVault with secret members', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ secretMembers: true });
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        expect(Object.keys(groupVault.keys).length).toBe(1);
     });
 
     it('should not be able to remove owner from the groupVault', async () => {

@@ -185,7 +185,8 @@ export interface FileAsset extends BinaryAsset {
 }
 
 export interface GroupVault {
-    publicJwk: EcdsaJwkPublic,
+    version: number;
+    publicJwk: EcdsaJwkPublic;
     salt: string;
     config: string;
     members: string;
