@@ -1,4 +1,5 @@
 import { EcdsaJwkPublic } from '@mdip/cipher/types';
+import {IPFSClient} from "@mdip/ipfs/types";
 
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
@@ -84,6 +85,43 @@ export interface GatekeeperDb {
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
     addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean>;
     getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null>;
+}
+
+export interface GatekeeperOptions {
+    db: GatekeeperDb,
+    ipfs: IPFSClient,
+    console?: typeof console,
+    didPrefix?: string,
+    maxOpBytes?: number,
+    maxQueueSize?: number,
+    registries?: string[],
+}
+
+export interface CheckDIDsOptions {
+    chatty?: boolean;
+    dids?: string[];
+}
+
+export interface ImportEventsResult {
+    added: number;
+    merged: number;
+    rejected: number;
+}
+
+export interface GatekeeperClientOptions {
+    url?: string;
+    console?: typeof console;
+    waitUntilReady?: boolean;
+    intervalSeconds?: number;
+    chatty?: boolean;
+    becomeChattyAfter?: number;
+    maxRetries?: number;
+}
+
+export interface GetStatusResult {
+    uptimeSeconds: number;
+    dids: CheckDIDsResult;
+    memoryUsage: NodeJS.MemoryUsage;
 }
 
 export interface GatekeeperInterface {

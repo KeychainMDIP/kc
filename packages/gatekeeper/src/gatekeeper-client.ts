@@ -1,18 +1,23 @@
-import axios, { AxiosError } from 'axios';
+import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import {
     BlockId,
     BlockInfo,
+    GatekeeperClientOptions,
     GatekeeperInterface,
     GatekeeperEvent,
+    GetStatusResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
     GetDIDOptions,
-    CheckDIDsResult,
     ImportBatchResult,
     ProcessEventsResult,
     VerifyDbResult,
 } from './types.js';
+
+const axios =
+    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+    (axiosModule as AxiosInstance);
 
 const VERSION = '/api/v1';
 
@@ -21,22 +26,6 @@ function throwError(error: AxiosError | any): never {
         throw error.response.data;
     }
     throw error.message;
-}
-
-export interface GatekeeperClientOptions {
-    url?: string;
-    console?: typeof console;
-    waitUntilReady?: boolean;
-    intervalSeconds?: number;
-    chatty?: boolean;
-    becomeChattyAfter?: number;
-    maxRetries?: number;
-}
-
-export interface GetStatusResult {
-    uptimeSeconds: number;
-    dids: CheckDIDsResult;
-    memoryUsage: NodeJS.MemoryUsage;
 }
 
 export default class GatekeeperClient implements GatekeeperInterface {
