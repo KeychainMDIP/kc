@@ -22,6 +22,7 @@ import { generateCID } from '@mdip/ipfs/utils';
 
 import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
+import { group } from 'console';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 let ipfs: HeliaClient;
@@ -5424,6 +5425,24 @@ describe('listGroupVaultMembers', () => {
 
         const groupVault = await keymaster.getGroupVault(did);
         expect(groupVault.version).toBe(1);
+    });
+
+    it('should throw an exception if triggered version upgrade encounters unsupported version', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        try {
+            const groupVault = await keymaster.getGroupVault(did);
+            groupVault.version = 999; // Simulate unsupported version
+            await keymaster.updateAsset(did, { groupVault });
+            await keymaster.listGroupVaultMembers(did);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Unsupported group vault version');
+        }
     });
 });
 
