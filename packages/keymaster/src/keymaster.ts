@@ -567,16 +567,17 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
+    private getPublicKeyJwk(doc: MdipDocument): EcdsaJwkPublic {
+        // TBD Return the right public key, not just the first one
+        return doc.didDocument!.verificationMethod![0].publicKeyJwk!;
+    }
+
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
         const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const doc = await this.resolveDID(id.did, { confirm: true });
-        const verificationMethod = doc.didDocument?.verificationMethod;
-        if (!verificationMethod || verificationMethod.length === 0) {
-            return null;
-        }
-        const confirmedPublicKeyJwk = verificationMethod[0].publicKeyJwk!;
+        const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
         for (let i = id.index; i >= 0; i--) {
             const path = `m/44'/0'/${id.account}'/0/${i}`;
@@ -801,10 +802,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const doc = await this.resolveDID(receiver, { confirm: true });
-        const receivePublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!receivePublicJwk) {
-            throw new InvalidParameterError('receiver has no public key');
-        }
+        const receivePublicJwk = this.getPublicKeyJwk(doc);
 
         const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
@@ -858,10 +856,7 @@ export default class Keymaster implements KeymasterInterface {
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
         const doc = await this.resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
-        const senderPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!senderPublicJwk) {
-            throw new KeymasterError('sender key not found');
-        }
+        const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
         return this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
@@ -941,12 +936,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const doc = await this.resolveDID(signature.signer, { atTime: signature.signed });
-
-        // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!publicJwk) {
-            return false;
-        }
+        const publicJwk = this.getPublicKeyJwk(doc);
 
         try {
             return this.cipher.verifySig(msgHash, signature.value, publicJwk);
@@ -1574,11 +1564,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const holder = credential.credentialSubject.id;
         const holderDoc = await this.resolveDID(holder, { confirm: true });
-        const receivePublicJwk = holderDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!receivePublicJwk) {
-            throw new InvalidParameterError('holder DID has no public key');
-        }
-
+        const receivePublicJwk = this.getPublicKeyJwk(holderDoc);
         const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
         const msgHash = this.cipher.hashMessage(msg);
@@ -2755,12 +2741,7 @@ export default class Keymaster implements KeymasterInterface {
 
     private async addMemberKey(groupVault: GroupVault, memberDID: string, privateJwk: EcdsaJwkPrivate): Promise<void> {
         const memberDoc = await this.resolveDID(memberDID, { confirm: true });
-        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-
-        if (!memberPublicJwk) {
-            throw new InvalidParameterError('memberDID');
-        }
-
+        const memberPublicJwk = this.getPublicKeyJwk(memberDoc);
         const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
         const memberKeyId = this.generateSaltedId(groupVault, memberDID);
         groupVault.keys[memberKeyId] = memberKey;
