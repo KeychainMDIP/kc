@@ -1,4 +1,5 @@
 import { imageSize } from 'image-size';
+import { fileTypeFromBuffer } from 'file-type';
 import {
     InvalidDIDError,
     InvalidParameterError,
@@ -2863,15 +2864,19 @@ export default class Keymaster implements KeymasterInterface {
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
         const sha256 = this.cipher.hashMessage(buffer);
+        const fileType = await fileTypeFromBuffer(buffer);
 
         items[validName] = {
             cid,
             sha256,
             bytes: buffer.length,
+            type: fileType ? fileType.mime : 'application/octet-stream',
+            added: new Date().toISOString(),
         };
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
         groupVault.sha256 = this.cipher.hashJSON(items);
+        
         return this.updateAsset(vaultId, { groupVault });
     }
 

@@ -93,19 +93,45 @@
   },
   "typesVersions": {
     "*": {
-      "client": ["./dist/types/keymaster-client.d.ts"],
-      "wallet/json": ["./dist/types/db/json.d.ts"],
-      "wallet/json-enc": ["./dist/types/db/json-enc.d.ts"],
-      "wallet/json-memory": ["./dist/types/db/json-memory.d.ts"],
-      "wallet/redis": ["./dist/types/db/redis.d.ts"],
-      "wallet/mongo": ["./dist/types/db/mongo.d.ts"],
-      "wallet/sqlite": ["./dist/types/db/sqlite.d.ts"],
-      "wallet/cache": ["./dist/types/db/cache.d.ts"],
-      "wallet/web": ["./dist/types/db/web.d.ts"],
-      "wallet/web-enc": ["./dist/types/db/web-enc.d.ts"],
-      "wallet/chrome": ["./dist/types/db/chrome.d.ts"],
-      "wallet/typeGuards": ["./dist/types/db/typeGuards.d.ts"],
-      "types": ["./dist/types/types.d.ts"]
+      "client": [
+        "./dist/types/keymaster-client.d.ts"
+      ],
+      "wallet/json": [
+        "./dist/types/db/json.d.ts"
+      ],
+      "wallet/json-enc": [
+        "./dist/types/db/json-enc.d.ts"
+      ],
+      "wallet/json-memory": [
+        "./dist/types/db/json-memory.d.ts"
+      ],
+      "wallet/redis": [
+        "./dist/types/db/redis.d.ts"
+      ],
+      "wallet/mongo": [
+        "./dist/types/db/mongo.d.ts"
+      ],
+      "wallet/sqlite": [
+        "./dist/types/db/sqlite.d.ts"
+      ],
+      "wallet/cache": [
+        "./dist/types/db/cache.d.ts"
+      ],
+      "wallet/web": [
+        "./dist/types/db/web.d.ts"
+      ],
+      "wallet/web-enc": [
+        "./dist/types/db/web-enc.d.ts"
+      ],
+      "wallet/chrome": [
+        "./dist/types/db/chrome.d.ts"
+      ],
+      "wallet/typeGuards": [
+        "./dist/types/db/typeGuards.d.ts"
+      ],
+      "types": [
+        "./dist/types/types.d.ts"
+      ]
     }
   },
   "scripts": {
@@ -120,6 +146,7 @@
   "dependencies": {
     "@mdip/common": "*",
     "axios": "^1.7.7",
+    "file-type": "^21.0.0",
     "image-size": "^2.0.1",
     "ioredis": "^5.4.1",
     "mongodb": "^6.5.0",
