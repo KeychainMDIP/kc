@@ -22,7 +22,6 @@ import { generateCID } from '@mdip/ipfs/utils';
 
 import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
-import { group } from 'console';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 let ipfs: HeliaClient;
@@ -5270,7 +5269,8 @@ describe('addGroupVaultMember', () => {
             await keymaster.addGroupVaultMember(did, asset);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.type).toBe(InvalidParameterError.type);
+            // eslint-disable-next-line
+            expect(error.detail).toBe('Document is not an agent');
         }
     });
 });
@@ -5351,7 +5351,7 @@ describe('removeGroupVaultMember', () => {
             await keymaster.removeGroupVaultMember(did, asset);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.type).toBe(InvalidParameterError.type);
+            expect(error.detail).toBe('Document is not an agent');
         }
     });
 });
@@ -5731,6 +5731,42 @@ describe('getPublicKeyJwk', () => {
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.detail).toBe('The publicKeyJwk is missing in the first verification method.');
+        }
+    });
+});
+
+describe('getAgentDID', () => {
+    it('should return the DID from an MDIP document', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+        const did = keymaster.getAgentDID(doc);
+
+        expect(did).toBe(bob);
+    });
+
+    it('should throw exception when not an agent doc', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const doc = await keymaster.resolveDID(did);
+
+        try {
+            keymaster.getAgentDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Document is not an agent');
+        }
+    });
+
+    it('should throw exception when didDocument missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument;
+            keymaster.getAgentDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Agent document does not have a DID');
         }
     });
 });

@@ -2783,6 +2783,20 @@ export default class Keymaster implements KeymasterInterface {
         throw new KeymasterError('Unsupported group vault version');
     }
 
+    getAgentDID(doc: MdipDocument): string {
+        if (doc.mdip?.type !== 'agent') {
+            throw new KeymasterError('Document is not an agent');
+        }
+
+        const did = doc.didDocument?.id;
+
+        if (!did) {
+            throw new KeymasterError('Agent document does not have a DID');
+        }
+
+        return did;
+    }
+
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
         const owner = await this.checkGroupVaultOwner(vaultId);
 
@@ -2790,12 +2804,7 @@ export default class Keymaster implements KeymasterInterface {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
-        const memberDID = memberDoc.didDocument!.id;
-        const isAgent = memberDoc?.mdip?.type === 'agent';
-
-        if (!memberDID || !isAgent) {
-            throw new InvalidParameterError('memberId');
-        }
+        const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow adding the vault owner
         if (owner === memberDID) {
@@ -2817,12 +2826,7 @@ export default class Keymaster implements KeymasterInterface {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
-        const memberDID = memberDoc.didDocument?.id;
-        const isAgent = memberDoc?.mdip?.type === 'agent';
-
-        if (!memberDID || !isAgent) {
-            throw new InvalidParameterError('memberId');
-        }
+        const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow removing the vault owner
         if (owner === memberDID) {
