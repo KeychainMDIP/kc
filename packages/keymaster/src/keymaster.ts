@@ -567,9 +567,20 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
-    private getPublicKeyJwk(doc: MdipDocument): EcdsaJwkPublic {
+    getPublicKeyJwk(doc: MdipDocument): EcdsaJwkPublic {
         // TBD Return the right public key, not just the first one
-        return doc.didDocument!.verificationMethod![0].publicKeyJwk!;
+        if (!doc.didDocument) {
+            throw new KeymasterError('Missing didDocument.');
+        }
+        const verificationMethods = doc.didDocument.verificationMethod;
+        if (!verificationMethods || verificationMethods.length === 0) {
+            throw new KeymasterError('The DID document does not contain any verification methods.');
+        }
+        const publicKeyJwk = verificationMethods[0].publicKeyJwk;
+        if (!publicKeyJwk) {
+            throw new KeymasterError('The publicKeyJwk is missing in the first verification method.');
+        }
+        return publicKeyJwk;
     }
 
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {

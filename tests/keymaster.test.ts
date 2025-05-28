@@ -5666,3 +5666,52 @@ describe('getGroupVaultItem', () => {
         expect(item).toBe(null);
     });
 });
+
+describe('getPublicKeyJwk', () => {
+    it('should return the public key from an MDIP document', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+        const publicKeyJwk = keymaster.getPublicKeyJwk(doc);
+
+        expect(publicKeyJwk).toStrictEqual(doc.didDocument!.verificationMethod![0].publicKeyJwk!);
+    });
+
+    it('should throw exception when not an agent doc', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const doc = await keymaster.resolveDID(did);
+
+        try {
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('The DID document does not contain any verification methods.');
+        }
+    });
+
+    it('should throw exception when didDocument missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument;
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Missing didDocument.');
+        }
+    });
+
+    it('should throw exception when key is missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument!.verificationMethod![0].publicKeyJwk;
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('The publicKeyJwk is missing in the first verification method.');
+        }
+    });
+});
