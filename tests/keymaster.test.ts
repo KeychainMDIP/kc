@@ -5482,6 +5482,31 @@ describe('addGroupVaultItem', () => {
 
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockImage);
         expect(ok).toBe(true);
+
+        const items = await keymaster.listGroupVaultItems(did);
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].type).toBe('image/png');
+    });
+
+    it('should add JSON to the groupVault', async () => {
+        const mockLogin = {
+            login: {
+                site: 'https://example.com',
+                username: 'bob',
+                password: 'secret',
+            }
+        };
+        const buffer = Buffer.from(JSON.stringify(mockLogin), 'utf-8');
+        const mockName = 'login: example.com';
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, buffer);
+        expect(ok).toBe(true);
+
+        const items = await keymaster.listGroupVaultItems(did);
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].type).toBe('application/json');
     });
 
     it('should be able to add a new item after key rotation', async () => {
@@ -5683,6 +5708,26 @@ describe('getGroupVaultItem', () => {
         const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
 
         expect(item).toBe(null);
+    });
+
+    it('should retrieve JSON to the groupVault', async () => {
+        const mockLogin = {
+            login: {
+                site: 'https://example.com',
+                username: 'bob',
+                password: 'secret',
+            }
+        };
+        const buffer = Buffer.from(JSON.stringify(mockLogin), 'utf-8');
+        const mockName = 'login: example.com';
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, buffer);
+
+        const itemBuffer = await keymaster.getGroupVaultItem(did, mockName);
+        const login = JSON.parse(itemBuffer!.toString('utf-8'));
+
+        expect(login).toStrictEqual(mockLogin);
     });
 });
 
