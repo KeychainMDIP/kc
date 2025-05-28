@@ -5131,6 +5131,7 @@ describe('createGroupVault', () => {
         const data = doc.didDocumentData as { groupVault?: GroupVault };
 
         expect(data.groupVault).toBeDefined();
+        expect(data.groupVault!.version).toBe(1);
         expect(data.groupVault!.publicJwk).toBeDefined();
         expect(data.groupVault!.salt).toBeDefined();
         expect(data.groupVault!.keys).toBeDefined();
@@ -5146,6 +5147,7 @@ describe('getGroupVault', () => {
         const groupVault = await keymaster.getGroupVault(did);
 
         expect(groupVault).toBeDefined();
+        expect(groupVault!.version).toBe(1);
         expect(groupVault!.publicJwk).toBeDefined();
         expect(groupVault!.salt).toBeDefined();
         expect(groupVault!.keys).toBeDefined();
@@ -5207,9 +5209,7 @@ describe('addGroupVaultMember', () => {
         expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const memberId = cipher.hashMessage(groupVault!.salt + alice);
-
-        expect(memberId in groupVault!.keys).toBe(true);
+        expect(Object.keys(groupVault.keys).length).toBe(2);
     });
 
     it('should not be able add owner as a member', async () => {
@@ -5218,7 +5218,6 @@ describe('addGroupVaultMember', () => {
 
         const ok = await keymaster.addGroupVaultMember(did, bob);
         expect(ok).toBe(false);
-
     });
 
     it('should be able to add a new member after key rotation', async () => {
@@ -5230,14 +5229,12 @@ describe('addGroupVaultMember', () => {
 
         await keymaster.addGroupVaultMember(did, alice);
         await keymaster.rotateKeys();
-        await keymaster.addGroupVaultMember(did, charlie);
+
+        const ok = await keymaster.addGroupVaultMember(did, charlie);
+        expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const aliceId = cipher.hashMessage(groupVault!.salt + alice);
-        const charlieId = cipher.hashMessage(groupVault!.salt + charlie);
-
-        expect(aliceId in groupVault!.keys).toBe(true);
-        expect(charlieId in groupVault!.keys).toBe(true);
+        expect(Object.keys(groupVault.keys).length).toBe(3);
     });
 
     // eslint-disable-next-line
@@ -5272,7 +5269,8 @@ describe('addGroupVaultMember', () => {
             await keymaster.addGroupVaultMember(did, asset);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.type).toBe(InvalidParameterError.type);
+            // eslint-disable-next-line
+            expect(error.detail).toBe('Document is not an agent');
         }
     });
 });
@@ -5288,9 +5286,20 @@ describe('removeGroupVaultMember', () => {
         expect(ok).toBe(true);
 
         const groupVault = await keymaster.getGroupVault(did);
-        const memberId = cipher.hashMessage(groupVault!.salt + alice);
+        expect(Object.keys(groupVault.keys).length).toBe(1);
+    });
 
-        expect(memberId in groupVault!.keys).not.toBe(true);
+    it('should remove a member from the groupVault with secret members', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ secretMembers: true });
+
+        await keymaster.addGroupVaultMember(did, alice);
+        const ok = await keymaster.removeGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        expect(Object.keys(groupVault.keys).length).toBe(1);
     });
 
     it('should not be able to remove owner from the groupVault', async () => {
@@ -5342,7 +5351,7 @@ describe('removeGroupVaultMember', () => {
             await keymaster.removeGroupVaultMember(did, asset);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.type).toBe(InvalidParameterError.type);
+            expect(error.detail).toBe('Document is not an agent');
         }
     });
 });
@@ -5401,6 +5410,39 @@ describe('listGroupVaultMembers', () => {
         const members = await keymaster.listGroupVaultMembers(did);
 
         expect(members).toStrictEqual({});
+    });
+
+    it('should trigger a version upgrade', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ version: 0 });
+
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        const members = await keymaster.listGroupVaultMembers(did);
+        expect(alice in members).toBe(true);
+
+        const groupVault = await keymaster.getGroupVault(did);
+        expect(groupVault.version).toBe(1);
+    });
+
+    it('should throw an exception if triggered version upgrade encounters unsupported version', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const ok = await keymaster.addGroupVaultMember(did, alice);
+        expect(ok).toBe(true);
+
+        try {
+            const groupVault = await keymaster.getGroupVault(did);
+            groupVault.version = 999; // Simulate unsupported version
+            await keymaster.updateAsset(did, { groupVault });
+            await keymaster.listGroupVaultMembers(did);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Unsupported group vault version');
+        }
     });
 });
 
@@ -5641,5 +5683,90 @@ describe('getGroupVaultItem', () => {
         const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
 
         expect(item).toBe(null);
+    });
+});
+
+describe('getPublicKeyJwk', () => {
+    it('should return the public key from an MDIP document', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+        const publicKeyJwk = keymaster.getPublicKeyJwk(doc);
+
+        expect(publicKeyJwk).toStrictEqual(doc.didDocument!.verificationMethod![0].publicKeyJwk!);
+    });
+
+    it('should throw exception when not an agent doc', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const doc = await keymaster.resolveDID(did);
+
+        try {
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('The DID document does not contain any verification methods.');
+        }
+    });
+
+    it('should throw exception when didDocument missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument;
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Missing didDocument.');
+        }
+    });
+
+    it('should throw exception when key is missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument!.verificationMethod![0].publicKeyJwk;
+            keymaster.getPublicKeyJwk(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('The publicKeyJwk is missing in the first verification method.');
+        }
+    });
+});
+
+describe('getAgentDID', () => {
+    it('should return the DID from an MDIP document', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+        const did = keymaster.getAgentDID(doc);
+
+        expect(did).toBe(bob);
+    });
+
+    it('should throw exception when not an agent doc', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ name: 'mockAnchor' });
+        const doc = await keymaster.resolveDID(did);
+
+        try {
+            keymaster.getAgentDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Document is not an agent');
+        }
+    });
+
+    it('should throw exception when didDocument missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        const doc = await keymaster.resolveDID(bob);
+
+        try {
+            delete doc.didDocument;
+            keymaster.getAgentDID(doc);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.detail).toBe('Agent document does not have a DID');
+        }
     });
 });

@@ -567,16 +567,28 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
+    getPublicKeyJwk(doc: MdipDocument): EcdsaJwkPublic {
+        // TBD Return the right public key, not just the first one
+        if (!doc.didDocument) {
+            throw new KeymasterError('Missing didDocument.');
+        }
+        const verificationMethods = doc.didDocument.verificationMethod;
+        if (!verificationMethods || verificationMethods.length === 0) {
+            throw new KeymasterError('The DID document does not contain any verification methods.');
+        }
+        const publicKeyJwk = verificationMethods[0].publicKeyJwk;
+        if (!publicKeyJwk) {
+            throw new KeymasterError('The publicKeyJwk is missing in the first verification method.');
+        }
+        return publicKeyJwk;
+    }
+
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
         const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
         const doc = await this.resolveDID(id.did, { confirm: true });
-        const verificationMethod = doc.didDocument?.verificationMethod;
-        if (!verificationMethod || verificationMethod.length === 0) {
-            return null;
-        }
-        const confirmedPublicKeyJwk = verificationMethod[0].publicKeyJwk!;
+        const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
         for (let i = id.index; i >= 0; i--) {
             const path = `m/44'/0'/${id.account}'/0/${i}`;
@@ -801,10 +813,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const doc = await this.resolveDID(receiver, { confirm: true });
-        const receivePublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!receivePublicJwk) {
-            throw new InvalidParameterError('receiver has no public key');
-        }
+        const receivePublicJwk = this.getPublicKeyJwk(doc);
 
         const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
@@ -858,10 +867,7 @@ export default class Keymaster implements KeymasterInterface {
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
         const doc = await this.resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
-        const senderPublicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!senderPublicJwk) {
-            throw new KeymasterError('sender key not found');
-        }
+        const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
         return this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
@@ -941,12 +947,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const doc = await this.resolveDID(signature.signer, { atTime: signature.signed });
-
-        // TBD get the right signature, not just the first one
-        const publicJwk = doc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!publicJwk) {
-            return false;
-        }
+        const publicJwk = this.getPublicKeyJwk(doc);
 
         try {
             return this.cipher.verifySig(msgHash, signature.value, publicJwk);
@@ -1574,11 +1575,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const holder = credential.credentialSubject.id;
         const holderDoc = await this.resolveDID(holder, { confirm: true });
-        const receivePublicJwk = holderDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!receivePublicJwk) {
-            throw new InvalidParameterError('holder DID has no public key');
-        }
-
+        const receivePublicJwk = this.getPublicKeyJwk(holderDoc);
         const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
         const msgHash = this.cipher.hashMessage(msg);
@@ -2630,17 +2627,20 @@ export default class Keymaster implements KeymasterInterface {
     async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo();
         const idKeypair = await this.fetchKeyPair();
+        // version defaults to 1. To make version undefined (unit testing), set options.version to 0
+        const version = typeof options.version === 'undefined'
+            ? 1
+            : (typeof options.version === 'number' && options.version === 1 ? options.version : undefined);
         const salt = this.cipher.generateRandomSalt();
         const vaultKeypair = this.cipher.generateRandomJwk();
-        const memberKey = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(vaultKeypair.privateJwk));
-        const memberID = this.cipher.hashMessage(salt + id.did);
-        const keys = { [memberID]: memberKey };
+        const keys = {};
         const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
         const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk; // If secret, encrypt for the owner only
         const members = this.cipher.encryptMessage(publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const sha256 = this.cipher.hashJSON({});
         const groupVault = {
+            version,
             publicJwk: vaultKeypair.publicJwk,
             salt,
             config,
@@ -2650,6 +2650,7 @@ export default class Keymaster implements KeymasterInterface {
             sha256,
         };
 
+        await this.addMemberKey(groupVault, id.did, vaultKeypair.privateJwk);
         return this.createAsset({ groupVault }, options);
     }
 
@@ -2673,10 +2674,19 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
+    private generateSaltedId(groupVault: GroupVault, memberDID: string): string {
+        if (!groupVault.version) {
+            return this.cipher.hashMessage(groupVault.salt + memberDID);
+        }
+
+        const suffix = memberDID.split(':').pop() as string;
+        return this.cipher.hashMessage(groupVault.salt + suffix);
+    }
+
     private async decryptGroupVault(groupVault: GroupVault) {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
-        const myMemberId = this.cipher.hashMessage(groupVault.salt + id.did);
+        const myMemberId = this.generateSaltedId(groupVault, id.did);
         const myVaultKey = groupVault.keys[myMemberId];
 
         if (!myVaultKey) {
@@ -2687,9 +2697,11 @@ export default class Keymaster implements KeymasterInterface {
         const privateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
         let config: GroupVaultOptions = {};
+        let isOwner = false;
         try {
             const configJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
             config = JSON.parse(configJSON);
+            isOwner = true;
         }
         catch (error) {
             // Can't decrypt config if not the owner
@@ -2718,6 +2730,7 @@ export default class Keymaster implements KeymasterInterface {
         const items = JSON.parse(itemsJSON);
 
         return {
+            isOwner,
             privateJwk,
             config,
             members,
@@ -2737,6 +2750,53 @@ export default class Keymaster implements KeymasterInterface {
         return controller
     }
 
+    private async addMemberKey(groupVault: GroupVault, memberDID: string, privateJwk: EcdsaJwkPrivate): Promise<void> {
+        const memberDoc = await this.resolveDID(memberDID, { confirm: true });
+        const memberPublicJwk = this.getPublicKeyJwk(memberDoc);
+        const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
+        const memberKeyId = this.generateSaltedId(groupVault, memberDID);
+        groupVault.keys[memberKeyId] = memberKey;
+    }
+
+    private async checkVaultVersion(vaultId: string, groupVault: GroupVault): Promise<void> {
+        if (groupVault.version === 1) {
+            return;
+        }
+
+        if (!groupVault.version) {
+            const id = await this.fetchIdInfo();
+            const { privateJwk, members } = await this.decryptGroupVault(groupVault);
+
+            groupVault.version = 1;
+            groupVault.keys = {};
+
+            await this.addMemberKey(groupVault, id.did, privateJwk);
+
+            for (const memberDID of Object.keys(members)) {
+                await this.addMemberKey(groupVault, memberDID, privateJwk);
+            }
+
+            await this.updateAsset(vaultId, { groupVault });
+            return;
+        }
+
+        throw new KeymasterError('Unsupported group vault version');
+    }
+
+    getAgentDID(doc: MdipDocument): string {
+        if (doc.mdip?.type !== 'agent') {
+            throw new KeymasterError('Document is not an agent');
+        }
+
+        const did = doc.didDocument?.id;
+
+        if (!did) {
+            throw new KeymasterError('Agent document does not have a DID');
+        }
+
+        return did;
+    }
+
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
         const owner = await this.checkGroupVaultOwner(vaultId);
 
@@ -2744,13 +2804,7 @@ export default class Keymaster implements KeymasterInterface {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
-        const memberDID = memberDoc.didDocument?.id;
-        // TBD get the right public key here, not just the first one
-        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-
-        if (!memberDID || !memberPublicJwk) {
-            throw new InvalidParameterError('memberId');
-        }
+        const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow adding the vault owner
         if (owner === memberDID) {
@@ -2761,10 +2815,7 @@ export default class Keymaster implements KeymasterInterface {
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
-        const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
-        groupVault.keys[memberKeyId] = memberKey;
-
+        await this.addMemberKey(groupVault, memberDID, privateJwk);
         return this.updateAsset(vaultId, { groupVault });
     }
 
@@ -2775,12 +2826,7 @@ export default class Keymaster implements KeymasterInterface {
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
         const memberDoc = await this.resolveDID(memberId, { confirm: true });
-        const memberDID = memberDoc.didDocument?.id;
-        // TBD get the right public key here, not just the first one
-        const memberPublicJwk = memberDoc.didDocument?.verificationMethod?.[0].publicKeyJwk;
-        if (!memberDID || !memberPublicJwk) {
-            throw new InvalidParameterError('memberId');
-        }
+        const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow removing the vault owner
         if (owner === memberDID) {
@@ -2791,7 +2837,7 @@ export default class Keymaster implements KeymasterInterface {
         const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
-        const memberKeyId = this.cipher.hashMessage(groupVault.salt + memberDID);
+        const memberKeyId = this.generateSaltedId(groupVault, memberDID);
         delete groupVault.keys[memberKeyId];
 
         return this.updateAsset(vaultId, { groupVault });
@@ -2799,7 +2845,11 @@ export default class Keymaster implements KeymasterInterface {
 
     async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId);
-        const { members } = await this.decryptGroupVault(groupVault);
+        const { members, isOwner } = await this.decryptGroupVault(groupVault);
+
+        if (isOwner) {
+            await this.checkVaultVersion(vaultId, groupVault);
+        }
 
         return members;
     }
