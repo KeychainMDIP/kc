@@ -20,6 +20,10 @@ import {
     Typography
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import {
     AccountBalanceWallet,
     Article,
@@ -133,6 +137,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
     const [vaultMember, setVaultMember] = useState('');
     const [docList, setDocList] = useState({});
+    const [loginDialogOpen, setLoginDialogOpen] = useState(false);
 
     useEffect(() => {
         checkForChallenge();
@@ -1468,6 +1473,43 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function addLoginVaultItem(service, username, password) {
+        try {
+            if (!service || !username || !password) {
+                showError("Service, username, and password are required");
+                return;
+            }
+
+            let hostname = "";
+            try {
+                hostname = new URL(service).hostname;
+            } catch (e) {
+                showError("Service URL is invalid");
+                return;
+            }
+
+            const name = `login: ${username}@${hostname}`;
+            const login = {
+                service,
+                username,
+                password
+            };
+            const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
+            const ok = await keymaster.addGroupVaultItem(selectedVaultName, name, buffer);
+
+            setLoginDialogOpen(false);
+
+            if (ok) {
+                showAlert(`Login added successfully: ${service}`);
+                refreshVault(selectedVaultName);
+            } else {
+                showAlert(`Error adding login: ${service}`);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function downloadVaultItem(name) {
         try {
             const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
@@ -1564,6 +1606,60 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     </Button>
                 </Grid>
             </Grid>
+        );
+    }
+
+    function LoginDialog({ open, onClose, onOK }) {
+        const [service, setService] = useState('');
+        const [username, setUsername] = useState('');
+        const [password, setPassword] = useState('');
+
+        const handleSubmit = () => {
+            onOK(service, username, password);
+        };
+
+        const handleClose = () => {
+            setService('');
+            setUsername('');
+            setPassword('');
+            onClose();
+        };
+
+        return (
+            <Dialog open={open} onClose={handleClose}>
+                <DialogTitle>Login</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Service"
+                        fullWidth
+                        value={service}
+                        onChange={e => setService(e.target.value)}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Username"
+                        fullWidth
+                        value={username}
+                        onChange={e => setUsername(e.target.value)}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Password"
+                        type="password"
+                        fullWidth
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleClose} variant="contained" color="primary">Cancel</Button>
+                    <Button onClick={handleSubmit} variant="contained" color="primary" disabled={!service || !username || !password}>
+                        OK
+                    </Button>
+                </DialogActions>
+            </Dialog>
         );
     }
 
@@ -2412,6 +2508,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 />
                                                             </TableCell>
                                                             <TableCell>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={() => setLoginDialogOpen(true)}
+                                                                >
+                                                                    Add login...
+                                                                </Button>
+                                                                <LoginDialog
+                                                                    open={loginDialogOpen}
+                                                                    onClose={() => setLoginDialogOpen(false)}
+                                                                    onOK={addLoginVaultItem}
+                                                                />
                                                             </TableCell>
                                                         </TableRow>
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
