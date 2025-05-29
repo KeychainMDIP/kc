@@ -10,6 +10,7 @@ import {
     Seed,
     WalletFile,
     GroupVault,
+    GroupVaultLogin,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
@@ -5489,14 +5490,12 @@ describe('addGroupVaultItem', () => {
     });
 
     it('should add JSON to the groupVault', async () => {
-        const mockLogin = {
-            login: {
-                site: 'https://example.com',
-                username: 'bob',
-                password: 'secret',
-            }
+        const login: GroupVaultLogin = {
+            service: 'https://example.com',
+            username: 'bob',
+            password: 'secret',
         };
-        const buffer = Buffer.from(JSON.stringify(mockLogin), 'utf-8');
+        const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
         const mockName = 'login: example.com';
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -5711,23 +5710,21 @@ describe('getGroupVaultItem', () => {
     });
 
     it('should retrieve JSON to the groupVault', async () => {
-        const mockLogin = {
-            login: {
-                site: 'https://example.com',
-                username: 'bob',
-                password: 'secret',
-            }
+        const login: GroupVaultLogin = {
+            service: 'https://example2.com',
+            username: 'alice',
+            password: '*******',
         };
-        const buffer = Buffer.from(JSON.stringify(mockLogin), 'utf-8');
+        const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
         const mockName = 'login: example.com';
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
         await keymaster.addGroupVaultItem(did, mockName, buffer);
 
         const itemBuffer = await keymaster.getGroupVaultItem(did, mockName);
-        const login = JSON.parse(itemBuffer!.toString('utf-8'));
+        const itemLogin = JSON.parse(itemBuffer!.toString('utf-8'));
 
-        expect(login).toStrictEqual(mockLogin);
+        expect(itemLogin).toStrictEqual({ login });
     });
 });
 
