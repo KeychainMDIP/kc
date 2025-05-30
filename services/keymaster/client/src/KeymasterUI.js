@@ -17,12 +17,17 @@ import {
     TableCell,
     TextField,
     Tooltip,
-    Typography
+    Typography,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import {
     AccountBalanceWallet,
     Article,
+    AttachFile,
     Badge,
     Groups,
     Image,
@@ -32,9 +37,11 @@ import {
     LibraryBooks,
     List,
     Lock,
+    Login,
     Message,
     MarkunreadMailbox,
     PermIdentity,
+    PictureAsPdf,
     Schema,
     Send,
     Token,
@@ -133,6 +140,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
     const [vaultMember, setVaultMember] = useState('');
     const [docList, setDocList] = useState({});
+    const [editLoginOpen, setEditLoginOpen] = useState(false);
+    const [revealLoginOpen, setRevealLoginOpen] = useState(false);
+    const [revealLogin, setRevealLogin] = useState(null);
 
     useEffect(() => {
         checkForChallenge();
@@ -532,6 +542,37 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
 
         return '';
+    }
+
+    function getNameIcon(name) {
+        const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
+
+        if (agentList && agentList.includes(name)) {
+            return <PermIdentity style={iconStyle} />;
+        }
+
+        if (vaultList && vaultList.includes(name)) {
+            return <Lock style={iconStyle} />;
+        }
+
+        if (groupList && groupList.includes(name)) {
+            return <Groups style={iconStyle} />;
+        }
+
+        if (schemaList && schemaList.includes(name)) {
+            return <Schema style={iconStyle} />;
+        }
+
+        if (imageList && imageList.includes(name)) {
+            return <Image style={iconStyle} />;
+        }
+
+        if (documentList && documentList.includes(name)) {
+            return <Article style={iconStyle} />;
+        }
+
+        // Add more types as needed, e.g. images, pdf, etc.
+        return <Token style={iconStyle} />;
     }
 
     async function addName() {
@@ -1390,7 +1431,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const docs = await keymaster.resolveDID(vaultName);
 
             setSelectedVaultName(vaultName);
-            setSelectedVaultOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedVaultOwned(docs.didDocument.controller === currentDID);
             setVaultMember('');
 
             const vaultMembers = await keymaster.listGroupVaultMembers(vaultName);
@@ -1401,6 +1442,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             setSelectedVault({ members, vaultMembers, items, vaultItems });
         } catch (error) {
+            setSelectedVaultName('');
+            setSelectedVaultOwned(false);
             setSelectedVault(null)
             showError(error);
         }
@@ -1468,9 +1511,58 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function addLoginVaultItem(service, username, password) {
+        try {
+            if (
+                !service || !service.trim() ||
+                !username || !username.trim() ||
+                !password || !password.trim()
+            ) {
+                showError("Service, username, and password are required");
+                return;
+            }
+
+            service = service.trim();
+            username = username.trim();
+
+            const name = `login: ${service}`;
+            const login = {
+                service,
+                username,
+                password
+            };
+            const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
+            const ok = await keymaster.addGroupVaultItem(selectedVaultName, name, buffer);
+
+            setEditLoginOpen(false);
+
+            if (ok) {
+                showAlert(`Login added successfully: ${service}`);
+                refreshVault(selectedVaultName);
+            } else {
+                showAlert(`Error adding login: ${service}`);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    function isVaultItemFile(item) {
+        if (item.type === 'application/json') {
+            return false;
+        }
+
+        return true;
+    }
+
     async function downloadVaultItem(name) {
         try {
             const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
+
+            if (!buffer) {
+                showError(`Item ${name} not found in vault ${selectedVaultName}`);
+                return;
+            }
 
             // Create a Blob from the buffer
             const blob = new Blob([buffer]);
@@ -1487,6 +1579,29 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function revealVaultItem(name) {
+        try {
+            const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
+
+            if (!buffer) {
+                showError(`Item ${name} not found in vault ${selectedVaultName}`);
+                return;
+            }
+
+            const item = JSON.parse(buffer.toString('utf-8'));
+
+            if (item.login) {
+                setRevealLogin(item.login);
+                setRevealLoginOpen(true);
+                return;
+            }
+
+            showError(`Unknown item type ${name}`);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function removeVaultItem(name) {
         try {
             if (window.confirm(`Remove item from ${selectedVaultName}?`)) {
@@ -1496,6 +1611,29 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         } catch (error) {
             showError(error);
         }
+    }
+
+    function getVaultItemIcon(item) {
+        const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
+
+        if (!item || !item.type) {
+            return <AttachFile style={iconStyle} />;
+        }
+
+        if (item.type.startsWith('image/')) {
+            return <Image style={iconStyle} />;
+        }
+
+        if (item.type === 'application/pdf') {
+            return <PictureAsPdf style={iconStyle} />;
+        }
+
+        if (item.type === 'application/json') {
+            return <Login style={iconStyle} />;
+        }
+
+        // Add more types as needed, e.g. images, pdf, etc.
+        return <AttachFile style={iconStyle} />;
     }
 
     function RegistrySelect() {
@@ -1559,6 +1697,73 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     </Button>
                 </Grid>
             </Grid>
+        );
+    }
+
+    function LoginDialog({ open, onClose, onOK, login, readOnly }) {
+        const [service, setService] = useState('');
+        const [username, setUsername] = useState('');
+        const [password, setPassword] = useState('');
+
+        useEffect(() => {
+            setService(login?.service || '');
+            setUsername(login?.username || '');
+            setPassword(login?.password || '');
+        }, [login, open]);
+
+        const handleSubmit = () => {
+            if (onOK) {
+                onOK(service, username, password);
+
+            } else {
+                onClose();
+            }
+        };
+
+        const handleClose = () => {
+            setService('');
+            setUsername('');
+            setPassword('');
+            onClose();
+        };
+
+        return (
+            <Dialog open={open} onClose={handleClose}>
+                <DialogTitle>Login</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Service"
+                        fullWidth
+                        value={service}
+                        onChange={e => setService(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Username"
+                        fullWidth
+                        value={username}
+                        onChange={e => setUsername(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Password"
+                        fullWidth
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleClose} variant="contained" color="primary">Cancel</Button>
+                    <Button onClick={handleSubmit} variant="contained" color="primary" disabled={!service || !username || !password}>
+                        OK
+                    </Button>
+                </DialogActions>
+            </Dialog>
         );
     }
 
@@ -1741,7 +1946,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </TableRow>
                                         {Object.entries(nameList).map(([name, did], index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{name}</TableCell>
+                                                <TableCell>
+                                                    {getNameIcon(name)}
+                                                    {name}
+                                                </TableCell>
                                                 <TableCell>
                                                     <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
                                                         {did}
@@ -2364,7 +2572,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 <TableCell>
                                                                     <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
                                                                         <span>
-                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultMember(did)} disabled={!selectedVaultOwned}>
+                                                                            <Button
+                                                                                variant="contained"
+                                                                                color="primary"
+                                                                                onClick={() => removeVaultMember(did)}
+                                                                                disabled={!selectedVaultOwned}>
                                                                                 Remove
                                                                             </Button>
                                                                         </span>
@@ -2396,6 +2608,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     variant="contained"
                                                                     color="primary"
                                                                     onClick={() => document.getElementById('vaultItemUpload').click()}
+                                                                    disabled={!selectedVaultOwned}
                                                                 >
                                                                     Upload...
                                                                 </Button>
@@ -2407,25 +2620,63 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 />
                                                             </TableCell>
                                                             <TableCell>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={() => setEditLoginOpen(true)}
+                                                                    disabled={!selectedVaultOwned}
+                                                                >
+                                                                    Add login...
+                                                                </Button>
+                                                                <LoginDialog
+                                                                    open={editLoginOpen}
+                                                                    onClose={() => setEditLoginOpen(false)}
+                                                                    onOK={addLoginVaultItem}
+                                                                />
+                                                                <LoginDialog
+                                                                    open={revealLoginOpen}
+                                                                    onClose={() => setRevealLoginOpen(false)}
+                                                                    login={revealLogin}
+                                                                    readOnly
+                                                                />
                                                             </TableCell>
                                                         </TableRow>
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
+                                                                    {getVaultItemIcon(item)}
                                                                     {name}
                                                                 </TableCell>
                                                                 <TableCell>
                                                                     {item.bytes}
                                                                 </TableCell>
                                                                 <TableCell>
-                                                                    <Button variant="contained" color="primary" onClick={() => downloadVaultItem(name)}>
-                                                                        Download
-                                                                    </Button>
+                                                                    {isVaultItemFile(item) ? (
+                                                                        <Button
+                                                                            variant="contained"
+                                                                            color="primary"
+                                                                            onClick={() => downloadVaultItem(name)}
+                                                                        >
+                                                                            Download
+                                                                        </Button>
+                                                                    ) : (
+                                                                        <Button
+                                                                            variant="contained"
+                                                                            color="primary"
+                                                                            onClick={() => revealVaultItem(name)}
+                                                                        >
+                                                                            Reveal
+                                                                        </Button>
+                                                                    )}
                                                                 </TableCell>
                                                                 <TableCell>
                                                                     <Tooltip title={!selectedVaultOwned ? "You must own the vault to edit." : ""}>
                                                                         <span>
-                                                                            <Button variant="contained" color="primary" onClick={() => removeVaultItem(name)} disabled={!selectedVaultOwned}>
+                                                                            <Button
+                                                                                variant="contained"
+                                                                                color="primary"
+                                                                                onClick={() => removeVaultItem(name)}
+                                                                                disabled={!selectedVaultOwned}>
                                                                                 Remove
                                                                             </Button>
                                                                         </span>

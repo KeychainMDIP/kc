@@ -1514,8 +1514,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     async function addLoginVaultItem(service, username, password) {
         try {
             if (
-                !service || !username || !password ||
-                !service.trim() || !username.trim() || !password.trim()
+                !service || !service.trim() ||
+                !username || !username.trim() ||
+                !password || !password.trim()
             ) {
                 showError("Service, username, and password are required");
                 return;
