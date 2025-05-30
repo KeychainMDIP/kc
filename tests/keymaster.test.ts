@@ -5496,7 +5496,7 @@ describe('addGroupVaultItem', () => {
             password: 'secret',
         };
         const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
-        const mockName = 'login: example.com';
+        const mockName = `login: ${login.service}`;
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
 
@@ -5716,7 +5716,7 @@ describe('getGroupVaultItem', () => {
             password: '*******',
         };
         const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
-        const mockName = 'login: example.com';
+        const mockName = `login: ${login.service}`;
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
         await keymaster.addGroupVaultItem(did, mockName, buffer);
