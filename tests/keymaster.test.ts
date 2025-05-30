@@ -10,6 +10,7 @@ import {
     Seed,
     WalletFile,
     GroupVault,
+    GroupVaultLogin,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
@@ -5482,6 +5483,29 @@ describe('addGroupVaultItem', () => {
 
         const ok = await keymaster.addGroupVaultItem(did, mockName, mockImage);
         expect(ok).toBe(true);
+
+        const items = await keymaster.listGroupVaultItems(did);
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].type).toBe('image/png');
+    });
+
+    it('should add JSON to the groupVault', async () => {
+        const login: GroupVaultLogin = {
+            service: 'https://example.com',
+            username: 'bob',
+            password: 'secret',
+        };
+        const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
+        const mockName = `login: ${login.service}`;
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+
+        const ok = await keymaster.addGroupVaultItem(did, mockName, buffer);
+        expect(ok).toBe(true);
+
+        const items = await keymaster.listGroupVaultItems(did);
+        expect(items![mockName]).toBeDefined();
+        expect(items![mockName].type).toBe('application/json');
     });
 
     it('should be able to add a new item after key rotation', async () => {
@@ -5683,6 +5707,24 @@ describe('getGroupVaultItem', () => {
         const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
 
         expect(item).toBe(null);
+    });
+
+    it('should retrieve JSON to the groupVault', async () => {
+        const login: GroupVaultLogin = {
+            service: 'https://example2.com',
+            username: 'alice',
+            password: '*******',
+        };
+        const buffer = Buffer.from(JSON.stringify({ login }), 'utf-8');
+        const mockName = `login: ${login.service}`;
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        await keymaster.addGroupVaultItem(did, mockName, buffer);
+
+        const itemBuffer = await keymaster.getGroupVaultItem(did, mockName);
+        const itemLogin = JSON.parse(itemBuffer!.toString('utf-8'));
+
+        expect(itemLogin).toStrictEqual({ login });
     });
 });
 

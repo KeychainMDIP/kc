@@ -200,6 +200,12 @@ export interface GroupVaultOptions extends CreateAssetOptions {
     version?: number;
 }
 
+export interface GroupVaultLogin {
+    service: string;
+    username: string;
+    password: string;
+}
+
 export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {
