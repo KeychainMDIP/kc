@@ -544,6 +544,37 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         return '';
     }
 
+    function getNameIcon(name) {
+        const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
+
+        if (agentList && agentList.includes(name)) {
+            return <PermIdentity style={iconStyle} />;
+        }
+
+        if (vaultList && vaultList.includes(name)) {
+            return <Lock style={iconStyle} />;
+        }
+
+        if (groupList && groupList.includes(name)) {
+            return <Groups style={iconStyle} />;
+        }
+
+        if (schemaList && schemaList.includes(name)) {
+            return <Schema style={iconStyle} />;
+        }
+
+        if (imageList && imageList.includes(name)) {
+            return <Image style={iconStyle} />;
+        }
+
+        if (documentList && documentList.includes(name)) {
+            return <Article style={iconStyle} />;
+        }
+
+        // Add more types as needed, e.g. images, pdf, etc.
+        return <Token style={iconStyle} />;
+    }
+
     async function addName() {
         try {
             await keymaster.addName(aliasName, aliasDID);
@@ -1914,7 +1945,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </TableRow>
                                         {Object.entries(nameList).map(([name, did], index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{name}</TableCell>
+                                                <TableCell>
+                                                    {getNameIcon(name)}
+                                                    {name}
+                                                </TableCell>
                                                 <TableCell>
                                                     <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
                                                         {did}
