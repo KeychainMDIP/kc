@@ -1395,7 +1395,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const docs = await keymaster.resolveDID(vaultName);
 
             setSelectedVaultName(vaultName);
-            setSelectedVaultOwned(docs.didDocumentMetadata.isOwned);
+            setSelectedVaultOwned(docs.didDocument.controller === currentDID);
             setVaultMember('');
 
             const vaultMembers = await keymaster.listGroupVaultMembers(vaultName);
@@ -1475,20 +1475,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function addLoginVaultItem(service, username, password) {
         try {
-            if (!service || !username || !password) {
+            if (
+                !service || !username || !password ||
+                !service.trim() || !username.trim() || !password.trim()
+            ) {
                 showError("Service, username, and password are required");
                 return;
             }
 
-            let hostname = "";
-            try {
-                hostname = new URL(service).hostname;
-            } catch (e) {
-                showError("Service URL is invalid");
-                return;
-            }
+            service = service.trim();
+            username = username.trim();
 
-            const name = `login: ${username}@${hostname}`;
+            const name = `login: ${service}`;
             const login = {
                 service,
                 username,
