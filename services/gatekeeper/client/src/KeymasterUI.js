@@ -17,7 +17,7 @@ import {
     TableCell,
     TextField,
     Tooltip,
-    Typography
+    Typography,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import Dialog from '@mui/material/Dialog';
@@ -27,6 +27,7 @@ import DialogActions from '@mui/material/DialogActions';
 import {
     AccountBalanceWallet,
     Article,
+    AttachFile,
     Badge,
     Groups,
     Image,
@@ -36,9 +37,11 @@ import {
     LibraryBooks,
     List,
     Lock,
+    Login,
     Message,
     MarkunreadMailbox,
     PermIdentity,
+    PictureAsPdf,
     Schema,
     Send,
     Token,
@@ -1408,6 +1411,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             setSelectedVault({ members, vaultMembers, items, vaultItems });
         } catch (error) {
+            setSelectedVaultName('');
+            setSelectedVaultOwned(false);
             setSelectedVault(null)
             showError(error);
         }
@@ -1574,6 +1579,29 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         } catch (error) {
             showError(error);
         }
+    }
+
+    function getVaultItemIcon(item) {
+        const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
+
+        if (!item || !item.type) {
+            return <AttachFile style={iconStyle} />;
+        }
+
+        if (item.type.startsWith('image/')) {
+            return <Image style={iconStyle} />;
+        }
+
+        if (item.type === 'application/pdf') {
+            return <PictureAsPdf style={iconStyle} />;
+        }
+
+        if (item.type === 'application/json') {
+            return <Login style={iconStyle} />;
+        }
+
+        // Add more types as needed, e.g. images, pdf, etc.
+        return <AttachFile style={iconStyle} />;
     }
 
     function RegistrySelect() {
@@ -2581,6 +2609,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
+                                                                    {getVaultItemIcon(item)}
                                                                     {name}
                                                                 </TableCell>
                                                                 <TableCell>
