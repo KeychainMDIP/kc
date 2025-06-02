@@ -228,7 +228,23 @@ class KuboClient implements IPFSClient {
         const peerID = await this.getPeerID();
 
         if (peerID === id) {
-            throw new Error(`Cannot add self as a peering peer: ${id}`);
+            // Not valid to add self as a peering peer
+            return;
+        }
+
+        // Filter addresses to only those we can connect to
+        const validAddresses: string[] = [];
+        for (const addr of addresses) {
+            try {
+                await this.ipfs.swarm.connect(addr);
+                validAddresses.push(addr);
+            } catch {
+                // Ignore errors, just skip invalid addresses
+            }
+        }
+
+        if (validAddresses.length === 0) {
+            return;
         }
 
         const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
@@ -238,9 +254,9 @@ class KuboClient implements IPFSClient {
 
         if (existing) {
             // Merge addresses without duplicates
-            existing.Addrs = Array.from(new Set([...existing.Addrs, ...addresses]));
+            existing.Addrs = Array.from(new Set([...existing.Addrs, ...validAddresses]));
         } else {
-            currentPeers.push({ ID: id, Addrs: addresses });
+            currentPeers.push({ ID: id, Addrs: validAddresses });
         }
 
         await this.ipfs.config.set(this.PeeringPeers, currentPeers, { json: true });
@@ -255,6 +271,11 @@ class KuboClient implements IPFSClient {
 
     async getPeeringPeers(): Promise<PeeringPeer[]> {
         return (await this.ipfs.config.get(this.PeeringPeers)) || [];
+    }
+
+    async resetPeeringPeers(): Promise<void> {
+        // Reset Peering.Peers to an empty array
+        await this.ipfs.config.set(this.PeeringPeers, [], { json: true });
     }
 }
 
