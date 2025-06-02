@@ -372,12 +372,10 @@ async function addPeer(did: string): Promise<void> {
         return;
     }
 
-    if (id === nodeInfo.ipfs.id) {
+    if (id !== nodeInfo.ipfs.id) {
         // A node should never add itself as a peer node
-        return;
+        await ipfs.addPeeringPeer(id, addresses);
     }
-
-    await ipfs.addPeeringPeer(id, addresses);
 
     knownNodes[did] = {
         name: data.node.name,
@@ -606,6 +604,7 @@ async function main(): Promise<void> {
         intervalSeconds: 5,
         chatty: true,
     });
+    await ipfs.resetPeeringPeers();
 
     const ipfsID = await ipfs.getPeerID();
     const ipfsAddresses = await ipfs.getAddresses();
