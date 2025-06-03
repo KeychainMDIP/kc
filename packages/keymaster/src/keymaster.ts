@@ -693,7 +693,7 @@ export default class Keymaster implements KeymasterInterface {
             cid,
             bytes: buffer.length,
             ...metadata,
-            type: `image/${metadata.type || 'unknown'}` // always a string
+            type: `image/${metadata.type}`
         };
 
         return image;
