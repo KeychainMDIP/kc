@@ -136,4 +136,52 @@ export default class CipherNode implements Cipher {
     generateRandomSalt(): string {
         return base64url.encode(randomBytes(32));
     }
+
+    hasLeadingZeroBits(hexHash: string, bits: number): boolean {
+        const binary = BigInt('0x' + hexHash).toString(2).padStart(hexHash.length * 4, '0');
+        return binary.startsWith('0'.repeat(bits));
+    }
+
+    addProofOfWork(obj: object, difficulty: number): object {
+        if (!Number.isInteger(difficulty) || difficulty < 0 || difficulty > 256) {
+            throw new Error('Invalid difficulty: must be an integer between 0 and 256.');
+        }
+
+        let nonce = 0;
+
+        while (true) {
+            const candidate = {
+                ...obj,
+                pow: {
+                    nonce: nonce.toString(16),
+                    difficulty,
+                }
+            };
+            const hash = this.hashJSON(candidate);
+
+            if (this.hasLeadingZeroBits(hash, difficulty)) {
+                return candidate;
+            }
+
+            nonce++;
+        }
+    }
+
+    checkProofOfWork(obj: object): boolean {
+        // Check if pow field exists and has required properties
+        if (
+            !obj ||
+            typeof obj !== 'object' ||
+            !('pow' in obj) ||
+            typeof (obj as any).pow !== 'object' ||
+            typeof (obj as any).pow.nonce !== 'string' ||
+            typeof (obj as any).pow.difficulty !== 'number'
+        ) {
+            return false;
+        }
+
+        const hash = this.hashJSON(obj);
+
+        return this.hasLeadingZeroBits(hash, (obj as any).pow.difficulty);
+    }
 }

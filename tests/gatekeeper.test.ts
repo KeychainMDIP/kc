@@ -3085,9 +3085,6 @@ describe('Test operation validation errors', () => {
 });
 
 describe('addJSON', () => {
-    beforeEach(() => {    });
-
-
     const data = { key: 'mock' };
     const hash = 'z3v8AuaXiw9ZVBhPuQdTJySePBjwpBtvsSCRLXuPLzwqokHV8cS';
 
@@ -3099,9 +3096,6 @@ describe('addJSON', () => {
 });
 
 describe('getJSON', () => {
-    beforeEach(() => {    });
-
-
     const mockData = { key: 'mock' };
 
     it('should return JSON data from CID', async () => {
@@ -3113,9 +3107,6 @@ describe('getJSON', () => {
 });
 
 describe('addText', () => {
-    beforeEach(() => {    });
-
-
     const mockData = 'mock text data';
     const hash = 'zb2rhgNGdyFtViUWRk4oYLGrwdkgbt4GnF2s15k3ZujX6w3QW';
 
@@ -3127,9 +3118,6 @@ describe('addText', () => {
 });
 
 describe('getText', () => {
-    beforeEach(() => {    });
-
-
     const mockData = 'mock text data';
 
     it('should return text data from CID', async () => {
@@ -3141,9 +3129,6 @@ describe('getText', () => {
 });
 
 describe('addData', () => {
-    beforeEach(() => {    });
-
-
     const mockData = Buffer.from('mock data');
     const hash = 'zb2rhYuMKCR7pY51Tzv52NmTW9zYU2P53XFUJitvDwtSpCDhd';
 
@@ -3155,9 +3140,6 @@ describe('addData', () => {
 });
 
 describe('getData', () => {
-    beforeEach(() => {    });
-
-
     const mockData = Buffer.from('mock data');
 
     it('should return text data from CID', async () => {
@@ -3181,9 +3163,6 @@ const mockBlock2: BlockInfo = {
 };
 
 describe('addBlock', () => {
-    beforeEach(() => {    });
-
-
     it('should add a new block', async () => {
         const ok = await gatekeeper.addBlock('local', mockBlock);
 
@@ -3202,9 +3181,6 @@ describe('addBlock', () => {
 });
 
 describe('getBlock', () => {
-    beforeEach(() => {    });
-
-
     it('should get a block by height', async () => {
         await gatekeeper.addBlock('local', mockBlock);
         const block = await gatekeeper.getBlock('local', mockBlock.height);
