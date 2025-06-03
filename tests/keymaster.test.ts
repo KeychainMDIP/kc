@@ -4924,7 +4924,7 @@ describe('createDocument', () => {
                 cid,
                 filename,
                 bytes: 31,
-                type: 'txt',
+                type: 'text/plain',
             }
         };
 
@@ -4947,7 +4947,7 @@ describe('createDocument', () => {
                 cid,
                 filename: 'document',
                 bytes: 37,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -4971,7 +4971,7 @@ describe('createDocument', () => {
                 cid,
                 filename,
                 bytes: 30,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -4997,7 +4997,7 @@ describe('updateDocument', () => {
                 cid,
                 filename,
                 bytes: 27,
-                type: 'txt',
+                type: 'text/plain',
             }
         };
 
@@ -5022,7 +5022,7 @@ describe('updateDocument', () => {
                 cid,
                 filename: 'document',
                 bytes: 31,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -5048,7 +5048,7 @@ describe('updateDocument', () => {
                 cid,
                 filename,
                 bytes: 35,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -5072,7 +5072,7 @@ describe('getDocument', () => {
             cid,
             filename,
             bytes: 31,
-            type: 'txt',
+            type: 'text/plain',
         };
 
         expect(asset).toStrictEqual(document);
