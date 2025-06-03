@@ -72,4 +72,7 @@ export interface Cipher {
     ): string,
 
     generateRandomSalt(): string,
+
+    addProofOfWork(obj: unknown, difficulty: number): unknown,
+    checkProofOfWork(obj: unknown): boolean,
 }

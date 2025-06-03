@@ -148,11 +148,15 @@ export default class CipherWeb implements Cipher {
     }
 
     hasLeadingZeroBits(hexHash: string, bits: number): boolean {
-        const binary = BigInt('0x' + hexHash).toString(2).padStart(256, '0');
+        const binary = BigInt('0x' + hexHash).toString(2).padStart(hexHash.length * 4, '0');
         return binary.startsWith('0'.repeat(bits));
     }
 
-    addPoW(obj: object, difficulty: number): object {
+    addProofOfWork(obj: object, difficulty: number): object {
+        if (!Number.isInteger(difficulty) || difficulty < 0 || difficulty > 256) {
+            throw new Error('Invalid difficulty: must be an integer between 0 and 256.');
+        }
+
         let nonce = 0;
 
         while (true) {
@@ -173,7 +177,7 @@ export default class CipherWeb implements Cipher {
         }
     }
 
-    checkPoW(obj: object): boolean {
+    checkProofOfWork(obj: object): boolean {
         // Check if pow field exists and has required properties
         if (
             !obj ||
