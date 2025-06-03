@@ -79,13 +79,12 @@ export default class CipherNode implements Cipher {
         return Buffer.from(hash).toString('hex');
     }
 
-    hashJSON(json: unknown): string {
-        const canonical = canonicalize(json);
-        return this.hashMessage(canonical);
-    }
-
     canonicalizeJSON(json: unknown): string {
         return canonicalize(json);
+    }
+
+    hashJSON(json: unknown): string {
+        return this.hashMessage(this.canonicalizeJSON(json));
     }
 
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
