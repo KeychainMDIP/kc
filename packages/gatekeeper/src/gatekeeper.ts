@@ -26,8 +26,6 @@ import {
     VerifyDbResult,
     Signature,
 } from './types.js';
-import canonicalizeModule from 'canonicalize';
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
@@ -242,7 +240,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async generateCID(operation: unknown, save: boolean = false): Promise<string> {
-        const canonical = canonicalize(operation);
+        const canonical = this.cipher.canonicalizeJSON(operation);
 
         if (save) {
             return this.ipfs.addJSON(JSON.parse(canonical));
