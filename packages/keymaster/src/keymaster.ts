@@ -734,31 +734,26 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async getMimeType(buffer: Buffer): Promise<string> {
-        // 1. Try magic number detection
+        // Try magic number detection
         const result = await fileTypeFromBuffer(buffer);
         if (result) return result.mime;
 
-        // 2. Convert to UTF-8 string if decodable
+        // Convert to UTF-8 string if decodable
         const text = buffer.toString('utf8');
 
-        // 3. Check for JSON
+        // Check for JSON
         try {
             JSON.parse(text);
             return 'application/json';
         } catch { }
 
-        // 4. Check for Markdown (basic heuristic)
-        if (/^#\s|\n[-*]\s|\n>\s|\n```/.test(text)) {
-            return 'text/markdown';
-        }
-
-        // 5. Default to plain text if printable ASCII
+        // Default to plain text if printable ASCII
         // eslint-disable-next-line
         if (/^[\x09\x0A\x0D\x20-\x7E]*$/.test(text.replace(/\n/g, ''))) {
             return 'text/plain';
         }
 
-        // 6. Fallback
+        // Fallback
         return 'application/octet-stream';
     }
 

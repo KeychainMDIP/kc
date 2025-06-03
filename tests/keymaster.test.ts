@@ -4907,8 +4907,8 @@ describe('testImage', () => {
 });
 
 describe('createDocument', () => {
-    it('should create DID from document data', async () => {
-        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+    it('should create DID from text data', async () => {
+        const mockDocument = Buffer.from('This is a mock text document.', 'utf-8');
         const cid = await generateCID(mockDocument);
         const filename = 'mockDocument.txt';
 
@@ -4923,9 +4923,33 @@ describe('createDocument', () => {
             document: {
                 cid,
                 filename,
-                bytes: 31,
+                bytes: 29,
                 // eslint-disable-next-line
                 type: 'text/plain',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+
+    it('should create DID from binary data', async () => {
+        const mockDocument = Buffer.from([0x00, 0xFF, 0xAB, 0xCD, 0x01, 0x02, 0x03, 0x04]);
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument.bin';
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument, { filename });
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 8,
+                type: 'application/octet-stream',
             }
         };
 
