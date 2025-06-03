@@ -678,10 +678,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset(cloneData, options);
     }
 
-    async createImage(
-        buffer: Buffer,
-        options: CreateAssetOptions = {}
-    ): Promise<string> {
+    async generateImageAsset(buffer: Buffer): Promise<ImageAsset> {
         let metadata;
 
         try {
@@ -692,40 +689,32 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const cid = await this.gatekeeper.addData(buffer);
-        const data = {
-            image: {
-                cid,
-                bytes: buffer.length,
-                ...metadata
-            }
+        const image: ImageAsset = {
+            cid,
+            bytes: buffer.length,
+            ...metadata,
+            type: `image/${metadata.type || 'unknown'}` // always a string
         };
 
-        return this.createAsset(data, options);
+        return image;
+    }
+
+    async createImage(
+        buffer: Buffer,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
+        const image = await this.generateImageAsset(buffer);
+
+        return this.createAsset({ image }, options);
     }
 
     async updateImage(
         id: string,
         buffer: Buffer
     ): Promise<boolean> {
-        let metadata;
+        const image = await this.generateImageAsset(buffer);
 
-        try {
-            metadata = imageSize(buffer);
-        }
-        catch (error) {
-            throw new InvalidParameterError('buffer');
-        }
-
-        const cid = await this.gatekeeper.addData(buffer);
-        const data = {
-            image: {
-                cid,
-                bytes: buffer.length,
-                ...metadata
-            }
-        };
-
-        return this.updateAsset(id, data);
+        return this.updateAsset(id, { image });
     }
 
     async getImage(id: string): Promise<ImageAsset | null> {

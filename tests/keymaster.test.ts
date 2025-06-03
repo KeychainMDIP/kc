@@ -4691,7 +4691,7 @@ describe('createImage', () => {
             image: {
                 cid,
                 bytes: 392,
-                type: 'png',
+                type: 'image/png',
                 width: 100,
                 height: 100,
             }
@@ -4729,7 +4729,7 @@ describe('updateImage', () => {
                 channels: 3,
                 background: { r: 0, g: 255, b: 0 }
             }
-        }).png().toBuffer();
+        }).jpeg().toBuffer();
         const cid = await generateCID(mockImage2);
         const ok = await keymaster.updateImage(dataDid, mockImage2);
         const doc = await keymaster.resolveDID(dataDid);
@@ -4741,8 +4741,8 @@ describe('updateImage', () => {
         const expected = {
             image: {
                 cid,
-                bytes: 779,
-                type: 'png',
+                bytes: 522,
+                type: 'image/jpg',
                 width: 200,
                 height: 200,
             }
@@ -4775,7 +4775,7 @@ describe('updateImage', () => {
             image: {
                 cid,
                 bytes: 779,
-                type: 'png',
+                type: 'image/png',
                 width: 200,
                 height: 200,
             }
@@ -4823,7 +4823,7 @@ describe('getImage', () => {
         const image = await keymaster.getImage(did);
 
         expect(image).not.toBeNull();
-        expect(image!.type).toStrictEqual('png');
+        expect(image!.type).toStrictEqual('image/png');
         expect(image!.width).toStrictEqual(100);
         expect(image!.height).toStrictEqual(100);
         expect(image!.bytes).toStrictEqual(392);
