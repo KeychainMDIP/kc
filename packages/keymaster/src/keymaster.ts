@@ -753,6 +753,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         // 5. Default to plain text if printable ASCII
+        // eslint-disable-next-line
         if (/^[\x09\x0A\x0D\x20-\x7E]*$/.test(text.replace(/\n/g, ''))) {
             return 'text/plain';
         }

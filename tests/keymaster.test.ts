@@ -4924,6 +4924,7 @@ describe('createDocument', () => {
                 cid,
                 filename,
                 bytes: 31,
+                // eslint-disable-next-line
                 type: 'text/plain',
             }
         };
