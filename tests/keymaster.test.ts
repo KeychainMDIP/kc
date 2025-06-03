@@ -4691,7 +4691,7 @@ describe('createImage', () => {
             image: {
                 cid,
                 bytes: 392,
-                type: 'png',
+                type: 'image/png',
                 width: 100,
                 height: 100,
             }
@@ -4729,7 +4729,7 @@ describe('updateImage', () => {
                 channels: 3,
                 background: { r: 0, g: 255, b: 0 }
             }
-        }).png().toBuffer();
+        }).jpeg().toBuffer();
         const cid = await generateCID(mockImage2);
         const ok = await keymaster.updateImage(dataDid, mockImage2);
         const doc = await keymaster.resolveDID(dataDid);
@@ -4741,8 +4741,8 @@ describe('updateImage', () => {
         const expected = {
             image: {
                 cid,
-                bytes: 779,
-                type: 'png',
+                bytes: 522,
+                type: 'image/jpg',
                 width: 200,
                 height: 200,
             }
@@ -4775,7 +4775,7 @@ describe('updateImage', () => {
             image: {
                 cid,
                 bytes: 779,
-                type: 'png',
+                type: 'image/png',
                 width: 200,
                 height: 200,
             }
@@ -4823,7 +4823,7 @@ describe('getImage', () => {
         const image = await keymaster.getImage(did);
 
         expect(image).not.toBeNull();
-        expect(image!.type).toStrictEqual('png');
+        expect(image!.type).toStrictEqual('image/png');
         expect(image!.width).toStrictEqual(100);
         expect(image!.height).toStrictEqual(100);
         expect(image!.bytes).toStrictEqual(392);
@@ -4907,8 +4907,8 @@ describe('testImage', () => {
 });
 
 describe('createDocument', () => {
-    it('should create DID from document data', async () => {
-        const mockDocument = Buffer.from('This is a mock binary document.', 'utf-8');
+    it('should create DID from text data', async () => {
+        const mockDocument = Buffer.from('This is a mock text document.', 'utf-8');
         const cid = await generateCID(mockDocument);
         const filename = 'mockDocument.txt';
 
@@ -4923,8 +4923,33 @@ describe('createDocument', () => {
             document: {
                 cid,
                 filename,
-                bytes: 31,
-                type: 'txt',
+                bytes: 29,
+                // eslint-disable-next-line
+                type: 'text/plain',
+            }
+        };
+
+        expect(doc.didDocumentData).toStrictEqual(expected);
+    });
+
+    it('should create DID from binary data', async () => {
+        const mockDocument = Buffer.from([0x00, 0xFF, 0xAB, 0xCD, 0x01, 0x02, 0x03, 0x04]);
+        const cid = await generateCID(mockDocument);
+        const filename = 'mockDocument.bin';
+
+        const ownerDid = await keymaster.createId('Bob');
+        const dataDid = await keymaster.createDocument(mockDocument, { filename });
+        const doc = await keymaster.resolveDID(dataDid);
+
+        expect(doc.didDocument!.id).toBe(dataDid);
+        expect(doc.didDocument!.controller).toBe(ownerDid);
+
+        const expected = {
+            document: {
+                cid,
+                filename,
+                bytes: 8,
+                type: 'application/octet-stream',
             }
         };
 
@@ -4947,7 +4972,7 @@ describe('createDocument', () => {
                 cid,
                 filename: 'document',
                 bytes: 37,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -4971,7 +4996,7 @@ describe('createDocument', () => {
                 cid,
                 filename,
                 bytes: 30,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -4997,7 +5022,7 @@ describe('updateDocument', () => {
                 cid,
                 filename,
                 bytes: 27,
-                type: 'txt',
+                type: 'text/plain',
             }
         };
 
@@ -5022,7 +5047,7 @@ describe('updateDocument', () => {
                 cid,
                 filename: 'document',
                 bytes: 31,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -5048,7 +5073,7 @@ describe('updateDocument', () => {
                 cid,
                 filename,
                 bytes: 35,
-                type: 'unknown',
+                type: 'text/plain',
             }
         };
 
@@ -5072,7 +5097,7 @@ describe('getDocument', () => {
             cid,
             filename,
             bytes: 31,
-            type: 'txt',
+            type: 'text/plain',
         };
 
         expect(asset).toStrictEqual(document);

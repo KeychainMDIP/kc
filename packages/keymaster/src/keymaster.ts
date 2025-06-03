@@ -678,10 +678,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset(cloneData, options);
     }
 
-    async createImage(
-        buffer: Buffer,
-        options: CreateAssetOptions = {}
-    ): Promise<string> {
+    async generateImageAsset(buffer: Buffer): Promise<ImageAsset> {
         let metadata;
 
         try {
@@ -692,47 +689,38 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const cid = await this.gatekeeper.addData(buffer);
-        const data = {
-            image: {
-                cid,
-                bytes: buffer.length,
-                ...metadata
-            }
+        const image: ImageAsset = {
+            cid,
+            bytes: buffer.length,
+            ...metadata,
+            type: `image/${metadata.type}`
         };
 
-        return this.createAsset(data, options);
+        return image;
+    }
+
+    async createImage(
+        buffer: Buffer,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
+        const image = await this.generateImageAsset(buffer);
+
+        return this.createAsset({ image }, options);
     }
 
     async updateImage(
         id: string,
         buffer: Buffer
     ): Promise<boolean> {
-        let metadata;
+        const image = await this.generateImageAsset(buffer);
 
-        try {
-            metadata = imageSize(buffer);
-        }
-        catch (error) {
-            throw new InvalidParameterError('buffer');
-        }
-
-        const cid = await this.gatekeeper.addData(buffer);
-        const data = {
-            image: {
-                cid,
-                bytes: buffer.length,
-                ...metadata
-            }
-        };
-
-        return this.updateAsset(id, data);
+        return this.updateAsset(id, { image });
     }
 
     async getImage(id: string): Promise<ImageAsset | null> {
-        const asset = await this.resolveAsset(id);
-        const castAsset = asset as { image?: ImageAsset };
+        const asset = await this.resolveAsset(id) as { image?: ImageAsset };
 
-        return castAsset.image ?? null;
+        return asset.image ?? null;
     }
 
     async testImage(id: string): Promise<boolean> {
@@ -745,19 +733,53 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async createDocument(
+    async getMimeType(buffer: Buffer): Promise<string> {
+        // Try magic number detection
+        const result = await fileTypeFromBuffer(buffer);
+        if (result) return result.mime;
+
+        // Convert to UTF-8 string if decodable
+        const text = buffer.toString('utf8');
+
+        // Check for JSON
+        try {
+            JSON.parse(text);
+            return 'application/json';
+        } catch { }
+
+        // Default to plain text if printable ASCII
+        // eslint-disable-next-line
+        if (/^[\x09\x0A\x0D\x20-\x7E]*$/.test(text.replace(/\n/g, ''))) {
+            return 'text/plain';
+        }
+
+        // Fallback
+        return 'application/octet-stream';
+    }
+
+    async generateFileAsset(
+        filename: string,
         buffer: Buffer,
-        options: FileAssetOptions = {}
-    ): Promise<string> {
-        const filename = options.filename || 'document';
-        const type = filename.includes('.') ? filename.split('.').pop() || 'unknown' : 'unknown';
+    ): Promise<FileAsset> {
         const cid = await this.gatekeeper.addData(buffer);
-        const document: FileAsset = {
+        const type = await this.getMimeType(buffer);
+
+        const file: FileAsset = {
             cid,
             filename,
             type,
             bytes: buffer.length,
         };
+
+        return file;
+    }
+
+    async createDocument(
+        buffer: Buffer,
+        options: FileAssetOptions = {}
+    ): Promise<string> {
+        const filename = options.filename || 'document';
+        const document = await this.generateFileAsset(filename, buffer);
 
         return this.createAsset({ document }, options);
     }
@@ -768,23 +790,15 @@ export default class Keymaster implements KeymasterInterface {
         options: FileAssetOptions = {}
     ): Promise<boolean> {
         const filename = options.filename || 'document';
-        const type = filename.includes('.') ? filename.split('.').pop() || 'unknown' : 'unknown';
-        const cid = await this.gatekeeper.addData(buffer);
-        const document: FileAsset = {
-            cid,
-            filename,
-            type,
-            bytes: buffer.length,
-        };
+        const document = await this.generateFileAsset(filename, buffer);
 
         return this.updateAsset(id, { document });
     }
 
     async getDocument(id: string): Promise<FileAsset | null> {
-        const asset = await this.resolveAsset(id);
-        const castAsset = asset as { document?: FileAsset };
+        const asset = await this.resolveAsset(id) as { document?: FileAsset };
 
-        return castAsset.document ?? null;
+        return asset.document ?? null;
     }
 
     async testDocument(id: string): Promise<boolean> {
@@ -2864,22 +2878,13 @@ export default class Keymaster implements KeymasterInterface {
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
         const sha256 = this.cipher.hashMessage(buffer);
-        let fileType = await fileTypeFromBuffer(buffer);
-
-        if (!fileType) {
-            try {
-                JSON.parse(buffer.toString('utf8'));
-                fileType = { ext: 'json', mime: 'application/json' };
-            } catch (e) {
-                fileType = { ext: 'bin', mime: 'application/octet-stream' };
-            }
-        }
+        const type = await this.getMimeType(buffer);
 
         items[validName] = {
             cid,
             sha256,
             bytes: buffer.length,
-            type: fileType.mime,
+            type,
             added: new Date().toISOString(),
         };
 
