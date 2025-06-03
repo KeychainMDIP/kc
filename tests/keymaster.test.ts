@@ -20,10 +20,7 @@ import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { generateCID } from '@mdip/ipfs/utils';
-
-import canonicalizeModule from 'canonicalize';
 import { MdipDocument } from "@mdip/gatekeeper/types";
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -1785,7 +1782,7 @@ describe('addSignature', () => {
     it('should add a signature to the object', async () => {
         const name = 'Bob';
         const did = await keymaster.createId(name);
-        const hash = cipher.hashMessage(canonicalize(mockJson));
+        const hash = cipher.hashJSON(mockJson);
         const signed = await keymaster.addSignature(mockJson);
 
         expect(signed.signature.signer).toBe(did);

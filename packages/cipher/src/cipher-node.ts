@@ -84,6 +84,10 @@ export default class CipherNode implements Cipher {
         return this.hashMessage(canonical);
     }
 
+    canonicalizeJSON(json: unknown): string {
+        return canonicalize(json);
+    }
+
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
         const privKey = base64url.baseDecode(privateJwk.d);
         const signature = secp.sign(msgHash, privKey);

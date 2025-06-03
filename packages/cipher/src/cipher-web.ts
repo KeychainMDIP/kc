@@ -85,6 +85,10 @@ export default class CipherWeb implements Cipher {
         const canonical = canonicalize(json);
         return this.hashMessage(canonical);
     }
+    
+    canonicalizeJSON(json: unknown): string {
+        return canonicalize(json);
+    }
 
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
         const privKey = base64url.baseDecode(privateJwk.d);
