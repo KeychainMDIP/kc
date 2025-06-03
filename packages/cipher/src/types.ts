@@ -26,6 +26,11 @@ export interface EcdsaJwkPair {
     privateJwk: EcdsaJwkPrivate,
 }
 
+export interface ProofOfWork {
+    difficulty: number,
+    nonce: string,
+}
+
 export interface Cipher {
     generateMnemonic(): string,
 
