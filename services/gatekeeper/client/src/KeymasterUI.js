@@ -113,9 +113,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailTab, setDmailTab] = useState('');
     const [dmailDID, setDmailDID] = useState('');
     const [dmailString, setDmailString] = useState('');
-    const [selectedDmail, setSelectedDmail] = useState(null);
-    const [sendDmail, setSendDmail] = useState('');
-    const [dmailRecipient, setDmailRecipient] = useState('');
+    const [dmailSubject, setDmailSubject] = useState('');
+    const [dmailBody, setDmailBody] = useState('');
+    const [dmailTo, setDmailTo] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
@@ -216,8 +216,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedHeld('');
             setSelectedIssued('');
             setDmailString('');
-            setSendDmail('');
-            setDmailRecipient('');
+            setDmailBody('');
+            setDmailTo('');
             setDmailDID('');
             setEncryptedDID('');
             setSelectedImageName('');
@@ -1008,9 +1008,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function encryptDmail() {
+    async function sendDmail() {
         try {
-            const did = await keymaster.encryptMessage(sendDmail, dmailRecipient, { registry });
+            const did = await keymaster.encryptMessage(dmailBody, dmailTo, { registry });
             setEncryptedDID(did);
         } catch (error) {
             showError(error);
@@ -2990,39 +2990,51 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <Select
-                                                style={{ width: '300px' }}
-                                                value={dmailRecipient}
-                                                fullWidth
-                                                displayEmpty
-                                                onChange={(event) => setDmailRecipient(event.target.value)}
-                                            >
-                                                <MenuItem value="" disabled>
-                                                    Select recipient
-                                                </MenuItem>
-                                                {agentList.map((name, index) => (
-                                                    <MenuItem value={name} key={index}>
-                                                        {name}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
+                                            <Autocomplete
+                                                freeSolo
+                                                options={agentList || []} // array of options, e.g. DIDs or names
+                                                value={dmailTo}
+                                                onChange={(event, newValue) => setDmailTo(newValue)}
+                                                onInputChange={(event, newInputValue) => setDmailTo(newInputValue)}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        label="Name or DID"
+                                                        style={{ width: '500px' }}
+                                                        margin="normal"
+                                                        inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                        fullWidth
+                                                    />
+                                                )}
+                                            />
                                         </Grid>
                                     </Grid>
                                     <p />
-                                    {dmailRecipient &&
+                                    {dmailTo &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
+                                                    <TextField
+                                                        label="Subject"
+                                                        style={{ width: '800px' }}
+                                                        value={dmailSubject}
+                                                        onChange={e => setDmailSubject(e.target.value)}
+                                                        margin="normal"
+                                                        inputProps={{ maxLength: 120 }}
+                                                        fullWidth
+                                                    />
+                                                </Grid>
+                                                <Grid item>
                                                     <textarea
-                                                        value={sendDmail}
-                                                        onChange={(e) => setSendDmail(e.target.value)}
+                                                        value={dmailBody}
+                                                        onChange={(e) => setDmailBody(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                                     />
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptDmail} disabled={!sendDmail || !registry}>
-                                                            Encrypt Dmail
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailBody || !registry}>
+                                                            Send Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
