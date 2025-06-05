@@ -416,7 +416,7 @@ function GroupVaultTab() {
             <Box display="flex" alignItems="center" sx={{ flexGrow: 1 }}>
                 {getVaultItemIcon(item)}
                 <Typography variant="body2" sx={{ ml: 0.5 }}>
-                    {name.substring('login:'.length)}
+                    {name.startsWith('login:') ? name.substring('login:'.length) : name}
                 </Typography>
             </Box>
             <Typography variant="body2" sx={{ width: 120, textAlign: "right", mr: 1 }}>
