@@ -168,7 +168,7 @@ const GroupsTab = () => {
                         onChange={(e) => setGroupName(e.target.value)}
                         slotProps={{
                             htmlInput: {
-                                maxLength: 80,
+                                maxLength: 32,
                             },
                         }}
                     />

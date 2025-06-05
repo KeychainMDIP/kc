@@ -102,7 +102,7 @@ export function UIProvider(
         setNameList,
         setGroupList,
         setSchemaList,
-        agentList,
+        setVaultList,
         credentialSubject,
         setCredentialSubject,
         setAgentList,
@@ -283,33 +283,59 @@ export function UIProvider(
 
         setNameList(nameList);
 
+        const agentList = await keymaster.listIds();
+        const schemaList = [];
+        const imageList = [];
         const groupList = [];
+        const vaultList = [];
+        const documentList = [];
 
         for (const name of names) {
             try {
-                const isGroup = await keymaster.testGroup(name);
+                const doc = await keymaster.resolveDID(name);
+                const data = doc.didDocumentData as Record<string, unknown>;
 
-                if (isGroup) {
+                if (doc.mdip?.type === 'agent') {
+                    agentList.push(name);
+                    continue;
+                }
+
+                if (data.group) {
                     groupList.push(name);
+                    continue;
+                }
+
+                if (data.schema) {
+                    schemaList.push(name);
+                    continue;
+                }
+
+                if (data.image) {
+                    imageList.push(name);
+                    continue;
+                }
+
+                if (data.document) {
+                    documentList.push(name);
+                    continue;
+                }
+
+                if (data.groupVault) {
+                    vaultList.push(name);
+                    continue;
                 }
             }
             catch {}
         }
 
-        setGroupList(groupList);
+        setAgentList(agentList);
 
-        const schemaList = [];
-
-        for (const name of names) {
-            try {
-                const isSchema = await keymaster.testSchema(name);
-
-                if (isSchema) {
-                    schemaList.push(name);
-                }
-            } catch {}
+        if (!agentList.includes(credentialSubject)) {
+            setCredentialSubject("");
+            setCredentialString("");
         }
 
+        setGroupList(groupList);
         setSchemaList(schemaList);
 
         if (!schemaList.includes(credentialSchema)) {
@@ -317,52 +343,9 @@ export function UIProvider(
             setCredentialString("");
         }
 
-        const imageList = [];
-
-        for (const name of names) {
-            try {
-                const isImage = await keymaster.testImage(name);
-
-                if (isImage) {
-                    imageList.push(name);
-                }
-            }
-            catch {}
-        }
-
         setImageList(imageList);
-
-        const documentList = [];
-
-        for (const name of names) {
-            try {
-                const isDocument = await keymaster.testDocument(name);
-
-                if (isDocument) {
-                    documentList.push(name);
-                }
-            }
-            catch {}
-        }
-
         setDocumentList(documentList);
-
-        const agents = await keymaster.listIds();
-        for (const name of names) {
-            try {
-                const isAgent = await keymaster.testAgent(name);
-                if (isAgent) {
-                    agents.push(name);
-                }
-            } catch {}
-        }
-
-        setAgentList(agents);
-
-        if (!agentList.includes(credentialSubject)) {
-            setCredentialSubject("");
-            setCredentialString("");
-        }
+        setVaultList(vaultList);
     }
 
     async function resetCurrentID() {
@@ -419,6 +402,7 @@ export function UIProvider(
         setHeldList([]);
         setIssuedList([]);
         setIssuedString("");
+        setVaultList([]);
     }
 
     function wipeState() {
