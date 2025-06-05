@@ -12,12 +12,14 @@ import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
+import { TestHelper } from './helper.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let helper: TestHelper;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -36,6 +38,7 @@ beforeEach(() => {
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+    helper = new TestHelper(keymaster);
 });
 
 describe('loadWallet', () => {
@@ -374,58 +377,6 @@ describe('recoverWallet', () => {
     });
 });
 
-const mockSchema = {    // eslint-disable-next-line
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "properties": {
-        "email": {
-            "format": "email",
-            "type": "string"
-        }
-    },
-    "required": [
-        "email"
-    ],
-    "type": "object"
-};
-
-async function setupCredentials() {
-    await keymaster.createId('Alice');
-    await keymaster.createId('Bob');
-    const carol = await keymaster.createId('Carol');
-    await keymaster.createId('Victor');
-
-    await keymaster.setCurrentId('Alice');
-
-    const credential1 = await keymaster.createSchema(mockSchema);
-    const credential2 = await keymaster.createSchema(mockSchema);
-
-    const bc1 = await keymaster.bindCredential(credential1, carol);
-    const bc2 = await keymaster.bindCredential(credential2, carol);
-
-    const vc1 = await keymaster.issueCredential(bc1);
-    const vc2 = await keymaster.issueCredential(bc2);
-
-    await keymaster.setCurrentId('Bob');
-
-    const credential3 = await keymaster.createSchema(mockSchema);
-    const credential4 = await keymaster.createSchema(mockSchema);
-
-    const bc3 = await keymaster.bindCredential(credential3, carol);
-    const bc4 = await keymaster.bindCredential(credential4, carol);
-
-    const vc3 = await keymaster.issueCredential(bc3);
-    const vc4 = await keymaster.issueCredential(bc4);
-
-    await keymaster.setCurrentId('Carol');
-
-    await keymaster.acceptCredential(vc1);
-    await keymaster.acceptCredential(vc2);
-    await keymaster.acceptCredential(vc3);
-    await keymaster.acceptCredential(vc4);
-
-    return [vc1, vc2, vc3, vc4];
-}
-
 describe('checkWallet', () => {
     it('should report no problems with empty wallet', async () => {
         const { checked, invalid, deleted } = await keymaster.checkWallet();
@@ -482,7 +433,7 @@ describe('checkWallet', () => {
     });
 
     it('should detect revoked credentials in wallet', async () => {
-        const credentials = await setupCredentials();
+        const credentials = await helper.setupCredentials();
         await keymaster.addName('credential-0', credentials[0]);
         await keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);
@@ -556,7 +507,7 @@ describe('fixWallet', () => {
     });
 
     it('should remove revoked credentials', async () => {
-        const credentials = await setupCredentials();
+        const credentials = await helper.setupCredentials();
         await keymaster.addName('credential-0', credentials[0]);
         await keymaster.addName('credential-2', credentials[2]);
         await keymaster.revokeCredential(credentials[0]);

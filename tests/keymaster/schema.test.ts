@@ -5,6 +5,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { mockSchema } from './helper.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -30,20 +31,6 @@ beforeEach(() => {
     cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 });
-
-const mockSchema = {    // eslint-disable-next-line
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "properties": {
-        "email": {
-            "format": "email",
-            "type": "string"
-        }
-    },
-    "required": [
-        "email"
-    ],
-    "type": "object"
-};
 
 describe('createSchema', () => {
     it('should create a credential from a schema', async () => {
