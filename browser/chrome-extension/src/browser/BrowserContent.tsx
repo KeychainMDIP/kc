@@ -7,6 +7,7 @@ import {
     Description,
     Groups,
     Image,
+    Lock,
     ManageSearch,
     PermIdentity,
     Schema,
@@ -26,6 +27,7 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 import SchemaTab from "./components/SchemaTab";
 import ImageTab from "./components/ImageTab";
 import DocumentTab from "./components/DocumentTab";
+import GroupVaultTab from "./components/GroupVaultTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -59,7 +61,8 @@ function BrowserContent() {
             urlTab === "groups" ||
             urlTab === "schemas" ||
             urlTab === "images" ||
-            urlTab === "documents"
+            urlTab === "documents" ||
+            urlTab === "vaults"
         )) {
             initialTab = "identities";
             setParamTab(urlTab);
@@ -192,6 +195,16 @@ function BrowserContent() {
                                 )}
                                 {currentId && (
                                     <Tab
+                                        icon={<Lock />}
+                                        label={menuOpen ? "Vaults" : ""}
+                                        value="vaults"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25, whiteSpace: 'nowrap' }}
+                                    />
+                                )}
+                                {currentId && (
+                                    <Tab
                                         icon={<Description />}
                                         label={menuOpen ? "Documents" : ""}
                                         value="documents"
@@ -257,6 +270,11 @@ function BrowserContent() {
                             {currentId && (
                                 <TabPanel value="images" sx={{ p: 0 }}>
                                     <ImageTab />
+                                </TabPanel>
+                            )}
+                            {currentId && (
+                                <TabPanel value="vaults" sx={{ p: 0 }}>
+                                    <GroupVaultTab />
                                 </TabPanel>
                             )}
                             {currentId && (

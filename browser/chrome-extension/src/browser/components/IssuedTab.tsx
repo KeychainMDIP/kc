@@ -117,7 +117,7 @@ function IssuedTab() {
     return (
         <Box>
             <WarningModal
-                title="Remoke Credential"
+                title="Revoke Credential"
                 warningText="Are you sure you want to rekove the credential?"
                 isOpen={open}
                 onClose={handleRevokeClose}

@@ -16,6 +16,8 @@ interface CredentialsContextValue {
     setCredentialString: Dispatch<SetStateAction<string>>;
     schemaList: string[];
     setSchemaList: Dispatch<SetStateAction<string[]>>;
+    vaultList: string[];
+    setVaultList: Dispatch<SetStateAction<string[]>>;
     groupList: string[];
     setGroupList: Dispatch<SetStateAction<string[]>>;
     imageList: string[];
@@ -55,6 +57,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [imageList, setImageList] = useState<string[]>([]);
     const [documentList, setDocumentList] = useState<string[]>([]);
     const [schemaList, setSchemaList] = useState<string[]>([]);
+    const [vaultList, setVaultList] = useState<string[]>([]);
     const [issuedList, setIssuedList] = useState<string[]>([]);
     const [issuedString, setIssuedString] = useState<string>("");
     const [issuedEdit, setIssuedEdit] = useState<boolean>(false);
@@ -118,6 +121,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setDocumentList,
         schemaList,
         setSchemaList,
+        vaultList,
+        setVaultList,
         issuedList,
         setIssuedList,
         issuedString,
