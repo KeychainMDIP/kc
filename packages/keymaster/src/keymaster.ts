@@ -1445,10 +1445,22 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async listNames(): Promise<Record<string, string>> {
+    async listNames(
+        options: {
+            includeIDs?: boolean
+        } = {}
+    ): Promise<Record<string, string>> {
+        const { includeIDs = false } = options;
         const wallet = await this.loadWallet();
+        const names = wallet.names || {};
 
-        return wallet.names || {};
+        if (includeIDs) {
+            for (const [name, id] of Object.entries(wallet.ids || {})) {
+                names[name] = id.did;
+            }
+        }
+
+        return names;
     }
 
     async addName(

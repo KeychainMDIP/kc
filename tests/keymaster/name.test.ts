@@ -225,6 +225,21 @@ describe('listNames', () => {
         }
     });
 
+    it('should include IDs when requested', async () => {
+        const bob = await keymaster.createId('Bob');
+        const alice = await keymaster.createId('Alice');
+
+        for (let i = 0; i < 10; i++) {
+            await keymaster.addName(`name-${i}`, bob);
+        }
+
+        const names = await keymaster.listNames({ includeIDs: true });
+
+        expect(Object.keys(names).length).toBe(12);
+        expect(names['Bob']).toBe(bob);
+        expect(names['Alice']).toBe(alice);
+    });
+
     it('should return empty list if no names added', async () => {
         const names = await keymaster.listNames();
 
