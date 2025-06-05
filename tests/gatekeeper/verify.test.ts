@@ -1,9 +1,8 @@
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
-import type { EcdsaJwkPair } from '@mdip/cipher/types';
 import HeliaClient from '@mdip/ipfs/helia';
+import TestHelper from './helper.ts';
 
 const mockConsole = {
     log: (): void => { },
@@ -16,6 +15,7 @@ const cipher = new CipherNode();
 const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+const helper = new TestHelper(gatekeeper, cipher);
 
 beforeAll(async () => {
     await ipfs.start();
@@ -29,123 +29,13 @@ beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
-async function createAgentOp(
-    keypair: EcdsaJwkPair,
-    options: {
-        version?: number;
-        registry?: string;
-        prefix?: string;
-    } = {}
-): Promise<Operation> {
-    const { version = 1, registry = 'local', prefix } = options;
-    const operation: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: version,
-            type: "agent",
-            registry: registry,
-        },
-        publicJwk: keypair.publicJwk,
-    };
-
-    if (prefix) {
-        operation.mdip!.prefix = prefix;
-    }
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature
-        }
-    };
-}
-
-async function createUpdateOp(
-    keypair: EcdsaJwkPair,
-    did: string,
-    doc: MdipDocument,
-    options: {
-        excludePrevid?: boolean;
-        mockPrevid?: string;
-        mockBlockid?: string;
-    } = {}
-): Promise<Operation> {
-    const { excludePrevid = false, mockPrevid } = options;
-    const current = await gatekeeper.resolveDID(did);
-    const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
-    const { mockBlockid } = options;
-
-    const operation: Operation = {
-        type: "update",
-        did,
-        previd,
-        ...(mockBlockid !== undefined && { blockid: mockBlockid }),
-        doc,
-    };
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signer: did,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
-
-async function createAssetOp(
-    agent: string,
-    keypair: EcdsaJwkPair,
-    options: {
-        registry?: string;
-        validUntil?: string | null;
-    } = {}
-): Promise<Operation> {
-    const { registry = 'local', validUntil = null } = options;
-    const dataAnchor: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: 1,
-            type: "asset",
-            registry,
-            validUntil: validUntil || undefined
-        },
-        controller: agent,
-        data: "mockData",
-    };
-
-    const msgHash = cipher.hashJSON(dataAnchor);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...dataAnchor,
-        signature: {
-            signer: agent,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
-
 describe('verifyDb', () => {
 
     it('should verify all DIDs in db', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await helper.createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
         const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
@@ -158,9 +48,9 @@ describe('verifyDb', () => {
 
     it('should get same results with cached verifications', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await helper.createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
         const verify1 = await gatekeeper.verifyDb();
@@ -171,9 +61,9 @@ describe('verifyDb', () => {
 
     it('should get same results with chatty turned off', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await helper.createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
         const verify1 = await gatekeeper.verifyDb();
@@ -184,13 +74,13 @@ describe('verifyDb', () => {
 
     it('should remove invalid DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await helper.createAssetOp(agentDID, keypair);
         const assetDID = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(assetDID);
         doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, assetDID, doc);
+        const updateOp = await helper.createUpdateOp(keypair, assetDID, doc);
         const ok = await gatekeeper.updateDID(updateOp);
         expect(ok).toBe(true);
 
@@ -207,18 +97,18 @@ describe('verifyDb', () => {
 
     it('should remove expired DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
         // create asset that should expire
         const validUntil = new Date().toISOString();
-        const assetOp1 = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil });
+        const assetOp1 = await helper.createAssetOp(agentDID, keypair, { registry: 'local', validUntil });
         await gatekeeper.createDID(assetOp1);
 
         // create asset that expires later
         const expires = new Date();
         expires.setHours(expires.getHours() + 1); // Add 1 hour
-        const assetOp3 = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil: expires.toISOString() });
+        const assetOp3 = await helper.createAssetOp(agentDID, keypair, { registry: 'local', validUntil: expires.toISOString() });
         await gatekeeper.createDID(assetOp3);
 
         const { verified, expired, invalid, total } = await gatekeeper.verifyDb();
@@ -234,9 +124,9 @@ describe('checkDIDs', () => {
 
     it('should check all DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'local', validUntil: new Date().toISOString() });
+        const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'local', validUntil: new Date().toISOString() });
         await gatekeeper.createDID(assetOp);
 
         const check = await gatekeeper.checkDIDs({ chatty: true });
@@ -252,13 +142,13 @@ describe('checkDIDs', () => {
 
     it('should report unconfirmed DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
+        const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'hyperswarm' });
         const assetDID = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(assetDID);
         doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, assetDID, doc);
+        const updateOp = await helper.createUpdateOp(keypair, assetDID, doc);
         const ok = await gatekeeper.updateDID(updateOp);
 
         const check = await gatekeeper.checkDIDs({ chatty: true });
@@ -278,9 +168,9 @@ describe('checkDIDs', () => {
 
     it('should report invalid DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agentDID, keypair);
+        const assetOp = await helper.createAssetOp(agentDID, keypair);
         await gatekeeper.createDID(assetOp);
 
         const dids = await gatekeeper.getDIDs();

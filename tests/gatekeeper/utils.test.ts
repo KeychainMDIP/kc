@@ -1,12 +1,12 @@
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
+import { Operation } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { compareOrdinals } from '@mdip/common/utils';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import type { EcdsaJwkPair } from '@mdip/cipher/types';
 import HeliaClient from '@mdip/ipfs/helia';
 import { isValidDID } from '@mdip/ipfs/utils';
+import TestHelper from './helper.ts';
 
 const mockConsole = {
     log: (): void => { },
@@ -19,6 +19,7 @@ const cipher = new CipherNode();
 const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+const helper = new TestHelper(gatekeeper, cipher);
 
 beforeAll(async () => {
     await ipfs.start();
@@ -31,116 +32,6 @@ afterAll(async () => {
 beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
-
-async function createAgentOp(
-    keypair: EcdsaJwkPair,
-    options: {
-        version?: number;
-        registry?: string;
-        prefix?: string;
-    } = {}
-): Promise<Operation> {
-    const { version = 1, registry = 'local', prefix } = options;
-    const operation: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: version,
-            type: "agent",
-            registry: registry,
-        },
-        publicJwk: keypair.publicJwk,
-    };
-
-    if (prefix) {
-        operation.mdip!.prefix = prefix;
-    }
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature
-        }
-    };
-}
-
-async function createUpdateOp(
-    keypair: EcdsaJwkPair,
-    did: string,
-    doc: MdipDocument,
-    options: {
-        excludePrevid?: boolean;
-        mockPrevid?: string;
-        mockBlockid?: string;
-    } = {}
-): Promise<Operation> {
-    const { excludePrevid = false, mockPrevid } = options;
-    const current = await gatekeeper.resolveDID(did);
-    const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
-    const { mockBlockid } = options;
-
-    const operation: Operation = {
-        type: "update",
-        did,
-        previd,
-        ...(mockBlockid !== undefined && { blockid: mockBlockid }),
-        doc,
-    };
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signer: did,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
-
-async function createAssetOp(
-    agent: string,
-    keypair: EcdsaJwkPair,
-    options: {
-        registry?: string;
-        validUntil?: string | null;
-    } = {}
-): Promise<Operation> {
-    const { registry = 'local', validUntil = null } = options;
-    const dataAnchor: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: 1,
-            type: "asset",
-            registry,
-            validUntil: validUntil || undefined
-        },
-        controller: agent,
-        data: "mockData",
-    };
-
-    const msgHash = cipher.hashJSON(dataAnchor);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...dataAnchor,
-        signature: {
-            signer: agent,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
 
 describe('constructor', () => {
     it('should throw exception on invalid parameters', async () => {
@@ -234,7 +125,7 @@ describe('generateDoc', () => {
 
     it('should generate an agent doc from a valid anchor', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.generateDID(agentOp);
         const doc = await gatekeeper.generateDoc(agentOp);
         const expected = {
@@ -270,7 +161,7 @@ describe('generateDoc', () => {
 
     it('should generate an agent doc with a custom prefix', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { prefix: 'did:custom' });
+        const agentOp = await helper.createAgentOp(keypair, { prefix: 'did:custom' });
         const did = await gatekeeper.generateDID(agentOp);
         const doc = await gatekeeper.generateDoc(agentOp);
         const expected = {
@@ -307,9 +198,9 @@ describe('generateDoc', () => {
 
     it('should generate an asset doc from a valid anchor', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agent, keypair);
+        const assetOp = await helper.createAssetOp(agent, keypair);
         const did = await gatekeeper.generateDID(assetOp);
         const doc = await gatekeeper.generateDoc(assetOp);
         const expected = {
@@ -335,7 +226,7 @@ describe('generateDoc', () => {
 
     it('should return an empty doc if mdip missing from anchor', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         delete agentOp.mdip;
         const doc = await gatekeeper.generateDoc(agentOp);
 
@@ -344,7 +235,7 @@ describe('generateDoc', () => {
 
     it('should return an empty doc if mdip version invalid', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 0 });
+        const agentOp = await helper.createAgentOp(keypair, { version: 0 });
         const doc = await gatekeeper.generateDoc(agentOp);
 
         expect(doc).toStrictEqual({});
@@ -352,7 +243,7 @@ describe('generateDoc', () => {
 
     it('should return an empty doc if mdip type invalid', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         // @ts-expect-error Testing invalid usage
         agentOp.mdip!.type = 'mock';
         const doc = await gatekeeper.generateDoc(agentOp);
@@ -362,7 +253,7 @@ describe('generateDoc', () => {
 
     it('should return an empty doc if mdip registry invalid', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mock' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'mock' });
         const doc = await gatekeeper.generateDoc(agentOp);
 
         expect(doc).toStrictEqual({});
@@ -423,7 +314,7 @@ describe('compareOrdinals', () => {
 describe('isValidDID', () => {
     it('should return true for valid DID', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const isValid = isValidDID(agentDID);
@@ -432,7 +323,7 @@ describe('isValidDID', () => {
 
     it('should return true for custome DID prefix', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, {});
+        const agentOp = await helper.createAgentOp(keypair, {});
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const isValid = isValidDID(agentDID);
@@ -454,7 +345,7 @@ describe('isValidDID', () => {
 
     it('should return false if prefix missing', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const didWithoutPrefix = agentDID.replace(/^did:/, '');
@@ -465,7 +356,7 @@ describe('isValidDID', () => {
 
     it('should return false if did scheme is missing', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const suffix = agentDID.split(':').pop();
@@ -477,7 +368,7 @@ describe('isValidDID', () => {
 
     it('should return false if suffix is not a valid CID', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agentDID = await gatekeeper.createDID(agentOp);
 
         const badDID = agentDID + 'mock';
@@ -497,10 +388,10 @@ describe('Test operation validation errors', () => {
 
     it('update error with missing didDocument', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         let doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
 
         delete doc.didDocument;
 
@@ -515,10 +406,10 @@ describe('Test operation validation errors', () => {
 
     it('update error with missing didDocument', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         let doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
 
         delete doc.didDocument;
 
@@ -533,10 +424,10 @@ describe('Test operation validation errors', () => {
 
     it('update error with deactivated didDocumentMetadata', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         let doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
 
         doc.didDocumentMetadata!.deactivated = true;
 
@@ -551,10 +442,10 @@ describe('Test operation validation errors', () => {
 
     it('update error without verificationMethod', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         let doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
 
         delete doc.didDocument!.verificationMethod;
 
@@ -569,10 +460,10 @@ describe('Test operation validation errors', () => {
 
     it('update error with empty verificationMethod', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         let doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
         doc = await gatekeeper.resolveDID(did);
 
         delete doc.didDocument!.verificationMethod![0].publicKeyJwk;
@@ -588,9 +479,9 @@ describe('Test operation validation errors', () => {
 
     it('create error with invalid type', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
-        let assetOp = await createAssetOp(agent, keypair);
+        let assetOp = await helper.createAssetOp(agent, keypair);
 
         // @ts-expect-error Testing invalid value
         assetOp.mdip!.type = "dummy";
@@ -606,7 +497,7 @@ describe('Test operation validation errors', () => {
 
     it('create error with invalid signature', async () => {
         const keypair = cipher.generateRandomJwk();
-        let agentOp = await createAgentOp(keypair);
+        let agentOp = await helper.createAgentOp(keypair);
         agentOp.mdip!.prefix = "dummy";
 
         try {

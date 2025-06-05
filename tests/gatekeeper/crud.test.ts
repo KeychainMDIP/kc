@@ -1,10 +1,9 @@
 import CipherNode from '@mdip/cipher/node';
-import { Operation, MdipDocument } from '@mdip/gatekeeper/types';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
-import type { EcdsaJwkPair } from '@mdip/cipher/types';
 import HeliaClient from '@mdip/ipfs/helia';
+import TestHelper from './helper.ts';
 
 const mockConsole = {
     log: (): void => { },
@@ -17,6 +16,7 @@ const cipher = new CipherNode();
 const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+const helper = new TestHelper(gatekeeper, cipher);
 
 beforeAll(async () => {
     await ipfs.start();
@@ -30,120 +30,10 @@ beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
-async function createAgentOp(
-    keypair: EcdsaJwkPair,
-    options: {
-        version?: number;
-        registry?: string;
-        prefix?: string;
-    } = {}
-): Promise<Operation> {
-    const { version = 1, registry = 'local', prefix } = options;
-    const operation: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: version,
-            type: "agent",
-            registry: registry,
-        },
-        publicJwk: keypair.publicJwk,
-    };
-
-    if (prefix) {
-        operation.mdip!.prefix = prefix;
-    }
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature
-        }
-    };
-}
-
-async function createUpdateOp(
-    keypair: EcdsaJwkPair,
-    did: string,
-    doc: MdipDocument,
-    options: {
-        excludePrevid?: boolean;
-        mockPrevid?: string;
-        mockBlockid?: string;
-    } = {}
-): Promise<Operation> {
-    const { excludePrevid = false, mockPrevid } = options;
-    const current = await gatekeeper.resolveDID(did);
-    const previd = excludePrevid ? undefined : mockPrevid ? mockPrevid : current.didDocumentMetadata?.versionId;
-    const { mockBlockid } = options;
-
-    const operation: Operation = {
-        type: "update",
-        did,
-        previd,
-        ...(mockBlockid !== undefined && { blockid: mockBlockid }),
-        doc,
-    };
-
-    const msgHash = cipher.hashJSON(operation);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...operation,
-        signature: {
-            signer: did,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
-
-async function createAssetOp(
-    agent: string,
-    keypair: EcdsaJwkPair,
-    options: {
-        registry?: string;
-        validUntil?: string | null;
-    } = {}
-): Promise<Operation> {
-    const { registry = 'local', validUntil = null } = options;
-    const dataAnchor: Operation = {
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: {
-            version: 1,
-            type: "asset",
-            registry,
-            validUntil: validUntil || undefined
-        },
-        controller: agent,
-        data: "mockData",
-    };
-
-    const msgHash = cipher.hashJSON(dataAnchor);
-    const signature = cipher.signHash(msgHash, keypair.privateJwk);
-
-    return {
-        ...dataAnchor,
-        signature: {
-            signer: agent,
-            signed: new Date().toISOString(),
-            hash: msgHash,
-            value: signature,
-        }
-    };
-}
-
 describe('createDID', () => {
     it('should create DID from agent operation', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
 
         const did = await gatekeeper.createDID(agentOp);
 
@@ -152,7 +42,7 @@ describe('createDID', () => {
 
     it('should create DID for local registry', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'local' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'local' });
 
         const did = await gatekeeper.createDID(agentOp);
 
@@ -161,7 +51,7 @@ describe('createDID', () => {
 
     it('should throw exception on invalid version', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 2 });
+        const agentOp = await helper.createAgentOp(keypair, { version: 2 });
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -174,7 +64,7 @@ describe('createDID', () => {
     // eslint-disable-next-line
     it('should throw exception on invalid registry', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -186,7 +76,7 @@ describe('createDID', () => {
 
     it('should throw exception on unsupported registry', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'TFTC' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
 
         const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['hyperswarm'] });
 
@@ -200,7 +90,7 @@ describe('createDID', () => {
 
     it('should throw exception on invalid type', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'mockRegistry' });
         // @ts-expect-error Testing invalid usage
         agentOp.mdip!.type = 'mock';
 
@@ -224,7 +114,7 @@ describe('createDID', () => {
         const keypair = cipher.generateRandomJwk();
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             // @ts-expect-error Testing invalid usage
             agentOp.type = 'mock';
             await gatekeeper.createDID(agentOp);
@@ -234,7 +124,7 @@ describe('createDID', () => {
         }
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             agentOp.created = 'mock';
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
@@ -243,7 +133,7 @@ describe('createDID', () => {
         }
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             agentOp.mdip = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
@@ -252,7 +142,7 @@ describe('createDID', () => {
         }
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             agentOp.created = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
@@ -261,7 +151,7 @@ describe('createDID', () => {
         }
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             agentOp.signature = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
@@ -271,7 +161,7 @@ describe('createDID', () => {
         }
 
         try {
-            const agentOp = await createAgentOp(keypair);
+            const agentOp = await helper.createAgentOp(keypair);
             agentOp.publicJwk = undefined;
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
@@ -283,7 +173,7 @@ describe('createDID', () => {
     it('should throw exception on create op size exceeding limit', async () => {
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
 
         try {
             await gk.createDID(agentOp);
@@ -295,9 +185,9 @@ describe('createDID', () => {
 
     it('should create DID from asset operation', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agent, keypair);
+        const assetOp = await helper.createAssetOp(agent, keypair);
 
         const did = await gatekeeper.createDID(assetOp);
 
@@ -306,12 +196,12 @@ describe('createDID', () => {
 
     it('should throw exception on invalid create asset operation', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
 
         try {
             // inconsistent registry
-            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
+            const assetOp = await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -321,7 +211,7 @@ describe('createDID', () => {
 
         try {
             // invalid controller
-            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
+            const assetOp = await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             assetOp.controller = 'mock';
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
@@ -331,7 +221,7 @@ describe('createDID', () => {
 
         try {
             // invalid signature
-            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm' });
+            const assetOp = await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' });
             assetOp.signature = undefined;
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
@@ -341,7 +231,7 @@ describe('createDID', () => {
 
         try {
             // invalid validUntil date
-            const assetOp = await createAssetOp(agent, keypair, { registry: 'hyperswarm', validUntil: 'mock' });
+            const assetOp = await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm', validUntil: 'mock' });
             await gatekeeper.createDID(assetOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -355,7 +245,7 @@ describe('createDID', () => {
         try {
             for (let i = 0; i < 10; i++) {
                 const keypair = cipher.generateRandomJwk();
-                const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+                const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
                 await gk.createDID(agentOp);
             }
             throw new ExpectedExceptionError();
@@ -368,7 +258,7 @@ describe('createDID', () => {
 describe('resolveDID', () => {
     it('should resolve a valid agent DID', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const opid = await gatekeeper.generateCID(agentOp);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
@@ -409,11 +299,11 @@ describe('resolveDID', () => {
     it('should resolve a valid agent DID after an update', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
@@ -454,12 +344,12 @@ describe('resolveDID', () => {
     it('should resolve confirmed version when specified', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const expected = await gatekeeper.resolveDID(did);
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, update);
+        const updateOp = await helper.createUpdateOp(keypair, did, update);
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
@@ -471,12 +361,12 @@ describe('resolveDID', () => {
     it('should resolve verified version after an update', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         await gatekeeper.resolveDID(did, { confirm: true });
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, update);
+        const updateOp = await helper.createUpdateOp(keypair, did, update);
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
@@ -518,11 +408,11 @@ describe('resolveDID', () => {
     it('should resolve unconfirmed version when specified', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
         const did = await gatekeeper.createDID(agentOp);
         const update = await gatekeeper.resolveDID(did);
         update.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, update);
+        const updateOp = await helper.createUpdateOp(keypair, did, update);
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did, { confirm: false });
@@ -563,7 +453,7 @@ describe('resolveDID', () => {
     it('should resolve version at specified time', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
 
         let expected;
@@ -577,7 +467,7 @@ describe('resolveDID', () => {
             }
 
             update.didDocumentData = { mock: 1 };
-            const updateOp = await createUpdateOp(keypair, did, update);
+            const updateOp = await helper.createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
         }
 
@@ -588,7 +478,7 @@ describe('resolveDID', () => {
     it('should resolve specified version', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
 
         let expected;
@@ -602,7 +492,7 @@ describe('resolveDID', () => {
             }
 
             update.didDocumentData = { mock: 1 };
-            const updateOp = await createUpdateOp(keypair, did, update);
+            const updateOp = await helper.createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
         }
 
@@ -613,14 +503,14 @@ describe('resolveDID', () => {
     it('should resolve all specified versions', async () => {
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
 
         // Add 10 versions
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
             update.didDocumentData = { mock: 1 };
-            const updateOp = await createUpdateOp(keypair, did, update);
+            const updateOp = await helper.createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
         }
 
@@ -632,9 +522,9 @@ describe('resolveDID', () => {
 
     it('should resolve a valid asset DID', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
-        const assetOp = await createAssetOp(agent, keypair);
+        const assetOp = await helper.createAssetOp(agent, keypair);
         delete assetOp.mdip!.validUntil;
         const opid = await gatekeeper.generateCID(assetOp);
         const did = await gatekeeper.createDID(assetOp);
@@ -743,7 +633,7 @@ describe('resolveDID', () => {
 
     it('should throw an exception on invalid signature in create op', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
 
         const events = await db.getEvents(did);
@@ -761,11 +651,11 @@ describe('resolveDID', () => {
 
     it('should throw an exception on invalid signature in update op', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
         await gatekeeper.updateDID(updateOp);
 
         const events = await db.getEvents(did);
@@ -783,15 +673,15 @@ describe('resolveDID', () => {
 
     it('should throw an exception on invalid operation previd in update op', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc1 = await gatekeeper.resolveDID(did);
         doc1.didDocumentData = { mock: 1 };
-        const updateOp1 = await createUpdateOp(keypair, did, doc1);
+        const updateOp1 = await helper.createUpdateOp(keypair, did, doc1);
         await gatekeeper.updateDID(updateOp1);
         const doc2 = await gatekeeper.resolveDID(did);
         doc2.didDocumentData = { mock: 2 };
-        const updateOp2 = await createUpdateOp(keypair, did, doc2);
+        const updateOp2 = await helper.createUpdateOp(keypair, did, doc2);
         await gatekeeper.updateDID(updateOp2);
 
         const events = await db.getEvents(did);
@@ -811,11 +701,11 @@ describe('resolveDID', () => {
 describe('updateDID', () => {
     it('should update a valid DID', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         doc.didDocumentData = { mock: 1 };
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
@@ -829,13 +719,13 @@ describe('updateDID', () => {
 
     it('should increment version with each update', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
         for (let i = 0; i < 10; i++) {
             doc.didDocumentData = { mock: i };
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             const ok = await gatekeeper.updateDID(updateOp);
             const updatedDoc = await gatekeeper.resolveDID(did);
 
@@ -846,10 +736,10 @@ describe('updateDID', () => {
 
     it('should return false if update operation is invalid', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
-        const updateOp = await createUpdateOp(keypair, did, doc);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
         updateOp.doc!.didDocumentData = 'mock';
         const ok = await gatekeeper.updateDID(updateOp);
 
@@ -858,12 +748,12 @@ describe('updateDID', () => {
 
     it('should throw exception on invalid update operation', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
         try {
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             delete updateOp.signature;
             await gatekeeper.updateDID(updateOp);
             throw new ExpectedExceptionError();
@@ -872,7 +762,7 @@ describe('updateDID', () => {
         }
 
         try {
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             delete updateOp.did;
             await gatekeeper.updateDID(updateOp);
             throw new ExpectedExceptionError();
@@ -883,13 +773,13 @@ describe('updateDID', () => {
 
     it('should throw exception on update op size exceeding limit', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
         try {
             const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             await gk.updateDID(updateOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -899,13 +789,13 @@ describe('updateDID', () => {
 
     it('should verify DID that has been updated multiple times', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
 
         for (let i = 0; i < 10; i++) {
             doc.didDocumentData = { mock: i };
-            const updateOp = await createUpdateOp(keypair, did, doc);
+            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             await gatekeeper.updateDID(updateOp);
         }
 
@@ -917,7 +807,7 @@ describe('updateDID', () => {
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'TFTC'] });
 
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await createAgentOp(keypair, { registry: 'TFTC' });
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
 
         const did = await gk.createDID(agentOp);
         const doc = await gk.resolveDID(did);
@@ -925,7 +815,7 @@ describe('updateDID', () => {
         try {
             for (let i = 0; i < 10; i++) {
                 doc.didDocumentData = { mock: i };
-                const updateOp = await createUpdateOp(keypair, did, doc);
+                const updateOp = await helper.createUpdateOp(keypair, did, doc);
                 await gk.updateDID(updateOp);
             }
             throw new ExpectedExceptionError();
