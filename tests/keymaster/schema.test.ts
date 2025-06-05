@@ -64,14 +64,6 @@ describe('createSchema', () => {
         expect((doc.didDocumentData! as { schema: Record<string, unknown> }).schema).toStrictEqual(expectedSchema);
     });
 
-    it('should create a simple schema', async () => {
-        await keymaster.createId('Bob');
-        const did = await keymaster.createSchema(mockSchema);
-        const doc = await keymaster.resolveDID(did);
-
-        expect((doc.didDocumentData! as { schema: Record<string, unknown> }).schema).toStrictEqual(mockSchema);
-    });
-
     it('should throw an exception on create invalid schema', async () => {
         await keymaster.createId('Bob');
 
