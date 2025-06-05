@@ -30,6 +30,7 @@ import {
     AttachFile,
     Badge,
     Groups,
+    Email,
     Image,
     Key,
     LibraryAdd,
@@ -38,7 +39,6 @@ import {
     List,
     Lock,
     Login,
-    Message,
     MarkunreadMailbox,
     PermIdentity,
     PictureAsPdf,
@@ -110,11 +110,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
-    const [messagesTab, setMessagesTab] = useState('');
-    const [messageDID, setMessageDID] = useState('');
-    const [messageString, setMessageString] = useState('');
-    const [sendMessage, setSendMessage] = useState('');
-    const [messageRecipient, setMessageRecipient] = useState('');
+    const [dmailTab, setDmailTab] = useState('');
+    const [dmailDID, setDmailDID] = useState('');
+    const [dmailString, setDmailString] = useState('');
+    const [selectedDmail, setSelectedDmail] = useState(null);
+    const [sendDmail, setSendDmail] = useState('');
+    const [dmailRecipient, setDmailRecipient] = useState('');
     const [encryptedDID, setEncryptedDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
@@ -198,7 +199,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 setTab('identity');
                 setAssetsTab('schemas');
                 setCredentialTab('held');
-                setMessagesTab('receive');
+                setDmailTab('receive');
             }
             else {
                 setCurrentId('');
@@ -214,10 +215,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedName('');
             setSelectedHeld('');
             setSelectedIssued('');
-            setMessageString('');
-            setSendMessage('');
-            setMessageRecipient('');
-            setMessageDID('');
+            setDmailString('');
+            setSendDmail('');
+            setDmailRecipient('');
+            setDmailDID('');
             setEncryptedDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
@@ -989,27 +990,27 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function resolveMessage(did) {
+    async function resolveDmail(did) {
         try {
             const doc = await keymaster.resolveDID(did);
-            setMessageString(JSON.stringify(doc, null, 4));
+            setDmailString(JSON.stringify(doc, null, 4));
         } catch (error) {
             showError(error);
         }
     }
 
-    async function decryptMessage(did) {
+    async function decryptDmail(did) {
         try {
-            const message = await keymaster.decryptMessage(did);
-            setMessageString(message);
+            const dmail = await keymaster.decryptMessage(did);
+            setDmailString(dmail);
         } catch (error) {
             showError(error);
         }
     }
 
-    async function encryptMessage() {
+    async function encryptDmail() {
         try {
-            const did = await keymaster.encryptMessage(sendMessage, messageRecipient, { registry });
+            const did = await keymaster.encryptMessage(sendDmail, dmailRecipient, { registry });
             setEncryptedDID(did);
         } catch (error) {
             showError(error);
@@ -1813,7 +1814,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <Tab key="credentials" value="credentials" label={'Credentials'} icon={<Badge />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="messages" value="messages" label={'Messages'} icon={<Message />} />
+                            <Tab key="dmail" value="dmail" label={'Dmail'} icon={<Email />} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} icon={<Key />} />
@@ -2932,12 +2933,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             }
                         </Box>
                     }
-                    {tab === 'messages' &&
+                    {tab === 'dmail' &&
                         <Box>
                             <Box>
                                 <Tabs
-                                    value={messagesTab}
-                                    onChange={(event, newTab) => setMessagesTab(newTab)}
+                                    value={dmailTab}
+                                    onChange={(event, newTab) => setDmailTab(newTab)}
                                     indicatorColor="primary"
                                     textColor="primary"
                                     variant="scrollable"
@@ -2947,7 +2948,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
-                            {messagesTab === 'receive' &&
+                            {dmailTab === 'receive' &&
                                 <Box>
                                     <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
                                         <Table style={{ width: '800px' }}>
@@ -2955,22 +2956,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableRow>
                                                     <TableCell style={{ width: '100%' }}>
                                                         <TextField
-                                                            label="Message DID"
+                                                            label="Dmail DID"
                                                             style={{ width: '500px' }}
-                                                            value={messageDID}
-                                                            onChange={(e) => setMessageDID(e.target.value.trim())}
+                                                            value={dmailDID}
+                                                            onChange={(e) => setDmailDID(e.target.value.trim())}
                                                             fullWidth
                                                             margin="normal"
                                                             inputProps={{ maxLength: 80 }}
                                                         />
                                                     </TableCell>
                                                     <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => resolveMessage(messageDID)} disabled={!messageDID}>
+                                                        <Button variant="contained" color="primary" onClick={() => resolveDmail(dmailDID)} disabled={!dmailDID}>
                                                             Resolve
                                                         </Button>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => decryptMessage(messageDID)} disabled={!messageDID}>
+                                                        <Button variant="contained" color="primary" onClick={() => decryptDmail(dmailDID)} disabled={!dmailDID}>
                                                             Decrypt
                                                         </Button>
                                                     </TableCell>
@@ -2979,22 +2980,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </Table>
                                     </TableContainer>
                                     <textarea
-                                        value={messageString}
+                                        value={dmailString}
                                         readOnly
                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                     />
                                 </Box>
                             }
-                            {messagesTab === 'send' &&
+                            {dmailTab === 'send' &&
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
                                             <Select
                                                 style={{ width: '300px' }}
-                                                value={messageRecipient}
+                                                value={dmailRecipient}
                                                 fullWidth
                                                 displayEmpty
-                                                onChange={(event) => setMessageRecipient(event.target.value)}
+                                                onChange={(event) => setDmailRecipient(event.target.value)}
                                             >
                                                 <MenuItem value="" disabled>
                                                     Select recipient
@@ -3008,20 +3009,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </Grid>
                                     </Grid>
                                     <p />
-                                    {messageRecipient &&
+                                    {dmailRecipient &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
                                                     <textarea
-                                                        value={sendMessage}
-                                                        onChange={(e) => setSendMessage(e.target.value)}
+                                                        value={sendDmail}
+                                                        onChange={(e) => setSendDmail(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                                     />
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
-                                                            Encrypt Message
+                                                        <Button variant="contained" color="primary" onClick={encryptDmail} disabled={!sendDmail || !registry}>
+                                                            Encrypt Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
