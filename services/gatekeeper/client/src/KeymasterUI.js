@@ -30,6 +30,7 @@ import {
     AttachFile,
     Badge,
     Groups,
+    Email,
     Image,
     Key,
     LibraryAdd,
@@ -38,7 +39,6 @@ import {
     List,
     Lock,
     Login,
-    Message,
     MarkunreadMailbox,
     PermIdentity,
     PictureAsPdf,
@@ -110,12 +110,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [disableSendResponse, setDisableSendResponse] = useState(true);
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
-    const [messagesTab, setMessagesTab] = useState('');
-    const [messageDID, setMessageDID] = useState('');
-    const [messageString, setMessageString] = useState('');
-    const [sendMessage, setSendMessage] = useState('');
-    const [messageRecipient, setMessageRecipient] = useState('');
-    const [encryptedDID, setEncryptedDID] = useState('');
+    const [dmailTab, setDmailTab] = useState('');
+    const [dmailDID, setDmailDID] = useState('');
+    const [dmailString, setDmailString] = useState('');
+    const [dmailSubject, setDmailSubject] = useState('');
+    const [dmailBody, setDmailBody] = useState('');
+    const [dmailTo, setDmailTo] = useState('');
+    const [dmailVaultDID, setDmailVaultDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -143,6 +144,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [editLoginOpen, setEditLoginOpen] = useState(false);
     const [revealLoginOpen, setRevealLoginOpen] = useState(false);
     const [revealLogin, setRevealLogin] = useState(null);
+    const [revealDmailOpen, setRevealDmailOpen] = useState(false);
+    const [revealDmail, setRevealDmail] = useState(null);
 
     useEffect(() => {
         checkForChallenge();
@@ -198,7 +201,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 setTab('identity');
                 setAssetsTab('schemas');
                 setCredentialTab('held');
-                setMessagesTab('receive');
+                setDmailTab('receive');
             }
             else {
                 setCurrentId('');
@@ -214,11 +217,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedName('');
             setSelectedHeld('');
             setSelectedIssued('');
-            setMessageString('');
-            setSendMessage('');
-            setMessageRecipient('');
-            setMessageDID('');
-            setEncryptedDID('');
+            setDmailString('');
+            setDmailBody('');
+            setDmailTo('');
+            setDmailDID('');
+            setDmailVaultDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
             setSelectedVaultName('');
@@ -989,28 +992,30 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function resolveMessage(did) {
+    async function importDmail(did) {
         try {
-            const doc = await keymaster.resolveDID(did);
-            setMessageString(JSON.stringify(doc, null, 4));
+            const ok = await keymaster.importDmail(did);
+
+            if (ok) {
+                showAlert("Dmail import successful");
+            } else {
+                showError("Dmail import failed");
+            }
         } catch (error) {
             showError(error);
         }
     }
 
-    async function decryptMessage(did) {
+    async function sendDmail() {
         try {
-            const message = await keymaster.decryptMessage(did);
-            setMessageString(message);
-        } catch (error) {
-            showError(error);
-        }
-    }
+            const dmail = {
+                to: [dmailTo],
+                subject: dmailSubject,
+                body: dmailBody,
+            };
 
-    async function encryptMessage() {
-        try {
-            const did = await keymaster.encryptMessage(sendMessage, messageRecipient, { registry });
-            setEncryptedDID(did);
+            const did = await keymaster.sendDmail(dmail, { registry });
+            setDmailVaultDID(did);
         } catch (error) {
             showError(error);
         }
@@ -1596,6 +1601,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 return;
             }
 
+            if (item.dmail) {
+                setRevealDmail(item.dmail);
+                setRevealDmailOpen(true);
+                return;
+            }
+
             showError(`Unknown item type ${name}`);
         } catch (error) {
             showError(error);
@@ -1613,7 +1624,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    function getVaultItemIcon(item) {
+    function getVaultItemIcon(name, item) {
         const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
 
         if (!item || !item.type) {
@@ -1629,7 +1640,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
 
         if (item.type === 'application/json') {
-            return <Login style={iconStyle} />;
+            if (name.startsWith('login:')) {
+                return <Login style={iconStyle} />;
+            }
+
+            if (name === 'dmail') {
+                return <Email style={iconStyle} />;
+            }
+
+            return <Token style={iconStyle} />;
         }
 
         // Add more types as needed, e.g. images, pdf, etc.
@@ -1714,7 +1733,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         const handleSubmit = () => {
             if (onOK) {
                 onOK(service, username, password);
-
             } else {
                 onClose();
             }
@@ -1760,6 +1778,87 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 <DialogActions>
                     <Button onClick={handleClose} variant="contained" color="primary">Cancel</Button>
                     <Button onClick={handleSubmit} variant="contained" color="primary" disabled={!service || !username || !password}>
+                        OK
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        );
+    }
+
+    function DmailDialog({ open, onClose, onOK, dmail, readOnly }) {
+        const [toList, setToList] = useState([]);
+        const [ccList, setCcList] = useState([]);
+        const [subject, setSubject] = useState('');
+        const [body, setBody] = useState('');
+
+        useEffect(() => {
+            setToList(dmail?.to || []);
+            setCcList(dmail?.cc || []);
+            setSubject(dmail?.subject || '');
+            setBody(dmail?.body || '');
+        }, [dmail, open]);
+
+        const handleSubmit = () => {
+            if (onOK) {
+                onOK();
+            } else {
+                onClose();
+            }
+        };
+
+        const handleClose = () => {
+            setToList([]);
+            setCcList([]);
+            setSubject('');
+            setBody('')
+            onClose();
+        };
+
+        return (
+            <Dialog open={open} onClose={handleClose}>
+                <DialogTitle>Dmail</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="To"
+                        fullWidth
+                        value={toList.join(', ')}
+                        onChange={e => setToList(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="cc"
+                        fullWidth
+                        value={ccList.join(', ')}
+                        onChange={e => setCcList(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Subject"
+                        fullWidth
+                        value={subject}
+                        onChange={e => setSubject(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                    <TextField
+                        margin="dense"
+                        label="Body"
+                        fullWidth
+                        multiline
+                        minRows={10}
+                        maxRows={30}
+                        value={body}
+                        onChange={e => setBody(e.target.value)}
+                        InputProps={{ readOnly }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleClose} variant="contained" color="primary">Cancel</Button>
+                    <Button onClick={handleSubmit} variant="contained" color="primary" disabled={!subject || !body}>
                         OK
                     </Button>
                 </DialogActions>
@@ -1813,7 +1912,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <Tab key="credentials" value="credentials" label={'Credentials'} icon={<Badge />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="messages" value="messages" label={'Messages'} icon={<Message />} />
+                            <Tab key="dmail" value="dmail" label={'Dmail'} icon={<Email />} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} icon={<Key />} />
@@ -2628,23 +2727,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 >
                                                                     Add login...
                                                                 </Button>
-                                                                <LoginDialog
-                                                                    open={editLoginOpen}
-                                                                    onClose={() => setEditLoginOpen(false)}
-                                                                    onOK={addLoginVaultItem}
-                                                                />
-                                                                <LoginDialog
-                                                                    open={revealLoginOpen}
-                                                                    onClose={() => setRevealLoginOpen(false)}
-                                                                    login={revealLogin}
-                                                                    readOnly
-                                                                />
                                                             </TableCell>
                                                         </TableRow>
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
-                                                                    {getVaultItemIcon(item)}
+                                                                    {getVaultItemIcon(name, item)}
                                                                     {name}
                                                                 </TableCell>
                                                                 <TableCell>
@@ -2932,12 +3020,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             }
                         </Box>
                     }
-                    {tab === 'messages' &&
+                    {tab === 'dmail' &&
                         <Box>
                             <Box>
                                 <Tabs
-                                    value={messagesTab}
-                                    onChange={(event, newTab) => setMessagesTab(newTab)}
+                                    value={dmailTab}
+                                    onChange={(event, newTab) => setDmailTab(newTab)}
                                     indicatorColor="primary"
                                     textColor="primary"
                                     variant="scrollable"
@@ -2947,7 +3035,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
-                            {messagesTab === 'receive' &&
+                            {dmailTab === 'receive' &&
                                 <Box>
                                     <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
                                         <Table style={{ width: '800px' }}>
@@ -2955,23 +3043,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <TableRow>
                                                     <TableCell style={{ width: '100%' }}>
                                                         <TextField
-                                                            label="Message DID"
+                                                            label="Dmail DID"
                                                             style={{ width: '500px' }}
-                                                            value={messageDID}
-                                                            onChange={(e) => setMessageDID(e.target.value.trim())}
+                                                            value={dmailDID}
+                                                            onChange={(e) => setDmailDID(e.target.value.trim())}
                                                             fullWidth
                                                             margin="normal"
                                                             inputProps={{ maxLength: 80 }}
                                                         />
                                                     </TableCell>
                                                     <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => resolveMessage(messageDID)} disabled={!messageDID}>
-                                                            Resolve
-                                                        </Button>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => decryptMessage(messageDID)} disabled={!messageDID}>
-                                                            Decrypt
+                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailDID)} disabled={!dmailDID}>
+                                                            Import
                                                         </Button>
                                                     </TableCell>
                                                 </TableRow>
@@ -2979,59 +3062,71 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </Table>
                                     </TableContainer>
                                     <textarea
-                                        value={messageString}
+                                        value={dmailString}
                                         readOnly
                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                     />
                                 </Box>
                             }
-                            {messagesTab === 'send' &&
+                            {dmailTab === 'send' &&
                                 <Box>
                                     <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                         <Grid item>
-                                            <Select
-                                                style={{ width: '300px' }}
-                                                value={messageRecipient}
-                                                fullWidth
-                                                displayEmpty
-                                                onChange={(event) => setMessageRecipient(event.target.value)}
-                                            >
-                                                <MenuItem value="" disabled>
-                                                    Select recipient
-                                                </MenuItem>
-                                                {agentList.map((name, index) => (
-                                                    <MenuItem value={name} key={index}>
-                                                        {name}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
+                                            <Autocomplete
+                                                freeSolo
+                                                options={agentList || []} // array of options, e.g. DIDs or names
+                                                value={dmailTo}
+                                                onChange={(event, newValue) => setDmailTo(newValue)}
+                                                onInputChange={(event, newInputValue) => setDmailTo(newInputValue)}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        label="Name or DID"
+                                                        style={{ width: '500px' }}
+                                                        margin="normal"
+                                                        inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                        fullWidth
+                                                    />
+                                                )}
+                                            />
                                         </Grid>
                                     </Grid>
                                     <p />
-                                    {messageRecipient &&
+                                    {dmailTo &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
+                                                    <TextField
+                                                        label="Subject"
+                                                        style={{ width: '800px' }}
+                                                        value={dmailSubject}
+                                                        onChange={e => setDmailSubject(e.target.value)}
+                                                        margin="normal"
+                                                        inputProps={{ maxLength: 120 }}
+                                                        fullWidth
+                                                    />
+                                                </Grid>
+                                                <Grid item>
                                                     <textarea
-                                                        value={sendMessage}
-                                                        onChange={(e) => setSendMessage(e.target.value)}
+                                                        value={dmailBody}
+                                                        onChange={(e) => setDmailBody(e.target.value)}
                                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                                     />
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={encryptMessage} disabled={!sendMessage || !registry}>
-                                                            Encrypt Message
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailBody || !registry}>
+                                                            Send Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
                                                         <RegistrySelect />
                                                     </Grid>
                                                 </Grid>
-                                                {encryptedDID &&
+                                                {dmailVaultDID &&
                                                     <Grid item>
                                                         <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {encryptedDID}
+                                                            {dmailVaultDID}
                                                         </Typography>
                                                     </Grid>
                                                 }
@@ -3263,6 +3358,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             Special Access
                         </Box>
                     }
+                    <LoginDialog
+                        open={editLoginOpen}
+                        onClose={() => setEditLoginOpen(false)}
+                        onOK={addLoginVaultItem}
+                    />
+                    <LoginDialog
+                        open={revealLoginOpen}
+                        onClose={() => setRevealLoginOpen(false)}
+                        login={revealLogin}
+                        readOnly
+                    />
+                    <DmailDialog
+                        open={revealDmailOpen}
+                        onClose={() => setRevealDmailOpen(false)}
+                        dmail={revealDmail}
+                        readOnly
+                    />
                 </Box>
             </header>
         </div >
