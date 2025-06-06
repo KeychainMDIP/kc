@@ -27,6 +27,7 @@ export interface IDInfo {
     index: number
     held?: string[]
     owned?: string[]
+    dmail?: Record<string, any>
 }
 
 export interface WalletFile {
@@ -248,6 +249,14 @@ export interface WaitUntilReadyOptions {
     chatty?: boolean;
     becomeChattyAfter?: number;
     maxRetries?: number;
+}
+
+export interface DmailMessage {
+    to: string[];
+    cc?: string[];
+    subject: string;
+    body: string;
+    inReplyTo?: string;
 }
 
 export interface KeymasterInterface {

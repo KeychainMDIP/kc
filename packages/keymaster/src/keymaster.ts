@@ -21,6 +21,7 @@ import {
     EncryptedMessage,
     FileAssetOptions,
     CreateResponseOptions,
+    DmailMessage,
     EncryptOptions,
     FileAsset,
     FixWalletResult,
@@ -48,6 +49,7 @@ import {
     EcdsaJwkPrivate,
     EcdsaJwkPublic
 } from '@mdip/cipher/types';
+import { isValidDID } from '@mdip/ipfs/utils';
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -61,6 +63,15 @@ const DefaultSchema = {
         "propertyName"
     ]
 };
+
+export enum DmailTags {
+    DMAIL = 'dmail',
+    INBOX = 'inbox',
+    SENT = 'sent',
+    ARCHIVED = 'archived',
+    DRAFT = 'draft',
+    TRASH = 'trash',
+}
 
 export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
@@ -2945,5 +2956,120 @@ export default class Keymaster implements KeymasterInterface {
         catch (error) {
             return null;
         }
+    }
+
+    async addToDmail(
+        did: string,
+        tags: string[],
+        owner?: string
+    ): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(owner, wallet);
+
+        if (!id.dmail) {
+            id.dmail = {};
+        }
+
+        id.dmail[did] = { tags };
+
+        return this.saveWallet(wallet);
+    }
+
+    async removeFromDmail(
+        did: string,
+        owner: string
+    ): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(owner, wallet);
+
+        if (!id.dmail || !id.dmail[did]) {
+            return true;
+        }
+
+        delete id.dmail[did];
+
+        return this.saveWallet(wallet);
+    }
+
+    async verifyDmailList(list: string[]): Promise<string[]> {
+        const nameList = await this.listNames({ includeIDs: true });
+        let newList = [];
+
+        for (const id of list) {
+            if (typeof id !== 'string') {
+                throw new InvalidParameterError(`Invalid recipient type: ${typeof id}`);
+            }
+
+            if (id in nameList) {
+                const did = nameList[id];
+                const isAgent = await this.testAgent(did);
+
+                if (isAgent) {
+                    newList.push(did);
+                    continue;
+                }
+
+                throw new InvalidParameterError(`Invalid recipient name: ${id}`);
+            }
+
+            if (isValidDID(id)) {
+                newList.push(id);
+                continue;
+            }
+
+            throw new InvalidParameterError(`Invalid recipient: ${id}`);
+        }
+
+        return newList;
+    }
+
+    async sendDmail(dmail: DmailMessage, options: GroupVaultOptions = {}): Promise<string> {
+        if (!dmail.to || !Array.isArray(dmail.to) || dmail.to.length === 0) {
+            throw new InvalidParameterError('dmail.to');
+        }
+
+        if (!dmail.subject) {
+            throw new InvalidParameterError('dmail.subject');
+        }
+
+        if (!dmail.body) {
+            throw new InvalidParameterError('dmail.body');
+        }
+
+        dmail.to = await this.verifyDmailList(dmail.to);
+        dmail.cc = dmail.cc ? await this.verifyDmailList(dmail.cc) : [];
+
+        const did = await this.createGroupVault(options);
+
+        for (const toDID of dmail.to) {
+            await this.addGroupVaultMember(did, toDID);
+        }
+
+        for (const ccDID of dmail.cc) {
+            await this.addGroupVaultMember(did, ccDID);
+        }
+
+        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
+        await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
+
+        await this.addToDmail(did, [DmailTags.SENT]);
+
+        return did;
+    }
+
+    async importDmail(did: string): Promise<boolean> {
+        const isGroupVault = await this.testGroupVault(did);
+
+        if (!isGroupVault) {
+            return false;
+        }
+
+        const items = await this.listGroupVaultItems(did);
+
+        if (!('dmail' in items)) {
+            return false;
+        }
+
+        return this.addToDmail(did, [DmailTags.INBOX]);
     }
 }

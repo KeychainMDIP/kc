@@ -48,7 +48,6 @@ import {
 } from "@mui/icons-material";
 import axios from 'axios';
 import { Buffer } from 'buffer';
-import { isValidDID } from '@mdip/ipfs/utils';
 import './App.css';
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
@@ -993,19 +992,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function resolveDmail(did) {
+    async function importDmail(did) {
         try {
-            const doc = await keymaster.resolveDID(did);
-            setDmailString(JSON.stringify(doc, null, 4));
-        } catch (error) {
-            showError(error);
-        }
-    }
+            const ok = await keymaster.importDmail(did);
 
-    async function decryptDmail(did) {
-        try {
-            const dmail = await keymaster.decryptMessage(did);
-            setDmailString(dmail);
+            if (ok) {
+                showAlert("Dmail import successful");
+            } else {
+                showError("Dmail import failed");
+            }
         } catch (error) {
             showError(error);
         }
@@ -1013,30 +1008,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function sendDmail() {
         try {
-            const nameList = await keymaster.listNames({ includeIDs: true });
-            let toDID = dmailTo;
-
-            if (dmailTo in nameList) {
-                toDID = nameList[dmailTo];
-            }
-
-            if (!isValidDID(toDID)) {
-                showError(`Invalid DID: ${toDID}`);
-                return;
-            }
-
             const dmail = {
-                to: [toDID],
-                cc: [],
+                to: [dmailTo],
                 subject: dmailSubject,
                 body: dmailBody,
             };
 
-            const did = await keymaster.createGroupVault();
-            await keymaster.addGroupVaultMember(did, toDID);
-            const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
-            await keymaster.addGroupVaultItem(did, 'dmail', buffer);
-
+            const did = await keymaster.sendDmail(dmail, { registry });
             setDmailVaultDID(did);
         } catch (error) {
             showError(error);
@@ -2749,23 +2727,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 >
                                                                     Add login...
                                                                 </Button>
-                                                                <LoginDialog
-                                                                    open={editLoginOpen}
-                                                                    onClose={() => setEditLoginOpen(false)}
-                                                                    onOK={addLoginVaultItem}
-                                                                />
-                                                                <LoginDialog
-                                                                    open={revealLoginOpen}
-                                                                    onClose={() => setRevealLoginOpen(false)}
-                                                                    login={revealLogin}
-                                                                    readOnly
-                                                                />
-                                                                <DmailDialog
-                                                                    open={revealDmailOpen}
-                                                                    onClose={() => setRevealDmailOpen(false)}
-                                                                    dmail={revealDmail}
-                                                                    readOnly
-                                                                />
                                                             </TableCell>
                                                         </TableRow>
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
@@ -3092,13 +3053,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         />
                                                     </TableCell>
                                                     <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => resolveDmail(dmailDID)} disabled={!dmailDID}>
-                                                            Resolve
-                                                        </Button>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => decryptDmail(dmailDID)} disabled={!dmailDID}>
-                                                            Decrypt
+                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailDID)} disabled={!dmailDID}>
+                                                            Import
                                                         </Button>
                                                     </TableCell>
                                                 </TableRow>
@@ -3402,6 +3358,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             Special Access
                         </Box>
                     }
+                    <LoginDialog
+                        open={editLoginOpen}
+                        onClose={() => setEditLoginOpen(false)}
+                        onOK={addLoginVaultItem}
+                    />
+                    <LoginDialog
+                        open={revealLoginOpen}
+                        onClose={() => setRevealLoginOpen(false)}
+                        login={revealLogin}
+                        readOnly
+                    />
+                    <DmailDialog
+                        open={revealDmailOpen}
+                        onClose={() => setRevealDmailOpen(false)}
+                        dmail={revealDmail}
+                        readOnly
+                    />
                 </Box>
             </header>
         </div >
