@@ -1646,7 +1646,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    function getVaultItemIcon(item) {
+    function getVaultItemIcon(name, item) {
         const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
 
         if (!item || !item.type) {
@@ -1662,7 +1662,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
 
         if (item.type === 'application/json') {
-            return <Login style={iconStyle} />;
+            if (name.startsWith('login:')) {
+                return <Login style={iconStyle} />;
+            }
+
+            if (name === 'dmail') {
+                return <Email style={iconStyle} />;
+            }
+
+            return <Token style={iconStyle} />;
         }
 
         // Add more types as needed, e.g. images, pdf, etc.
@@ -2763,7 +2771,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
-                                                                    {getVaultItemIcon(item)}
+                                                                    {getVaultItemIcon(name, item)}
                                                                     {name}
                                                                 </TableCell>
                                                                 <TableCell>
