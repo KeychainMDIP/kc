@@ -126,12 +126,7 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
                     Encrypt
                 </Button>
                 <Select
-                    value={
-                        registries.length > 0 &&
-                        registries.includes(messageRegistry)
-                            ? messageRegistry
-                            : ""
-                    }
+                    value={registries.includes(messageRegistry) ? messageRegistry : ""}
                     onChange={(e) => setMessageRegistry(e.target.value)}
                     size="small"
                     variant="outlined"

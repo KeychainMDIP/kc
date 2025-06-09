@@ -1,5 +1,6 @@
 import React, {ChangeEvent, useEffect, useState} from "react";
-import {Box, Button, MenuItem, Select} from "@mui/material";
+import {Box, Button, IconButton, MenuItem, Select, Tooltip} from "@mui/material";
+import {Edit, ContentCopy, ManageSearch} from "@mui/icons-material";
 import {useWalletContext} from "../../shared/contexts/WalletProvider";
 import {useUIContext} from "../../shared/contexts/UIContext";
 import {useCredentialsContext} from "../../shared/contexts/CredentialsProvider";
@@ -7,6 +8,7 @@ import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
+import TextInputModal from "../../shared/TextInputModal";
 
 const gatekeeper = new GatekeeperClient();
 
@@ -18,19 +20,23 @@ const ImageTab = () => {
         setSuccess,
     } = useWalletContext();
     const {
+        handleCopyDID,
+        openBrowserWindow,
         refreshNames,
     } = useUIContext();
     const {
         imageList,
+        nameList,
     } = useCredentialsContext();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [selectedImageName, setSelectedImageName] = useState<string>('');
     const [selectedImage, setSelectedImage] = useState<ImageAsset | null>(null);
     const [selectedImageDocs, setSelectedImageDocs] = useState<MdipDocument | null>(null);
     const [selectedImageDataUrl, setSelectedImageDataUrl] = useState<string>("");
-
     const [imageVersion, setImageVersion] = useState<number>(1);
     const [imageVersionMax, setImageVersionMax] = useState<number>(1);
+    const [renameOpen, setRenameOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
 
     useEffect(() => {
         const init = async () => {
@@ -61,7 +67,7 @@ const ImageTab = () => {
 
             const currentVersion = docs.didDocumentMetadata?.version ?? 1;
             setImageVersion(currentVersion);
-            if (currentVersion > imageVersionMax) {
+            if (version === undefined) {
                 setImageVersionMax(currentVersion);
             }
 
@@ -197,15 +203,45 @@ const ImageTab = () => {
         refreshImage(selectedImageName, newVer);
     }
 
+    const openRenameModal = () => {
+        setRenameOldName(selectedImageName);
+        setRenameOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName: string) => {
+        setRenameOpen(false);
+        if (!newName || !keymaster || newName === selectedImageName) {
+            return;
+        }
+        try {
+            const did = nameList[selectedImageName];
+            await keymaster.addName(newName, did);
+            await keymaster.removeName(selectedImageName);
+            await refreshNames();
+            setSelectedImageName(newName);
+            await refreshImage(newName);
+            setSuccess("Image renamed");
+        } catch (error: any) {
+            setError(error);
+        }
+    };
+
     return (
         <Box>
+            <TextInputModal
+                isOpen={renameOpen}
+                title="Rename Image"
+                description={`Rename '${renameOldName}'`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameOpen(false)}
+            />
+
             <Box className="flex-box mt-2">
                 <Select
-                    value={
-                        registries.length > 0 && registries.includes(registry)
-                            ? registry
-                            : ""
-                    }
+                    value={registries.includes(registry) ? registry : ""}
                     onChange={(e) => setRegistry(e.target.value)}
                     size="small"
                     variant="outlined"
@@ -252,7 +288,7 @@ const ImageTab = () => {
                             <MenuItem value="" disabled>
                                 Select image
                             </MenuItem>
-                            {imageList.map((name, index) => (
+                            {imageList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>
@@ -274,6 +310,39 @@ const ImageTab = () => {
                             style={{ display: "none" }}
                             onChange={updateImage}
                         />
+                        <Tooltip title="Rename Image">
+                            <span>
+                                <IconButton size="small" onClick={openRenameModal} disabled={!selectedImageName} sx={{ ml: 1 }}>
+                                    <Edit fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="Copy DID">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => handleCopyDID(nameList[selectedImageName])}
+                                    disabled={!selectedImageName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <ContentCopy fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="Resolve DID">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={() =>
+                                        openBrowserWindow({ did: nameList[selectedImageName] })
+                                    }
+                                    disabled={!selectedImageName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <ManageSearch fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                     </Box>
                     {selectedImage && selectedImageDocs && selectedImageDataUrl && (
                         <Box sx={{ mt: 2 }}>
