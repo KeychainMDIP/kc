@@ -160,7 +160,7 @@ function IdentitiesTab() {
                 onClose={() => setRecoverModalOpen(false)}
             />
 
-            <Box className="flex-box mt-2" sx={{ ml: 1, maxWidth: "400px" }}>
+            <Box className="flex-box mt-2">
                 <TextField
                     label="Create ID"
                     variant="outlined"
@@ -176,11 +176,7 @@ function IdentitiesTab() {
                 />
 
                 <Select
-                    value={
-                        registries.length > 0 && registries.includes(registry)
-                            ? registry
-                            : ""
-                    }
+                    value={registries.includes(registry) ? registry : ""}
                     onChange={(e) => setRegistry(e.target.value)}
                     size="small"
                     variant="outlined"

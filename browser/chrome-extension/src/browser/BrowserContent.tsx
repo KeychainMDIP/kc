@@ -4,14 +4,17 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
     AccountBalanceWallet,
     Badge,
+    ControlPointDuplicate,
     Description,
     Groups,
     Image,
+    List,
     Lock,
     ManageSearch,
     PermIdentity,
     Schema,
     Settings,
+    Token,
 } from "@mui/icons-material";
 import CredentialsTab from "./components/CredentialsTab";
 import WalletTab from "./components/WalletTab";
@@ -28,6 +31,8 @@ import SchemaTab from "./components/SchemaTab";
 import ImageTab from "./components/ImageTab";
 import DocumentTab from "./components/DocumentTab";
 import GroupVaultTab from "./components/GroupVaultTab";
+import CloneAssetTab from "./components/CloneAssetTab";
+import NamedDIDs from "./components/NamedDIDs";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -43,9 +48,9 @@ function BrowserContent() {
         },
     });
 
-    const [paramTab, setParamTab] = useState<string>("");
-    const [activeSubTab, setActiveSubTab] = useState<string>("");
     const [activeTab, setActiveTab] = useState<string>("identities");
+    const [activeSubTab, setActiveSubTab] = useState<string>("");
+    const [assetSubTab, setAssetSubTab] = useState<string>("schemas");
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -56,32 +61,32 @@ function BrowserContent() {
         const urlDoc = urlParams.get("doc");
 
         let initialTab = urlTab || "identities";
-        if (!currentId && (
-            urlTab === "credentials" ||
-            urlTab === "groups" ||
-            urlTab === "schemas" ||
-            urlTab === "images" ||
-            urlTab === "documents" ||
-            urlTab === "vaults"
-        )) {
+        let initialAssetSubTab = "schemas";
+
+        const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
+
+        if (assetTabs.includes(urlTab)) {
+            initialTab = "assets";
+            initialAssetSubTab = urlTab;
+        }
+
+        if (!currentId && urlTab === "credentials") {
             initialTab = "identities";
-            setParamTab(urlTab);
         }
 
         setActiveTab(initialTab);
+        setAssetSubTab(initialAssetSubTab);
         setActiveSubTab(urlSubTab);
 
         if (!urlDid && !urlDoc) {
             return;
         }
 
-        let parsedContents = null;
+        let parsedContents: any = null;
         if (urlDoc) {
             try {
                 parsedContents = JSON.parse(urlDoc);
-            } catch (error: any) {
-                return;
-            }
+            } catch (error) {}
         }
 
         if (setOpenBrowser) {
@@ -93,9 +98,8 @@ function BrowserContent() {
                 contents: parsedContents,
             });
         }
-
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, []);
 
     function toggleMenuOpen() {
         const newValue = !menuOpen;
@@ -104,13 +108,14 @@ function BrowserContent() {
     }
 
     useEffect(() => {
-        chrome.storage.local.get(['menuOpen'], (result) => {
+        chrome.storage.local.get(["menuOpen"], (result) => {
             if (result.menuOpen) {
                 setMenuOpen(result.menuOpen);
             }
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
 
     useEffect(() => {
         if (!isBrowser || !openBrowser) {
@@ -118,29 +123,51 @@ function BrowserContent() {
         }
 
         const { tab, subTab } = openBrowser;
-        const useTab = tab === "credentials" && !currentId ? "identities" : tab || "viewer";
-        setActiveTab(useTab);
+        const mappedTab =
+            tab === "credentials" && !currentId
+                ? "identities"
+                : assetTabs.includes(tab ?? "")
+                    ? "assets"
+                    : tab || "viewer";
+        setActiveTab(mappedTab);
+
+        if (assetTabs.includes(tab ?? "")) {
+            setAssetSubTab(tab!);
+        }
+
         if (subTab) {
             setActiveSubTab(subTab);
             setRefresh(r => r + 1);
         }
-
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [openBrowser])
+    }, [openBrowser]);
 
-    // Set active tab once current ID is loaded as the paramTab value
-    // is only available after the current ID is present.
     useEffect(() => {
-        if (!didRun && currentId) {
-            if (paramTab) {
-                setActiveTab(paramTab);
-            }
-            setDidRun(true);
+        if (didRun || !currentId) {
+            return;
         }
-    }, [didRun, paramTab, currentId]);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const paramTab = urlParams.get("tab") || "";
+        if (assetTabs.includes(paramTab)) {
+            setActiveTab("assets");
+            setAssetSubTab(paramTab);
+        } else if (paramTab) {
+            setActiveTab(paramTab);
+        }
+        setDidRun(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [didRun, currentId]);
 
     const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
         setActiveTab(newValue);
+        if (newValue === "assets") {
+            setAssetSubTab("schemas");
+        }
+    };
+
+    const handleAssetTabChange = (_: React.SyntheticEvent, newValue: string) => {
+        setAssetSubTab(newValue);
     };
 
     return (
@@ -150,11 +177,7 @@ function BrowserContent() {
                 <TabContext value={activeTab}>
                     <Box className="layoutContainer">
                         <Box className={`sidebar ${menuOpen ? "open" : ""}`}>
-                            <TabList
-                                orientation="vertical"
-                                onChange={handleTabChange}
-                                className="tabList"
-                            >
+                            <TabList orientation="vertical" onChange={handleTabChange} className="tabList">
                                 <Tab
                                     icon={<PermIdentity />}
                                     label={menuOpen ? "Identities" : ""}
@@ -163,6 +186,7 @@ function BrowserContent() {
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
+
                                 {currentId && (
                                     <Tab
                                         icon={<Badge />}
@@ -173,56 +197,29 @@ function BrowserContent() {
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
+
                                 {currentId && (
                                     <Tab
-                                        icon={<Schema />}
-                                        label={menuOpen ? "Schemas" : ""}
-                                        value="schemas"
+                                        icon={<List />}
+                                        label={menuOpen ? "Named DIDs" : ""}
+                                        value="names"
                                         iconPosition="start"
                                         className="sidebarTab"
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
+
                                 {currentId && (
                                     <Tab
-                                        icon={<Image />}
-                                        label={menuOpen ? "Images" : ""}
-                                        value="images"
+                                        icon={<Token />}
+                                        label={menuOpen ? "Assets" : ""}
+                                        value="assets"
                                         iconPosition="start"
                                         className="sidebarTab"
                                         sx={{ gap: 0.25 }}
                                     />
                                 )}
-                                {currentId && (
-                                    <Tab
-                                        icon={<Lock />}
-                                        label={menuOpen ? "Vaults" : ""}
-                                        value="vaults"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{ gap: 0.25, whiteSpace: 'nowrap' }}
-                                    />
-                                )}
-                                {currentId && (
-                                    <Tab
-                                        icon={<Description />}
-                                        label={menuOpen ? "Documents" : ""}
-                                        value="documents"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{ gap: 0.25 }}
-                                    />
-                                )}
-                                {currentId && (
-                                    <Tab
-                                        icon={<Groups />}
-                                        label={menuOpen ? "Groups" : ""}
-                                        value="groups"
-                                        iconPosition="start"
-                                        className="sidebarTab"
-                                        sx={{ gap: 0.25 }}
-                                    />
-                                )}
+
                                 <Tab
                                     icon={<AccountBalanceWallet />}
                                     label={menuOpen ? "Wallet" : ""}
@@ -231,17 +228,16 @@ function BrowserContent() {
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
+
                                 <Tab
                                     icon={<ManageSearch />}
                                     label={menuOpen ? "JSON Viewer" : ""}
                                     value="viewer"
                                     iconPosition="start"
                                     className="sidebarTab"
-                                    sx={{
-                                        gap: 0.25,
-                                        whiteSpace: "nowrap",
-                                    }}
+                                    sx={{ gap: 0.25, whiteSpace: "nowrap" }}
                                 />
+
                                 <Tab
                                     icon={<Settings />}
                                     label={menuOpen ? "Settings" : ""}
@@ -257,42 +253,98 @@ function BrowserContent() {
                             <TabPanel value="identities" sx={{ p: 0 }}>
                                 <IdentitiesTab />
                             </TabPanel>
+
                             {currentId && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
                                     <CredentialsTab subTab={activeSubTab} refresh={refresh} />
                                 </TabPanel>
                             )}
+
                             {currentId && (
-                                <TabPanel value="schemas" sx={{ p: 0 }}>
-                                    <SchemaTab />
+                                <TabPanel value="names" sx={{ p: 0 }}>
+                                    <NamedDIDs />
                                 </TabPanel>
                             )}
+
                             {currentId && (
-                                <TabPanel value="images" sx={{ p: 0 }}>
-                                    <ImageTab />
+                                <TabPanel value="assets" sx={{ p: 0 }}>
+                                    <TabContext value={assetSubTab}>
+                                        <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+                                            <TabList
+                                                onChange={handleAssetTabChange}
+                                                aria-label="Asset Tabs"
+                                                variant="scrollable"
+                                                scrollButtons="auto"
+                                            >
+                                                <Tab
+                                                    icon={<Schema sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="schemas"
+                                                    label="Schemas"
+                                                />
+                                                <Tab
+                                                    icon={<Image sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="images"
+                                                    label="Images"
+                                                />
+                                                <Tab
+                                                    icon={<Description sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="documents"
+                                                    label="Documents"
+                                                />
+                                                <Tab
+                                                    icon={<Groups sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="groups"
+                                                    label="Groups"
+                                                />
+                                                <Tab
+                                                    icon={<Lock sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="vaults"
+                                                    label="Vaults"
+                                                />
+                                                <Tab
+                                                    icon={<ControlPointDuplicate sx={{ mb: 0.5 }} />}
+                                                    iconPosition="top"
+                                                    value="clone"
+                                                    label="Clone"
+                                                />
+                                            </TabList>
+                                        </Box>
+
+                                        <TabPanel value="schemas" sx={{ p: 0 }}>
+                                            <SchemaTab />
+                                        </TabPanel>
+                                        <TabPanel value="images" sx={{ p: 0 }}>
+                                            <ImageTab />
+                                        </TabPanel>
+                                        <TabPanel value="documents" sx={{ p: 0 }}>
+                                            <DocumentTab />
+                                        </TabPanel>
+                                        <TabPanel value="groups" sx={{ p: 0 }}>
+                                            <GroupsTab />
+                                        </TabPanel>
+                                        <TabPanel value="vaults" sx={{ p: 0 }}>
+                                            <GroupVaultTab />
+                                        </TabPanel>
+                                        <TabPanel value="clone" sx={{ p: 0 }}>
+                                            <CloneAssetTab />
+                                        </TabPanel>
+                                    </TabContext>
                                 </TabPanel>
                             )}
-                            {currentId && (
-                                <TabPanel value="vaults" sx={{ p: 0 }}>
-                                    <GroupVaultTab />
-                                </TabPanel>
-                            )}
-                            {currentId && (
-                                <TabPanel value="documents" sx={{ p: 0 }}>
-                                    <DocumentTab />
-                                </TabPanel>
-                            )}
+
                             <TabPanel value="wallet" sx={{ p: 0 }}>
                                 <WalletTab />
                             </TabPanel>
+
                             <TabPanel value="viewer" sx={{ p: 0 }}>
                                 <JsonViewer browserTab="viewer" showResolveField={true} />
                             </TabPanel>
-                            {currentId && (
-                                <TabPanel value="groups" sx={{ p: 0 }}>
-                                    <GroupsTab />
-                                </TabPanel>
-                            )}
+
                             <TabPanel value="settings" sx={{ p: 0 }}>
                                 <SettingsTab />
                             </TabPanel>

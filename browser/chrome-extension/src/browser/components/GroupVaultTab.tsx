@@ -9,7 +9,7 @@ import {
     Typography
 } from "@mui/material";
 import {
-    AttachFile, ContentCopy,
+    AttachFile, ContentCopy, Edit,
     Image,
     Login, ManageSearch,
     PictureAsPdf,
@@ -19,6 +19,7 @@ import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider
 import { useUIContext } from "../../shared/contexts/UIContext";
 import LoginDialog from "./LoginDialog";
 import WarningModal from "../../shared/WarningModal";
+import TextInputModal from "../../shared/TextInputModal";
 
 function GroupVaultTab() {
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -43,6 +44,8 @@ function GroupVaultTab() {
     const [warningTitle, setWarningTitle] = useState("");
     const [warningText,  setWarningText]  = useState("");
     const [groupVaultDID, setGroupVaultDID] = useState<string>('');
+    const [renameOpen, setRenameOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
     const warningCbRef = useRef<() => Promise<void> | void>(() => {});
     const {
         currentDID,
@@ -456,6 +459,28 @@ function GroupVaultTab() {
         </Box>
     );
 
+    const openRenameModal = () => {
+        setRenameOldName(selectedVaultName);
+        setRenameOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName: string) => {
+        setRenameOpen(false);
+        if (!newName || newName === selectedVaultName || !keymaster) {
+            return;
+        }
+        try {
+            await keymaster.addName(newName, groupVaultDID);
+            await keymaster.removeName(selectedVaultName);
+            await refreshNames();
+            setSelectedVaultName(newName);
+            setRenameOldName("");
+            setSuccess("Vault renamed");
+        } catch (error: any) {
+            setError(error);
+        }
+    };
+
     return (
         <Box>
             <WarningModal
@@ -467,6 +492,17 @@ function GroupVaultTab() {
                     await warningCbRef.current();
                 }}
                 onClose={() => setWarningOpen(false)}
+            />
+
+            <TextInputModal
+                isOpen={renameOpen}
+                title="Rename Vault"
+                description={`Rename '${renameOldName}' to:`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameOpen(false)}
             />
 
             <LoginDialog
@@ -486,7 +522,7 @@ function GroupVaultTab() {
                 <Box className="flex-box mt-2">
                     <TextField
                         label="Vault Name"
-                        style={{ width: "300px" }}
+                        style={{ flex: "0 0 400px" }}
                         className="text-field single-line"
                         size="small"
                         value={vaultName}
@@ -538,33 +574,59 @@ function GroupVaultTab() {
                             <MenuItem value="" disabled>
                                 Select vault
                             </MenuItem>
-                            {vaultList.map((name) => (
+                            {vaultList.slice().sort((a, b) => a.localeCompare(b)).map((name) => (
                                 <MenuItem value={name} key={name}>
                                     {name}
                                 </MenuItem>
                             ))}
                         </Select>
-                        {groupVaultDID &&
-                            <Tooltip title="Copy GroupVault DID">
+                        <Tooltip title="Rename Vault">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={openRenameModal}
+                                    disabled={!selectedVaultName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <Edit fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Copy DID">
+                            <span>
                                 <IconButton
                                     onClick={() => handleCopyDID(groupVaultDID)}
                                     size="small"
-                                    sx={{
-                                        px: 0.5,
-                                        ml: 1,
-                                    }}
+                                    sx={{ ml: 1 }}
+                                    disabled={!selectedVaultName}
                                 >
                                     <ContentCopy fontSize="small" />
                                 </IconButton>
-                            </Tooltip>
-                        }
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Resolve DID">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={() =>
+                                        openBrowserWindow({ did: groupVaultDID })
+                                    }
+                                    disabled={!selectedVaultName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <ManageSearch fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                     </Box>
                 )}
 
                 {selectedVault && (
                     <Box display="flex" flexDirection="column">
                         <Typography variant="h5" component="h5" sx={{ my: 2 }}>
-                            {`Vault Members`}
+                            {`Members`}
                         </Typography>
 
                         {selectedVaultOwned &&
@@ -600,7 +662,7 @@ function GroupVaultTab() {
                         ))}
 
                         <Typography variant="h5" component="h5" sx={{ my: 2 }}>
-                            Vault Items
+                            Items
                         </Typography>
 
                         {selectedVaultOwned &&

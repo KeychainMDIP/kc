@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
-import { ContentCopy } from "@mui/icons-material";
+import {ContentCopy, Edit, ManageSearch} from "@mui/icons-material";
+import TextInputModal from "../../shared/TextInputModal";
 
 const SchemaTab = ()=> {
     const {
@@ -14,6 +15,7 @@ const SchemaTab = ()=> {
     } = useWalletContext();
     const {
         handleCopyDID,
+        openBrowserWindow,
         refreshNames,
     } = useUIContext();
     const {
@@ -24,37 +26,34 @@ const SchemaTab = ()=> {
     const [schemaName, setSchemaName] = useState<string>('');
     const [schemaDID, setSchemaDID] = useState<string>('');
     const [selectedSchemaName, setSelectedSchemaName] = useState<string>('');
-    const [editedSchemaName, setEditedSchemaName] = useState<string>('');
-    const [selectedSchema, setSelectedSchema] = useState<string>('');
     const [schemaString, setSchemaString] = useState<string>('');
+    const [renameOpen, setRenameOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
 
-    async function saveSchema() {
+    const saveSchema = async () => {
         if (!keymaster) {
             return;
         }
         try {
-            await keymaster.setSchema(editedSchemaName, JSON.parse(schemaString));
-            await editSchema(editedSchemaName);
+            await keymaster.setSchema(selectedSchemaName, JSON.parse(schemaString));
+            await editSchema(selectedSchemaName);
+            setSuccess("Schema saved");
         } catch (error: any) {
             setError(error);
-            return;
         }
-        setSuccess("Schema saved");
-    }
+    };
 
-    async function editSchema(schemaName: string) {
-        if (!keymaster) {
+    const editSchema = async (name: string) => {
+        if (!keymaster || !name) {
             return;
         }
         try {
-            const schema = await keymaster.getSchema(schemaName) as string;
-            setSelectedSchema(schema);
-            setEditedSchemaName(schemaName);
+            const schema = (await keymaster.getSchema(name)) as unknown as object;
             setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error: any) {
             setError(error);
         }
-    }
+    };
 
     async function createSchema() {
         if (!keymaster) {
@@ -84,12 +83,45 @@ const SchemaTab = ()=> {
         setSchemaDID(nameList[name]);
     }
 
+    const openRenameModal = () => {
+        setRenameOldName(selectedSchemaName);
+        setRenameOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName: string) => {
+        setRenameOpen(false);
+        if (!newName || newName === selectedSchemaName || !keymaster) {
+            return;
+        }
+        try {
+            await keymaster.addName(newName, schemaDID);
+            await keymaster.removeName(selectedSchemaName);
+            await refreshNames();
+            setSelectedSchemaName(newName);
+            setRenameOldName("");
+            setSuccess("Schema renamed");
+        } catch (error: any) {
+            setError(error);
+        }
+    };
+
     return (
         <Box display="flex" flexDirection="column">
+            <TextInputModal
+                isOpen={renameOpen}
+                title="Rename Schema"
+                description={`Rename '${renameOldName}' to:`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameOpen(false)}
+            />
+
             <Box className="flex-box mt-2">
                 <TextField
                     label="Schema Name"
-                    style={{ width: '300px' }}
+                    style={{ flex: "0 0 400px" }}
                     className="text-field single-line"
                     size="small"
                     value={schemaName}
@@ -131,53 +163,67 @@ const SchemaTab = ()=> {
                         value={selectedSchemaName}
                         displayEmpty
                         variant="outlined"
-                        className="select-small-left"
-                        onChange={(event) => {
-                            const selectedName = event.target.value;
-                            setSelectedSchemaName(selectedName);
-                            populateCopyButton(selectedName);
+                        size="small"
+                        onChange={async (event) => {
+                            const name = event.target.value;
+                            setSelectedSchemaName(name);
+                            populateCopyButton(name);
+                            await editSchema(name);
                         }}
                     >
                         <MenuItem value="" disabled>
                             Select schema
                         </MenuItem>
-                        {schemaList.map((name, index) => (
+                        {schemaList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
                             <MenuItem value={name} key={index}>
                                 {name}
                             </MenuItem>
                         ))}
                     </Select>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => editSchema(selectedSchemaName)}
-                        disabled={!selectedSchemaName}
-                        className="button-right"
-                    >
-                        Edit Schema
-                    </Button>
-                    {schemaDID &&
-                        <Tooltip title="Copy Schema">
+                    <Tooltip title="Rename Schema">
+                        <span>
+                            <IconButton
+                                size="small"
+                                onClick={openRenameModal}
+                                disabled={!selectedSchemaName}
+                                sx={{ ml: 1 }}
+                            >
+                                <Edit fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+
+                    <Tooltip title="Copy DID">
+                        <span>
                             <IconButton
                                 onClick={() => handleCopyDID(schemaDID)}
                                 size="small"
-                                sx={{
-                                    px: 0.5,
-                                    ml: 1,
-                                }}
+                                disabled={!selectedSchemaName}
+                                sx={{ ml: 1 }}
                             >
                                 <ContentCopy fontSize="small" />
                             </IconButton>
-                        </Tooltip>
-                    }
+                        </span>
+                    </Tooltip>
+
+                    <Tooltip title="Resolve DID">
+                        <span>
+                            <IconButton
+                                size="small"
+                                onClick={() =>
+                                    openBrowserWindow({ did: schemaDID })
+                                }
+                                disabled={!selectedSchemaName}
+                                sx={{ ml: 1 }}
+                            >
+                                <ManageSearch fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
                 </Box>
             }
-            {selectedSchema &&
+            {schemaString &&
                 <Box display="flex" flexDirection="column" sx={{ mt: 2 }}>
-                    <Typography style={{ fontSize: '1.5em', fontFamily: "Courier, monospace" }}>
-                        {`Editing: ${editedSchemaName}`}
-                    </Typography>
-
                     <TextField
                         value={schemaString}
                         onChange={(e) => setSchemaString(e.target.value)}
