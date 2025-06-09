@@ -2958,6 +2958,32 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
+    async getDmail(owner?: string): Promise<Record<string, any>> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(owner, wallet);
+
+        return id.dmail ?? {};
+    }
+
+    verifyDmailTags(tags: string[]): string[] {
+        if (!Array.isArray(tags)) {
+            throw new InvalidParameterError('tags');
+        }
+
+        const tagSet = new Set<string>();
+
+        for (const tag of tags) {
+            try {
+                tagSet.add(this.validateName(tag));
+            }
+            catch (error) {
+                throw new InvalidParameterError(`Invalid tag: '${tag}'`);
+            }
+        }
+
+        return tagSet.size > 0 ? Array.from(tagSet) : [];
+    }
+
     async addToDmail(
         did: string,
         tags: string[],
@@ -2965,12 +2991,13 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner, wallet);
+        const verifiedTags = this.verifyDmailTags(tags);
 
         if (!id.dmail) {
             id.dmail = {};
         }
 
-        id.dmail[did] = { tags };
+        id.dmail[did] = { tags: verifiedTags };
 
         return this.saveWallet(wallet);
     }
@@ -2991,7 +3018,33 @@ export default class Keymaster implements KeymasterInterface {
         return this.saveWallet(wallet);
     }
 
+    async getDmailTags(
+        did: string,
+        owner?: string
+    ): Promise<string[]> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(owner, wallet);
+
+        if (!id.dmail || !id.dmail[did]) {
+            return [];
+        }
+
+        return id.dmail[did].tags || [];
+    }
+
+    async setDmailTags(
+        did: string,
+        tags: string[],
+        owner?: string
+    ): Promise<boolean> {
+        return this.addToDmail(did, tags, owner);
+    }
+
     async verifyDmailList(list: string[]): Promise<string[]> {
+        if (!Array.isArray(list)) {
+            throw new InvalidParameterError('list');
+        }
+
         const nameList = await this.listNames({ includeIDs: true });
         let newList = [];
 
@@ -3009,7 +3062,7 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
-                throw new InvalidParameterError(`Invalid recipient name: ${id}`);
+                throw new InvalidParameterError(`Invalid recipient: ${id}`);
             }
 
             if (isValidDID(id)) {
@@ -3023,38 +3076,60 @@ export default class Keymaster implements KeymasterInterface {
         return newList;
     }
 
-    async sendDmail(dmail: DmailMessage, options: GroupVaultOptions = {}): Promise<string> {
-        if (!dmail.to || !Array.isArray(dmail.to) || dmail.to.length === 0) {
+    async verifyDmail(dmail: DmailMessage): Promise<DmailMessage> {
+        const to = await this.verifyDmailList(dmail.to);
+        const cc = await this.verifyDmailList(dmail.cc);
+
+        if (to.length === 0) {
             throw new InvalidParameterError('dmail.to');
         }
 
-        if (!dmail.subject) {
+        if (!dmail.subject || typeof dmail.subject !== 'string' || dmail.subject.trim() === '') {
             throw new InvalidParameterError('dmail.subject');
         }
 
-        if (!dmail.body) {
+        if (!dmail.body || typeof dmail.body !== 'string' || dmail.body.trim() === '') {
             throw new InvalidParameterError('dmail.body');
         }
 
-        dmail.to = await this.verifyDmailList(dmail.to);
-        dmail.cc = dmail.cc ? await this.verifyDmailList(dmail.cc) : [];
+        return {
+            ...dmail,
+            to,
+            cc,
+        };
+    }
 
+    async createDmail(dmail: DmailMessage, options: GroupVaultOptions = {}): Promise<string> {
+        const verifiedDmail = await this.verifyDmail(dmail);
         const did = await this.createGroupVault(options);
 
-        for (const toDID of dmail.to) {
+        for (const toDID of verifiedDmail.to) {
             await this.addGroupVaultMember(did, toDID);
         }
 
-        for (const ccDID of dmail.cc) {
+        for (const ccDID of verifiedDmail.cc) {
             await this.addGroupVaultMember(did, ccDID);
         }
 
-        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
+        const buffer = Buffer.from(JSON.stringify({ dmail: verifiedDmail }), 'utf-8');
         await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
-
-        await this.addToDmail(did, [DmailTags.SENT]);
+        await this.addToDmail(did, [DmailTags.DRAFT]);
 
         return did;
+    }
+
+    async updateDmail(
+        did: string,
+        dmail: DmailMessage
+    ): Promise<boolean> {
+        const verifiedDmail = await this.verifyDmail(dmail);
+        const buffer = Buffer.from(JSON.stringify({ dmail: verifiedDmail }), 'utf-8');
+        return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
+    }
+
+    async sendDmail(did: string): Promise<boolean> {
+        // TBD create notice for the recipients
+        return this.setDmailTags(did, [DmailTags.SENT]);
     }
 
     async importDmail(did: string): Promise<boolean> {
@@ -3066,7 +3141,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const items = await this.listGroupVaultItems(did);
 
-        if (!('dmail' in items)) {
+        if (!(DmailTags.DMAIL in items)) {
             return false;
         }
 

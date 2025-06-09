@@ -253,7 +253,7 @@ export interface WaitUntilReadyOptions {
 
 export interface DmailMessage {
     to: string[];
-    cc?: string[];
+    cc: string[];
     subject: string;
     body: string;
     inReplyTo?: string;
