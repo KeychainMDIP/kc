@@ -1,5 +1,5 @@
 import Gatekeeper from '@mdip/gatekeeper';
-import Keymaster from '@mdip/keymaster';
+import Keymaster, { DmailTags } from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
@@ -47,6 +47,13 @@ describe('verifyDmailTags', () => {
         expect(verified).toStrictEqual(['tag1', 'tag2', 'tag3']);
     });
 
+    it('should remove whitespace from tags', async () => {
+        const tags = ['   tag1', 'tag2   ', '   tag3    '];
+        const verified = keymaster.verifyDmailTags(tags);
+
+        expect(verified).toStrictEqual(['tag1', 'tag2', 'tag3']);
+    });
+
     it('should handle empty list', async () => {
         const verified = keymaster.verifyDmailTags([]);
 
@@ -55,7 +62,7 @@ describe('verifyDmailTags', () => {
 
     it('should throw an exception on invalid tags', async () => {
         try {
-            await keymaster.verifyDmailTags(123 as any);
+            keymaster.verifyDmailTags(123 as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -63,7 +70,7 @@ describe('verifyDmailTags', () => {
         }
 
         try {
-            await keymaster.verifyDmailTags([1, 2, 3] as any);
+            keymaster.verifyDmailTags([1, 2, 3] as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -71,7 +78,7 @@ describe('verifyDmailTags', () => {
         }
 
         try {
-            await keymaster.verifyDmailTags(['   ']);
+            keymaster.verifyDmailTags(['tag1', 'tag 2', '   ']);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -106,7 +113,7 @@ describe('verifyDmailList', () => {
 
     it('should throw an exception on invalid list', async () => {
         await keymaster.createId('Alice');
-        await keymaster.createAsset({ mock: 'mock'}, { name: 'Asset' });
+        await keymaster.createAsset({ mock: 'mock' }, { name: 'Asset' });
 
         try {
             await keymaster.verifyDmailList(123 as any);
@@ -225,5 +232,188 @@ describe('createDmail', () => {
         const did = await keymaster.createDmail(mock);
 
         expect(did).toBeDefined();
+    });
+});
+
+describe('listDmail', () => {
+    it('should retrieve all dmails when none specified', async () => {
+        const alice = await keymaster.createId('Alice');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [],
+            subject: 'Test Dmail 5',
+            body: 'This is a test dmail message 5.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toBeDefined();
+        expect(dmails[did]).toBeDefined();
+        expect(dmails[did]).toStrictEqual({ tags: ['draft'] });
+    });
+
+    it('should retrieve an empty set when no dmails', async () => {
+        await keymaster.createId('Alice');
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toStrictEqual({});
+    });
+});
+
+describe('getDmail', () => {
+    it('should retrieve dmail by DID', async () => {
+        const alice = await keymaster.createId('Alice');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [],
+            subject: 'Test Dmail 6',
+            body: 'This is a test dmail message 6.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+        const dmail = await keymaster.getDmail(did);
+
+        expect(dmail).toStrictEqual(mock);
+    });
+
+    it('should retrieve null if DID is not a GroupVault', async () => {
+        const alice = await keymaster.createId('Alice');
+        const dmail = await keymaster.getDmail(alice);
+
+        expect(dmail).toBeNull();
+    });
+
+    it('should retrieve null if DID is a different kind of GroupVault', async () => {
+        await keymaster.createId('Alice');
+        const vault = await keymaster.createGroupVault();
+        const dmail = await keymaster.getDmail(vault);
+
+        expect(dmail).toBeNull();
+    });
+
+    it('should retrieve null if DID GroupVault item is the wrong type', async () => {
+        await keymaster.createId('Alice');
+        const vault = await keymaster.createGroupVault();
+        const buffer = Buffer.from('This is not a valid dmail');
+        await keymaster.addGroupVaultItem(vault, DmailTags.DMAIL, buffer);
+        const dmail = await keymaster.getDmail(vault);
+
+        expect(dmail).toBeNull();
+    });
+});
+
+describe('updateDmail', () => {
+    it('should update a valid dmail', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 7',
+            body: 'This is a test dmail message 7.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+
+        const mock2: DmailMessage = {
+            to: [bob],
+            cc: [alice],
+            subject: 'Test Dmail 7 udpated',
+            body: 'This is a test dmail message 7 updated.',
+        };
+
+        const ok = await keymaster.updateDmail(did, mock2);
+        expect(ok).toBe(true);
+
+        const dmail = await keymaster.getDmail(did);
+        expect(dmail).toStrictEqual(mock2);
+    });
+});
+
+describe('removeDmail', () => {
+    it('should remove a valid dmail', async () => {
+        await keymaster.createId('Alice');
+
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 8',
+            body: 'This is a test dmail message 8.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+
+        const ok = await keymaster.removeDmail(did);
+        expect(ok).toBe(true);
+
+        const dmails = await keymaster.listDmail();
+        expect(did in dmails).toBe(false);
+    });
+
+    it('should return true for non-existent dmail', async () => {
+        const alice = await keymaster.createId('Alice');
+
+        const ok = await keymaster.removeDmail(alice);
+        expect(ok).toBe(true);
+    });
+});
+
+describe('sendDmail', () => {
+    it('should tag a dmail as sent', async () => {
+        await keymaster.createId('Alice');
+
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 9',
+            body: 'This is a test dmail message 9.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+
+        const ok = await keymaster.sendDmail(did);
+        expect(ok).toBe(true);
+
+        const dmails = await keymaster.listDmail();
+        expect(dmails[did]).toStrictEqual({ tags: ['sent'] });
+    });
+
+    it('should return false for invalid dmail', async () => {
+        const alice = await keymaster.createId('Alice');
+
+        const ok = await keymaster.sendDmail(alice);
+        expect(ok).toBe(false);
+    });
+});
+
+describe('importDmail', () => {
+    it('should import a valid dmail', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 10',
+            body: 'This is a test dmail message 10.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        await keymaster.setCurrentId('Alice');
+
+        const ok = await keymaster.importDmail(did);
+        expect(ok).toBe(true);
+
+        const dmails = await keymaster.listDmail();
+        expect(dmails[did]).toStrictEqual({ tags: ['inbox'] });
+    });
+
+    it('should return false for invalid dmail', async () => {
+        const alice = await keymaster.createId('Alice');
+
+        const ok = await keymaster.importDmail(alice);
+        expect(ok).toBe(false);
     });
 });

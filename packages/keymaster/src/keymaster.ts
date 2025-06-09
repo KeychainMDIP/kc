@@ -2958,7 +2958,7 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async getDmail(owner?: string): Promise<Record<string, any>> {
+    async listDmail(owner?: string): Promise<Record<string, any>> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner, wallet);
 
@@ -3004,7 +3004,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async removeFromDmail(
         did: string,
-        owner: string
+        owner?: string
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner, wallet);
@@ -3016,28 +3016,6 @@ export default class Keymaster implements KeymasterInterface {
         delete id.dmail[did];
 
         return this.saveWallet(wallet);
-    }
-
-    async getDmailTags(
-        did: string,
-        owner?: string
-    ): Promise<string[]> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
-
-        if (!id.dmail || !id.dmail[did]) {
-            return [];
-        }
-
-        return id.dmail[did].tags || [];
-    }
-
-    async setDmailTags(
-        did: string,
-        tags: string[],
-        owner?: string
-    ): Promise<boolean> {
-        return this.addToDmail(did, tags, owner);
     }
 
     async verifyDmailList(list: string[]): Promise<string[]> {
@@ -3129,19 +3107,46 @@ export default class Keymaster implements KeymasterInterface {
 
     async sendDmail(did: string): Promise<boolean> {
         // TBD create notice for the recipients
-        return this.setDmailTags(did, [DmailTags.SENT]);
-    }
 
-    async importDmail(did: string): Promise<boolean> {
-        const isGroupVault = await this.testGroupVault(did);
+        const dmail = await this.getDmail(did);
 
-        if (!isGroupVault) {
+        if (!dmail) {
             return false;
         }
 
-        const items = await this.listGroupVaultItems(did);
+        return this.addToDmail(did, [DmailTags.SENT]);
+    }
 
-        if (!(DmailTags.DMAIL in items)) {
+    async removeDmail(did: string): Promise<boolean> {
+        return this.removeFromDmail(did);
+    }
+
+    async getDmail(did: string): Promise<DmailMessage | null> {
+        const isGroupVault = await this.testGroupVault(did);
+
+        if (!isGroupVault) {
+            return null;
+        }
+
+        const buffer = await this.getGroupVaultItem(did, DmailTags.DMAIL);
+
+        if (!buffer) {
+            return null;
+        }
+
+        try {
+            const data = JSON.parse(buffer.toString('utf-8'));
+            return data.dmail as DmailMessage;
+        }
+        catch (error) {
+            return null;
+        }
+    }
+
+    async importDmail(did: string): Promise<boolean> {
+        const dmail = await this.getDmail(did);
+
+        if (!dmail) {
             return false;
         }
 
