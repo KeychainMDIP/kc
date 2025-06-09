@@ -9,7 +9,7 @@ import * as rawCodec from 'multiformats/codecs/raw';
 import * as sha256 from 'multiformats/hashes/sha2';
 import { MDIPError } from '@mdip/common/errors';
 import { IPFSClient } from './types.js';
-// import { generateCID } from './utils.js';
+import { createLibp2p } from 'libp2p';
 
 interface HeliaConfig {
     minimal?: boolean;
@@ -71,7 +71,10 @@ class HeliaClient implements IPFSClient {
             this.helia = await createHelia({ blockstore });
         }
         else {
-            this.helia = await createHelia();
+            const libp2p = await createLibp2p({
+                transports: [], // local only
+            });
+            this.helia = await createHelia({ libp2p });
         }
 
         this.ipfs = json(this.helia);
