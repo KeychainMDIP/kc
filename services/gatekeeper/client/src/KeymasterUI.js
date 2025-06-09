@@ -1006,16 +1006,52 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function sendDmail() {
+    async function createDmail() {
         try {
             const dmail = {
                 to: [dmailTo],
+                cc: [],
                 subject: dmailSubject,
                 body: dmailBody,
             };
 
-            const did = await keymaster.sendDmail(dmail, { registry });
+            const did = await keymaster.createDmail(dmail, { registry });
             setDmailVaultDID(did);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function updateDmail() {
+        try {
+            const dmail = {
+                to: [dmailTo],
+                cc: [],
+                subject: dmailSubject,
+                body: dmailBody,
+            };
+
+            const ok = await keymaster.updateDmail(dmailVaultDID, dmail);
+
+            if (ok) {
+                showAlert("Dmail updated successfully");
+            } else {
+                showError("Dmail update failed");
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function sendDmail() {
+        try {
+            const ok = await keymaster.sendDmail(dmailVaultDID);
+
+            if (ok) {
+                showAlert("Dmail sent successfully");
+            } else {
+                showError("Dmail send failed");
+            }
         } catch (error) {
             showError(error);
         }
@@ -3115,8 +3151,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailBody || !registry}>
-                                                            Send Dmail
+                                                        <Button variant="contained" color="primary" onClick={createDmail} disabled={!dmailBody || !registry}>
+                                                            Create Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
@@ -3130,6 +3166,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </Typography>
                                                     </Grid>
                                                 }
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailVaultDID}>
+                                                            Update Dmail
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailVaultDID}>
+                                                            Send Dmail
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
                                             </Grid>
                                         </Box>
                                     }
