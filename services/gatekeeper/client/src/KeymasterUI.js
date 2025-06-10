@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+    Autocomplete,
     Box,
     Button,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     FormControl,
     FormLabel,
     Grid,
@@ -13,17 +18,13 @@ import {
     TableContainer,
     Table,
     TableBody,
+    TableHead,
     TableRow,
     TableCell,
     TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
-import Autocomplete from '@mui/material/Autocomplete';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
 import {
     AccountBalanceWallet,
     Article,
@@ -3097,6 +3098,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Box width="50%" minWidth={320} mr={2}>
                                         <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
                                             <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell>Sender</TableCell>
+                                                        <TableCell>Subject</TableCell>
+                                                        <TableCell>Date</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
                                                 <TableBody>
                                                     {Object.entries(dmailList).map(([did, item], idx) => (
                                                         <TableRow
@@ -3106,9 +3114,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             onClick={() => setSelectedDmail(item)}
                                                             style={{ cursor: 'pointer' }}
                                                         >
-                                                            <TableCell>{item.date}</TableCell>
                                                             <TableCell>{item.sender}</TableCell>
                                                             <TableCell>{item.dmail.subject}</TableCell>
+                                                            <TableCell>{item.date}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
