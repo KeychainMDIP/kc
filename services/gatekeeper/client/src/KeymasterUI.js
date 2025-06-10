@@ -3130,7 +3130,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <Box display="flex" alignItems="center" mb={1}>
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
                                                     <Typography variant="body2">
-                                                        {(selectedDmail.message.to).join(', ')}
+                                                        {(selectedDmail.to).join(', ')}
                                                     </Typography>
                                                 </Box>
                                                 <Box display="flex" alignItems="center" mb={1}>

@@ -2971,9 +2971,9 @@ export default class Keymaster implements KeymasterInterface {
         }, {} as Record<string, string>);
 
         for (const did of Object.keys(list)) {
-            const dmail = await this.getDmailMessage(did);
+            const message = await this.getDmailMessage(did);
 
-            if (!dmail) {
+            if (!message) {
                 continue; // Skip if no dmail found for this DID
             }
 
@@ -2982,11 +2982,13 @@ export default class Keymaster implements KeymasterInterface {
             const controller = docs.didDocument?.controller ?? '';
             const sender = didToName[controller] ?? controller;
             const date = docs.didDocumentMetadata?.updated ?? '';
-            const to = dmail.to.map(addr => didToName[addr] ?? addr);
-            const cc = dmail.cc.map(addr => didToName[addr] ?? addr);
+            const to = message.to.map(addr => didToName[addr] ?? addr);
+            const cc = message.cc.map(addr => didToName[addr] ?? addr);
 
             dmailList[did] = {
-                message: { ...dmail, to, cc },
+                message,
+                to,
+                cc,
                 tags,
                 sender,
                 date,

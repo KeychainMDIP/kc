@@ -261,6 +261,8 @@ export interface DmailMessage {
 
 export interface DmailItem {
     message: DmailMessage;
+    to: string[];
+    cc: string[];
     sender: string;
     date: string;
     tags: string[];

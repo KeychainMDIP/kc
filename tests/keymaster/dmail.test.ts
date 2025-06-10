@@ -249,17 +249,13 @@ describe('listDmail', () => {
         const did = await keymaster.createDmail(mock);
         const dmails = await keymaster.listDmail();
 
-        const expected = {
-            ...mock,
-            to: ['Alice'],
-            cc: ['Bob'],
-        };
-
         expect(dmails).toBeDefined();
         expect(dmails[did]).toBeDefined();
         expect(dmails[did].sender).toBe('Bob');
         expect(dmails[did].date).toBeDefined();
-        expect(dmails[did].message).toStrictEqual(expected);
+        expect(dmails[did].message).toStrictEqual(mock);
+        expect(dmails[did].to).toStrictEqual(['Alice']);
+        expect(dmails[did].cc).toStrictEqual(['Bob']);
         expect(dmails[did].tags).toStrictEqual(['draft']);
     });
 

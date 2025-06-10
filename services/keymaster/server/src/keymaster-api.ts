@@ -5214,7 +5214,8 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
 
 v1router.get('/dmail', async (req, res) => {
     try {
-        const dmail = await keymaster.listDmail();
+        const owner = typeof req.query.owner === 'string' ? req.query.owner : undefined;
+        const dmail = await keymaster.listDmail(owner);
         res.json({ dmail });
     } catch (error: any) {
         res.status(500).send(error.toString());
@@ -5241,9 +5242,10 @@ v1router.post('/dmail/import', async (req, res) => {
     }
 });
 
+// eslint-disable-next-line
 v1router.get('/dmail/:id', async (req, res) => {
     try {
-        const message = await keymaster.getDmail(req.params.id);
+        const message = await keymaster.getDmailMessage(req.params.id);
         res.json({ message });
     } catch (error: any) {
         res.status(404).send({ error: 'Dmail not found' });
