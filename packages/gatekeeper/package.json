@@ -61,8 +61,6 @@
       "types": "./dist/types/db/mongo.d.ts"
     },
     "./types": {
-      "import": "./dist/types/types.d.js",
-      "require": "./dist/types/types.d.js",
       "types": "./dist/types/types.d.ts"
     }
   },

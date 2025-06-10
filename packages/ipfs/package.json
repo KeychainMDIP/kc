@@ -41,8 +41,6 @@
       "types": "./dist/types/utils.d.ts"
     },
     "./types": {
-      "import": "./dist/types/types.d.js",
-      "require": "./dist/types/types.d.cjs",
       "types": "./dist/types/types.d.ts"
     }
   },

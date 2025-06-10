@@ -86,8 +86,6 @@
       "types": "./dist/types/db/typeGuards.d.ts"
     },
     "./types": {
-      "import": "./dist/types/types.d.ts",
-      "require": "./dist/types/types.d.ts",
       "types": "./dist/types/types.d.ts"
     }
   },
