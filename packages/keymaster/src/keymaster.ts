@@ -2964,6 +2964,11 @@ export default class Keymaster implements KeymasterInterface {
         const id = await this.fetchIdInfo(owner, wallet);
         const list = id.dmail || {};
         const dmailList: Record<string, DmailItem> = {};
+        const nameList = await this.listNames({ includeIDs: true });
+        const didToName: Record<string, string> = Object.entries(nameList).reduce((acc, [name, did]) => {
+            acc[did] = name;
+            return acc;
+        }, {} as Record<string, string>);
 
         for (const did of Object.keys(list)) {
             const dmail = await this.getDmail(did);
@@ -2974,11 +2979,18 @@ export default class Keymaster implements KeymasterInterface {
 
             const tags = list[did].tags || [];
             const docs = await this.resolveDID(did);
-            const sender = docs.didDocument?.controller ?? '';
+            let sender = docs.didDocument?.controller ?? '';
             const date = docs.didDocumentMetadata?.updated || docs.didDocumentMetadata?.created || '';
 
+            if (sender && didToName[sender]) {
+                sender = didToName[sender];
+            }
+
+            const to = (dmail.to || []).map(addr => didToName[addr] || addr);
+            const cc = (dmail.cc || []).map(addr => didToName[addr] || addr);
+
             dmailList[did] = {
-                dmail,
+                dmail: { ...dmail, to, cc },
                 tags,
                 sender,
                 date,

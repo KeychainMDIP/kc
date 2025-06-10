@@ -3094,7 +3094,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             {dmailTab === 'inbox' &&
                                 <Box display="flex" flexDirection="row" width="100%">
                                     {/* Left: Dmail List */}
-                                    <Box width="40%" minWidth={320} maxWidth={400} mr={2}>
+                                    <Box width="50%" minWidth={320} mr={2}>
                                         <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
                                             <Table size="small">
                                                 <TableBody>
@@ -3108,7 +3108,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         >
                                                             <TableCell>{item.date}</TableCell>
                                                             <TableCell>{item.sender}</TableCell>
-                                                            <TableCell>{item.subject}</TableCell>
+                                                            <TableCell>{item.dmail.subject}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
@@ -3119,19 +3119,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Box flex={1}>
                                         {selectedDmail ? (
                                             <Paper style={{ padding: 16 }}>
-                                                <Typography variant="subtitle2">To:</Typography>
-                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
-                                                    {(selectedDmail.dmail.to).join(', ')}
-                                                </Typography>
-                                                <Typography variant="subtitle2">CC:</Typography>
-                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
-                                                    {(selectedDmail.dmail.cc).join(', ')}
-                                                </Typography>
-                                                <Typography variant="subtitle2">Subject:</Typography>
-                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
-                                                    {selectedDmail.dmail.subject}
-                                                </Typography>
-                                                <Typography variant="subtitle2">Body:</Typography>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
+                                                    <Typography variant="body2">
+                                                        {(selectedDmail.dmail.to).join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Cc:</Typography>
+                                                    <Typography variant="body2">
+                                                        {(selectedDmail.dmail.cc).join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Subject:</Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedDmail.dmail.subject}
+                                                    </Typography>
+                                                </Box>
                                                 <TextField
                                                     value={selectedDmail.dmail.body}
                                                     multiline
