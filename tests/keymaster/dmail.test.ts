@@ -238,6 +238,40 @@ describe('createDmail', () => {
 describe('listDmail', () => {
     it('should retrieve all dmails when none specified', async () => {
         const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 5',
+            body: 'This is a test dmail message 5.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+        const dmails = await keymaster.listDmail();
+
+        const expected = {
+            ...mock,
+            to: ['Alice'],
+            cc: ['Bob'],
+        };
+
+        expect(dmails).toBeDefined();
+        expect(dmails[did]).toBeDefined();
+        expect(dmails[did].sender).toBe('Bob');
+        expect(dmails[did].date).toBeDefined();
+        expect(dmails[did].dmail).toStrictEqual(expected);
+        expect(dmails[did].tags).toStrictEqual(['draft']);
+    });
+
+    it('should retrieve an empty set when no dmails', async () => {
+        await keymaster.createId('Alice');
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toStrictEqual({});
+    });
+
+    it('should retrieve an empty set when invalid dmails', async () => {
+        const alice = await keymaster.createId('Alice');
         const mock: DmailMessage = {
             to: [alice],
             cc: [],
@@ -246,18 +280,8 @@ describe('listDmail', () => {
         };
 
         const did = await keymaster.createDmail(mock);
-        const dmails = await keymaster.listDmail();
+        await keymaster.removeGroupVaultItem(did, DmailTags.DMAIL); // invalidate the dmail
 
-        expect(dmails).toBeDefined();
-        expect(dmails[did]).toBeDefined();
-        expect(dmails[did].sender).toBe(alice);
-        expect(dmails[did].date).toBeDefined();
-        expect(dmails[did].dmail).toStrictEqual(mock);
-        expect(dmails[did].tags).toStrictEqual(['draft']);
-    });
-
-    it('should retrieve an empty set when no dmails', async () => {
-        await keymaster.createId('Alice');
         const dmails = await keymaster.listDmail();
 
         expect(dmails).toStrictEqual({});

@@ -2977,17 +2977,13 @@ export default class Keymaster implements KeymasterInterface {
                 continue; // Skip if no dmail found for this DID
             }
 
-            const tags = list[did].tags || [];
+            const tags = list[did].tags ?? [];
             const docs = await this.resolveDID(did);
-            let sender = docs.didDocument?.controller ?? '';
-            const date = docs.didDocumentMetadata?.updated || docs.didDocumentMetadata?.created || '';
-
-            if (sender && didToName[sender]) {
-                sender = didToName[sender];
-            }
-
-            const to = (dmail.to || []).map(addr => didToName[addr] || addr);
-            const cc = (dmail.cc || []).map(addr => didToName[addr] || addr);
+            const controller = docs.didDocument?.controller ?? '';
+            const sender = didToName[controller] ?? controller;
+            const date = docs.didDocumentMetadata?.updated ?? '';
+            const to = dmail.to.map(addr => didToName[addr] ?? addr);
+            const cc = dmail.cc.map(addr => didToName[addr] ?? addr);
 
             dmailList[did] = {
                 dmail: { ...dmail, to, cc },
