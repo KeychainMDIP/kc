@@ -2986,7 +2986,7 @@ export default class Keymaster implements KeymasterInterface {
             const cc = dmail.cc.map(addr => didToName[addr] ?? addr);
 
             dmailList[did] = {
-                dmail: { ...dmail, to, cc },
+                message: { ...dmail, to, cc },
                 tags,
                 sender,
                 date,

@@ -3115,7 +3115,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             style={{ cursor: 'pointer' }}
                                                         >
                                                             <TableCell>{item.sender}</TableCell>
-                                                            <TableCell>{item.dmail.subject}</TableCell>
+                                                            <TableCell>{item.message.subject}</TableCell>
                                                             <TableCell>{item.date}</TableCell>
                                                         </TableRow>
                                                     ))}
@@ -3130,23 +3130,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <Box display="flex" alignItems="center" mb={1}>
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
                                                     <Typography variant="body2">
-                                                        {(selectedDmail.dmail.to).join(', ')}
-                                                    </Typography>
-                                                </Box>
-                                                <Box display="flex" alignItems="center" mb={1}>
-                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Cc:</Typography>
-                                                    <Typography variant="body2">
-                                                        {(selectedDmail.dmail.cc).join(', ')}
+                                                        {(selectedDmail.message.to).join(', ')}
                                                     </Typography>
                                                 </Box>
                                                 <Box display="flex" alignItems="center" mb={1}>
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>Subject:</Typography>
                                                     <Typography variant="body2">
-                                                        {selectedDmail.dmail.subject}
+                                                        {selectedDmail.message.subject}
                                                     </Typography>
                                                 </Box>
                                                 <TextField
-                                                    value={selectedDmail.dmail.body}
+                                                    value={selectedDmail.message.body}
                                                     multiline
                                                     minRows={10}
                                                     maxRows={30}

@@ -259,7 +259,7 @@ describe('listDmail', () => {
         expect(dmails[did]).toBeDefined();
         expect(dmails[did].sender).toBe('Bob');
         expect(dmails[did].date).toBeDefined();
-        expect(dmails[did].dmail).toStrictEqual(expected);
+        expect(dmails[did].message).toStrictEqual(expected);
         expect(dmails[did].tags).toStrictEqual(['draft']);
     });
 

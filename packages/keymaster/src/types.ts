@@ -1,4 +1,4 @@
-import {Cipher, EcdsaJwkPublic} from '@mdip/cipher/types';
+import { Cipher, EcdsaJwkPublic } from '@mdip/cipher/types';
 import {
     GatekeeperInterface,
     MdipDocument,
@@ -260,7 +260,7 @@ export interface DmailMessage {
 }
 
 export interface DmailItem {
-    dmail: DmailMessage;
+    message: DmailMessage;
     sender: string;
     date: string;
     tags: string[];
