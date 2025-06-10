@@ -32,6 +32,7 @@ import {
     Groups,
     Email,
     Image,
+    Inbox,
     Key,
     LibraryAdd,
     LibraryAddCheck,
@@ -111,6 +112,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
     const [dmailTab, setDmailTab] = useState('');
+    const [dmailList, setDmailList] = useState([]);
+    const [selectedDmail, setSelectedDmail] = useState(null);
     const [dmailDID, setDmailDID] = useState('');
     const [dmailString, setDmailString] = useState('');
     const [dmailSubject, setDmailSubject] = useState('');
@@ -197,11 +200,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 refreshNames();
                 refreshHeld();
                 refreshIssued();
+                refreshDmail();
 
                 setTab('identity');
                 setAssetsTab('schemas');
                 setCredentialTab('held');
-                setDmailTab('receive');
+                setDmailTab('inbox');
             }
             else {
                 setCurrentId('');
@@ -987,6 +991,21 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const newIssuedList = issuedList.filter(item => item !== did);
                 setIssuedList(newIssuedList);
             }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function refreshDmail() {
+        try {
+            const dmailList = await keymaster.listDmail();
+            setDmailList(dmailList);
+            setSelectedDmail(null);
+            setDmailString('');
+            setDmailSubject('');
+            setDmailBody('');
+            setDmailTo('');
+            setDmailVaultDID('');
         } catch (error) {
             showError(error);
         }
@@ -3067,10 +3086,68 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     variant="scrollable"
                                     scrollButtons="auto"
                                 >
+                                    <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
                                     <Tab key="receive" value="receive" label={'Receive'} icon={<MarkunreadMailbox />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
+                            {dmailTab === 'inbox' &&
+                                <Box display="flex" flexDirection="row" width="100%">
+                                    {/* Left: Dmail List */}
+                                    <Box width="40%" minWidth={320} maxWidth={400} mr={2}>
+                                        <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
+                                            <Table size="small">
+                                                <TableBody>
+                                                    {Object.entries(dmailList).map(([did, item], idx) => (
+                                                        <TableRow
+                                                            key={did}
+                                                            hover
+                                                            selected={selectedDmail && selectedDmail === item}
+                                                            onClick={() => setSelectedDmail(item)}
+                                                            style={{ cursor: 'pointer' }}
+                                                        >
+                                                            <TableCell>{item.date}</TableCell>
+                                                            <TableCell>{item.sender}</TableCell>
+                                                            <TableCell>{item.subject}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </Box>
+                                    {/* Right: Dmail Details */}
+                                    <Box flex={1}>
+                                        {selectedDmail ? (
+                                            <Paper style={{ padding: 16 }}>
+                                                <Typography variant="subtitle2">To:</Typography>
+                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
+                                                    {(selectedDmail.dmail.to).join(', ')}
+                                                </Typography>
+                                                <Typography variant="subtitle2">CC:</Typography>
+                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
+                                                    {(selectedDmail.dmail.cc).join(', ')}
+                                                </Typography>
+                                                <Typography variant="subtitle2">Subject:</Typography>
+                                                <Typography variant="body2" style={{ marginBottom: 8 }}>
+                                                    {selectedDmail.dmail.subject}
+                                                </Typography>
+                                                <Typography variant="subtitle2">Body:</Typography>
+                                                <TextField
+                                                    value={selectedDmail.dmail.body}
+                                                    multiline
+                                                    minRows={10}
+                                                    maxRows={30}
+                                                    fullWidth
+                                                    InputProps={{ readOnly: true }}
+                                                    variant="outlined"
+                                                />
+                                            </Paper>
+                                        ) : (
+                                            <Typography variant="body2">No Dmail selected.</Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                            }
                             {dmailTab === 'receive' &&
                                 <Box>
                                     <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>

@@ -21,6 +21,7 @@ import {
     EncryptedMessage,
     FileAssetOptions,
     CreateResponseOptions,
+    DmailItem,
     DmailMessage,
     EncryptOptions,
     FileAsset,
@@ -2958,11 +2959,34 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async listDmail(owner?: string): Promise<Record<string, any>> {
+    async listDmail(owner?: string): Promise<Record<string, DmailItem>> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(owner, wallet);
+        const list = id.dmail || {};
+        const dmailList: Record<string, DmailItem> = {};
 
-        return id.dmail ?? {};
+        for (const did of Object.keys(list)) {
+            const dmail = await this.getDmail(did);
+
+            if (!dmail) {
+                continue; // Skip if no dmail found for this DID
+            }
+
+            const tags = list[did].tags || [];
+            const docs = await this.resolveDID(did);
+            const sender = docs.didDocument?.controller ?? '';
+            const date = docs.didDocumentMetadata?.updated || docs.didDocumentMetadata?.created || '';
+
+            dmailList[did] = {
+                dmail,
+                tags,
+                sender,
+                date,
+                docs,
+            };
+        }
+
+        return dmailList;
     }
 
     verifyDmailTags(tags: string[]): string[] {

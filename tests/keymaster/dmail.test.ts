@@ -250,7 +250,10 @@ describe('listDmail', () => {
 
         expect(dmails).toBeDefined();
         expect(dmails[did]).toBeDefined();
-        expect(dmails[did]).toStrictEqual({ tags: ['draft'] });
+        expect(dmails[did].sender).toBe(alice);
+        expect(dmails[did].date).toBeDefined();
+        expect(dmails[did].dmail).toStrictEqual(mock);
+        expect(dmails[did].tags).toStrictEqual(['draft']);
     });
 
     it('should retrieve an empty set when no dmails', async () => {
@@ -377,7 +380,7 @@ describe('sendDmail', () => {
         expect(ok).toBe(true);
 
         const dmails = await keymaster.listDmail();
-        expect(dmails[did]).toStrictEqual({ tags: ['sent'] });
+        expect(dmails[did].tags).toStrictEqual(['sent']);
     });
 
     it('should return false for invalid dmail', async () => {
@@ -407,7 +410,7 @@ describe('importDmail', () => {
         expect(ok).toBe(true);
 
         const dmails = await keymaster.listDmail();
-        expect(dmails[did]).toStrictEqual({ tags: ['inbox'] });
+        expect(dmails[did].tags).toStrictEqual(['inbox']);
     });
 
     it('should return false for invalid dmail', async () => {

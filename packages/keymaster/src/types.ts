@@ -259,6 +259,14 @@ export interface DmailMessage {
     inReplyTo?: string;
 }
 
+export interface DmailItem {
+    dmail: DmailMessage;
+    sender: string;
+    date: string;
+    tags: string[];
+    docs?: any;
+}
+
 export interface KeymasterInterface {
     // Wallet
     loadWallet(): Promise<WalletFile>;
