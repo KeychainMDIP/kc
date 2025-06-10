@@ -382,4 +382,13 @@ export interface KeymasterInterface {
     removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
     listGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
     getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null>;
+
+    // Dmail
+    createDmail(message: DmailMessage, options?: CreateAssetOptions): Promise<string>;
+    updateDmail(did: string, message: DmailMessage): Promise<boolean>;
+    sendDmail(did: string): Promise<boolean>;
+    removeDmail(did: string): Promise<boolean>;
+    importDmail(did: string): Promise<boolean>;
+    getDmailMessage(did: string): Promise<DmailMessage | null>;
+    listDmail(owner?: string): Promise<Record<string, DmailItem>>;
 }

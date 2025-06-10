@@ -2971,7 +2971,7 @@ export default class Keymaster implements KeymasterInterface {
         }, {} as Record<string, string>);
 
         for (const did of Object.keys(list)) {
-            const dmail = await this.getDmail(did);
+            const dmail = await this.getDmailMessage(did);
 
             if (!dmail) {
                 continue; // Skip if no dmail found for this DID
@@ -3086,42 +3086,45 @@ export default class Keymaster implements KeymasterInterface {
         return newList;
     }
 
-    async verifyDmail(dmail: DmailMessage): Promise<DmailMessage> {
-        const to = await this.verifyDmailList(dmail.to);
-        const cc = await this.verifyDmailList(dmail.cc);
+    async verifyDmail(message: DmailMessage): Promise<DmailMessage> {
+        const to = await this.verifyDmailList(message.to);
+        const cc = await this.verifyDmailList(message.cc);
 
         if (to.length === 0) {
             throw new InvalidParameterError('dmail.to');
         }
 
-        if (!dmail.subject || typeof dmail.subject !== 'string' || dmail.subject.trim() === '') {
+        if (!message.subject || typeof message.subject !== 'string' || message.subject.trim() === '') {
             throw new InvalidParameterError('dmail.subject');
         }
 
-        if (!dmail.body || typeof dmail.body !== 'string' || dmail.body.trim() === '') {
+        if (!message.body || typeof message.body !== 'string' || message.body.trim() === '') {
             throw new InvalidParameterError('dmail.body');
         }
 
         return {
-            ...dmail,
+            ...message,
             to,
             cc,
         };
     }
 
-    async createDmail(dmail: DmailMessage, options: GroupVaultOptions = {}): Promise<string> {
-        const verifiedDmail = await this.verifyDmail(dmail);
+    async createDmail(
+        message: DmailMessage,
+        options: GroupVaultOptions = {}
+    ): Promise<string> {
+        const dmail = await this.verifyDmail(message);
         const did = await this.createGroupVault(options);
 
-        for (const toDID of verifiedDmail.to) {
+        for (const toDID of dmail.to) {
             await this.addGroupVaultMember(did, toDID);
         }
 
-        for (const ccDID of verifiedDmail.cc) {
+        for (const ccDID of dmail.cc) {
             await this.addGroupVaultMember(did, ccDID);
         }
 
-        const buffer = Buffer.from(JSON.stringify({ dmail: verifiedDmail }), 'utf-8');
+        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
         await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
         await this.addToDmail(did, [DmailTags.DRAFT]);
 
@@ -3130,17 +3133,17 @@ export default class Keymaster implements KeymasterInterface {
 
     async updateDmail(
         did: string,
-        dmail: DmailMessage
+        message: DmailMessage
     ): Promise<boolean> {
-        const verifiedDmail = await this.verifyDmail(dmail);
-        const buffer = Buffer.from(JSON.stringify({ dmail: verifiedDmail }), 'utf-8');
+        const dmail = await this.verifyDmail(message);
+        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
         return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
     }
 
     async sendDmail(did: string): Promise<boolean> {
         // TBD create notice for the recipients
 
-        const dmail = await this.getDmail(did);
+        const dmail = await this.getDmailMessage(did);
 
         if (!dmail) {
             return false;
@@ -3153,7 +3156,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.removeFromDmail(did);
     }
 
-    async getDmail(did: string): Promise<DmailMessage | null> {
+    async getDmailMessage(did: string): Promise<DmailMessage | null> {
         const isGroupVault = await this.testGroupVault(did);
 
         if (!isGroupVault) {
@@ -3176,7 +3179,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async importDmail(did: string): Promise<boolean> {
-        const dmail = await this.getDmail(did);
+        const dmail = await this.getDmailMessage(did);
 
         if (!dmail) {
             return false;

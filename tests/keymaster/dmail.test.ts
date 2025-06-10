@@ -288,8 +288,8 @@ describe('listDmail', () => {
     });
 });
 
-describe('getDmail', () => {
-    it('should retrieve dmail by DID', async () => {
+describe('getDmailMessage', () => {
+    it('should retrieve message by DID', async () => {
         const alice = await keymaster.createId('Alice');
         const mock: DmailMessage = {
             to: [alice],
@@ -299,14 +299,14 @@ describe('getDmail', () => {
         };
 
         const did = await keymaster.createDmail(mock);
-        const dmail = await keymaster.getDmail(did);
+        const dmail = await keymaster.getDmailMessage(did);
 
         expect(dmail).toStrictEqual(mock);
     });
 
     it('should retrieve null if DID is not a GroupVault', async () => {
         const alice = await keymaster.createId('Alice');
-        const dmail = await keymaster.getDmail(alice);
+        const dmail = await keymaster.getDmailMessage(alice);
 
         expect(dmail).toBeNull();
     });
@@ -314,7 +314,7 @@ describe('getDmail', () => {
     it('should retrieve null if DID is a different kind of GroupVault', async () => {
         await keymaster.createId('Alice');
         const vault = await keymaster.createGroupVault();
-        const dmail = await keymaster.getDmail(vault);
+        const dmail = await keymaster.getDmailMessage(vault);
 
         expect(dmail).toBeNull();
     });
@@ -324,7 +324,7 @@ describe('getDmail', () => {
         const vault = await keymaster.createGroupVault();
         const buffer = Buffer.from('This is not a valid dmail');
         await keymaster.addGroupVaultItem(vault, DmailTags.DMAIL, buffer);
-        const dmail = await keymaster.getDmail(vault);
+        const dmail = await keymaster.getDmailMessage(vault);
 
         expect(dmail).toBeNull();
     });
@@ -354,7 +354,7 @@ describe('updateDmail', () => {
         const ok = await keymaster.updateDmail(did, mock2);
         expect(ok).toBe(true);
 
-        const dmail = await keymaster.getDmail(did);
+        const dmail = await keymaster.getDmailMessage(did);
         expect(dmail).toStrictEqual(mock2);
     });
 });

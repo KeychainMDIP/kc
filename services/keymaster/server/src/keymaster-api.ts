@@ -5212,6 +5212,72 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
     }
 });
 
+v1router.get('/dmail', async (req, res) => {
+    try {
+        const dmail = await keymaster.listDmail();
+        res.json({ dmail });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/dmail', async (req, res) => {
+    try {
+        const { dmail: message, options } = req.body;
+        const did = await keymaster.createDmail(message, options);
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/dmail/import', async (req, res) => {
+    try {
+        const { did } = req.body;
+        const ok = await keymaster.importDmail(did);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.get('/dmail/:id', async (req, res) => {
+    try {
+        const message = await keymaster.getDmail(req.params.id);
+        res.json({ message });
+    } catch (error: any) {
+        res.status(404).send({ error: 'Dmail not found' });
+    }
+});
+
+v1router.put('/dmail/:id', async (req, res) => {
+    try {
+        const { message } = req.body;
+        const ok = await keymaster.updateDmail(req.params.id, message);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.delete('/dmail/:id', async (req, res) => {
+    try {
+        const ok = await keymaster.removeDmail(req.params.id);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+v1router.post('/dmail/:id/send', async (req, res) => {
+    try {
+        const ok = await keymaster.sendDmail(req.params.id);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {
