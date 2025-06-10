@@ -19,22 +19,20 @@ const DisplayDID = ({ did }: { did: string }) => {
             overflow="hidden"
             alignItems="center"
         >
-            <Tooltip title={did}>
-                <Typography
-                    noWrap
-                    sx={{
-                        fontSize: '1.5em',
-                        fontFamily: "Courier, monospace",
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        minWidth: 0,
-                        flex: 1,
-                    }}
-                >
-                    {did}
-                </Typography>
-            </Tooltip>
+            <Typography
+                noWrap
+                sx={{
+                    fontSize: '1.5em',
+                    fontFamily: "Courier, monospace",
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minWidth: 0,
+                    flex: 1,
+                }}
+            >
+                {did}
+            </Typography>
 
             <Tooltip title="Copy DID">
                 <IconButton

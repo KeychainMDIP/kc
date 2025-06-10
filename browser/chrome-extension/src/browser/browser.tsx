@@ -11,9 +11,9 @@ const BrowserUI = () => {
     const [browserRefresh, setBrowserRefresh] = useState<RefreshMode>(RefreshMode.NONE);
 
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {
-        if (request.type === "PING_JSON_VIEWER") {
+        if (request.type === "PING_BROWSER") {
             sendResponse({ ack: true });
-        } else if (request.type === "LOAD_JSON") {
+        } else if (request.type === "LOAD_BROWSER_CONTENTS") {
             setOpenBrowser(request.payload);
         } else if (request.type === "BROWSER_REFRESH") {
             setBrowserRefresh(RefreshMode.WALLET);
