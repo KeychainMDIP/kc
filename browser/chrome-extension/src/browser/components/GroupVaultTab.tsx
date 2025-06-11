@@ -1,7 +1,9 @@
 import React, {ChangeEvent, useRef, useState} from "react";
 import {
+    Autocomplete,
     Box,
-    Button, IconButton,
+    Button,
+    IconButton,
     MenuItem,
     Select,
     TextField,
@@ -9,9 +11,12 @@ import {
     Typography
 } from "@mui/material";
 import {
-    AttachFile, ContentCopy, Edit,
+    AttachFile,
+    ContentCopy,
+    Edit,
     Image,
-    Login, ManageSearch,
+    Login,
+    ManageSearch,
     PictureAsPdf,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
@@ -55,6 +60,7 @@ function GroupVaultTab() {
         setSuccess,
     } = useWalletContext();
     const {
+        agentList,
         nameList,
         vaultList,
     } = useCredentialsContext();
@@ -631,17 +637,26 @@ function GroupVaultTab() {
 
                         {selectedVaultOwned &&
                             <Box display="flex" flexDirection="row" sx={{ mb: 2 }}>
-                                <TextField
-                                    size="small"
-                                    sx={{ width: "500px" }}
+                                <Autocomplete
+                                    freeSolo
+                                    options={agentList || []}
                                     value={vaultMember}
-                                    className="text-field single-line"
-                                    onChange={(e) => setVaultMember(e.target.value)}
-                                    slotProps={{
-                                        htmlInput: {
-                                            maxLength: 80,
-                                        },
-                                    }}
+                                    onChange={(_e, newVal) => setVaultMember(newVal || "")}
+                                    onInputChange={(_e, newInput) => setVaultMember(newInput)}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            label="Name or DID"
+                                            sx={{ width: 500 }}
+                                            size="small"
+                                            slotProps={{
+                                                htmlInput: {
+                                                    ...params.inputProps,
+                                                    maxLength: 80,
+                                                },
+                                            }}
+                                        />
+                                    )}
                                 />
 
                                 <Button
