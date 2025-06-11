@@ -5386,6 +5386,7 @@ v1router.post('/dmail/import', async (req, res) => {
  *                 error:
  *                   type: string
  */
+// eslint-disable-next-line
 v1router.get('/dmail/:id', async (req, res) => {
     try {
         const message = await keymaster.getDmailMessage(req.params.id);
