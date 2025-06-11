@@ -392,5 +392,5 @@ export interface KeymasterInterface {
     removeDmail(did: string): Promise<boolean>;
     importDmail(did: string): Promise<boolean>;
     getDmailMessage(did: string): Promise<DmailMessage | null>;
-    listDmail(owner?: string): Promise<Record<string, DmailItem>>;
+    listDmail(): Promise<Record<string, DmailItem>>;
 }

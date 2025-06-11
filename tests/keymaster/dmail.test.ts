@@ -375,11 +375,11 @@ describe('removeDmail', () => {
         expect(did in dmails).toBe(false);
     });
 
-    it('should return true for non-existent dmail', async () => {
+    it('should return false for non-dmail', async () => {
         const alice = await keymaster.createId('Alice');
 
         const ok = await keymaster.removeDmail(alice);
-        expect(ok).toBe(true);
+        expect(ok).toBe(false);
     });
 });
 

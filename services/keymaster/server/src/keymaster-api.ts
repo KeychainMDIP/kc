@@ -5214,8 +5214,7 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
 
 v1router.get('/dmail', async (req, res) => {
     try {
-        const owner = typeof req.query.owner === 'string' ? req.query.owner : undefined;
-        const dmail = await keymaster.listDmail(owner);
+        const dmail = await keymaster.listDmail();
         res.json({ dmail });
     } catch (error: any) {
         res.status(500).send(error.toString());

@@ -1166,15 +1166,10 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listDmail(owner?: string): Promise<Record<string, DmailItem>> {
+    async listDmail(): Promise<Record<string, DmailItem>> {
         try {
-            if (owner) {
-                const response = await axios.get(`${this.API}/dmail?owner=${owner}`);
-                return response.data.dmail;
-            } else {
-                const response = await axios.get(`${this.API}/dmail`);
-                return response.data.dmail;
-            }
+            const response = await axios.get(`${this.API}/dmail`);
+            return response.data.dmail;
         } catch (error) {
             throwError(error);
         }

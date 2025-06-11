@@ -2959,9 +2959,9 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async listDmail(owner?: string): Promise<Record<string, DmailItem>> {
+    async listDmail(): Promise<Record<string, DmailItem>> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
+        const id = await this.fetchIdInfo(undefined, wallet);
         const list = id.dmail || {};
         const dmailList: Record<string, DmailItem> = {};
         const nameList = await this.listNames({ includeIDs: true });
@@ -3020,11 +3020,10 @@ export default class Keymaster implements KeymasterInterface {
 
     async addToDmail(
         did: string,
-        tags: string[],
-        owner?: string
+        tags: string[]
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
+        const id = await this.fetchIdInfo(undefined, wallet);
         const verifiedTags = this.verifyDmailTags(tags);
 
         if (!id.dmail) {
@@ -3036,12 +3035,9 @@ export default class Keymaster implements KeymasterInterface {
         return this.saveWallet(wallet);
     }
 
-    async removeFromDmail(
-        did: string,
-        owner?: string
-    ): Promise<boolean> {
+    async removeFromDmail(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
+        const id = await this.fetchIdInfo(undefined, wallet);
 
         if (!id.dmail || !id.dmail[did]) {
             return true;
@@ -3143,18 +3139,24 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async sendDmail(did: string): Promise<boolean> {
-        // TBD create notice for the recipients
-
         const dmail = await this.getDmailMessage(did);
 
         if (!dmail) {
             return false;
         }
 
+        // TBD create notice for the recipients
+
         return this.addToDmail(did, [DmailTags.SENT]);
     }
 
     async removeDmail(did: string): Promise<boolean> {
+        const dmail = await this.getDmailMessage(did);
+
+        if (!dmail) {
+            return false;
+        }
+
         return this.removeFromDmail(did);
     }
 
