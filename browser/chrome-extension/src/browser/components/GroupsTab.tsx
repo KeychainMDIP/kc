@@ -1,19 +1,21 @@
 import React, { useState } from "react";
-import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
-import { ContentCopy } from "@mui/icons-material";
+import {ContentCopy, Edit, ManageSearch} from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "../../shared/DisplayDID";
 import { Group } from '@mdip/keymaster/types'
+import TextInputModal from "../../shared/TextInputModal";
 
 const GroupsTab = () => {
     const {
         keymaster,
         registries,
         setError,
+        setSuccess,
     } = useWalletContext();
     const {
         groupList,
@@ -23,6 +25,7 @@ const GroupsTab = () => {
         refreshNames,
         handleCopyDID,
         setOpenBrowser,
+        openBrowserWindow,
     } = useUIContext();
 
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -34,6 +37,8 @@ const GroupsTab = () => {
     const [jsonDID, setJsonDID] = useState<string>('');
     const [removeDID, setRemoveDID] = useState<string>('');
     const [open, setOpen] = useState<boolean>(false);
+    const [renameOpen, setRenameOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
 
     const storageKey = "jsonViewerState-groups-noSubTab";
     sessionStorage.removeItem(storageKey);
@@ -147,21 +152,54 @@ const GroupsTab = () => {
         setRemoveDID("");
     };
 
+    const openRenameModal = () => {
+        setRenameOldName(selectedGroupName);
+        setRenameOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName: string) => {
+        setRenameOpen(false);
+        if (!newName || newName === selectedGroupName || !keymaster) {
+            return;
+        }
+        try {
+            await keymaster.addName(newName, groupDID);
+            await keymaster.removeName(selectedGroupName);
+            await refreshNames();
+            setSelectedGroupName(newName);
+            setRenameOldName("");
+            setSuccess("Group renamed");
+        } catch (error: any) {
+            setError(error);
+        }
+    };
+
     return (
         <Box>
-            <Box display="flex" flexDirection="column">
-                <WarningModal
-                    title="Overwrite wallet"
-                    warningText={`Remove member from ${selectedGroupName}?`}
-                    isOpen={open}
-                    onClose={handleClose}
-                    onSubmit={removeMember}
-                />
+            <TextInputModal
+                isOpen={renameOpen}
+                title="Rename Group"
+                description={`Rename '${renameOldName}' to:`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameOpen(false)}
+            />
 
+            <WarningModal
+                title="Overwrite wallet"
+                warningText={`Remove member from ${selectedGroupName}?`}
+                isOpen={open}
+                onClose={handleClose}
+                onSubmit={removeMember}
+            />
+
+            <Box display="flex" flexDirection="column">
                 <Box className="flex-box mt-2">
                     <TextField
                         label="Group Name"
-                        style={{ width: '300px' }}
+                        style={{ flex: "0 0 400px" }}
                         className="text-field single-line"
                         size="small"
                         value={groupName}
@@ -203,53 +241,69 @@ const GroupsTab = () => {
                             value={selectedGroupName}
                             displayEmpty
                             variant="outlined"
-                            className="select-small-left"
-                            onChange={(event) => {
-                                const selectedName = event.target.value;
-                                setSelectedGroupName(selectedName);
-                                populateCopyButton(selectedName);
+                            size="small"
+                            onChange={async (event) => {
+                                const name = event.target.value;
+                                setSelectedGroupName(name);
+                                populateCopyButton(name);
+                                await refreshGroup(name);
                             }}
                         >
                             <MenuItem value="" disabled>
                                 Select group
                             </MenuItem>
-                            {groupList.map((name, index) => (
+                            {groupList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>
                             ))}
                         </Select>
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={() => refreshGroup(selectedGroupName)}
-                            disabled={!selectedGroupName}
-                            className="button-right"
-                        >
-                            Edit Group
-                        </Button>
-                        {groupDID &&
-                            <Tooltip title="Copy Group DID">
+
+                        <Tooltip title="Rename Group">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={openRenameModal}
+                                    disabled={!selectedGroupName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <Edit fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Copy DID">
+                            <span>
                                 <IconButton
                                     onClick={() => handleCopyDID(groupDID)}
                                     size="small"
-                                    sx={{
-                                        px: 0.5,
-                                        ml: 1,
-                                    }}
+                                    sx={{ ml: 1 }}
+                                    disabled={!selectedGroupName}
                                 >
                                     <ContentCopy fontSize="small" />
                                 </IconButton>
-                            </Tooltip>
-                        }
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Resolve DID">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    onClick={() =>
+                                        openBrowserWindow({ did: groupDID })
+                                    }
+                                    disabled={!selectedGroupName}
+                                    sx={{ ml: 1 }}
+                                >
+                                    <ManageSearch fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                     </Box>
                 }
                 {selectedGroup &&
                     <Box display="flex" flexDirection="column">
-                        <Typography variant="h5" component="h5" sx={{ my: 2 }}>
-                            {`Editing ${selectedGroup.name}`}
-                        </Typography>
-                        <Box display="flex" flexDirection="row" sx={{ mb: 2 }}>
+                        <Box display="flex" flexDirection="row" sx={{ mb: 2, mt: 2 }}>
                             <TextField
                                 label="DID"
                                 sx={{ width: '300px' }}

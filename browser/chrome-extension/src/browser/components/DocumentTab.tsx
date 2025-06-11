@@ -1,5 +1,6 @@
 import React, { ChangeEvent, useEffect, useState } from "react";
-import { Box, Button, MenuItem, Select } from "@mui/material";
+import {Box, Button, IconButton, MenuItem, Select, Tooltip} from "@mui/material";
+import { Edit, ContentCopy, ManageSearch } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -7,6 +8,7 @@ import { FileAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
+import TextInputModal from "../../shared/TextInputModal";
 
 const gatekeeper = new GatekeeperClient();
 
@@ -18,10 +20,13 @@ const DocumentTab = () => {
         setSuccess,
     } = useWalletContext();
     const {
+        handleCopyDID,
+        openBrowserWindow,
         refreshNames,
     } = useUIContext();
     const {
         documentList,
+        nameList,
     } = useCredentialsContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [selectedDocumentName, setSelectedDocumentName] = useState<string>("");
@@ -30,6 +35,8 @@ const DocumentTab = () => {
     const [selectedDocumentDataUrl, setSelectedDocumentDataUrl] = useState<string>("");
     const [docVersion, setDocVersion] = useState<number>(1);
     const [docVersionMax, setDocVersionMax] = useState<number>(1);
+    const [renameOpen, setRenameOpen] = useState<boolean>(false);
+    const [renameOldName, setRenameOldName] = useState<string>("");
 
     useEffect(() => {
         const init = async () => {
@@ -57,8 +64,7 @@ const DocumentTab = () => {
 
             const currentVersion = docs.didDocumentMetadata?.version ?? 1;
             setDocVersion(currentVersion);
-
-            if (currentVersion > docVersionMax) {
+            if (version === undefined) {
                 setDocVersionMax(currentVersion);
             }
 
@@ -210,15 +216,45 @@ const DocumentTab = () => {
         refreshDocument(selectedDocumentName, newVer);
     }
 
+    function openRenameModal() {
+        setRenameOldName(selectedDocumentName);
+        setRenameOpen(true);
+    }
+
+    async function handleRenameSubmit(newName: string) {
+        setRenameOpen(false);
+        if (!keymaster || !newName || newName === selectedDocumentName) {
+            return;
+        }
+        try {
+            const did = nameList[selectedDocumentName];
+            await keymaster.addName(newName, did);
+            await keymaster.removeName(selectedDocumentName);
+            await refreshNames();
+            setSelectedDocumentName(newName);
+            await refreshDocument(newName);
+            setSuccess("Document renamed");
+        } catch (error: any) {
+            setError(error);
+        }
+    }
+
     return (
         <Box>
+            <TextInputModal
+                isOpen={renameOpen}
+                title="Rename Document"
+                description={`Rename '${renameOldName}'`}
+                label="New Name"
+                confirmText="Rename"
+                defaultValue={renameOldName}
+                onSubmit={handleRenameSubmit}
+                onClose={() => setRenameOpen(false)}
+            />
+
             <Box className="flex-box mt-2">
                 <Select
-                    value={
-                        registries.length > 0 && registries.includes(registry)
-                            ? registry
-                            : ""
-                    }
+                    value={registries.includes(registry) ? registry : ""}
                     onChange={(e) => setRegistry(e.target.value)}
                     size="small"
                     variant="outlined"
@@ -266,7 +302,7 @@ const DocumentTab = () => {
                             <MenuItem value="" disabled>
                                 Select document
                             </MenuItem>
-                            {documentList.map((name, index) => (
+                            {documentList.slice().sort((a,b)=>a.localeCompare(b)).map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>
@@ -297,6 +333,35 @@ const DocumentTab = () => {
                         >
                             Download
                         </Button>
+                        <Tooltip title="Rename Document">
+                            <span>
+                                <IconButton size="small" onClick={openRenameModal} disabled={!selectedDocumentName} sx={{ ml: 1 }}>
+                                    <Edit fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Copy DID">
+                            <span>
+                                <IconButton size="small"
+                                    onClick={() => handleCopyDID(nameList[selectedDocumentName])}
+                                    disabled={!selectedDocumentName}
+                                    sx={{ ml: 1 }}>
+                                    <ContentCopy fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title="Resolve DID">
+                            <span>
+                                <IconButton size="small"
+                                    onClick={() => openBrowserWindow({ did: nameList[selectedDocumentName] })}
+                                    disabled={!selectedDocumentName}
+                                    sx={{ ml: 1 }}>
+                                    <ManageSearch fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                     </Box>
                     {selectedDocument && selectedDocumentDocs && selectedDocumentDataUrl && (
                         <Box sx={{ mt: 2 }}>

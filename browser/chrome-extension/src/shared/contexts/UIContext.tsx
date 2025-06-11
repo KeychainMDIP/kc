@@ -49,6 +49,7 @@ export function UIProvider(
     {
         children,
         pendingAuth,
+        pendingCredential,
         openBrowser,
         setOpenBrowser,
         browserRefresh,
@@ -56,6 +57,7 @@ export function UIProvider(
     }: {
         children: ReactNode,
         pendingAuth?: string,
+        pendingCredential?: string,
         openBrowser?: openBrowserValues,
         setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
@@ -96,6 +98,7 @@ export function UIProvider(
         setCredentialSchema,
         setCredentialString,
         setCredentialDID,
+        setHeldDID,
         setHeldList,
         setIssuedList,
         setIssuedString,
@@ -149,7 +152,9 @@ export function UIProvider(
     }, [browserRefresh]);
 
     useEffect(() => {
-        if (!currentId) return;
+        if (!currentId) {
+            return;
+        }
         if (pendingAuth && !pendingUsed) {
             (async () => {
                 await setSelectedTab("auth");
@@ -160,6 +165,14 @@ export function UIProvider(
             })();
 
             // Prevent challenge repopulating after clear on ID change
+            setPendingUsed(true);
+        } else if (pendingCredential && !pendingUsed) {
+            (async () => {
+                await setSelectedTab("credentials");
+                await setHeldDID(pendingCredential);
+            })();
+
+            // Prevent credential repopulating after clear on ID change
             setPendingUsed(true);
         } else if (pendingTab) {
             (async () => {
@@ -174,7 +187,7 @@ export function UIProvider(
             })();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentId, pendingAuth, pendingTab, pendingMessageTab]);
+    }, [currentId, pendingAuth, pendingCredential, pendingTab, pendingMessageTab]);
 
     function openBrowserWindow(options: openBrowserValues) {
         const tab = options.tab ?? "viewer";
@@ -189,54 +202,7 @@ export function UIProvider(
             return;
         }
 
-        let url = `browser.html?tab=${tab}`;
-
-        if (options.did) {
-            const didEncoded = encodeURIComponent(options.did);
-            url += `&did=${didEncoded}`;
-        }
-
-        if (options.title) {
-            const titleEncoded = encodeURIComponent(options.title);
-            url += `&title=${titleEncoded}`;
-        }
-
-        if (options.subTab) {
-            url += `&subTab=${options.subTab}`;
-        }
-
-        if (options.contents) {
-            const contentsString = options.contents ? JSON.stringify(options.contents, null, 4) : "";
-            const jsonEncoded = encodeURIComponent(contentsString);
-            url += `&doc=${jsonEncoded}`;
-        }
-
-        chrome.tabs.query({ url: chrome.runtime.getURL("browser.html") + "*" }, (tabs) => {
-            if (!tabs || tabs.length === 0 || tabs[0].id === undefined) {
-                chrome.tabs.create({ url });
-                return;
-            }
-
-            const existingTabId = tabs[0].id;
-
-            chrome.tabs.sendMessage(
-                existingTabId,
-                { type: "PING_JSON_VIEWER" },
-                (response) => {
-                    if (chrome.runtime.lastError || !response?.ack) {
-                        chrome.tabs.create({ url });
-                        return;
-                    }
-
-                    chrome.tabs.sendMessage(existingTabId, {
-                        type: "LOAD_JSON",
-                        payload
-                    });
-
-                    chrome.tabs.update(existingTabId, { active: true });
-                }
-            );
-        });
+        chrome.runtime.sendMessage({type: "OPEN_BROWSER_WINDOW", options});
     }
 
     async function setSelectedTab(value: string) {

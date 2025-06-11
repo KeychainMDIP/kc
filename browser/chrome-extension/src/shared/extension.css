@@ -28,6 +28,13 @@ body {
     border-top-left-radius: 0;
 }
 
+.text-field.middle .MuiOutlinedInput-notchedOutline {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
 .text-field .MuiOutlinedInput-input {
     font-family: "Courier", monospace;
 }

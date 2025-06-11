@@ -20,7 +20,7 @@ jobs:
           node-version: '22.15.0'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --ignore-scripts --omit=optional
 
       - name: Generate OpenAPI JSON files
         run: npm run generate-openapi
