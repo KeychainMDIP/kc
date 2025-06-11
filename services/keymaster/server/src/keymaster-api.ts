@@ -5250,7 +5250,7 @@ v1router.get('/dmail', async (req, res) => {
         const dmail = await keymaster.listDmail();
         res.json({ dmail });
     } catch (error: any) {
-        res.status(500).send(error.toString());
+        res.status(500).send({ error: error.toString() });
     }
 });
 

@@ -115,12 +115,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailTab, setDmailTab] = useState('');
     const [dmailList, setDmailList] = useState([]);
     const [selectedDmail, setSelectedDmail] = useState(null);
-    const [dmailDID, setDmailDID] = useState('');
+    const [dmailImportDID, setDmailImportDID] = useState('');
     const [dmailString, setDmailString] = useState('');
     const [dmailSubject, setDmailSubject] = useState('');
     const [dmailBody, setDmailBody] = useState('');
     const [dmailTo, setDmailTo] = useState('');
-    const [dmailVaultDID, setDmailVaultDID] = useState('');
+    const [dmailSendDID, setDmailSendDID] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -225,8 +225,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setDmailString('');
             setDmailBody('');
             setDmailTo('');
-            setDmailDID('');
-            setDmailVaultDID('');
+            setDmailImportDID('');
+            setDmailSendDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
             setSelectedVaultName('');
@@ -1006,7 +1006,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setDmailSubject('');
             setDmailBody('');
             setDmailTo('');
-            setDmailVaultDID('');
+            setDmailSendDID('');
         } catch (error) {
             showError(error);
         }
@@ -1018,6 +1018,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             if (ok) {
                 showAlert("Dmail import successful");
+                refreshDmail();
             } else {
                 showError("Dmail import failed");
             }
@@ -1036,7 +1037,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             };
 
             const did = await keymaster.createDmail(dmail, { registry });
-            setDmailVaultDID(did);
+            setDmailSendDID(did);
         } catch (error) {
             showError(error);
         }
@@ -1051,7 +1052,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 body: dmailBody,
             };
 
-            const ok = await keymaster.updateDmail(dmailVaultDID, dmail);
+            const ok = await keymaster.updateDmail(dmailSendDID, dmail);
 
             if (ok) {
                 showAlert("Dmail updated successfully");
@@ -1065,7 +1066,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function sendDmail() {
         try {
-            const ok = await keymaster.sendDmail(dmailVaultDID);
+            const ok = await keymaster.sendDmail(dmailSendDID);
 
             if (ok) {
                 showAlert("Dmail sent successfully");
@@ -3165,15 +3166,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         <TextField
                                                             label="Dmail DID"
                                                             style={{ width: '500px' }}
-                                                            value={dmailDID}
-                                                            onChange={(e) => setDmailDID(e.target.value.trim())}
+                                                            value={dmailImportDID}
+                                                            onChange={(e) => setDmailImportDID(e.target.value.trim())}
                                                             fullWidth
                                                             margin="normal"
                                                             inputProps={{ maxLength: 80 }}
                                                         />
                                                     </TableCell>
                                                     <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailDID)} disabled={!dmailDID}>
+                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailImportDID)} disabled={!dmailImportDID}>
                                                             Import
                                                         </Button>
                                                     </TableCell>
@@ -3243,21 +3244,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         <RegistrySelect />
                                                     </Grid>
                                                 </Grid>
-                                                {dmailVaultDID &&
+                                                {dmailSendDID &&
                                                     <Grid item>
-                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {dmailVaultDID}
-                                                        </Typography>
+                                                        <p>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {dmailSendDID}
+                                                            </Typography>
+                                                        </p>
                                                     </Grid>
                                                 }
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailVaultDID}>
+                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailSendDID}>
                                                             Update Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailVaultDID}>
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailSendDID}>
                                                             Send Dmail
                                                         </Button>
                                                     </Grid>
