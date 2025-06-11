@@ -5212,6 +5212,324 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /dmail:
+ *   get:
+ *     summary: List all Dmail messages for the current or specified owner.
+ *     description: Returns a mapping of Dmail DIDs to Dmail item objects for the current wallet or for the specified owner.
+ *     parameters:
+ *       - in: query
+ *         name: owner
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the owner whose Dmail messages should be listed.
+ *     responses:
+ *       200:
+ *         description: A mapping of Dmail DIDs to Dmail item objects.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dmail:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                   description: An object where each key is a Dmail DID, and each value is the associated Dmail item.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
+v1router.get('/dmail', async (req, res) => {
+    try {
+        const dmail = await keymaster.listDmail();
+        res.json({ dmail });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail:
+ *   post:
+ *     summary: Create a new Dmail message.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dmail:
+ *                 type: object
+ *                 description: The Dmail message object to create.
+ *                 example:
+ *                   to: ["did:mdip:abc123", "did:mdip:def456"]
+ *                   cc: ["did:mdip:ghi789"]
+ *                   subject: "Hello World"
+ *                   body: "This is a test Dmail message."
+ *               options:
+ *                 type: object
+ *                 description: Additional creation options (e.g., registry, validUntil).
+ *     responses:
+ *       200:
+ *         description: The DID of the newly created Dmail message.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 did:
+ *                   type: string
+ *                   description: The DID representing the new Dmail message.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/dmail', async (req, res) => {
+    try {
+        const { message, options } = req.body;
+        const did = await keymaster.createDmail(message, options);
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/import:
+ *   post:
+ *     summary: Import a Dmail message into the inbox.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               did:
+ *                 type: string
+ *                 description: The DID of the Dmail message to import.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the import was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/dmail/import', async (req, res) => {
+    try {
+        const { did } = req.body;
+        const ok = await keymaster.importDmail(did);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/{id}:
+ *   get:
+ *     summary: Retrieve a Dmail message by DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to retrieve.
+ *     responses:
+ *       200:
+ *         description: The Dmail message object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: object
+ *                   description: The Dmail message.
+ *       404:
+ *         description: Dmail not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+// eslint-disable-next-line
+v1router.get('/dmail/:id', async (req, res) => {
+    try {
+        const message = await keymaster.getDmailMessage(req.params.id);
+        res.json({ message });
+    } catch (error: any) {
+        res.status(404).send({ error: 'Dmail not found' });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/{id}:
+ *   put:
+ *     summary: Update an existing Dmail message.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: object
+ *                 description: The updated Dmail message object.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the update was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.put('/dmail/:id', async (req, res) => {
+    try {
+        const { message } = req.body;
+        const ok = await keymaster.updateDmail(req.params.id, message);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/{id}:
+ *   delete:
+ *     summary: Remove a Dmail message from the mailbox.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to remove.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the removal was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.delete('/dmail/:id', async (req, res) => {
+    try {
+        const ok = await keymaster.removeDmail(req.params.id);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/{id}/send:
+ *   post:
+ *     summary: Mark a Dmail message as sent.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to send.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the send operation was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/dmail/:id/send', async (req, res) => {
+    try {
+        const ok = await keymaster.sendDmail(req.params.id);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 app.use('/api/v1', v1router);
 
 app.use((req, res) => {

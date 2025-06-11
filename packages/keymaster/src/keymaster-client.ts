@@ -7,6 +7,8 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    DmailItem,
+    DmailMessage,
     FileAssetOptions,
     CreateResponseOptions,
     EncryptOptions,
@@ -14,6 +16,7 @@ import {
     FixWalletResult,
     Group,
     GroupVault,
+    GroupVaultOptions,
     ImageAsset,
     IssueCredentialsOptions,
     KeymasterClientOptions,
@@ -1026,7 +1029,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async createGroupVault(options: CreateAssetOptions = {}): Promise<string> {
+    async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/groupVaults`, { options });
             return response.data.did;
@@ -1160,6 +1163,81 @@ export default class KeymasterClient implements KeymasterInterface {
                 axiosError.response.data = JSON.parse(errorMessage);
             }
             throwError(axiosError);
+        }
+    }
+
+    async listDmail(): Promise<Record<string, DmailItem>> {
+        try {
+            const response = await axios.get(`${this.API}/dmail`);
+            return response.data.dmail;
+        } catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createDmail(
+        message: DmailMessage,
+        options: GroupVaultOptions = {}
+    ): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/dmail`, { message, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateDmail(
+        did: string,
+        message: DmailMessage
+    ): Promise<boolean> {
+        try {
+            const response = await axios.put(`${this.API}/dmail/${did}`, { message });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async sendDmail(did: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/dmail/${did}/send`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeDmail(did: string): Promise<boolean> {
+        try {
+            const response = await axios.delete(`${this.API}/dmail/${did}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getDmailMessage(did: string): Promise<DmailMessage | null> {
+        try {
+            const response = await axios.get(`${this.API}/dmail/${did}`);
+            return response.data.message;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async importDmail(did: string): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/dmail/import`, { did });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
         }
     }
 }

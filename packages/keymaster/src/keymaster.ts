@@ -21,6 +21,8 @@ import {
     EncryptedMessage,
     FileAssetOptions,
     CreateResponseOptions,
+    DmailItem,
+    DmailMessage,
     EncryptOptions,
     FileAsset,
     FixWalletResult,
@@ -48,6 +50,7 @@ import {
     EcdsaJwkPrivate,
     EcdsaJwkPublic
 } from '@mdip/cipher/types';
+import { isValidDID } from '@mdip/ipfs/utils';
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -61,6 +64,15 @@ const DefaultSchema = {
         "propertyName"
     ]
 };
+
+export enum DmailTags {
+    DMAIL = 'dmail',
+    INBOX = 'inbox',
+    SENT = 'sent',
+    ARCHIVED = 'archived',
+    DRAFT = 'draft',
+    TRASH = 'trash',
+}
 
 export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
@@ -1445,10 +1457,22 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async listNames(): Promise<Record<string, string>> {
+    async listNames(
+        options: {
+            includeIDs?: boolean
+        } = {}
+    ): Promise<Record<string, string>> {
+        const { includeIDs = false } = options;
         const wallet = await this.loadWallet();
+        const names = wallet.names || {};
 
-        return wallet.names || {};
+        if (includeIDs) {
+            for (const [name, id] of Object.entries(wallet.ids || {})) {
+                names[name] = id.did;
+            }
+        }
+
+        return names;
     }
 
     async addName(
@@ -2933,5 +2957,238 @@ export default class Keymaster implements KeymasterInterface {
         catch (error) {
             return null;
         }
+    }
+
+    async listDmail(): Promise<Record<string, DmailItem>> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+        const list = id.dmail || {};
+        const dmailList: Record<string, DmailItem> = {};
+        const nameList = await this.listNames({ includeIDs: true });
+        const didToName: Record<string, string> = Object.entries(nameList).reduce((acc, [name, did]) => {
+            acc[did] = name;
+            return acc;
+        }, {} as Record<string, string>);
+
+        for (const did of Object.keys(list)) {
+            const message = await this.getDmailMessage(did);
+
+            if (!message) {
+                continue; // Skip if no dmail found for this DID
+            }
+
+            const tags = list[did].tags ?? [];
+            const docs = await this.resolveDID(did);
+            const controller = docs.didDocument?.controller ?? '';
+            const sender = didToName[controller] ?? controller;
+            const date = docs.didDocumentMetadata?.updated ?? '';
+            const to = message.to.map(addr => didToName[addr] ?? addr);
+            const cc = message.cc.map(addr => didToName[addr] ?? addr);
+
+            dmailList[did] = {
+                message,
+                to,
+                cc,
+                tags,
+                sender,
+                date,
+                docs,
+            };
+        }
+
+        return dmailList;
+    }
+
+    verifyDmailTags(tags: string[]): string[] {
+        if (!Array.isArray(tags)) {
+            throw new InvalidParameterError('tags');
+        }
+
+        const tagSet = new Set<string>();
+
+        for (const tag of tags) {
+            try {
+                tagSet.add(this.validateName(tag));
+            }
+            catch (error) {
+                throw new InvalidParameterError(`Invalid tag: '${tag}'`);
+            }
+        }
+
+        return tagSet.size > 0 ? Array.from(tagSet) : [];
+    }
+
+    async addToDmail(
+        did: string,
+        tags: string[]
+    ): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+        const verifiedTags = this.verifyDmailTags(tags);
+
+        if (!id.dmail) {
+            id.dmail = {};
+        }
+
+        id.dmail[did] = { tags: verifiedTags };
+
+        return this.saveWallet(wallet);
+    }
+
+    async removeFromDmail(did: string): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+
+        if (!id.dmail || !id.dmail[did]) {
+            return true;
+        }
+
+        delete id.dmail[did];
+
+        return this.saveWallet(wallet);
+    }
+
+    async verifyDmailList(list: string[]): Promise<string[]> {
+        if (!Array.isArray(list)) {
+            throw new InvalidParameterError('list');
+        }
+
+        const nameList = await this.listNames({ includeIDs: true });
+        let newList = [];
+
+        for (const id of list) {
+            if (typeof id !== 'string') {
+                throw new InvalidParameterError(`Invalid recipient type: ${typeof id}`);
+            }
+
+            if (id in nameList) {
+                const did = nameList[id];
+                const isAgent = await this.testAgent(did);
+
+                if (isAgent) {
+                    newList.push(did);
+                    continue;
+                }
+
+                throw new InvalidParameterError(`Invalid recipient: ${id}`);
+            }
+
+            if (isValidDID(id)) {
+                newList.push(id);
+                continue;
+            }
+
+            throw new InvalidParameterError(`Invalid recipient: ${id}`);
+        }
+
+        return newList;
+    }
+
+    async verifyDmail(message: DmailMessage): Promise<DmailMessage> {
+        const to = await this.verifyDmailList(message.to);
+        const cc = await this.verifyDmailList(message.cc);
+
+        if (to.length === 0) {
+            throw new InvalidParameterError('dmail.to');
+        }
+
+        if (!message.subject || typeof message.subject !== 'string' || message.subject.trim() === '') {
+            throw new InvalidParameterError('dmail.subject');
+        }
+
+        if (!message.body || typeof message.body !== 'string' || message.body.trim() === '') {
+            throw new InvalidParameterError('dmail.body');
+        }
+
+        return {
+            ...message,
+            to,
+            cc,
+        };
+    }
+
+    async createDmail(
+        message: DmailMessage,
+        options: GroupVaultOptions = {}
+    ): Promise<string> {
+        const dmail = await this.verifyDmail(message);
+        const did = await this.createGroupVault(options);
+
+        for (const toDID of dmail.to) {
+            await this.addGroupVaultMember(did, toDID);
+        }
+
+        for (const ccDID of dmail.cc) {
+            await this.addGroupVaultMember(did, ccDID);
+        }
+
+        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
+        await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
+        await this.addToDmail(did, [DmailTags.DRAFT]);
+
+        return did;
+    }
+
+    async updateDmail(
+        did: string,
+        message: DmailMessage
+    ): Promise<boolean> {
+        const dmail = await this.verifyDmail(message);
+        const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
+        return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
+    }
+
+    async sendDmail(did: string): Promise<boolean> {
+        const dmail = await this.getDmailMessage(did);
+
+        if (!dmail) {
+            return false;
+        }
+
+        // TBD create notice for the recipients
+
+        return this.addToDmail(did, [DmailTags.SENT]);
+    }
+
+    async removeDmail(did: string): Promise<boolean> {
+        const dmail = await this.getDmailMessage(did);
+
+        if (!dmail) {
+            return false;
+        }
+
+        return this.removeFromDmail(did);
+    }
+
+    async getDmailMessage(did: string): Promise<DmailMessage | null> {
+        const isGroupVault = await this.testGroupVault(did);
+
+        if (!isGroupVault) {
+            return null;
+        }
+
+        const buffer = await this.getGroupVaultItem(did, DmailTags.DMAIL);
+
+        if (!buffer) {
+            return null;
+        }
+
+        try {
+            const data = JSON.parse(buffer.toString('utf-8'));
+            return data.dmail as DmailMessage;
+        }
+        catch (error) {
+            return null;
+        }
+    }
+
+    async importDmail(did: string): Promise<boolean> {
+        const dmail = await this.getDmailMessage(did);
+
+        if (!dmail) {
+            return false;
+        }
+
+        return this.addToDmail(did, [DmailTags.INBOX]);
     }
 }

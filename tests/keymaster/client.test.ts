@@ -43,6 +43,7 @@ const Endpoints = {
     images: '/api/v1/images',
     documents: '/api/v1/documents',
     groupVaults: `/api/v1/groupVaults`,
+    dmail: '/api/v1/dmail',
 };
 
 const mockConsole = {
@@ -2969,6 +2970,214 @@ describe('getGroupVaultItem', () => {
 
         try {
             await keymaster.getGroupVaultItem(mockVaultId, mockName);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+const mockDmailId = 'did:mdip:dmail';
+const mockDmail = { to: ['mockTo'], cc: ['mockCC'], subject: 'Test subject', body: 'Test body' };
+
+describe('createDmail', () => {
+    it('should return dmail DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}`)
+            .reply(200, { did: mockDmailId });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.createDmail(mockDmail);
+
+        expect(did).toStrictEqual(mockDmailId);
+    });
+
+    it('should throw exception on createDmail server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createDmail(mockDmail);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('updateDmail', () => {
+    it('should update dmail DID', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.updateDmail(mockDmailId, mockDmail);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on updateDmail server error', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.updateDmail(mockDmailId, mockDmail);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('sendDmail', () => {
+    it('should send dmail DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.sendDmail(mockDmailId);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on sendDmail server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.sendDmail(mockDmailId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('removeDmail', () => {
+    it('should remove dmail DID', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.removeDmail(mockDmailId);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on removeDmail server error', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.removeDmail(mockDmailId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('importDmail', () => {
+    it('should import dmail DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/import`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.importDmail(mockDmailId);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on importDmail server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/import`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.importDmail(mockDmailId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getDmailMessage', () => {
+    it('should get message', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(200, { message: mockDmail });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const message = await keymaster.getDmailMessage(mockDmailId);
+
+        expect(message).toStrictEqual(mockDmail);
+    });
+
+    it('should throw exception on getDmailMessage server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getDmailMessage(mockDmailId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('listDmail', () => {
+    const mockDmailList = { dmail1: 'mock1', dmail2: 'mock2' };
+
+    it('should get message', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}`)
+            .reply(200, { dmail: mockDmailList });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const dmail = await keymaster.listDmail();
+
+        expect(dmail).toStrictEqual(mockDmailList);
+    });
+
+    it('should throw exception on getDmailMessage server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.listDmail();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
