@@ -4,8 +4,14 @@ const extensionState: Record<string, any> = {};
 chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     if (message.action === "OPEN_AUTH_TAB") {
         chrome.runtime.sendMessage({
-            action: "REQUEST_POPUP_OPEN",
+            action: "REQUEST_POPUP_AUTH",
             challenge: message.challenge,
+        });
+        sendResponse({ success: true });
+    } else if (message.action === "OPEN_CREDENTIAL_TAB") {
+        chrome.runtime.sendMessage({
+            action: "REQUEST_POPUP_CREDENTIAL",
+            credential: message.credential,
         });
         sendResponse({ success: true });
     } else if (message.action === "STORE_PASSPHRASE") {
