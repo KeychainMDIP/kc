@@ -21,6 +21,7 @@ export function ContextProviders(
         children,
         isBrowser,
         pendingAuth,
+        pendingCredential,
         openBrowser,
         setOpenBrowser,
         browserRefresh,
@@ -29,6 +30,7 @@ export function ContextProviders(
         children: ReactNode,
         isBrowser: boolean,
         pendingAuth?: string,
+        pendingCredential?: string,
         openBrowser?: openBrowserValues,
         setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
@@ -86,6 +88,7 @@ export function ContextProviders(
                                 <MessageProvider>
                                     <UIProvider
                                         pendingAuth={pendingAuth}
+                                        pendingCredential={pendingCredential}
                                         openBrowser={openBrowser}
                                         browserRefresh={browserRefresh}
                                         setBrowserRefresh={setBrowserRefresh}

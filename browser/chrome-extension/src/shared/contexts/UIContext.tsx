@@ -49,6 +49,7 @@ export function UIProvider(
     {
         children,
         pendingAuth,
+        pendingCredential,
         openBrowser,
         setOpenBrowser,
         browserRefresh,
@@ -56,6 +57,7 @@ export function UIProvider(
     }: {
         children: ReactNode,
         pendingAuth?: string,
+        pendingCredential?: string,
         openBrowser?: openBrowserValues,
         setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
@@ -96,6 +98,7 @@ export function UIProvider(
         setCredentialSchema,
         setCredentialString,
         setCredentialDID,
+        setHeldDID,
         setHeldList,
         setIssuedList,
         setIssuedString,
@@ -149,7 +152,9 @@ export function UIProvider(
     }, [browserRefresh]);
 
     useEffect(() => {
-        if (!currentId) return;
+        if (!currentId) {
+            return;
+        }
         if (pendingAuth && !pendingUsed) {
             (async () => {
                 await setSelectedTab("auth");
@@ -160,6 +165,14 @@ export function UIProvider(
             })();
 
             // Prevent challenge repopulating after clear on ID change
+            setPendingUsed(true);
+        } else if (pendingCredential && !pendingUsed) {
+            (async () => {
+                await setSelectedTab("credentials");
+                await setHeldDID(pendingCredential);
+            })();
+
+            // Prevent credential repopulating after clear on ID change
             setPendingUsed(true);
         } else if (pendingTab) {
             (async () => {
@@ -174,7 +187,7 @@ export function UIProvider(
             })();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentId, pendingAuth, pendingTab, pendingMessageTab]);
+    }, [currentId, pendingAuth, pendingCredential, pendingTab, pendingMessageTab]);
 
     function openBrowserWindow(options: openBrowserValues) {
         const tab = options.tab ?? "viewer";

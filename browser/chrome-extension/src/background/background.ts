@@ -29,7 +29,15 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
-    if (message.action === "REQUEST_POPUP_OPEN") {
+    if (message.action === "REQUEST_POPUP_CREDENTIAL") {
+        chrome.action.openPopup(() => {
+            chrome.runtime.sendMessage({
+                action: "SHOW_POPUP_CREDENTIAL",
+                credential: message.credential,
+            });
+        });
+        sendResponse({ success: true });
+    } else if (message.action === "REQUEST_POPUP_AUTH") {
         chrome.action.openPopup(() => {
             chrome.runtime.sendMessage({
                 action: "SHOW_POPUP_AUTH",

@@ -6,6 +6,7 @@ import "../shared/extension.css";
 
 const PopupUI = () => {
     const [pendingAuth, setPendingAuth] = useState<string>("");
+    const [pendingCredential, setPendingCredential] = useState<string>("");
 
     useEffect(() => {
         const handleMessage = (
@@ -15,6 +16,9 @@ const PopupUI = () => {
         ) => {
             if (message.action === "SHOW_POPUP_AUTH") {
                 setPendingAuth(message.challenge);
+                sendResponse({ success: true });
+            } else if (message.action === "SHOW_POPUP_CREDENTIAL") {
+                setPendingCredential(message.credential);
                 sendResponse({ success: true });
             }
         };
@@ -26,7 +30,7 @@ const PopupUI = () => {
     }, []);
 
     return (
-        <ContextProviders pendingAuth={pendingAuth} isBrowser={false}>
+        <ContextProviders pendingCredential={pendingCredential} pendingAuth={pendingAuth} isBrowser={false}>
             <PopupContent />
         </ContextProviders>
     );
