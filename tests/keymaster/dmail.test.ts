@@ -330,7 +330,6 @@ describe('updateDmail', () => {
     it('should update a valid dmail', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
-
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
@@ -358,14 +357,12 @@ describe('updateDmail', () => {
 describe('removeDmail', () => {
     it('should remove a valid dmail', async () => {
         await keymaster.createId('Alice');
-
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
             subject: 'Test Dmail 8',
             body: 'This is a test dmail message 8.',
         };
-
         const did = await keymaster.createDmail(mock1);
 
         const ok = await keymaster.removeDmail(did);
@@ -373,6 +370,22 @@ describe('removeDmail', () => {
 
         const dmails = await keymaster.listDmail();
         expect(did in dmails).toBe(false);
+    });
+
+    it('should return true if dmail already removed', async () => {
+        await keymaster.createId('Alice');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 81',
+            body: 'This is a test dmail message 81.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        await keymaster.removeDmail(did);
+
+        const ok = await keymaster.removeDmail(did);
+        expect(ok).toBe(true);
     });
 
     it('should return false for non-dmail', async () => {
@@ -386,7 +399,6 @@ describe('removeDmail', () => {
 describe('sendDmail', () => {
     it('should tag a dmail as sent', async () => {
         await keymaster.createId('Alice');
-
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
@@ -415,7 +427,6 @@ describe('importDmail', () => {
     it('should import a valid dmail', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
-
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
