@@ -3146,8 +3146,6 @@ export default class Keymaster implements KeymasterInterface {
             return null;
         }
 
-        this.addToDmail(did, [DmailTags.SENT]);
-
         const registry = this.ephemeralRegistry;
         const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Default to 7 days
         const message: NoticeMessage = {
@@ -3155,7 +3153,13 @@ export default class Keymaster implements KeymasterInterface {
             dids: [did],
         };
 
-        return this.createNotice(message, { registry, validUntil });
+        const notice = await this.createNotice(message, { registry, validUntil });
+
+        if (notice) {
+            await this.addToDmail(did, [DmailTags.SENT]);
+        }
+
+        return notice;
     }
 
     async removeDmail(did: string): Promise<boolean> {
