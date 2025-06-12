@@ -22,9 +22,10 @@ USER node
 WORKDIR /app/search-server
 
 RUN npm i
+RUN npm run build
 
 EXPOSE 4002
 
 # Run...
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]
 

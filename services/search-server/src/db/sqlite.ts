@@ -114,6 +114,57 @@ export default class Sqlite implements DIDsDb {
         return rows.map(row => row.did);
     }
 
+    async queryDocs(where: Record<string, unknown>): Promise<string[]> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const [rawPath, cond] = Object.entries(where)[0] as [string, any];
+        if (typeof cond !== 'object' || !Array.isArray(cond.$in))
+            throw new Error('Only {$in:[…]} supported');
+
+        const list = cond.$in as unknown[];
+
+        const isKeyWildcard   = rawPath.endsWith('.*');
+        const isValueWildcard = rawPath.includes('.*.');
+
+        let sql: string;
+        let params: unknown[];
+
+        if (isKeyWildcard) {
+            const basePath = '$.' + rawPath.slice(0, -2);
+            sql = `
+                SELECT did
+                FROM   did_docs,
+                       json_each(json_extract(doc, ?)) AS m
+                WHERE  m.key IN (${list.map(() => '?').join(',')})
+            `;
+            params = [basePath, ...list];
+
+        } else if (isValueWildcard) {
+            const [prefix, suffix] = rawPath.split('.*.');
+            const basePath = '$.' + prefix;
+            sql = `
+                  SELECT did
+                  FROM   did_docs,
+                         json_each(json_extract(doc, ?)) AS m
+                  WHERE  json_extract(m.value, ?) IN (${list.map(() => '?').join(',')})
+                `;
+            params = [basePath, '$.' + suffix, ...list];
+
+        } else {
+            sql = `
+                  SELECT did
+                  FROM   did_docs
+                  WHERE  json_extract(doc, ?) IN (${list.map(() => '?').join(',')})
+                `;
+            params = ['$.'.concat(rawPath), ...list];
+        }
+
+        const rows = await this.db.all<{ did: string }[]>(sql, params);
+        return rows.map(r => r.did);
+    }
+
     async wipeDb(): Promise<void> {
         if (!this.db) {
             throw new Error('DB not connected');
