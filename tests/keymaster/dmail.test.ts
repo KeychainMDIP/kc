@@ -5,7 +5,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
-import { DmailMessage } from '@mdip/keymaster/types';
+import { DmailMessage, NoticeMessage } from '@mdip/keymaster/types';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -32,37 +32,37 @@ beforeEach(() => {
     keymaster = new Keymaster({ gatekeeper, wallet, cipher });
 });
 
-describe('verifyDmailTags', () => {
+describe('verifyTagList', () => {
     it('should return same list of valid tags', async () => {
         const tags = ['tag1', 'tag2', 'tag3'];
-        const verified = keymaster.verifyDmailTags(tags);
+        const verified = keymaster.verifyTagList(tags);
 
         expect(verified).toStrictEqual(tags);
     });
 
     it('should remove duplicate tags', async () => {
         const tags = ['tag1', 'tag2', 'tag2', 'tag3', 'tag3', 'tag3'];
-        const verified = keymaster.verifyDmailTags(tags);
+        const verified = keymaster.verifyTagList(tags);
 
         expect(verified).toStrictEqual(['tag1', 'tag2', 'tag3']);
     });
 
     it('should remove whitespace from tags', async () => {
         const tags = ['   tag1', 'tag2   ', '   tag3    '];
-        const verified = keymaster.verifyDmailTags(tags);
+        const verified = keymaster.verifyTagList(tags);
 
         expect(verified).toStrictEqual(['tag1', 'tag2', 'tag3']);
     });
 
     it('should handle empty list', async () => {
-        const verified = keymaster.verifyDmailTags([]);
+        const verified = keymaster.verifyTagList([]);
 
         expect(verified).toStrictEqual([]);
     });
 
     it('should throw an exception on invalid tags', async () => {
         try {
-            keymaster.verifyDmailTags(123 as any);
+            keymaster.verifyTagList(123 as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -70,7 +70,7 @@ describe('verifyDmailTags', () => {
         }
 
         try {
-            keymaster.verifyDmailTags([1, 2, 3] as any);
+            keymaster.verifyTagList([1, 2, 3] as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -78,7 +78,7 @@ describe('verifyDmailTags', () => {
         }
 
         try {
-            keymaster.verifyDmailTags(['tag1', 'tag 2', '   ']);
+            keymaster.verifyTagList(['tag1', 'tag 2', '   ']);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -87,14 +87,14 @@ describe('verifyDmailTags', () => {
     });
 });
 
-describe('verifyDmailList', () => {
+describe('verifyRecipientList', () => {
     it('should return same list of valid DIDs', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const charles = await keymaster.createId('Charles');
         const to = [alice, bob, charles];
 
-        const verified = await keymaster.verifyDmailList(to);
+        const verified = await keymaster.verifyRecipientList(to);
 
         expect(verified).toStrictEqual(to);
     });
@@ -106,7 +106,7 @@ describe('verifyDmailList', () => {
         await keymaster.addName('Chuck', charles);
         const to = ['Alice', 'Bob', 'Chuck'];
 
-        const verified = await keymaster.verifyDmailList(to);
+        const verified = await keymaster.verifyRecipientList(to);
 
         expect(verified).toStrictEqual([alice, bob, charles]);
     });
@@ -116,7 +116,7 @@ describe('verifyDmailList', () => {
         await keymaster.createAsset({ mock: 'mock' }, { name: 'Asset' });
 
         try {
-            await keymaster.verifyDmailList(123 as any);
+            await keymaster.verifyRecipientList(123 as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -124,7 +124,7 @@ describe('verifyDmailList', () => {
         }
 
         try {
-            await keymaster.verifyDmailList([1, 2, 3] as any);
+            await keymaster.verifyRecipientList([1, 2, 3] as any);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -132,7 +132,7 @@ describe('verifyDmailList', () => {
         }
 
         try {
-            await keymaster.verifyDmailList(['Bob']);
+            await keymaster.verifyRecipientList(['Bob']);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -140,7 +140,7 @@ describe('verifyDmailList', () => {
         }
 
         try {
-            await keymaster.verifyDmailList(['Asset']);
+            await keymaster.verifyRecipientList(['Asset']);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -397,8 +397,8 @@ describe('removeDmail', () => {
 });
 
 describe('sendDmail', () => {
-    it('should tag a dmail as sent', async () => {
-        await keymaster.createId('Alice');
+    it('should tag a dmail as sent and return a notice DID', async () => {
+        const alice = await keymaster.createId('Alice');
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
@@ -408,18 +408,28 @@ describe('sendDmail', () => {
 
         const did = await keymaster.createDmail(mock1);
 
-        const ok = await keymaster.sendDmail(did);
-        expect(ok).toBe(true);
+        const notice = await keymaster.sendDmail(did);
+        expect(notice).toBeDefined();
+
+        const doc = await keymaster.resolveDID(notice!);
+        expect(doc.mdip!.registry).toBe('hyperswarm');
+        expect(doc.mdip!.validUntil).toBeDefined();
+
+        const asset = doc.didDocumentData as { notice?: NoticeMessage };
+
+        expect(asset.notice).toBeDefined();
+        expect(asset.notice!.to).toStrictEqual([alice]);
+        expect(asset.notice!.dids).toStrictEqual([did]);
 
         const dmails = await keymaster.listDmail();
         expect(dmails[did].tags).toStrictEqual(['sent']);
     });
 
-    it('should return false for invalid dmail', async () => {
+    it('should return null for invalid dmail', async () => {
         const alice = await keymaster.createId('Alice');
 
-        const ok = await keymaster.sendDmail(alice);
-        expect(ok).toBe(false);
+        const notice = await keymaster.sendDmail(alice);
+        expect(notice).toBe(null);
     });
 });
 

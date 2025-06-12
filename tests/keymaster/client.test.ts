@@ -44,6 +44,7 @@ const Endpoints = {
     documents: '/api/v1/documents',
     groupVaults: `/api/v1/groupVaults`,
     dmail: '/api/v1/dmail',
+    notices: '/api/v1/notices',
 };
 
 const mockConsole = {
@@ -3040,15 +3041,17 @@ describe('updateDmail', () => {
 });
 
 describe('sendDmail', () => {
+    const mockNotice = 'mockNotice';
+
     it('should send dmail DID', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.dmail}/${mockDmailId}/send`)
-            .reply(200, { ok: true });
+            .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.sendDmail(mockDmailId);
+        const did = await keymaster.sendDmail(mockDmailId);
 
-        expect(ok).toBe(true);
+        expect(did).toBe(mockNotice);
     });
 
     it('should throw exception on sendDmail server error', async () => {
@@ -3178,6 +3181,96 @@ describe('listDmail', () => {
 
         try {
             await keymaster.listDmail();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+const mockNoticeId = 'did:mdip:notice';
+const mockNotice = { to: ['mockTo'], dids: ['mockDID'] };
+
+describe('createNotice', () => {
+    it('should return dmail DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.notices}`)
+            .reply(200, { did: mockNoticeId });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.createNotice(mockNotice);
+
+        expect(did).toStrictEqual(mockNoticeId);
+    });
+
+    it('should throw exception on createNotice server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.notices}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.createNotice(mockNotice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('updateNotice', () => {
+    it('should update notice DID', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.updateNotice(mockNoticeId, mockNotice);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on updateNotice server error', async () => {
+        nock(KeymasterURL)
+            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.updateNotice(mockNoticeId, mockNotice);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('refreshNotices', () => {
+    it('should refresh notices', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.notices}/refresh`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.refreshNotices();
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on refreshNotices server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.notices}/refresh`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.refreshNotices();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
