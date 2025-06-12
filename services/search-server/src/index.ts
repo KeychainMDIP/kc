@@ -75,9 +75,24 @@ async function main() {
     app.use('/api/v1', v1router);
 
     const port = Number(SEARCH_SERVER_PORT) || 4002;
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
         console.log(`Listening on port ${port}`);
     });
+
+    const shutdown = async () => {
+        try {
+            server.close();
+            await indexer.stopIndexing();
+            await didDb.disconnect();
+        } catch (error: any) {
+            console.error("Error during shutdown:", error);
+        } finally {
+            process.exit(0);
+        }
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 }
 
 main().catch((err) => {
