@@ -394,9 +394,9 @@ export interface KeymasterInterface {
     // Dmail
     createDmail(message: DmailMessage, options?: CreateAssetOptions): Promise<string>;
     updateDmail(did: string, message: DmailMessage): Promise<boolean>;
-    sendDmail(did: string): Promise<boolean>;
     removeDmail(did: string): Promise<boolean>;
     importDmail(did: string): Promise<boolean>;
     getDmailMessage(did: string): Promise<DmailMessage | null>;
     listDmail(): Promise<Record<string, DmailItem>>;
+    sendDmail(did: string): Promise<string | null>;
 }

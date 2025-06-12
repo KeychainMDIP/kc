@@ -3139,16 +3139,23 @@ export default class Keymaster implements KeymasterInterface {
         return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
     }
 
-    async sendDmail(did: string): Promise<boolean> {
+    async sendDmail(did: string): Promise<string | null> {
         const dmail = await this.getDmailMessage(did);
 
         if (!dmail) {
-            return false;
+            return null;
         }
 
-        // TBD create notice for the recipients
+        this.addToDmail(did, [DmailTags.SENT]);
 
-        return this.addToDmail(did, [DmailTags.SENT]);
+        const registry = this.ephemeralRegistry;
+        const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Default to 7 days
+        const message: NoticeMessage = {
+            to: [...dmail.to, ...dmail.cc],
+            dids: [did],
+        };
+
+        return this.createNotice(message, { registry, validUntil });
     }
 
     async removeDmail(did: string): Promise<boolean> {

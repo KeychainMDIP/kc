@@ -3040,15 +3040,17 @@ describe('updateDmail', () => {
 });
 
 describe('sendDmail', () => {
+    const mockNotice = 'mockNotice';
+
     it('should send dmail DID', async () => {
         nock(KeymasterURL)
             .post(`${Endpoints.dmail}/${mockDmailId}/send`)
-            .reply(200, { ok: true });
+            .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.sendDmail(mockDmailId);
+        const did = await keymaster.sendDmail(mockDmailId);
 
-        expect(ok).toBe(true);
+        expect(did).toBe(mockNotice);
     });
 
     it('should throw exception on sendDmail server error', async () => {

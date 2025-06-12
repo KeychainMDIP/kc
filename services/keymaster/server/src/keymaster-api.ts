@@ -5523,8 +5523,8 @@ v1router.delete('/dmail/:id', async (req, res) => {
  */
 v1router.post('/dmail/:id/send', async (req, res) => {
     try {
-        const ok = await keymaster.sendDmail(req.params.id);
-        res.json({ ok });
+        const did = await keymaster.sendDmail(req.params.id);
+        res.json({ did });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }

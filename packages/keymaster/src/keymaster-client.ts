@@ -1201,10 +1201,10 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async sendDmail(did: string): Promise<boolean> {
+    async sendDmail(did: string): Promise<string | null> {
         try {
             const response = await axios.post(`${this.API}/dmail/${did}/send`);
-            return response.data.ok;
+            return response.data.did;
         }
         catch (error) {
             throwError(error);

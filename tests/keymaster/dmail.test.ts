@@ -5,7 +5,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
-import { DmailMessage } from '@mdip/keymaster/types';
+import { DmailMessage, NoticeMessage } from '@mdip/keymaster/types';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -397,8 +397,8 @@ describe('removeDmail', () => {
 });
 
 describe('sendDmail', () => {
-    it('should tag a dmail as sent', async () => {
-        await keymaster.createId('Alice');
+    it('should tag a dmail as sent and return a notice DID', async () => {
+        const alice = await keymaster.createId('Alice');
         const mock1: DmailMessage = {
             to: ['Alice'],
             cc: [],
@@ -408,18 +408,28 @@ describe('sendDmail', () => {
 
         const did = await keymaster.createDmail(mock1);
 
-        const ok = await keymaster.sendDmail(did);
-        expect(ok).toBe(true);
+        const notice = await keymaster.sendDmail(did);
+        expect(notice).toBeDefined();
+
+        const doc = await keymaster.resolveDID(notice!);
+        expect(doc.mdip!.registry).toBe('hyperswarm');
+        expect(doc.mdip!.validUntil).toBeDefined();
+
+        const asset = doc.didDocumentData as { notice?: NoticeMessage };
+
+        expect(asset.notice).toBeDefined();
+        expect(asset.notice!.to).toStrictEqual([alice]);
+        expect(asset.notice!.dids).toStrictEqual([did]);
 
         const dmails = await keymaster.listDmail();
         expect(dmails[did].tags).toStrictEqual(['sent']);
     });
 
-    it('should return false for invalid dmail', async () => {
+    it('should return null for invalid dmail', async () => {
         const alice = await keymaster.createId('Alice');
 
-        const ok = await keymaster.sendDmail(alice);
-        expect(ok).toBe(false);
+        const notice = await keymaster.sendDmail(alice);
+        expect(notice).toBe(null);
     });
 });
 
