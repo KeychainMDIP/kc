@@ -399,4 +399,9 @@ export interface KeymasterInterface {
     getDmailMessage(did: string): Promise<DmailMessage | null>;
     listDmail(): Promise<Record<string, DmailItem>>;
     sendDmail(did: string): Promise<string | null>;
+
+    // Notices
+    createNotice(message: NoticeMessage, options: CreateAssetOptions): Promise<string>;
+    updateNotice(did: string, message: NoticeMessage): Promise<boolean>;
+    refreshNotices(): Promise<boolean>;
 }

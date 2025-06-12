@@ -21,6 +21,7 @@ import {
     IssueCredentialsOptions,
     KeymasterClientOptions,
     KeymasterInterface,
+    NoticeMessage,
     Poll,
     StoredWallet,
     VerifiableCredential,
@@ -1234,6 +1235,42 @@ export default class KeymasterClient implements KeymasterInterface {
     async importDmail(did: string): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/dmail/import`, { did });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createNotice(
+        message: NoticeMessage,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
+        try {
+            const response = await axios.post(`${this.API}/notices`, { message, options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async updateNotice(
+        did: string,
+        message: NoticeMessage
+    ): Promise<boolean> {
+        try {
+            const response = await axios.put(`${this.API}/notices/${did}`, { message });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async refreshNotices(): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/notices/refresh`);
             return response.data.ok;
         }
         catch (error) {
