@@ -6,36 +6,37 @@ import {
 } from '@mdip/gatekeeper/types';
 
 export interface EncryptedWallet {
-    salt: string
-    iv: string
-    data: string
+    salt: string;
+    iv: string;
+    data: string;
 }
 
 export interface HDKey {
-    xpriv: string
-    xpub: string
+    xpriv: string;
+    xpub: string;
 }
 
 export interface Seed {
-    mnemonic: string
-    hdkey: HDKey
+    mnemonic: string;
+    hdkey: HDKey;
 }
 
 export interface IDInfo {
-    did: string
-    account: number
-    index: number
-    held?: string[]
-    owned?: string[]
-    dmail?: Record<string, any>
+    did: string;
+    account: number;
+    index: number;
+    held?: string[];
+    owned?: string[];
+    dmail?: Record<string, any>;
+    notices?: Record<string, any>;
 }
 
 export interface WalletFile {
-    seed: Seed
-    counter: number
-    ids: Record<string, IDInfo>
-    current?: string
-    names?: Record<string, string>
+    seed: Seed;
+    counter: number;
+    ids: Record<string, IDInfo>;
+    current?: string;
+    names?: Record<string, string>;
 }
 
 export interface CheckWalletResult {
@@ -267,6 +268,11 @@ export interface DmailItem {
     date: string;
     tags: string[];
     docs?: any;
+}
+
+export interface NoticeMessage {
+    to: string[];
+    dids: string[];
 }
 
 export interface KeymasterInterface {

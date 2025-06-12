@@ -34,6 +34,7 @@ import {
     IssueCredentialsOptions,
     KeymasterInterface,
     KeymasterOptions,
+    NoticeMessage,
     Poll,
     PollResults,
     PossiblySigned,
@@ -2999,7 +3000,7 @@ export default class Keymaster implements KeymasterInterface {
         return dmailList;
     }
 
-    verifyDmailTags(tags: string[]): string[] {
+    verifyTagList(tags: string[]): string[] {
         if (!Array.isArray(tags)) {
             throw new InvalidParameterError('tags');
         }
@@ -3024,7 +3025,7 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(undefined, wallet);
-        const verifiedTags = this.verifyDmailTags(tags);
+        const verifiedTags = this.verifyTagList(tags);
 
         if (!id.dmail) {
             id.dmail = {};
@@ -3048,7 +3049,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.saveWallet(wallet);
     }
 
-    async verifyDmailList(list: string[]): Promise<string[]> {
+    async verifyRecipientList(list: string[]): Promise<string[]> {
         if (!Array.isArray(list)) {
             throw new InvalidParameterError('list');
         }
@@ -3085,8 +3086,8 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async verifyDmail(message: DmailMessage): Promise<DmailMessage> {
-        const to = await this.verifyDmailList(message.to);
-        const cc = await this.verifyDmailList(message.cc);
+        const to = await this.verifyRecipientList(message.to);
+        const cc = await this.verifyRecipientList(message.cc);
 
         if (to.length === 0) {
             throw new InvalidParameterError('dmail.to');
@@ -3190,5 +3191,116 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         return this.addToDmail(did, [DmailTags.INBOX]);
+    }
+
+    async verifyDIDList(didList: string[]): Promise<string[]> {
+        if (!Array.isArray(didList)) {
+            throw new InvalidParameterError('didList');
+        }
+
+        for (const did of didList) {
+            if (!isValidDID(did)) {
+                throw new InvalidParameterError(`Invalid DID: ${did}`);
+            }
+        }
+
+        return didList;
+    }
+
+    async verifyNotice(notice: NoticeMessage): Promise<NoticeMessage> {
+        const to = await this.verifyRecipientList(notice.to);
+        const dids = await this.verifyDIDList(notice.dids);
+
+        if (to.length === 0) {
+            throw new InvalidParameterError('notice.to');
+        }
+
+        if (dids.length === 0) {
+            throw new InvalidParameterError('notice.dids');
+        }
+
+        return { to, dids };
+    }
+
+    async createNotice(
+        message: NoticeMessage,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
+        const notice = await this.verifyNotice(message);
+        return this.createAsset({ notice }, options);
+    }
+
+    async updateNotice(
+        id: string,
+        message: NoticeMessage,
+    ): Promise<boolean> {
+        const notice = await this.verifyNotice(message);
+        return this.updateAsset(id, { notice });
+    }
+
+    async addToNotices(
+        did: string,
+        tags: string[]
+    ): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+        const verifiedTags = this.verifyTagList(tags);
+
+        if (!id.notices) {
+            id.notices = {};
+        }
+
+        id.notices[did] = { tags: verifiedTags };
+
+        return this.saveWallet(wallet);
+    }
+
+    async importNotice(did: string): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+
+        if (id.notices && id.notices[did]) {
+            return true; // Already imported
+        }
+
+        const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
+
+        if (!asset || !asset.notice) {
+            return false; // Not a notice
+        }
+
+        if (!asset.notice.to.includes(id.did)) {
+            return false; // Not for this user
+        }
+
+        for (const noticeDID of asset.notice.dids) {
+            const dmail = await this.getDmailMessage(noticeDID);
+
+            if (dmail) {
+                await this.importDmail(noticeDID);
+                await this.addToNotices(did, [DmailTags.DMAIL]);
+            }
+        }
+
+        return true;
+    }
+
+    async refreshNotices(): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+
+        if (!id.notices) {
+            return true; // No notices to refresh
+        }
+
+        for (const did of Object.keys(id.notices)) {
+            const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
+
+            if (!asset || !asset.notice) {
+                delete id.notices[did]; // expired
+            }
+        }
+
+        return this.saveWallet(wallet);
     }
 }
