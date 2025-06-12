@@ -24,6 +24,7 @@ async function main() {
     };
 
     app.use(cors(corsOptions));
+    app.use(express.json({ limit: '2mb' }));
 
     const didDb = await DIDsSQLite.create();
 
@@ -69,6 +70,21 @@ async function main() {
         } catch (error) {
             console.error("/api/search error:", error);
             return res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.post("/query", async (req, res) => {
+        try {
+            const where = req.body?.where;
+            if (!where || typeof where !== "object") {
+                return res.status(400).json({error: "`where` must be an object"});
+            }
+
+            const dids = await didDb.queryDocs(where);
+            return res.json(dids);
+        } catch (err) {
+            console.error("/query error:", err);
+            res.status(500).json({ error: String(err) });
         }
     });
 
