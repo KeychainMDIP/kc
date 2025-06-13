@@ -96,7 +96,7 @@ export default class SearchClient implements SearchEngine {
 
     async search(where: object): Promise<string[]> {
         try {
-            const response = await axios.post(`${this.API}/query`, { where });
+            const response = await axios.post(`${this.API}/query`, where);
             return response.data as string[];
         }
         catch (error) {
