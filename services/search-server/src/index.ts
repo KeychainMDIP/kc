@@ -44,6 +44,14 @@ async function main() {
     // the app while the indexer is indexing
     indexer.startIndexing();
 
+    v1router.get('/ready', async (req, res) => {
+        try {
+            res.json({ ready: true });
+        } catch (error: any) {
+            res.status(500).send({ error: error.toString() });
+        }
+    });
+
     v1router.get("/did/:did", async (req, res) => {
         try {
             const { did } = req.params;
@@ -77,7 +85,7 @@ async function main() {
         try {
             const where = req.body?.where;
             if (!where || typeof where !== "object") {
-                return res.status(400).json({error: "`where` must be an object"});
+                return res.status(400).json({ error: "`where` must be an object" });
             }
 
             const dids = await didDb.queryDocs(where);

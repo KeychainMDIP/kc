@@ -58,6 +58,7 @@ services:
     environment:
       - KC_KEYMASTER_PORT=4226
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_SEARCH_URL=http://search-server:4002
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_KEYMASTER_DB=${KC_KEYMASTER_DB}
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
@@ -72,6 +73,9 @@ services:
       - ${KC_KEYMASTER_PORT}:4226
     depends_on:
       - gatekeeper
+      - search-server
+      - redis
+      - mongodb
 
   hypr-mediator:
     build:

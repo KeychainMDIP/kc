@@ -240,7 +240,7 @@ export interface PossiblySigned {
     signature?: Signature;
 }
 
-export interface KeymasterClientOptions {
+export interface RestClientOptions {
     url?: string;
     console?: any;
     waitUntilReady?: boolean;
@@ -248,6 +248,12 @@ export interface KeymasterClientOptions {
     chatty?: boolean;
     becomeChattyAfter?: number;
     maxRetries?: number;
+}
+
+export interface KeymasterClientOptions extends RestClientOptions {
+}
+
+export interface SearchClientOptions extends RestClientOptions {
 }
 
 export interface WaitUntilReadyOptions {
