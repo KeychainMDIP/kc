@@ -5,13 +5,26 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
-import { NoticeMessage } from '@mdip/keymaster/types';
+import { NoticeMessage, SearchEngine } from '@mdip/keymaster/types';
+
+class MockSearch implements SearchEngine {
+    private results: string[] = [];
+
+    async setResults(results: string[]): Promise<void> {
+        this.results = results;
+    }
+
+    async search(query: object): Promise<string[]> {
+        return this.results;
+    }
+}
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let search: MockSearch;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -29,7 +42,8 @@ beforeEach(() => {
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+    search = new MockSearch();
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search });
 });
 
 describe('verifyNotice', () => {
@@ -246,11 +260,28 @@ describe('importNotice', () => {
     });
 });
 
+describe('searchNotices', () => {
+    it('should return true if nothing to do', async () => {
+        await keymaster.createId('Alice');
+
+        const ok = await keymaster.searchNotices();
+        expect(ok).toBe(true);
+    });
+
+    it('should return false if search engine not configured', async () => {
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+        await keymaster.createId('Alice');
+
+        const ok = await keymaster.searchNotices();
+        expect(ok).toBe(false);
+    });
+});
+
 describe('refreshNotices', () => {
     it('should return true if nothing to do', async () => {
         await keymaster.createId('Alice');
-        const ok = await keymaster.refreshNotices();
 
+        const ok = await keymaster.refreshNotices();
         expect(ok).toBe(true);
     });
 
@@ -307,5 +338,55 @@ describe('refreshNotices', () => {
         const ok = await keymaster.refreshNotices();
 
         expect(ok).toBe(true);
+    });
+
+    it('should import notices from search results', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Charles');
+        const dmail = await keymaster.createDmail({
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 5',
+            body: 'This is a test dmail 5.',
+        });
+
+        const notice = await keymaster.sendDmail(dmail) || '';
+        search.setResults([notice]);
+
+        await keymaster.setCurrentId('Alice');
+        const ok = await keymaster.refreshNotices();
+        expect(ok).toBe(true);
+
+        const id = await keymaster.fetchIdInfo();
+        expect(id.notices).toBeDefined();
+        expect(notice in id.notices!).toBeTruthy();
+
+        const dmailbox = await keymaster.listDmail();
+        expect(dmailbox).toBeDefined();
+        expect(dmail in dmailbox).toBeTruthy();
+    });
+
+    it('should skip notices that are already imported', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Charles');
+        const dmail = await keymaster.createDmail({
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 6',
+            body: 'This is a test dmail 6.',
+        });
+
+        const notice = await keymaster.sendDmail(dmail) || '';
+        search.setResults([notice]);
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.refreshNotices();
+        await keymaster.refreshNotices();
+
+        const id = await keymaster.fetchIdInfo();
+        expect(id.notices).toBeDefined();
+        expect(notice in id.notices!).toBeTruthy();
     });
 });

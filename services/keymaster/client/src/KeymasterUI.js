@@ -999,6 +999,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshDmail() {
         try {
+            await keymaster.refreshNotices();
             const dmailList = await keymaster.listDmail();
             setDmailList(dmailList);
             setSelectedDmail(null);
@@ -1012,8 +1013,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function importDmail(did) {
+    async function importDmail() {
         try {
+            const did = window.prompt("Dmail DID:");
+
+            if (!did) {
+                return;
+            }
+
             const ok = await keymaster.importDmail(did);
 
             if (ok) {
@@ -1025,6 +1032,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         } catch (error) {
             showError(error);
         }
+    }
+
+    async function composeDmail() {
+        showAlert("Compose Dmail");
     }
 
     async function createDmail() {
@@ -3079,6 +3090,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
                     {tab === 'dmail' &&
                         <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={refreshDmail}>
+                                        Refresh
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={importDmail}>
+                                        Import...
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={composeDmail}>
+                                        Compose...
+                                    </Button>
+                                </Grid>
+                            </Grid>
                             <Box>
                                 <Tabs
                                     value={dmailTab}

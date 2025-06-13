@@ -215,10 +215,15 @@ export interface WalletBase {
     loadWallet(): Promise<StoredWallet>
 }
 
+export interface SearchEngine {
+    search(query: object): Promise<string[]>;
+}
+
 export interface KeymasterOptions {
     gatekeeper: GatekeeperInterface;
     wallet: WalletBase;
     cipher: Cipher;
+    search?: SearchEngine;
     defaultRegistry?: string;
     maxNameLength?: number;
 }
@@ -235,7 +240,7 @@ export interface PossiblySigned {
     signature?: Signature;
 }
 
-export interface KeymasterClientOptions {
+export interface RestClientOptions {
     url?: string;
     console?: any;
     waitUntilReady?: boolean;
@@ -243,6 +248,12 @@ export interface KeymasterClientOptions {
     chatty?: boolean;
     becomeChattyAfter?: number;
     maxRetries?: number;
+}
+
+export interface KeymasterClientOptions extends RestClientOptions {
+}
+
+export interface SearchClientOptions extends RestClientOptions {
 }
 
 export interface WaitUntilReadyOptions {
