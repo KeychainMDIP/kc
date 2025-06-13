@@ -288,7 +288,7 @@ const ImageTab = () => {
                             <MenuItem value="" disabled>
                                 Select image
                             </MenuItem>
-                            {imageList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
+                            {imageList.map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>

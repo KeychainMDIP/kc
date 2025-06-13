@@ -174,7 +174,7 @@ const SchemaTab = ()=> {
                         <MenuItem value="" disabled>
                             Select schema
                         </MenuItem>
-                        {schemaList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
+                        {schemaList.map((name, index) => (
                             <MenuItem value={name} key={index}>
                                 {name}
                             </MenuItem>

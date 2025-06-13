@@ -17,65 +17,63 @@ function CredentialsTab({ subTab, refresh }: {subTab: string, refresh: number}) 
     }
 
     return (
-        <Box>
-            <TabContext value={credentialTab}>
-                <Box
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="space-between"
+        <TabContext value={credentialTab}>
+            <Box
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+            >
+                <Tabs
+                    value={credentialTab}
+                    onChange={handleChange}
+                    className="tabs"
                 >
-                    <Tabs
-                        value={credentialTab}
-                        onChange={handleChange}
-                        className="tabs"
-                    >
-                        <Tab
-                            sx={{ minWidth: "70px", px: 0 }}
-                            label="Held"
-                            value="held"
-                        />
-
-                        <Tab
-                            sx={{ minWidth: "70px", px: 0 }}
-                            label="Issue"
-                            value="issue"
-                        />
-
-                        <Tab
-                            sx={{ minWidth: "70px", px: 0 }}
-                            label="Issued"
-                            value="issued"
-                        />
-                    </Tabs>
-                </Box>
-
-                <Stack spacing={0}>
-                    <TabPanel
+                    <Tab
+                        sx={{ minWidth: "70px", px: 0 }}
+                        label="Held"
                         value="held"
-                        className="tab-panel"
-                        sx={{ px: 0 }}
-                    >
-                        <HeldTab />
-                    </TabPanel>
+                    />
 
-                    <TabPanel
+                    <Tab
+                        sx={{ minWidth: "70px", px: 0 }}
+                        label="Issue"
                         value="issue"
-                        className="tab-panel"
-                        sx={{ px: 0 }}
-                    >
-                        <IssueTab />
-                    </TabPanel>
+                    />
 
-                    <TabPanel
+                    <Tab
+                        sx={{ minWidth: "70px", px: 0 }}
+                        label="Issued"
                         value="issued"
-                        className="tab-panel"
-                        sx={{ px: 0 }}
-                    >
-                        <IssuedTab />
-                    </TabPanel>
-                </Stack>
-            </TabContext>
-        </Box>
+                    />
+                </Tabs>
+            </Box>
+
+            <Stack spacing={0}>
+                <TabPanel
+                    value="held"
+                    className="tab-panel"
+                    sx={{ px: 0 }}
+                >
+                    <HeldTab />
+                </TabPanel>
+
+                <TabPanel
+                    value="issue"
+                    className="tab-panel"
+                    sx={{ px: 0 }}
+                >
+                    <IssueTab />
+                </TabPanel>
+
+                <TabPanel
+                    value="issued"
+                    className="tab-panel"
+                    sx={{ px: 0 }}
+                >
+                    <IssuedTab />
+                </TabPanel>
+            </Stack>
+        </TabContext>
     );
 }
 
