@@ -244,12 +244,15 @@ export function UIProvider(
         if (!keymaster) {
             return;
         }
+
         const nameList = await keymaster.listNames();
         const names = Object.keys(nameList);
+        names.sort((a, b) => a.localeCompare(b))
+
+        const agentList = await keymaster.listIds();
 
         setNameList(nameList);
 
-        const agentList = await keymaster.listIds();
         const schemaList = [];
         const imageList = [];
         const groupList = [];
@@ -294,6 +297,7 @@ export function UIProvider(
             catch {}
         }
 
+        agentList.sort((a, b) => a.localeCompare(b));
         setAgentList(agentList);
 
         if (!agentList.includes(credentialSubject)) {
@@ -353,6 +357,7 @@ export function UIProvider(
         await refreshIssued();
 
         const ids = await keymaster.listIds();
+        ids.sort((a, b) => a.localeCompare(b));
         setIdList(ids);
     }
 
@@ -452,6 +457,7 @@ export function UIProvider(
         const ids = await keymaster.listIds();
         if (ids.length) {
             setIdList(ids);
+            ids.sort((a, b) => a.localeCompare(b));
         }
 
         const nameList = await keymaster.listNames();

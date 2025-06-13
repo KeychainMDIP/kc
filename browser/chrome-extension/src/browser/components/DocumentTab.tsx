@@ -302,7 +302,7 @@ const DocumentTab = () => {
                             <MenuItem value="" disabled>
                                 Select document
                             </MenuItem>
-                            {documentList.slice().sort((a,b)=>a.localeCompare(b)).map((name, index) => (
+                            {documentList.map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>

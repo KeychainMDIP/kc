@@ -252,7 +252,7 @@ const GroupsTab = () => {
                             <MenuItem value="" disabled>
                                 Select group
                             </MenuItem>
-                            {groupList.slice().sort((a, b) => a.localeCompare(b)).map((name, index) => (
+                            {groupList.map((name, index) => (
                                 <MenuItem value={name} key={index}>
                                     {name}
                                 </MenuItem>

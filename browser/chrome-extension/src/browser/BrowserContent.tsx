@@ -4,15 +4,10 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
     AccountBalanceWallet,
     Badge,
-    ControlPointDuplicate,
-    Description,
-    Groups,
-    Image,
+    Email,
     List,
-    Lock,
     ManageSearch,
     PermIdentity,
-    Schema,
     Settings,
     Token,
 } from "@mui/icons-material";
@@ -20,19 +15,15 @@ import CredentialsTab from "./components/CredentialsTab";
 import WalletTab from "./components/WalletTab";
 import SettingsTab from "./components/SettingsTab";
 import IdentitiesTab from "../shared/IdentitiesTab";
-import GroupsTab from "./components/GroupsTab";
 import BrowserHeader from "./components/BrowserHeader";
 import JsonViewer from "./components/JsonViewer";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
 import { useUIContext } from "../shared/contexts/UIContext";
 import { useThemeContext } from "../shared/contexts/ContextProviders";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
-import SchemaTab from "./components/SchemaTab";
-import ImageTab from "./components/ImageTab";
-import DocumentTab from "./components/DocumentTab";
-import GroupVaultTab from "./components/GroupVaultTab";
-import CloneAssetTab from "./components/CloneAssetTab";
 import NamedDIDs from "./components/NamedDIDs";
+import AssetsTab from "./components/AssetsTab";
+import DmailTab from "./components/DmailTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -52,6 +43,8 @@ function BrowserContent() {
     const [activeSubTab, setActiveSubTab] = useState<string>("");
     const [assetSubTab, setAssetSubTab] = useState<string>("schemas");
 
+    const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
+
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const urlTab = urlParams.get("tab") || "";
@@ -62,8 +55,6 @@ function BrowserContent() {
 
         let initialTab = urlTab || "identities";
         let initialAssetSubTab = "schemas";
-
-        const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
 
         if (assetTabs.includes(urlTab)) {
             initialTab = "assets";
@@ -115,8 +106,6 @@ function BrowserContent() {
         });
     }, []);
 
-    const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
-
     useEffect(() => {
         if (!isBrowser || !openBrowser) {
             return;
@@ -166,10 +155,6 @@ function BrowserContent() {
         }
     };
 
-    const handleAssetTabChange = (_: React.SyntheticEvent, newValue: string) => {
-        setAssetSubTab(newValue);
-    };
-
     return (
         <ThemeProvider theme={theme}>
             <Box className="rootContainer">
@@ -186,6 +171,17 @@ function BrowserContent() {
                                     className="sidebarTab"
                                     sx={{ gap: 0.25 }}
                                 />
+
+                                {currentId && (
+                                    <Tab
+                                        icon={<Email />}
+                                        label={menuOpen ? "DMail" : ""}
+                                        value="dmail"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
 
                                 {currentId && (
                                     <Tab
@@ -255,6 +251,12 @@ function BrowserContent() {
                             </TabPanel>
 
                             {currentId && (
+                                <TabPanel value="dmail" sx={{ p: 0 }}>
+                                    <DmailTab />
+                                </TabPanel>
+                            )}
+
+                            {currentId && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
                                     <CredentialsTab subTab={activeSubTab} refresh={refresh} />
                                 </TabPanel>
@@ -268,72 +270,7 @@ function BrowserContent() {
 
                             {currentId && (
                                 <TabPanel value="assets" sx={{ p: 0 }}>
-                                    <TabContext value={assetSubTab}>
-                                        <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-                                            <TabList
-                                                onChange={handleAssetTabChange}
-                                                aria-label="Asset Tabs"
-                                                variant="scrollable"
-                                                scrollButtons="auto"
-                                            >
-                                                <Tab
-                                                    icon={<Schema sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="schemas"
-                                                    label="Schemas"
-                                                />
-                                                <Tab
-                                                    icon={<Image sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="images"
-                                                    label="Images"
-                                                />
-                                                <Tab
-                                                    icon={<Description sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="documents"
-                                                    label="Documents"
-                                                />
-                                                <Tab
-                                                    icon={<Groups sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="groups"
-                                                    label="Groups"
-                                                />
-                                                <Tab
-                                                    icon={<Lock sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="vaults"
-                                                    label="Vaults"
-                                                />
-                                                <Tab
-                                                    icon={<ControlPointDuplicate sx={{ mb: 0.5 }} />}
-                                                    iconPosition="top"
-                                                    value="clone"
-                                                    label="Clone"
-                                                />
-                                            </TabList>
-                                        </Box>
-
-                                        <TabPanel value="schemas" sx={{ p: 0 }}>
-                                            <SchemaTab />
-                                        </TabPanel>
-                                        <TabPanel value="images" sx={{ p: 0 }}>
-                                            <ImageTab />
-                                        </TabPanel>
-                                        <TabPanel value="documents" sx={{ p: 0 }}>
-                                            <DocumentTab />
-                                        </TabPanel>
-                                        <TabPanel value="groups" sx={{ p: 0 }}>
-                                            <GroupsTab />
-                                        </TabPanel>
-                                        <TabPanel value="vaults" sx={{ p: 0 }}>
-                                            <GroupVaultTab />
-                                        </TabPanel>
-                                        <TabPanel value="clone" sx={{ p: 0 }}>
-                                            <CloneAssetTab />
-                                        </TabPanel>
-                                    </TabContext>
+                                    <AssetsTab subTab={assetSubTab} />
                                 </TabPanel>
                             )}
 

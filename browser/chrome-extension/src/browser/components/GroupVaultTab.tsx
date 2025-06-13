@@ -14,10 +14,12 @@ import {
     AttachFile,
     ContentCopy,
     Edit,
+    Email,
     Image,
     Login,
     ManageSearch,
     PictureAsPdf,
+    Token,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -25,6 +27,8 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 import LoginDialog from "./LoginDialog";
 import WarningModal from "../../shared/WarningModal";
 import TextInputModal from "../../shared/TextInputModal";
+import DmailDialog from "./DmailDialog";
+import { DmailMessage } from '@mdip/keymaster/types';
 
 function GroupVaultTab() {
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -38,6 +42,8 @@ function GroupVaultTab() {
         username: string;
         password: string;
     } | null>(null);
+    const [revealDmailOpen, setRevealDmailOpen] = useState<boolean>(false);
+    const [revealDmail, setRevealDmail] = useState<DmailMessage | null>(null);
     const [editLoginOpen, setEditLoginOpen] = useState<boolean>(false);
     const [selectedVault, setSelectedVault] = useState<{
         members: string[],
@@ -136,7 +142,7 @@ function GroupVaultTab() {
         }
     }
 
-    function getVaultItemIcon(item: any) {
+    function getVaultItemIcon(name: string, item: any) {
         const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
 
         if (!item || !item.type) {
@@ -152,7 +158,15 @@ function GroupVaultTab() {
         }
 
         if (item.type === 'application/json') {
-            return <Login style={iconStyle} />;
+            if (name.startsWith('login:')) {
+                return <Login style={iconStyle} />;
+            }
+
+            if (name === 'dmail') {
+                return <Email style={iconStyle} />;
+            }
+
+            return <Token style={iconStyle} />;
         }
 
         // Add more types as needed, e.g. images, PDF, etc.
@@ -219,6 +233,12 @@ function GroupVaultTab() {
             if (item.login) {
                 setRevealLogin(item.login);
                 setRevealLoginOpen(true);
+                return;
+            }
+
+            if (item.dmail) {
+                setRevealDmail(item.dmail);
+                setRevealDmailOpen(true);
                 return;
             }
 
@@ -423,7 +443,7 @@ function GroupVaultTab() {
             sx={{ mb: 1 }}
         >
             <Box display="flex" alignItems="center" sx={{ flexGrow: 1 }}>
-                {getVaultItemIcon(item)}
+                {getVaultItemIcon(name, item)}
                 <Typography variant="body2" sx={{ ml: 0.5 }}>
                     {name.startsWith('login:') ? name.substring('login:'.length) : name}
                 </Typography>
@@ -489,6 +509,12 @@ function GroupVaultTab() {
 
     return (
         <Box>
+            <DmailDialog
+                open={revealDmailOpen}
+                onClose={() => setRevealDmailOpen(false)}
+                dmail={revealDmail}
+            />
+
             <WarningModal
                 isOpen={warningOpen}
                 title={warningTitle}
@@ -571,16 +597,16 @@ function GroupVaultTab() {
                             displayEmpty
                             size="small"
                             variant="outlined"
-                            onChange={(event) => {
+                            onChange={async (event) => {
                                 const selectedName = event.target.value;
-                                refreshVault(selectedName);
+                                await refreshVault(selectedName);
                                 populateCopyButton(selectedName);
                             }}
                         >
                             <MenuItem value="" disabled>
                                 Select vault
                             </MenuItem>
-                            {vaultList.slice().sort((a, b) => a.localeCompare(b)).map((name) => (
+                            {vaultList.map((name) => (
                                 <MenuItem value={name} key={name}>
                                     {name}
                                 </MenuItem>
