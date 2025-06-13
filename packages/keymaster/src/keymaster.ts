@@ -3302,44 +3302,61 @@ export default class Keymaster implements KeymasterInterface {
         return true;
     }
 
-    async refreshNotices(): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
+    async searchNotices(): Promise<boolean> {
+        if (!this.searchEngine) {
+            return false; // Search engine not available
+        }
+
+        const id = await this.fetchIdInfo();
 
         if (!id.notices) {
             id.notices = {};
         }
 
-        if (this.searchEngine) {
-            // Search for all notice DIDs sent to the current ID
-            const query = {
-                "where": {
-                    "didDocumentData.notice.to": {
-                        "$in": [id.did]
-                    }
+        // Search for all notice DIDs sent to the current ID
+        const query = {
+            "where": {
+                "didDocumentData.notice.to": {
+                    "$in": [id.did]
                 }
-            };
-
-            const notices = await this.searchEngine.search(query);
-
-            for (const notice of notices) {
-                if (notice in id.notices) {
-                    continue; // Already imported
-                }
-
-                await this.importNotice(notice);
-                console.log(`Imported notice: ${notice}`);
             }
+        };
+
+        const notices = await this.searchEngine.search(query);
+
+        for (const notice of notices) {
+            if (notice in id.notices) {
+                continue; // Already imported
+            }
+
+            await this.importNotice(notice);
+            console.log(`Imported notice: ${notice}`);
+        }
+
+        return true;
+    }
+
+    async cleanupNotices(): Promise<boolean> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+
+        if (!id.notices) {
+            return true; // No notices to clean up
         }
 
         for (const did of Object.keys(id.notices)) {
             const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
 
             if (!asset || !asset.notice) {
-                delete id.notices[did]; // expired
+                delete id.notices[did]; // expired or revoked or otherwise invalid
             }
         }
 
         return this.saveWallet(wallet);
+    }
+
+    async refreshNotices(): Promise<boolean> {
+        await this.searchNotices();
+        return this.cleanupNotices();
     }
 }
