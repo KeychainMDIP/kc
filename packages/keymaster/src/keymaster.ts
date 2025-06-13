@@ -44,6 +44,7 @@ import {
     ViewPollResult,
     WalletBase,
     WalletFile,
+    SearchEngine,
 } from './types.js';
 import {
     Cipher,
@@ -79,6 +80,7 @@ export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
     private db: WalletBase;
     private cipher: Cipher;
+    private searchEngine: SearchEngine | undefined;
     private readonly defaultRegistry: string;
     private readonly ephemeralRegistry: string;
     private readonly maxNameLength: number;
@@ -93,10 +95,14 @@ export default class Keymaster implements KeymasterInterface {
         if (!options.cipher || !options.cipher.verifySig) {
             throw new InvalidParameterError('options.cipher');
         }
+        if (options.search && !options.search.search) {
+            throw new InvalidParameterError('options.search');
+        }
 
         this.gatekeeper = options.gatekeeper;
         this.db = options.wallet;
         this.cipher = options.cipher;
+        this.searchEngine = options.search;
 
         this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
@@ -3301,7 +3307,29 @@ export default class Keymaster implements KeymasterInterface {
         const id = await this.fetchIdInfo(undefined, wallet);
 
         if (!id.notices) {
-            return true; // No notices to refresh
+            id.notices = {};
+        }
+
+        if (this.searchEngine) {
+            // Search for all notice DIDs sent to the current ID
+            const query = {
+                "where": {
+                    "didDocumentData.notice.to": {
+                        "$in": [id.did]
+                    }
+                }
+            };
+
+            const notices = await this.searchEngine.search(query);
+
+            for (const notice of notices) {
+                if (notice in id.notices) {
+                    continue; // Already imported
+                }
+
+                await this.importNotice(notice);
+                console.log(`Imported notice: ${notice}`);
+            }
         }
 
         for (const did of Object.keys(id.notices)) {

@@ -215,10 +215,15 @@ export interface WalletBase {
     loadWallet(): Promise<StoredWallet>
 }
 
+export interface SearchEngine {
+    search(query: object): Promise<string[]>;
+}
+
 export interface KeymasterOptions {
     gatekeeper: GatekeeperInterface;
     wallet: WalletBase;
     cipher: Cipher;
+    search?: SearchEngine;
     defaultRegistry?: string;
     maxNameLength?: number;
 }
