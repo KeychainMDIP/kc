@@ -3314,23 +3314,26 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         // Search for all notice DIDs sent to the current ID
-        const query = {
-            "where": {
-                "didDocumentData.notice.to": {
-                    "$in": [id.did]
-                }
+        const where = {
+            "didDocumentData.notice.to": {
+                "$in": [id.did]
             }
         };
 
-        const notices = await this.searchEngine.search(query);
+        try {
+            const notices = await this.searchEngine.search({ where });
 
-        for (const notice of notices) {
-            if (notice in id.notices) {
-                continue; // Already imported
+            for (const notice of notices) {
+                if (notice in id.notices) {
+                    continue; // Already imported
+                }
+
+                await this.importNotice(notice);
+                console.log(`Imported notice: ${notice}`);
             }
-
-            await this.importNotice(notice);
-            console.log(`Imported notice: ${notice}`);
+        }
+        catch (error) {
+            throw new KeymasterError('Failed to search for notices');
         }
 
         return true;
