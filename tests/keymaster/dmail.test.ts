@@ -265,8 +265,8 @@ describe('listDmail', () => {
         const mock: DmailMessage = {
             to: [alice],
             cc: [bob],
-            subject: 'Test Dmail 5',
-            body: 'This is a test dmail message 5.',
+            subject: 'Test Dmail 51',
+            body: 'This is a test dmail message 51.',
         };
 
         const did = await keymaster.createDmail(mock);
@@ -299,8 +299,8 @@ describe('listDmail', () => {
         const mock: DmailMessage = {
             to: [alice],
             cc: [],
-            subject: 'Test Dmail 5',
-            body: 'This is a test dmail message 5.',
+            subject: 'Test Dmail 52',
+            body: 'This is a test dmail message 52.',
         };
 
         const did = await keymaster.createDmail(mock);
