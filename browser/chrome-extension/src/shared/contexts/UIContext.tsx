@@ -41,6 +41,7 @@ export interface openBrowserValues {
     tab?: string;
     subTab?: string;
     contents?: any;
+    clearState?: boolean;
 }
 
 const UIContext = createContext<UIContextValue | null>(null);
@@ -323,6 +324,11 @@ export function UIProvider(
             action: "CLEAR_STATE",
             key: "currentId",
         });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                clearState: true
+            });
+        }
         await refreshCurrentID();
     }
 

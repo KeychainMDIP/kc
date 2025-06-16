@@ -111,7 +111,12 @@ function BrowserContent() {
             return;
         }
 
-        const { tab, subTab } = openBrowser;
+        const { tab, subTab, clearState } = openBrowser;
+
+        if (clearState) {
+            return;
+        }
+
         const mappedTab =
             tab === "credentials" && !currentId
                 ? "identities"

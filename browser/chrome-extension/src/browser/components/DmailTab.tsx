@@ -71,11 +71,11 @@ const DmailTab: React.FC = () => {
         try {
             const ok = await keymaster.importDmail(importDid);
             if (ok) {
-                setSuccess("Dmail import successful");
+                setSuccess("DMail import successful");
                 await refreshInbox();
                 setImportDid("");
             } else {
-                setError("Dmail import failed");
+                setError("DMail import failed");
             }
         } catch (err: any) {
             setError(err);
@@ -130,14 +130,10 @@ const DmailTab: React.FC = () => {
         try {
             const ok = await keymaster.sendDmail(dmailDid);
             if (ok) {
-                setSuccess("Dmail sent");
-                setSendTo("");
-                setSendSubject("");
-                setSendBody("");
-                setDmailDid("");
+                setSuccess("DMail sent");
                 await refreshInbox();
             } else {
-                setError("Dmail send failed");
+                setError("DMail send failed");
             }
         } catch (err: any) {
             setError(err);
@@ -208,7 +204,7 @@ const DmailTab: React.FC = () => {
                         />
                     </Box>
                 ) : (
-                    <Typography sx={{ p: 2 }}>No Dmail selected</Typography>
+                    <Typography sx={{ p: 2 }}>No DMail selected</Typography>
                 )}
             </Box>
         </Box>
@@ -222,7 +218,7 @@ const DmailTab: React.FC = () => {
                         <TableRow>
                             <TableCell>
                                 <TextField
-                                    label="Dmail DID"
+                                    label="DMail DID"
                                     fullWidth
                                     value={importDid}
                                     onChange={(e) => setImportDid(e.target.value.trim())}
