@@ -40,6 +40,7 @@ KC_DEFAULT_REGISTRY=local
 # CLI
 KC_GATEKEEPER_URL=http://localhost:4224
 KC_KEYMASTER_URL=http://localhost:4226
+KC_SEARCH_URL=http://localhost:4002
 
 # Hyperswarm
 KC_HYPR_EXPORT_INTERVAL=2
