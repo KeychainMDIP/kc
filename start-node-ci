@@ -16,8 +16,8 @@ RETRY_COUNT=0
 
 while true; do
   # Count total services defined
-  TOTAL_SERVICES="6"
-  
+  TOTAL_SERVICES="7"
+
   # Count lines with 'Up' in status
   UP_COUNT=$(docker compose ps | grep 'Up' | wc -l)
 
