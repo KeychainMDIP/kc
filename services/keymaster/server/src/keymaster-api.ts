@@ -5767,14 +5767,18 @@ const server = app.listen(port, async () => {
         chatty: true,
     });
 
-    const search = new SearchClient();
+    let search;
 
-    await search.connect({
-        url: config.searchURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
+    if (config.searchURL) {
+        search = new SearchClient();
+
+        await search.connect({
+            url: config.searchURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+    }
 
     const wallet = await initWallet();
     const cipher = new CipherNode();

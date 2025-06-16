@@ -4,7 +4,7 @@ dotenv.config();
 
 const config = {
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
-    searchURL: process.env.KC_SEARCH_URL || 'http://localhost:4002',
+    searchURL: process.env.KC_SEARCH_URL,
     keymasterPort: process.env.KC_KEYMASTER_PORT ? parseInt(process.env.KC_KEYMASTER_PORT) : 4226,
     nodeID: process.env.KC_NODE_ID || '',
     db: process.env.KC_KEYMASTER_DB || 'json',

@@ -73,7 +73,6 @@ services:
       - ${KC_KEYMASTER_PORT}:4226
     depends_on:
       - gatekeeper
-      - search-server
       - redis
       - mongodb
 
