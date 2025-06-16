@@ -73,7 +73,13 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             return;
         }
 
-        const {title, did, tab, subTab, contents} = openBrowser;
+        const {title, did, tab, subTab, contents, clearState} = openBrowser;
+
+        if (clearState) {
+            setAliasDocs(undefined);
+            setCurrentTitle("");
+            return;
+        }
 
         if (tab !== browserTab || (subTab && subTab !== browserSubTab)) {
             return;

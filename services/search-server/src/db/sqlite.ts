@@ -17,6 +17,8 @@ export interface DIDsDb {
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
     private db: Database | null = null;
+    private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
+    private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
     static async create(dbFileName: string = 'dids.db', dataFolder: string = 'data'): Promise<Sqlite> {
         const db = new Sqlite(dbFileName, dataFolder);
@@ -127,11 +129,32 @@ export default class Sqlite implements DIDsDb {
 
         const isKeyWildcard   = rawPath.endsWith('.*');
         const isValueWildcard = rawPath.includes('.*.');
+        const isArrayTail     = Sqlite.ARRAY_WILDCARD_END.test(rawPath);
+        const isArrayMid      = Sqlite.ARRAY_WILDCARD_MID.test(rawPath);
 
         let sql: string;
         let params: unknown[];
 
-        if (isKeyWildcard) {
+        if (isArrayTail) {
+            const basePath = '$.' + rawPath.replace(Sqlite.ARRAY_WILDCARD_END, '');
+            sql = `
+                SELECT did
+                FROM   did_docs,
+                       json_each(json_extract(doc, ?)) AS elem
+                WHERE  elem.value IN (${list.map(() => '?').join(',')})
+            `;
+            params = [basePath, ...list];
+        } else if (isArrayMid) {
+            const [prefix, suffix] = rawPath.split('[*].');
+            const basePath = '$.' + prefix;
+            sql = `
+                SELECT did
+                FROM   did_docs,
+                       json_each(json_extract(doc, ?)) AS elem
+                WHERE  json_extract(elem.value, ?) IN (${list.map(() => '?').join(',')})
+            `;
+            params = [basePath, '$.' + suffix, ...list];
+        } else if (isKeyWildcard) {
             const basePath = '$.' + rawPath.slice(0, -2);
             sql = `
                 SELECT did

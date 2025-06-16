@@ -106,7 +106,7 @@ async function main() {
     const shutdown = async () => {
         try {
             server.close();
-            await indexer.stopIndexing();
+            indexer.stopIndexing();
             await didDb.disconnect();
         } catch (error: any) {
             console.error("Error during shutdown:", error);

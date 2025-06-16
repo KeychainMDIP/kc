@@ -5757,7 +5757,7 @@ async function initWallet() {
 
 const port = config.keymasterPort;
 
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
     gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
@@ -5791,3 +5791,16 @@ app.listen(port, async () => {
         console.error('Failed to wait for node ID:', error);
     }
 });
+
+const shutdown = async () => {
+    try {
+        server.close();
+    } catch (error: any) {
+        console.error("Error during shutdown:", error);
+    } finally {
+        process.exit(0);
+    }
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
