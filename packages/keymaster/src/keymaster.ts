@@ -2966,6 +2966,13 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
+    unknownDID(did: string): string {
+        // Example: did:mdip:z3v8AuahfVvgn9dQePbgjLBA7ikmperj3rXoceovG9p315P37PH
+        // Output: did:mdip:...37PH
+        const suffix = did.slice(-4);
+        return `Unknown (did:...${suffix})`;
+    }
+
     async listDmail(): Promise<Record<string, DmailItem>> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(undefined, wallet);
@@ -2987,10 +2994,10 @@ export default class Keymaster implements KeymasterInterface {
             const tags = list[did].tags ?? [];
             const docs = await this.resolveDID(did);
             const controller = docs.didDocument?.controller ?? '';
-            const sender = didToName[controller] ?? controller;
+            const sender = didToName[controller] ?? this.unknownDID(controller);
             const date = docs.didDocumentMetadata?.updated ?? '';
-            const to = message.to.map(addr => didToName[addr] ?? addr);
-            const cc = message.cc.map(addr => didToName[addr] ?? addr);
+            const to = message.to.map(addr => didToName[addr] ?? this.unknownDID(addr));
+            const cc = message.cc.map(addr => didToName[addr] ?? this.unknownDID(addr));
 
             dmailList[did] = {
                 message,

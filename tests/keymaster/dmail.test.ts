@@ -259,6 +259,34 @@ describe('listDmail', () => {
         expect(dmails[did].tags).toStrictEqual(['draft']);
     });
 
+    it('should convert unknown DIDs', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 5',
+            body: 'This is a test dmail message 5.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.importDmail(did); // import dmail for Alice
+        await keymaster.removeId('Bob'); // remove Bob to make it unknown
+
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toBeDefined();
+        expect(dmails[did]).toBeDefined();
+        expect(dmails[did].sender).toBe(`Unknown (did:...${bob.slice(-4)})`);
+        expect(dmails[did].date).toBeDefined();
+        expect(dmails[did].message).toStrictEqual(mock);
+        expect(dmails[did].to).toStrictEqual(['Alice']);
+        expect(dmails[did].cc).toStrictEqual([`Unknown (did:...${bob.slice(-4)})`]);
+        expect(dmails[did].tags).toStrictEqual(['inbox']);
+    });
+
     it('should retrieve an empty set when no dmails', async () => {
         await keymaster.createId('Alice');
         const dmails = await keymaster.listDmail();

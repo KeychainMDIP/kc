@@ -3122,9 +3122,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 </Tabs>
                             </Box>
                             {dmailTab === 'inbox' &&
-                                <Box display="flex" flexDirection="row" width="100%">
-                                    {/* Left: Dmail List */}
-                                    <Box width="50%" minWidth={320} mr={2}>
+                                <Box>
+                                    <Box>
                                         <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
                                             <Table size="small">
                                                 <TableHead>
@@ -3152,14 +3151,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Table>
                                         </TableContainer>
                                     </Box>
-                                    {/* Right: Dmail Details */}
-                                    <Box flex={1}>
+                                    <Box>
                                         {selectedDmail ? (
                                             <Paper style={{ padding: 16 }}>
                                                 <Box display="flex" alignItems="center" mb={1}>
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
                                                     <Typography variant="body2">
                                                         {(selectedDmail.to).join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>From:</Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedDmail.sender}
                                                     </Typography>
                                                 </Box>
                                                 <Box display="flex" alignItems="center" mb={1}>
