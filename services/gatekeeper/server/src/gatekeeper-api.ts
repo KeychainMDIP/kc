@@ -2045,10 +2045,26 @@ async function main() {
     console.log(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
     console.log(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
         console.log(`Server is running on port ${config.port}`);
         serverReady = true;
     });
+
+    const shutdown = async () => {
+        try {
+            server.close();
+            if (db) {
+                db.stop();
+            }
+        } catch (error: any) {
+            console.error("Error during shutdown:", error);
+        } finally {
+            process.exit(0);
+        }
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 }
 
 main();
