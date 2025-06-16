@@ -58,6 +58,7 @@ services:
     environment:
       - KC_KEYMASTER_PORT=4226
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_DISABLE_SEARCH=${KC_DISABLE_SEARCH:-false}
       - KC_SEARCH_URL=http://search-server:4002
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_KEYMASTER_DB=${KC_KEYMASTER_DB}

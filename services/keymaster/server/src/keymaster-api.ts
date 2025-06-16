@@ -5769,7 +5769,7 @@ const server = app.listen(port, async () => {
 
     let search;
 
-    if (config.searchURL) {
+    if (config.searchURL && !config.disableSearch) {
         search = new SearchClient();
 
         await search.connect({
@@ -5778,6 +5778,8 @@ const server = app.listen(port, async () => {
             intervalSeconds: 5,
             chatty: true,
         });
+    } else {
+        console.warn('Search client is disabled. Keymaster will not be able to search assets.');
     }
 
     const wallet = await initWallet();
