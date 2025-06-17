@@ -3101,11 +3101,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         Import...
                                     </Button>
                                 </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={composeDmail}>
-                                        Compose...
-                                    </Button>
-                                </Grid>
                             </Grid>
                             <Box>
                                 <Tabs
@@ -3117,7 +3112,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     scrollButtons="auto"
                                 >
                                     <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
-                                    <Tab key="receive" value="receive" label={'Receive'} icon={<MarkunreadMailbox />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
@@ -3186,39 +3180,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Typography variant="body2">No Dmail selected.</Typography>
                                         )}
                                     </Box>
-                                </Box>
-                            }
-                            {dmailTab === 'receive' &&
-                                <Box>
-                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                                        <Table style={{ width: '800px' }}>
-                                            <TableBody>
-                                                <TableRow>
-                                                    <TableCell style={{ width: '100%' }}>
-                                                        <TextField
-                                                            label="Dmail DID"
-                                                            style={{ width: '500px' }}
-                                                            value={dmailImportDID}
-                                                            onChange={(e) => setDmailImportDID(e.target.value.trim())}
-                                                            fullWidth
-                                                            margin="normal"
-                                                            inputProps={{ maxLength: 80 }}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailImportDID)} disabled={!dmailImportDID}>
-                                                            Import
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                    <textarea
-                                        value={dmailString}
-                                        readOnly
-                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                    />
                                 </Box>
                             }
                             {dmailTab === 'send' &&
