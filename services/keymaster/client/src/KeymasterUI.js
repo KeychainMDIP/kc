@@ -41,7 +41,6 @@ import {
     List,
     Lock,
     Login,
-    MarkunreadMailbox,
     PermIdentity,
     PictureAsPdf,
     Schema,
@@ -115,8 +114,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailTab, setDmailTab] = useState('');
     const [dmailList, setDmailList] = useState([]);
     const [selectedDmail, setSelectedDmail] = useState(null);
-    const [dmailImportDID, setDmailImportDID] = useState('');
-    const [dmailString, setDmailString] = useState('');
     const [dmailSubject, setDmailSubject] = useState('');
     const [dmailBody, setDmailBody] = useState('');
     const [dmailTo, setDmailTo] = useState('');
@@ -222,10 +219,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedName('');
             setSelectedHeld('');
             setSelectedIssued('');
-            setDmailString('');
             setDmailBody('');
             setDmailTo('');
-            setDmailImportDID('');
             setDmailSendDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
@@ -1003,7 +998,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const dmailList = await keymaster.listDmail();
             setDmailList(dmailList);
             setSelectedDmail(null);
-            setDmailString('');
             setDmailSubject('');
             setDmailBody('');
             setDmailTo('');
@@ -1032,10 +1026,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         } catch (error) {
             showError(error);
         }
-    }
-
-    async function composeDmail() {
-        showAlert("Compose Dmail");
     }
 
     async function createDmail() {
