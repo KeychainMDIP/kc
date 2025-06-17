@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster from '@mdip/keymaster';
+import SearchClient from '@mdip/keymaster/search';
 import { WalletBase } from '@mdip/keymaster/types';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
@@ -5766,10 +5767,25 @@ const server = app.listen(port, async () => {
         chatty: true,
     });
 
+    let search;
+
+    if (config.searchURL && !config.disableSearch) {
+        search = new SearchClient();
+
+        await search.connect({
+            url: config.searchURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+    } else {
+        console.warn('Search client is disabled. Keymaster will not be able to search assets.');
+    }
+
     const wallet = await initWallet();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry });
     console.log(`Keymaster server running on port ${port}`);
     console.log(`Keymaster server persisting to ${config.db}`);
 

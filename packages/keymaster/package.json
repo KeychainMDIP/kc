@@ -30,6 +30,11 @@
       "require": "./dist/cjs/keymaster-client.cjs",
       "types": "./dist/types/keymaster-client.d.ts"
     },
+    "./search": {
+      "import": "./dist/esm/search-client.js",
+      "require": "./dist/cjs/search-client.cjs",
+      "types": "./dist/types/search-client.d.ts"
+    },
     "./wallet/json": {
       "import": "./dist/esm/db/json.js",
       "require": "./dist/cjs/db/json.cjs",

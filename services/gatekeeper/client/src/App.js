@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
+import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
@@ -14,6 +15,9 @@ import './App.css';
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+
+const { protocol, hostname } = window.location;
+const search = await SearchClient.create({ url: `${protocol}//${hostname}:4002` });
 
 let keymaster;
 
@@ -46,7 +50,7 @@ function App() {
                 setIsEncrypted(true);
                 setModalAction('decrypt');
             } else {
-                keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher });
+                keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher, search });
                 setIsReady(true);
             }
         }
@@ -71,7 +75,7 @@ function App() {
             }
         }
 
-        keymaster = new Keymaster({ gatekeeper, wallet: wallet_cache, cipher });
+        keymaster = new Keymaster({ gatekeeper, wallet: wallet_cache, cipher, search });
 
         setIsReady(true);
         setModalAction(null);
@@ -92,7 +96,7 @@ function App() {
         const wallet_web = new WalletWeb();
 
         wallet_web.saveWallet(wallet, true);
-        keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher });
+        keymaster = new Keymaster({ gatekeeper, wallet: wallet_web, cipher, search });
         setIsEncrypted(false);
     }
 
