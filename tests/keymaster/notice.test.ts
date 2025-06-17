@@ -9,12 +9,21 @@ import { NoticeMessage, SearchEngine } from '@mdip/keymaster/types';
 
 class MockSearch implements SearchEngine {
     private results: string[] = [];
+    private throwError: boolean = false;
 
     async setResults(results: string[]): Promise<void> {
         this.results = results;
     }
 
+    async setThrowError(throwError: boolean): Promise<void> {
+        this.throwError = throwError;
+    }
+
     async search(query: object): Promise<string[]> {
+        if (this.throwError) {
+            throw new Error('Search engine error');
+        }
+
         return this.results;
     }
 }
@@ -258,6 +267,20 @@ describe('importNotice', () => {
 
         expect(ok).toBe(false);
     });
+
+    it('should not import unknown notice', async () => {
+        const alice = await keymaster.createId('Alice');
+
+        const notice: NoticeMessage = {
+            to: [alice],
+            dids: [alice],
+        };
+
+        const did = await keymaster.createNotice(notice);
+        const ok = await keymaster.importNotice(did);
+
+        expect(ok).toBe(false);
+    });
 });
 
 describe('searchNotices', () => {
@@ -274,6 +297,20 @@ describe('searchNotices', () => {
 
         const ok = await keymaster.searchNotices();
         expect(ok).toBe(false);
+    });
+
+    it('should throw an exception if search engine throws', async () => {
+        await keymaster.createId('Alice');
+
+        search.setThrowError(true);
+
+        try {
+            await keymaster.searchNotices();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Keymaster: Failed to search for notices');
+        }
     });
 });
 

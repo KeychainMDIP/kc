@@ -3304,21 +3304,12 @@ export default class Keymaster implements KeymasterInterface {
                 const imported = await this.importDmail(noticeDID);
 
                 if (imported) {
-                    const added = await this.addToNotices(did, [DmailTags.DMAIL]);
-
-                    if (added) {
-                        console.log(`Imported dmail for notice: ${noticeDID}`);
-                    } else {
-                        console.warn(`Failed to add dmail for notice: ${noticeDID}`);
-                    }
-                } else {
-                    console.warn(`Failed to import dmail for notice: ${noticeDID}`);
+                    await this.addToNotices(did, [DmailTags.DMAIL]);
                 }
 
                 continue;
             }
 
-            console.log(`Unknown notice type: ${noticeDID}`);
             return false;
         }
 
@@ -3348,21 +3339,13 @@ export default class Keymaster implements KeymasterInterface {
 
             for (const notice of notices) {
                 if (notice in id.notices) {
-                    console.log(`Already imported notice: ${notice}`);
                     continue; // Already imported
                 }
 
-                const ok = await this.importNotice(notice);
-
-                if (ok) {
-                    console.log(`Imported notice: ${notice}`);
-                } else {
-                    console.warn(`Failed to import notice: ${notice}`);
-                }
+                await this.importNotice(notice);
             }
         }
         catch (error) {
-            console.error(error);
             throw new KeymasterError('Failed to search for notices');
         }
 
