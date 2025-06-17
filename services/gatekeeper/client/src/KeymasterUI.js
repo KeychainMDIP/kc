@@ -41,7 +41,6 @@ import {
     List,
     Lock,
     Login,
-    MarkunreadMailbox,
     PermIdentity,
     PictureAsPdf,
     Schema,
@@ -115,8 +114,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailTab, setDmailTab] = useState('');
     const [dmailList, setDmailList] = useState([]);
     const [selectedDmail, setSelectedDmail] = useState(null);
-    const [dmailImportDID, setDmailImportDID] = useState('');
-    const [dmailString, setDmailString] = useState('');
     const [dmailSubject, setDmailSubject] = useState('');
     const [dmailBody, setDmailBody] = useState('');
     const [dmailTo, setDmailTo] = useState('');
@@ -222,10 +219,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedName('');
             setSelectedHeld('');
             setSelectedIssued('');
-            setDmailString('');
             setDmailBody('');
             setDmailTo('');
-            setDmailImportDID('');
             setDmailSendDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
@@ -999,10 +994,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshDmail() {
         try {
+            await keymaster.refreshNotices();
             const dmailList = await keymaster.listDmail();
             setDmailList(dmailList);
             setSelectedDmail(null);
-            setDmailString('');
             setDmailSubject('');
             setDmailBody('');
             setDmailTo('');
@@ -1012,8 +1007,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function importDmail(did) {
+    async function importDmail() {
         try {
+            const did = window.prompt("Dmail DID:");
+
+            if (!did) {
+                return;
+            }
+
             const ok = await keymaster.importDmail(did);
 
             if (ok) {
@@ -3079,6 +3080,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
                     {tab === 'dmail' &&
                         <Box>
+                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={refreshDmail}>
+                                        Refresh
+                                    </Button>
+                                </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={importDmail}>
+                                        Import...
+                                    </Button>
+                                </Grid>
+                            </Grid>
                             <Box>
                                 <Tabs
                                     value={dmailTab}
@@ -3089,14 +3102,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     scrollButtons="auto"
                                 >
                                     <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
-                                    <Tab key="receive" value="receive" label={'Receive'} icon={<MarkunreadMailbox />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
                             {dmailTab === 'inbox' &&
-                                <Box display="flex" flexDirection="row" width="100%">
-                                    {/* Left: Dmail List */}
-                                    <Box width="50%" minWidth={320} mr={2}>
+                                <Box>
+                                    <Box>
                                         <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
                                             <Table size="small">
                                                 <TableHead>
@@ -3124,14 +3135,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Table>
                                         </TableContainer>
                                     </Box>
-                                    {/* Right: Dmail Details */}
-                                    <Box flex={1}>
+                                    <Box>
                                         {selectedDmail ? (
                                             <Paper style={{ padding: 16 }}>
                                                 <Box display="flex" alignItems="center" mb={1}>
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
                                                     <Typography variant="body2">
                                                         {(selectedDmail.to).join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>From:</Typography>
+                                                    <Typography variant="body2">
+                                                        {selectedDmail.sender}
                                                     </Typography>
                                                 </Box>
                                                 <Box display="flex" alignItems="center" mb={1}>
@@ -3154,39 +3170,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Typography variant="body2">No Dmail selected.</Typography>
                                         )}
                                     </Box>
-                                </Box>
-                            }
-                            {dmailTab === 'receive' &&
-                                <Box>
-                                    <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                                        <Table style={{ width: '800px' }}>
-                                            <TableBody>
-                                                <TableRow>
-                                                    <TableCell style={{ width: '100%' }}>
-                                                        <TextField
-                                                            label="Dmail DID"
-                                                            style={{ width: '500px' }}
-                                                            value={dmailImportDID}
-                                                            onChange={(e) => setDmailImportDID(e.target.value.trim())}
-                                                            fullWidth
-                                                            margin="normal"
-                                                            inputProps={{ maxLength: 80 }}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button variant="contained" color="primary" onClick={() => importDmail(dmailImportDID)} disabled={!dmailImportDID}>
-                                                            Import
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
-                                    <textarea
-                                        value={dmailString}
-                                        readOnly
-                                        style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                    />
                                 </Box>
                             }
                             {dmailTab === 'send' &&
