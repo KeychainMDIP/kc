@@ -5,7 +5,7 @@ source .env
 echo $KC_GATEKEEPER_URL
 
 docker compose down
-docker compose build "$@"
+docker compose build cli gatekeeper keymaster ipfs redis mongodb
 docker compose up -d "$@"
 
 echo "Waiting for all services to be 'Up'..."
