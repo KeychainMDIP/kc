@@ -551,6 +551,17 @@ describe('getGroupVaultItem', () => {
         expect(item).toStrictEqual(mockDocument);
     });
 
+    it('should return a large BLOB', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault();
+        const largeDocument = Buffer.alloc(1024 * 1024, 'A'); // 1 MB of 'A's
+        await keymaster.addGroupVaultItem(did, mockDocumentName, largeDocument);
+
+        const item = await keymaster.getGroupVaultItem(did, mockDocumentName);
+
+        expect(item).toStrictEqual(largeDocument);
+    });
+
     it('should return null for unknown item', async () => {
         await keymaster.createId('Bob');
         const did = await keymaster.createGroupVault();
@@ -621,7 +632,7 @@ describe('getGroupVaultItem', () => {
         expect(item).toBe(null);
     });
 
-    it('should retrieve JSON to the groupVault', async () => {
+    it('should retrieve JSON', async () => {
         const login: GroupVaultLogin = {
             service: 'https://example2.com',
             username: 'alice',

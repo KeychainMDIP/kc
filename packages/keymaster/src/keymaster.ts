@@ -84,6 +84,7 @@ export default class Keymaster implements KeymasterInterface {
     private readonly defaultRegistry: string;
     private readonly ephemeralRegistry: string;
     private readonly maxNameLength: number;
+    private readonly maxDataLength: number;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -107,6 +108,7 @@ export default class Keymaster implements KeymasterInterface {
         this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
         this.ephemeralRegistry = 'hyperswarm';
         this.maxNameLength = options.maxNameLength || 32;
+        this.maxDataLength = 8 * 1024; // 8 KB max data to store in a JSON object
     }
 
     async listRegistries(): Promise<string[]> {
@@ -2910,6 +2912,7 @@ export default class Keymaster implements KeymasterInterface {
         const cid = await this.gatekeeper.addText(encryptedData);
         const sha256 = this.cipher.hashMessage(buffer);
         const type = await this.getMimeType(buffer);
+        const data = encryptedData.length < this.maxDataLength ? encryptedData : undefined;
 
         items[validName] = {
             cid,
@@ -2917,6 +2920,7 @@ export default class Keymaster implements KeymasterInterface {
             bytes: buffer.length,
             type,
             added: new Date().toISOString(),
+            data,
         };
 
         groupVault.items = this.cipher.encryptMessage(groupVault.publicJwk, privateJwk, JSON.stringify(items));
@@ -2951,7 +2955,7 @@ export default class Keymaster implements KeymasterInterface {
             const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
             if (items[name]) {
-                const encryptedData = await this.gatekeeper.getText(items[name].cid);
+                const encryptedData = items[name].data || await this.gatekeeper.getText(items[name].cid);
 
                 if (encryptedData) {
                     const bytes = this.cipher.decryptBytes(groupVault.publicJwk, privateJwk, encryptedData);
