@@ -20,13 +20,13 @@ import {
 import {
     ContentCopy,
     Inbox,
-    MarkunreadMailbox,
     Send,
 } from "@mui/icons-material";
 import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import TextInputModal from "../../shared/TextInputModal";
 
 const DmailTab: React.FC = () => {
     const {
@@ -41,14 +41,21 @@ const DmailTab: React.FC = () => {
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
     const [selected, setSelected] = useState<DmailItem | null>(null);
-    const [importDid, setImportDid] = useState<string>("");
     const [sendTo, setSendTo] = useState<string>("");
     const [sendSubject, setSendSubject] = useState<string>("");
     const [sendBody, setSendBody] = useState<string>("");
     const [dmailDid, setDmailDid] = useState<string>("");
+    const [importModalOpen, setImportModalOpen] = useState(false);
 
     useEffect(() => {
         refreshInbox();
+
+        const interval = setInterval(() => {
+            refreshInbox();
+        }, 30000);
+
+        return () => clearInterval(interval);
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [keymaster]);
 
@@ -59,24 +66,6 @@ const DmailTab: React.FC = () => {
         try {
             const msgs = await keymaster.listDmail();
             setDmailList(msgs || {});
-        } catch (err: any) {
-            setError(err);
-        }
-    }
-
-    async function handleImport() {
-        if (!keymaster) {
-            return;
-        }
-        try {
-            const ok = await keymaster.importDmail(importDid);
-            if (ok) {
-                setSuccess("DMail import successful");
-                await refreshInbox();
-                setImportDid("");
-            } else {
-                setError("DMail import failed");
-            }
         } catch (err: any) {
             setError(err);
         }
@@ -140,8 +129,48 @@ const DmailTab: React.FC = () => {
         }
     }
 
+    async function handleRefresh() {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            await keymaster.refreshNotices();
+            await refreshInbox();
+            setSuccess("Refreshed");
+        } catch (err: any) {
+            setError(err);
+        }
+    }
+
+    async function handleImportModalSubmit(did: string) {
+        setImportModalOpen(false);
+        if (!did.trim() || !keymaster) {
+            return;
+        }
+        try {
+            const ok = await keymaster.importDmail(did.trim());
+            if (ok) {
+                setSuccess("DMail import successful");
+                await refreshInbox();
+            } else {
+                setError("DMail import failed");
+            }
+        } catch (err: any) {
+            setError(err);
+        }
+    }
+
     const renderInbox = () => (
         <Box display="flex" flexDirection="column" mt={1}>
+            <Box sx={{ mt: 1, mb: 1, display: "flex", gap: 1 }}>
+                <Button variant="outlined" onClick={handleRefresh}>
+                    Refresh
+                </Button>
+
+                <Button variant="outlined" onClick={() => setImportModalOpen(true)}>
+                    Import DID
+                </Button>
+            </Box>
             <Box>
                 <TableContainer sx={{ maxHeight: 600 }}>
                     <Table size="small" stickyHeader>
@@ -207,41 +236,6 @@ const DmailTab: React.FC = () => {
                     <Typography sx={{ p: 2 }}>No DMail selected</Typography>
                 )}
             </Box>
-        </Box>
-    );
-
-    const renderReceive = () => (
-        <Box mt={2}>
-            <TableContainer>
-                <Table size="small">
-                    <TableBody>
-                        <TableRow>
-                            <TableCell>
-                                <TextField
-                                    label="DMail DID"
-                                    fullWidth
-                                    value={importDid}
-                                    onChange={(e) => setImportDid(e.target.value.trim())}
-                                    slotProps={{
-                                        htmlInput: {
-                                            maxLength: 80,
-                                        },
-                                    }}
-                                />
-                            </TableCell>
-                            <TableCell>
-                                <Button
-                                    variant="contained"
-                                    onClick={handleImport}
-                                    disabled={!importDid}
-                                >
-                                    Import
-                                </Button>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            </TableContainer>
         </Box>
     );
 
@@ -325,6 +319,16 @@ const DmailTab: React.FC = () => {
 
     return (
         <Box>
+            <TextInputModal
+                isOpen={importModalOpen}
+                title="Import DMail"
+                description="Paste the DMail DID to import"
+                label="DID"
+                confirmText="Import"
+                onSubmit={handleImportModalSubmit}
+                onClose={() => setImportModalOpen(false)}
+            />
+
             <Tabs
                 value={activeTab}
                 onChange={(_, v) => setActiveTab(v)}
@@ -334,12 +338,10 @@ const DmailTab: React.FC = () => {
                 scrollButtons="auto"
             >
                 <Tab label="Inbox" value="inbox" icon={<Inbox />} />
-                <Tab label="Receive" value="receive" icon={<MarkunreadMailbox />} />
                 <Tab label="Send" value="send" icon={<Send />} />
             </Tabs>
 
             {activeTab === "inbox" && renderInbox()}
-            {activeTab === "receive" && renderReceive()}
             {activeTab === "send" && renderSend()}
         </Box>
     );

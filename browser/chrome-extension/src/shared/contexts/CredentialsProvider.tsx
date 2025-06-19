@@ -42,6 +42,8 @@ interface CredentialsContextValue {
     setNameList: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
     setAgentList: Dispatch<SetStateAction<string[]>>;
+    pollList: string[];
+    setPollList: Dispatch<SetStateAction<string[]>>;
     resetCredentialState: () => void;
     refreshCredentialsStored: (state: Record<string, any>) => Promise<void>;
 }
@@ -53,6 +55,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [heldDID, setHeldDIDState] = useState<string>("");
     const [nameList, setNameList] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
+    const [pollList, setPollList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<string[]>([]);
     const [imageList, setImageList] = useState<string[]>([]);
     const [documentList, setDocumentList] = useState<string[]>([]);
@@ -149,6 +152,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setNameList,
         agentList,
         setAgentList,
+        pollList,
+        setPollList,
         resetCredentialState,
         refreshCredentialsStored,
     }

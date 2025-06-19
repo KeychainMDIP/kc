@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Tab } from "@mui/material";
 import { TabContext, TabList, TabPanel } from "@mui/lab";
 import {
@@ -8,6 +8,7 @@ import {
     List,
     ManageSearch,
     PermIdentity,
+    Poll,
     Settings,
     Token,
 } from "@mui/icons-material";
@@ -24,6 +25,7 @@ import { createTheme, ThemeProvider } from "@mui/material/styles";
 import NamedDIDs from "./components/NamedDIDs";
 import AssetsTab from "./components/AssetsTab";
 import DmailTab from "./components/DmailTab";
+import PollTab from "./components/PollTab";
 
 function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -33,11 +35,13 @@ function BrowserContent() {
     const { openBrowser, setOpenBrowser } = useUIContext();
     const { darkMode } = useThemeContext();
 
-    const theme = createTheme({
-        palette: {
-            mode: darkMode ? 'dark' : 'light',
-        },
-    });
+    const theme = useMemo(
+        () =>
+            createTheme({
+                palette: { mode: darkMode ? "dark" : "light" },
+            }),
+        [darkMode]
+    );
 
     const [activeTab, setActiveTab] = useState<string>("identities");
     const [activeSubTab, setActiveSubTab] = useState<string>("");
@@ -212,6 +216,17 @@ function BrowserContent() {
 
                                 {currentId && (
                                     <Tab
+                                        icon={<Poll />}
+                                        label={menuOpen ? "Polls" : ""}
+                                        value="polls"
+                                        iconPosition="start"
+                                        className="sidebarTab"
+                                        sx={{ gap: 0.25 }}
+                                    />
+                                )}
+
+                                {currentId && (
+                                    <Tab
                                         icon={<Token />}
                                         label={menuOpen ? "Assets" : ""}
                                         value="assets"
@@ -270,6 +285,12 @@ function BrowserContent() {
                             {currentId && (
                                 <TabPanel value="names" sx={{ p: 0 }}>
                                     <NamedDIDs />
+                                </TabPanel>
+                            )}
+
+                            {currentId && (
+                                <TabPanel value="polls" sx={{ p: 0 }}>
+                                    <PollTab />
                                 </TabPanel>
                             )}
 

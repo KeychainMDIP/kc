@@ -14,6 +14,7 @@ const config = {
         'node': 'dist/esm/node.js',
         'keymaster': 'dist/esm/keymaster.js',
         'keymaster-client': 'dist/esm/keymaster-client.js',
+        'search-client': 'dist/esm/search-client.js',
         'db/json': 'dist/esm/db/json.js',
         'db/json-enc': 'dist/esm/db/json-enc.js',
         'db/json-memory': 'dist/esm/db/json-memory.js',

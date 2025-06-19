@@ -584,7 +584,7 @@ describe('unpublishPoll', () => {
         expect(poll.results).toBe(undefined);
     });
 
-    it('should throw when non-owner tries to update pill', async () => {
+    it('should throw when non-owner tries to update poll', async () => {
         const bobDid = await keymaster.createId('Bob');
         const rosterDid = await keymaster.createGroup('mockRoster');
         await keymaster.addGroupMember(rosterDid, bobDid);
