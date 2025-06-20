@@ -4,12 +4,14 @@ import SaveIcon from "@mui/icons-material/Save";
 
 const SettingsTab = () => {
     const [gatekeeperUrl, setGatekeeperUrl] = useState<string>("");
+    const [searchServerUrl, setSearchServerUrl] = useState<string>("");
 
     useEffect(() => {
         const init = async () => {
             try {
-                const result = await chrome.storage.sync.get(["gatekeeperUrl"]);
+                const result = await chrome.storage.sync.get(["gatekeeperUrl", "searchServerUrl"]);
                 setGatekeeperUrl(result.gatekeeperUrl);
+                setSearchServerUrl(result.searchServerUrl);
             } catch (error: any) {
                 console.error("Error retrieving gatekeeperUrl:", error);
             }
@@ -19,9 +21,9 @@ const SettingsTab = () => {
 
     const handleSave = async () => {
         try {
-            await chrome.storage.sync.set({ gatekeeperUrl });
+            await chrome.storage.sync.set({ gatekeeperUrl, searchServerUrl });
         } catch (error: any) {
-            console.error("Error saving gatekeeperUrl:", error);
+            console.error("Error saving URLs:", error);
         }
     };
 
@@ -34,6 +36,15 @@ const SettingsTab = () => {
                 variant="outlined"
                 value={gatekeeperUrl}
                 onChange={(e) => setGatekeeperUrl(e.target.value)}
+                sx={{ mb: 2 }}
+                className="text-field"
+            />
+
+            <TextField
+                label="Search Server URL"
+                variant="outlined"
+                value={searchServerUrl}
+                onChange={(e) => setSearchServerUrl(e.target.value)}
                 sx={{ mb: 2 }}
                 className="text-field"
             />

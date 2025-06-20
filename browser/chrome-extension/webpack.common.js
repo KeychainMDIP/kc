@@ -63,6 +63,7 @@ module.exports = {
             "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/cache.js"),
             "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/typeGuards.js"),
             "@mdip/keymaster/types": path.resolve(__dirname, "../../packages/keymaster/dist/types/types.d.js"),
+            "@mdip/keymaster/search": path.resolve(__dirname, "../../packages/keymaster/dist/esm/search-client.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/dist/esm/keymaster.js"),
         },
         fallback: {

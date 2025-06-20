@@ -99,6 +99,9 @@
       "client": [
         "./dist/types/keymaster-client.d.ts"
       ],
+      "search": [
+        "./dist/types/search-client.d.ts"
+      ],
       "wallet/json": [
         "./dist/types/db/json.d.ts"
       ],
