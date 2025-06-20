@@ -212,6 +212,62 @@ describe('importNotice', () => {
         expect(ok).toBe(true);
     });
 
+    it('should import a poll notice', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const roster = await keymaster.createGroup('PollGroup');
+        await keymaster.addGroupMember(roster, alice);
+
+        const template = await keymaster.pollTemplate();
+        const pollDID = await keymaster.createPoll({
+            ...template,
+            roster
+        });
+
+        const notice: NoticeMessage = {
+            to: [alice],
+            dids: [pollDID],
+        };
+
+        const noticeDid = await keymaster.createNotice(notice);
+
+        await keymaster.setCurrentId('Alice');
+        const ok = await keymaster.importNotice(noticeDid);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should import a ballot notice', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const roster = await keymaster.createGroup('PollGroup');
+        await keymaster.addGroupMember(roster, alice);
+
+        const template = await keymaster.pollTemplate();
+        const pollDID = await keymaster.createPoll({
+            ...template,
+            roster
+        });
+
+        await keymaster.setCurrentId('Alice');
+        const ballotDid = await keymaster.votePoll(
+            pollDID,
+            1,
+        );
+
+        const notice: NoticeMessage = {
+            to: [bob],
+            dids: [ballotDid],
+        };
+
+        const noticeDid = await keymaster.createNotice(notice);
+
+        await keymaster.setCurrentId('Bob');
+        const ok = await keymaster.importNotice(noticeDid);
+
+        expect(ok).toBe(true);
+    });
+
     it('should return true if notice already imported', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
