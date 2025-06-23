@@ -347,7 +347,7 @@ describe('refreshNotices', () => {
         expect(ok).toBe(true);
     });
 
-    it('should remove expired notices', async () => {
+    it('should remove revoked notices', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Charles');
@@ -370,6 +370,36 @@ describe('refreshNotices', () => {
 
         await keymaster.setCurrentId('Bob');
         await keymaster.revokeDID(did);
+
+        await keymaster.setCurrentId('Alice');
+        const ok = await keymaster.refreshNotices();
+
+        expect(ok).toBe(true);
+    });
+
+    it('should remove expired notices', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Charles');
+        const dmail = await keymaster.createDmail({
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 4',
+            body: 'This is a test dmail 4.',
+        });
+
+        const notice: NoticeMessage = {
+            to: [alice, bob],
+            dids: [dmail],
+        };
+
+        const did = await keymaster.createNotice(notice);
+
+        await keymaster.setCurrentId('Alice');
+        await keymaster.importNotice(did);
+
+        // Simulate expiration by removing the DID
+        await gatekeeper.removeDIDs([did]);
 
         await keymaster.setCurrentId('Alice');
         const ok = await keymaster.refreshNotices();
