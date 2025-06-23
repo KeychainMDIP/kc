@@ -1080,10 +1080,25 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     async function createDmail() {
+        if (dmailToList.length === 0) {
+            showError("Please add at least one recipient to the 'To' field.");
+            return;
+        }
+
+        if (!dmailSubject) {
+            showError("Please enter a subject for the Dmail.");
+            return;
+        }
+
+        if (!dmailBody) {
+            showError("Please enter a body for the Dmail.");
+            return;
+        }
+
         try {
             const dmail = {
-                to: [dmailRecipient],
-                cc: [],
+                to: dmailToList,
+                cc: dmailCcList,
                 subject: dmailSubject,
                 body: dmailBody,
             };
@@ -3193,6 +3208,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
                                                     <Typography variant="body2">
                                                         {(selectedDmail.to).join(', ')}
+                                                    </Typography>
+                                                </Box>
+                                                <Box display="flex" alignItems="center" mb={1}>
+                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Cc:</Typography>
+                                                    <Typography variant="body2">
+                                                        {(selectedDmail.cc).join(', ')}
                                                     </Typography>
                                                 </Box>
                                                 <Box display="flex" alignItems="center" mb={1}>
