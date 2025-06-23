@@ -3365,10 +3365,14 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         for (const did of Object.keys(id.notices)) {
-            const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
+            try {
+                const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
 
-            if (!asset || !asset.notice) {
-                delete id.notices[did]; // expired or revoked or otherwise invalid
+                if (!asset || !asset.notice) {
+                    delete id.notices[did]; // revoked or invalid
+                }
+            } catch (error) {
+                delete id.notices[did]; // expired
             }
         }
 
