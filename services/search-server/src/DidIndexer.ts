@@ -49,6 +49,9 @@ export default class DidIndexer {
         this.refreshInProgress = true;
 
         try {
+            // Get the time now before the call to getDIDs()
+            const now = new Date().toISOString();
+
             const updatedAfter = await this.db.loadUpdatedAfter() || undefined;
             const dids = (await this.gatekeeper.getDIDs({ updatedAfter })) as string[];
 
@@ -57,7 +60,6 @@ export default class DidIndexer {
                 await this.db.storeDID(did, doc);
             }
 
-            const now = new Date().toISOString();
             await this.db.saveUpdatedAfter(now);
 
             console.log(`Indexed ${dids.length} DIDs. updatedAfter set to ${now}`);

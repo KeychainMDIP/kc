@@ -11,6 +11,7 @@ import React, {
 
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import Keymaster from "@mdip/keymaster";
+import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards'
@@ -59,6 +60,8 @@ interface WalletContextValue {
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
+
+let search: SearchClient | undefined;
 
 export function WalletProvider({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
     const [currentId, setCurrentIdState] = useState<string>("");
@@ -143,10 +146,12 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const keymasterRef = useRef<Keymaster | null>(null);
 
     async function initialiseWallet() {
-        const { gatekeeperUrl } = await chrome.storage.sync.get([
+        const { gatekeeperUrl, searchServerUrl } = await chrome.storage.sync.get([
             "gatekeeperUrl",
+            "searchServerUrl"
         ]);
         await gatekeeper.connect({ url: gatekeeperUrl });
+        search = await SearchClient.create({ url: searchServerUrl });
 
         const wallet = new WalletChrome();
         const walletData = await wallet.loadWallet();
@@ -173,6 +178,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
                 gatekeeper,
                 wallet,
                 cipher,
+                search,
             });
 
             if (!walletData) {
@@ -208,6 +214,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             gatekeeper,
             wallet: wallet_cache,
             cipher,
+            search,
         });
     }
 
@@ -215,6 +222,22 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         initialiseWallet();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!keymasterRef.current) {
+                return;
+            }
+
+            try {
+                keymasterRef.current.refreshNotices();
+            } catch {}
+        }, 30000);
+
+        return () => clearInterval(interval);
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keymasterRef]);
 
     async function clearStoredPassphrase() {
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
@@ -252,6 +275,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             gatekeeper,
             wallet: wallet_cache,
             cipher,
+            search,
         });
 
         setIsReady(true);

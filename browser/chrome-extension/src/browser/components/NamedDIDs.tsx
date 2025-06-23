@@ -21,6 +21,7 @@ import {
     Lock,
     ManageSearch,
     PermIdentity,
+    Poll,
     Schema,
     SwapHoriz,
     Token,
@@ -64,6 +65,7 @@ function NamedDIDs() {
         groupList,
         imageList,
         nameList,
+        pollList,
         schemaList,
         setAliasDID,
         setAliasName,
@@ -188,6 +190,11 @@ function NamedDIDs() {
                 icon: <Article style={iconStyle}/>, kind: "document"
             };
         }
+        if (pollList?.includes(name)) {
+            return {
+                icon: <Poll style={iconStyle}/>, kind: "poll"
+            };
+        }
         return {
             icon: <Token style={iconStyle} />, kind: "other"
         };
@@ -238,13 +245,13 @@ function NamedDIDs() {
                     label="Name"
                     variant="outlined"
                     value={aliasName}
-                    onChange={(e) => setAliasName(e.target.value.trim())}
+                    onChange={(e) => setAliasName(e.target.value)}
                     size="small"
                     className="text-field top-left short-name"
                     style={{ flex: "0 0 150px" }}
                     slotProps={{
                         htmlInput: {
-                            maxLength: 20,
+                            maxLength: 32,
                         },
                     }}
                 />
@@ -304,10 +311,11 @@ function NamedDIDs() {
                 >
                     <MenuItem value="all">All</MenuItem>
                     <MenuItem value="agent">Agents</MenuItem>
-                    <MenuItem value="group">Groups</MenuItem>
-                    <MenuItem value="schema">Schemas</MenuItem>
-                    <MenuItem value="image">Images</MenuItem>
                     <MenuItem value="document">Documents</MenuItem>
+                    <MenuItem value="group">Groups</MenuItem>
+                    <MenuItem value="image">Images</MenuItem>
+                    <MenuItem value="poll">Polls</MenuItem>
+                    <MenuItem value="schema">Schemas</MenuItem>
                     <MenuItem value="vault">Vaults</MenuItem>
                     <MenuItem value="other">Other</MenuItem>
                 </Select>

@@ -110,6 +110,7 @@ export function UIProvider(
         credentialSubject,
         setCredentialSubject,
         setAgentList,
+        setPollList,
         setSelectedIssued,
         setImageList,
         setDocumentList,
@@ -258,6 +259,7 @@ export function UIProvider(
         const imageList = [];
         const groupList = [];
         const vaultList = [];
+        const pollList = [];
         const documentList = [];
 
         for (const name of names) {
@@ -294,12 +296,18 @@ export function UIProvider(
                     vaultList.push(name);
                     continue;
                 }
+
+                if (data.poll) {
+                    pollList.push(name);
+                    continue;
+                }
             }
             catch {}
         }
 
-        agentList.sort((a, b) => a.localeCompare(b));
-        setAgentList(agentList);
+        const uniqueSortedAgents = [...new Set(agentList)]
+            .sort((a, b) => a.localeCompare(b));
+        setAgentList(uniqueSortedAgents);
 
         if (!agentList.includes(credentialSubject)) {
             setCredentialSubject("");
@@ -317,6 +325,7 @@ export function UIProvider(
         setImageList(imageList);
         setDocumentList(documentList);
         setVaultList(vaultList);
+        setPollList(pollList);
     }
 
     async function resetCurrentID() {
@@ -380,6 +389,7 @@ export function UIProvider(
         setIssuedList([]);
         setIssuedString("");
         setVaultList([]);
+        setPollList([]);
     }
 
     function wipeState() {

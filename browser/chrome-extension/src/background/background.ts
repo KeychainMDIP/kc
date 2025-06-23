@@ -1,16 +1,35 @@
 import {openBrowserValues} from "../shared/contexts/UIContext";
 
 const DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
+const DEFAULT_SEARCH_SERVER_URL = "http://localhost:4002";
+
+async function ensureDefaultSettings() {
+    try {
+        const { gatekeeperUrl, searchServerUrl } = await chrome.storage.sync.get([
+            "gatekeeperUrl",
+            "searchServerUrl",
+        ]);
+
+        const updates: Record<string, string> = {};
+
+        if (gatekeeperUrl === undefined) {
+            updates.gatekeeperUrl = DEFAULT_GATEKEEPER_URL;
+        }
+        if (searchServerUrl === undefined) {
+            updates.searchServerUrl = DEFAULT_SEARCH_SERVER_URL;
+        }
+
+        if (Object.keys(updates).length) {
+            await chrome.storage.sync.set(updates);
+        }
+    } catch (error) {
+        console.error("Error ensuring default settings:", error);
+    }
+}
 
 chrome.runtime.onInstalled.addListener(async (details) => {
     if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
-        try {
-            await chrome.storage.sync.set({
-                gatekeeperUrl: DEFAULT_GATEKEEPER_URL,
-            });
-        } catch (error: any) {
-            console.error("Error setting gatekeeperUrl:", error);
-        }
+        await ensureDefaultSettings();
     }
     await createOffscreen();
 });
@@ -27,6 +46,7 @@ async function createOffscreen() {
 }
 
 chrome.runtime.onStartup.addListener(async () => {
+    await ensureDefaultSettings();
     await createOffscreen();
 });
 

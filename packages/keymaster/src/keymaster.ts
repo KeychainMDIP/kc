@@ -76,6 +76,11 @@ export enum DmailTags {
     TRASH = 'trash',
 }
 
+export enum PollTags {
+    BALLOT = "ballot",
+    POLL = "poll",
+}
+
 export default class Keymaster implements KeymasterInterface {
     private gatekeeper: GatekeeperInterface;
     private db: WalletBase;
@@ -3314,6 +3319,30 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
+            const isBallot = await this.isBallot(noticeDID);
+
+            if (isBallot) {
+                let imported = false;
+                try {
+                    imported = await this.updatePoll(noticeDID);
+                } catch {}
+
+                if (imported) {
+                    await this.addToNotices(did, [PollTags.BALLOT]);
+                }
+
+                continue;
+            }
+
+            const poll = await this.getPoll(noticeDID);
+
+            if (poll) {
+                await this.addUnnamedPoll(noticeDID);
+                await this.addToNotices(did, [PollTags.POLL]);
+
+                continue;
+            }
+
             return false;
         }
 
@@ -3382,5 +3411,23 @@ export default class Keymaster implements KeymasterInterface {
     async refreshNotices(): Promise<boolean> {
         await this.searchNotices();
         return this.cleanupNotices();
+    }
+
+    private async isBallot(ballotDid: string): Promise<boolean> {
+        let payload: any;
+        try {
+            payload = await this.decryptJSON(ballotDid);
+        } catch {
+            return false;
+        }
+
+        return payload && typeof payload.poll === "string" && typeof payload.vote === "number";
+    }
+
+    private async addUnnamedPoll(did: string): Promise<void> {
+        const fallbackName = did.slice(-32);
+        try {
+            await this.addName(fallbackName, did);
+        } catch {}
     }
 }

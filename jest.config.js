@@ -22,6 +22,7 @@ const config = {
         '^@mdip/gatekeeper/db/(.*)$': '<rootDir>/packages/gatekeeper/src/db/$1',
         '^@mdip/ipfs/helia$': '<rootDir>/packages/ipfs/src/helia-client.ts',
         '^@mdip/ipfs/utils$': '<rootDir>/packages/ipfs/src/utils.ts',
+        '^@mdip/keymaster/search$': '<rootDir>/packages/keymaster/src/search-client.ts',
         '^@mdip/keymaster$': '<rootDir>/packages/keymaster/src/keymaster.ts',
         '^@mdip/keymaster/client$': '<rootDir>/packages/keymaster/src/keymaster-client.ts',
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
