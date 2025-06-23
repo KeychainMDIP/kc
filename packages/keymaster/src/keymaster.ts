@@ -3157,6 +3157,15 @@ export default class Keymaster implements KeymasterInterface {
         message: DmailMessage
     ): Promise<boolean> {
         const dmail = await this.verifyDmail(message);
+
+        for (const toDID of dmail.to) {
+            await this.addGroupVaultMember(did, toDID);
+        }
+
+        for (const ccDID of dmail.cc) {
+            await this.addGroupVaultMember(did, ccDID);
+        }
+        
         const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
         return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
     }
