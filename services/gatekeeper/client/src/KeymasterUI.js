@@ -3175,7 +3175,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             {dmailTab === 'inbox' &&
                                 <Box>
                                     <Box>
-                                        <TableContainer component={Paper} style={{ maxHeight: '600px', overflow: 'auto' }}>
+                                        <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
                                             <Table size="small">
                                                 <TableHead>
                                                     <TableRow>
@@ -3338,10 +3338,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <textarea
+                                            <TextField
+                                                margin="normal"
+                                                label="Body"
+                                                style={{ width: '800px' }}
+                                                multiline
+                                                minRows={12}
+                                                maxRows={12}
                                                 value={dmailBody}
-                                                onChange={(e) => setDmailBody(e.target.value)}
-                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                                onChange={e => setDmailBody(e.target.value)}
                                             />
                                         </Grid>
                                         {!dmailDID &&
