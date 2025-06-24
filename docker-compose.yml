@@ -16,7 +16,7 @@ services:
       - 127.0.0.1:6379:6379
 
   ipfs:
-    image: ipfs/kubo:v0.34.1
+    image: ipfs/kubo:v0.35.0
     ports:
       - 4001:4001
       - 4001:4001/udp
