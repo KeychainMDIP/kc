@@ -117,7 +117,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [selectedDmail, setSelectedDmail] = useState(null);
     const [dmailSubject, setDmailSubject] = useState('');
     const [dmailBody, setDmailBody] = useState('');
-    const [dmailRecipient, setDmailRecipient] = useState('');
+    const [dmailTo, setDmailTo] = useState('');
+    const [dmailCc, setDmailCc] = useState('');
     const [dmailToList, setDmailToList] = useState([]);
     const [dmailCcList, setDmailCcList] = useState([]);
     const [dmailDID, setDmailDID] = useState('');
@@ -223,7 +224,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedHeld('');
             setSelectedIssued('');
             setDmailBody('');
-            setDmailRecipient('');
+            setDmailCc('');
             setDmailDID('');
             setSelectedImageName('');
             setSelectedDocumentName('');
@@ -1003,7 +1004,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedDmail(null);
             setDmailSubject('');
             setDmailBody('');
-            setDmailRecipient('');
+            setDmailCc('');
             setDmailDID('');
         } catch (error) {
             showError(error);
@@ -1033,19 +1034,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function addDmailTo() {
         setDmailToList(prevToList => {
-            if (!dmailRecipient) {
+            if (!dmailTo) {
                 return prevToList;
             }
 
             // Check if recipient already exists in the list
-            if (prevToList.includes(dmailRecipient)) {
+            if (prevToList.includes(dmailTo)) {
                 return prevToList;
             }
 
             // Add recipient to the list
-            return [...prevToList, dmailRecipient];
+            return [...prevToList, dmailTo];
         });
-        setDmailRecipient(''); // Clear the input field after adding
+        setDmailTo(''); // Clear the input field after adding
     }
 
     async function removeDmailTo(recipient) {
@@ -1057,19 +1058,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function addDmailCc() {
         setDmailCcList(prevToList => {
-            if (!dmailRecipient) {
+            if (!dmailCc) {
                 return prevToList;
             }
 
             // Check if recipient already exists in the list
-            if (prevToList.includes(dmailRecipient)) {
+            if (prevToList.includes(dmailCc)) {
                 return prevToList;
             }
 
             // Add recipient to the list
-            return [...prevToList, dmailRecipient];
+            return [...prevToList, dmailCc];
         });
-        setDmailRecipient(''); // Clear the input field after adding
+        setDmailCc(''); // Clear the input field after adding
     }
 
     async function removeDmailCc(recipient) {
@@ -3246,122 +3247,139 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             }
                             {dmailTab === 'send' &&
                                 <Box>
-                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                    <Grid container direction="column" spacing={1}>
+                                        <Grid container direction="row" spacing={1} alignItems={'center'}>
+                                            <Grid item>
+                                                <Typography variant="subtitle1">To:</Typography>
+                                            </Grid>
+                                            <Grid item>
+                                                <Autocomplete
+                                                    freeSolo
+                                                    options={agentList || []} // array of options, e.g. DIDs or names
+                                                    value={dmailTo}
+                                                    onChange={(event, newValue) => setDmailTo(newValue)}
+                                                    onInputChange={(event, newInputValue) => setDmailTo(newInputValue)}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Name or DID"
+                                                            style={{ width: '500px' }}
+                                                            margin="normal"
+                                                            inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                            fullWidth
+                                                        />
+                                                    )}
+                                                />
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={addDmailTo} disabled={!dmailTo}>
+                                                    Add
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+                                        {dmailToList.map(recipient => (
+                                            <Grid container direction="row" spacing={1}>
+                                                <Grid item>
+                                                    <Button onClick={() => removeDmailTo(recipient)}><Clear /></Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Typography variant="subtitle1">{recipient}</Typography>
+                                                </Grid>
+                                            </Grid>
+                                        ))}
+                                        <Grid container direction="row" spacing={1} alignItems={'center'}>
+                                            <Grid item>
+                                                <Typography variant="subtitle1">Cc:</Typography>
+                                            </Grid>
+                                            <Grid item>
+                                                <Autocomplete
+                                                    freeSolo
+                                                    options={agentList || []} // array of options, e.g. DIDs or names
+                                                    value={dmailCc}
+                                                    onChange={(event, newValue) => setDmailCc(newValue)}
+                                                    onInputChange={(event, newInputValue) => setDmailCc(newInputValue)}
+                                                    renderInput={(params) => (
+                                                        <TextField
+                                                            {...params}
+                                                            label="Name or DID"
+                                                            style={{ width: '500px' }}
+                                                            margin="normal"
+                                                            inputProps={{ ...params.inputProps, maxLength: 80 }}
+                                                            fullWidth
+                                                        />
+                                                    )}
+                                                />
+                                            </Grid>
+                                            <Grid item>
+                                                <Button variant="contained" color="primary" onClick={addDmailCc} disabled={!dmailCc}>
+                                                    Add
+                                                </Button>
+                                            </Grid>
+                                        </Grid>
+                                        {dmailCcList.map(recipient => (
+                                            <Grid container direction="row" spacing={1}>
+                                                <Grid item>
+                                                    <Button onClick={() => removeDmailCc(recipient)}><Clear /></Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <Typography variant="subtitle1">{recipient}</Typography>
+                                                </Grid>
+                                            </Grid>
+                                        ))}
                                         <Grid item>
-                                            <Autocomplete
-                                                freeSolo
-                                                options={agentList || []} // array of options, e.g. DIDs or names
-                                                value={dmailRecipient}
-                                                onChange={(event, newValue) => setDmailRecipient(newValue)}
-                                                onInputChange={(event, newInputValue) => setDmailRecipient(newInputValue)}
-                                                renderInput={(params) => (
-                                                    <TextField
-                                                        {...params}
-                                                        label="Name or DID"
-                                                        style={{ width: '500px' }}
-                                                        margin="normal"
-                                                        inputProps={{ ...params.inputProps, maxLength: 80 }}
-                                                        fullWidth
-                                                    />
-                                                )}
+                                            <TextField
+                                                label="Subject"
+                                                style={{ width: '800px' }}
+                                                value={dmailSubject}
+                                                onChange={e => setDmailSubject(e.target.value)}
+                                                margin="normal"
+                                                inputProps={{ maxLength: 120 }}
+                                                fullWidth
                                             />
                                         </Grid>
                                         <Grid item>
-                                            <Button variant="contained" color="primary" onClick={addDmailTo} disabled={!dmailRecipient}>
-                                                Add To
-                                            </Button>
+                                            <textarea
+                                                value={dmailBody}
+                                                onChange={(e) => setDmailBody(e.target.value)}
+                                                style={{ width: '800px', height: '600px', overflow: 'auto' }}
+                                            />
                                         </Grid>
-                                        <Grid item>
-                                            <Button variant="contained" color="primary" onClick={addDmailCc} disabled={!dmailRecipient}>
-                                                Add Cc
-                                            </Button>
-                                        </Grid>
-                                    </Grid>
-                                    <p />
-                                    <Box>
-                                        <Grid container direction="column" spacing={1}>
-                                            <Grid item>
-                                                <Typography variant="subtitle1">To:</Typography>
-                                                {dmailToList.map(recipient => (
-                                                    <Grid container direction="row" spacing={1}>
-                                                        <Grid item>
-                                                            <Button onClick={() => removeDmailTo(recipient)}><Clear /></Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Typography variant="subtitle1">{recipient}</Typography>
-                                                        </Grid>
-                                                    </Grid>
-                                                ))}
+                                        {!dmailDID &&
+                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                <Grid item>
+                                                    <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
+                                                        Create Dmail
+                                                    </Button>
+                                                </Grid>
+                                                <Grid item>
+                                                    <RegistrySelect />
+                                                </Grid>
                                             </Grid>
-                                            <Grid item>
-                                                <Typography variant="subtitle1">Cc:</Typography>
-                                                {dmailCcList.map(recipient => (
-                                                    <Grid container direction="row" spacing={1}>
-                                                        <Grid item>
-                                                            <Button onClick={() => removeDmailCc(recipient)}><Clear /></Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Typography variant="subtitle1">{recipient}</Typography>
-                                                        </Grid>
-                                                    </Grid>
-                                                ))}
-                                            </Grid>
-                                            <Grid item>
-                                                <TextField
-                                                    label="Subject"
-                                                    style={{ width: '800px' }}
-                                                    value={dmailSubject}
-                                                    onChange={e => setDmailSubject(e.target.value)}
-                                                    margin="normal"
-                                                    inputProps={{ maxLength: 120 }}
-                                                    fullWidth
-                                                />
-                                            </Grid>
-                                            <Grid item>
-                                                <textarea
-                                                    value={dmailBody}
-                                                    onChange={(e) => setDmailBody(e.target.value)}
-                                                    style={{ width: '800px', height: '600px', overflow: 'auto' }}
-                                                />
-                                            </Grid>
-                                            {!dmailDID &&
+                                        }
+                                        {dmailDID &&
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <p>
+                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                            {dmailDID}
+                                                        </Typography>
+                                                    </p>
+                                                </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
-                                                            Create Dmail
+                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
+                                                            Update Dmail
                                                         </Button>
                                                     </Grid>
                                                     <Grid item>
-                                                        <RegistrySelect />
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
+                                                            Send Dmail
+                                                        </Button>
                                                     </Grid>
                                                 </Grid>
-                                            }
-                                            {dmailDID &&
-                                                <Grid container direction="column" spacing={1}>
-                                                    <Grid item>
-                                                        <p>
-                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                                {dmailDID}
-                                                            </Typography>
-                                                        </p>
-                                                    </Grid>
-                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
-                                                                Update Dmail
-                                                            </Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
-                                                                Send Dmail
-                                                            </Button>
-                                                        </Grid>
-                                                    </Grid>
-                                                </Grid>
-                                            }
-                                        </Grid>
-                                    </Box>
-
+                                            </Grid>
+                                        }
+                                    </Grid>
                                 </Box>
                             }
                         </Box>
