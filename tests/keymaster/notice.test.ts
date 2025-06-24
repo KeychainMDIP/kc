@@ -355,6 +355,22 @@ describe('searchNotices', () => {
         expect(ok).toBe(false);
     });
 
+    it('should silently skip expired notices', async () => {
+        const alice = await keymaster.createId('Alice');
+
+        const notice: NoticeMessage = {
+            to: [alice],
+            dids: [alice],
+        };
+
+        const did = await keymaster.createNotice(notice);
+        search.setResults([did]);
+        await gatekeeper.removeDIDs([did]);
+
+        const ok = await keymaster.searchNotices();
+        expect(ok).toBe(true);
+    });
+
     it('should throw an exception if search engine throws', async () => {
         await keymaster.createId('Alice');
 

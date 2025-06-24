@@ -3165,7 +3165,7 @@ export default class Keymaster implements KeymasterInterface {
         for (const ccDID of dmail.cc) {
             await this.addGroupVaultMember(did, ccDID);
         }
-        
+
         const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
         return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
     }
@@ -3334,7 +3334,7 @@ export default class Keymaster implements KeymasterInterface {
                 let imported = false;
                 try {
                     imported = await this.updatePoll(noticeDID);
-                } catch {}
+                } catch { }
 
                 if (imported) {
                     await this.addToNotices(did, [PollTags.BALLOT]);
@@ -3376,19 +3376,26 @@ export default class Keymaster implements KeymasterInterface {
             }
         };
 
+        let notices;
+
         try {
-            const notices = await this.searchEngine.search({ where });
-
-            for (const notice of notices) {
-                if (notice in id.notices) {
-                    continue; // Already imported
-                }
-
-                await this.importNotice(notice);
-            }
+            // TBD search engine should not return expired notices
+            notices = await this.searchEngine.search({ where });
         }
         catch (error) {
             throw new KeymasterError('Failed to search for notices');
+        }
+
+        for (const notice of notices) {
+            if (notice in id.notices) {
+                continue; // Already imported
+            }
+
+            try {
+                await this.importNotice(notice);
+            } catch (error) {
+                continue; // Skip if notice is expired or invalid
+            }
         }
 
         return true;
@@ -3437,6 +3444,6 @@ export default class Keymaster implements KeymasterInterface {
         const fallbackName = did.slice(-32);
         try {
             await this.addName(fallbackName, did);
-        } catch {}
+        } catch { }
     }
 }
