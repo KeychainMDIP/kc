@@ -1081,7 +1081,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     function getDmailInputOrError() {
-        if (dmailToList.length === 0) {
+        if (!dmailTo && dmailToList.length === 0) {
             showError("Please add at least one recipient to the 'To' field.");
             return null;
         }
@@ -1096,9 +1096,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             return null;
         }
 
+        const toList = [dmailTo, ...dmailToList].filter(Boolean); // Ensure no empty strings
+        const ccList = [dmailCc, ...dmailCcList].filter(Boolean);
+
         return {
-            to: dmailToList,
-            cc: dmailCcList,
+            to: toList,
+            cc: ccList,
             subject: dmailSubject,
             body: dmailBody,
         };
