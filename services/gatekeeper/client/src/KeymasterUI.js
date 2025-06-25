@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
     Autocomplete,
     Box,
@@ -42,6 +42,7 @@ import {
     List,
     Lock,
     Login,
+    Outbox,
     PermIdentity,
     PictureAsPdf,
     Schema,
@@ -1994,6 +1995,25 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         );
     }
 
+    const filteredDmailList = useMemo(() => {
+        let filtered = {};
+
+        for (const [did, item] of Object.entries(dmailList)) {
+            if (dmailTab === 'inbox' && item.tags.includes('inbox')) {
+                filtered[did] = item;
+            } else if (dmailTab === 'outbox' && item.tags.includes('sent')) {
+                filtered[did] = item;
+            }
+        }
+
+        return filtered;
+    }, [dmailList, dmailTab]);
+
+
+    async function showDmailFilter() {
+        showAlert(JSON.stringify(filteredDmailList, null, 4));
+    }
+
     return (
         <div className="App">
             <header className="App-header">
@@ -3161,6 +3181,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         Import...
                                     </Button>
                                 </Grid>
+                                <Grid item>
+                                    <Button variant="contained" color="primary" onClick={showDmailFilter}>
+                                        Filtered...
+                                    </Button>
+                                </Grid>
                             </Grid>
                             <Box>
                                 <Tabs
@@ -3172,10 +3197,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     scrollButtons="auto"
                                 >
                                     <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
+                                    <Tab key="outbox" value="outbox" label={'Outbox'} icon={<Outbox />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
-                            {dmailTab === 'inbox' &&
+                            {dmailTab !== 'send' &&
                                 <Box>
                                     <Box>
                                         <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
@@ -3185,10 +3211,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         <TableCell>Sender</TableCell>
                                                         <TableCell>Subject</TableCell>
                                                         <TableCell>Date</TableCell>
+                                                        <TableCell>Tags</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(dmailList).map(([did, item], idx) => (
+                                                    {Object.entries(filteredDmailList).map(([did, item], idx) => (
                                                         <TableRow
                                                             key={did}
                                                             hover
@@ -3199,6 +3226,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             <TableCell>{item.sender}</TableCell>
                                                             <TableCell>{item.message.subject}</TableCell>
                                                             <TableCell>{item.date}</TableCell>
+                                                            <TableCell>{item.tags.join(',')}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
