@@ -119,6 +119,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [authString, setAuthString] = useState('');
     const [dmailTab, setDmailTab] = useState('');
     const [dmailList, setDmailList] = useState([]);
+    const [selectedDmailDID, setSelectedDmailDID] = useState('');
     const [selectedDmail, setSelectedDmail] = useState(null);
     const [dmailSubject, setDmailSubject] = useState('');
     const [dmailBody, setDmailBody] = useState('');
@@ -3192,7 +3193,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                             <Box>
                                 <Tabs
                                     value={dmailTab}
-                                    onChange={(event, newTab) => setDmailTab(newTab)}
+                                    onChange={(event, newTab) => {
+                                        setDmailTab(newTab);
+                                        setSelectedDmail(null);
+                                        setSelectedDmailDID('');
+                                    }}
                                     indicatorColor="primary"
                                     textColor="primary"
                                     variant="scrollable"
@@ -3226,7 +3231,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             key={did}
                                                             hover
                                                             selected={selectedDmail && selectedDmail === item}
-                                                            onClick={() => setSelectedDmail(item)}
+                                                            onClick={() => {
+                                                                setSelectedDmail(item);
+                                                                setSelectedDmailDID(did);
+                                                            }}
                                                             style={{ cursor: 'pointer' }}
                                                         >
                                                             <TableCell>{item.sender}</TableCell>
@@ -3242,30 +3250,40 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Box>
                                         {selectedDmail ? (
                                             <Paper style={{ padding: 16 }}>
-                                                <Box display="flex" alignItems="center" mb={1}>
-                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>To:</Typography>
-                                                    <Typography variant="body2">
-                                                        {(selectedDmail.to).join(', ')}
-                                                    </Typography>
-                                                </Box>
-                                                <Box display="flex" alignItems="center" mb={1}>
-                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Cc:</Typography>
-                                                    <Typography variant="body2">
-                                                        {(selectedDmail.cc).join(', ')}
-                                                    </Typography>
-                                                </Box>
-                                                <Box display="flex" alignItems="center" mb={1}>
-                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>From:</Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedDmail.sender}
-                                                    </Typography>
-                                                </Box>
-                                                <Box display="flex" alignItems="center" mb={1}>
-                                                    <Typography variant="subtitle2" style={{ marginRight: 8 }}>Subject:</Typography>
-                                                    <Typography variant="body2">
-                                                        {selectedDmail.message.subject}
-                                                    </Typography>
-                                                </Box>
+                                                <TableContainer>
+                                                    <Table size="small">
+                                                        <TableBody>
+                                                            <TableRow>
+                                                                <TableCell><b>DID</b></TableCell>
+                                                                <TableCell>{selectedDmailDID}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>To</b></TableCell>
+                                                                <TableCell>{selectedDmail.to.join(', ')}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>Cc</b></TableCell>
+                                                                <TableCell>{selectedDmail.cc.join(', ')}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>From</b></TableCell>
+                                                                <TableCell>{selectedDmail.sender}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>Date</b></TableCell>
+                                                                <TableCell>{selectedDmail.date}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>Subject</b></TableCell>
+                                                                <TableCell>{selectedDmail.message?.subject}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>Tags</b></TableCell>
+                                                                <TableCell>{selectedDmail.tags.join(', ')}</TableCell>
+                                                            </TableRow>
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
                                                 <TextField
                                                     value={selectedDmail.message.body}
                                                     multiline
