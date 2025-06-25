@@ -57,6 +57,15 @@ import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
 
+const DmailTags = {
+    DMAIL: 'dmail',
+    INBOX: 'inbox',
+    SENT: 'sent',
+    ARCHIVED: 'archived',
+    DRAFT: 'draft',
+    TRASH: 'trash',
+};
+
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -1155,6 +1164,38 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function archiveDmail() {
+        showAlert(`Archiving ${selectedDmailDID}`);
+
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.ARCHIVED]);
+            refreshDmail();
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function unarchiveDmail() {
+        showAlert(`Unarchiving ${selectedDmailDID}`);
+    }
+
+    async function deleteDmail() {
+        showAlert(`Deleting ${selectedDmailDID}`);
+
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.TRASH]);
+            refreshDmail();
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function undeleteDmail() {
+        showAlert(`Undeleting ${selectedDmailDID}`);
+    }
+
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
@@ -2001,20 +2042,31 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     const filteredDmailList = useMemo(() => {
+        if (dmailTab === 'all') {
+            return dmailList;
+        }
+
         let filtered = {};
 
         for (const [did, item] of Object.entries(dmailList)) {
-            if (dmailTab === 'inbox' && item.tags.includes('inbox')) {
+            if (dmailTab === 'inbox' &&
+                item.tags.includes(DmailTags.INBOX) &&
+                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'outbox' && item.tags.includes('sent')) {
+            } else if (dmailTab === 'outbox' &&
+                item.tags.includes(DmailTags.SENT) &&
+                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'drafts' && item.tags.includes('draft')) {
+            } else if (dmailTab === 'drafts' &&
+                item.tags.includes(DmailTags.DRAFT) &&
+                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'trash' && item.tags.includes('trash')) {
+            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.TRASH)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'archive' && item.tags.includes('archive')) {
-                filtered[did] = item;
-            } else if (dmailTab === 'all') {
+            } else if (dmailTab === 'archive' && item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
             }
         }
@@ -3219,10 +3271,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Table size="small">
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell>Sender</TableCell>
-                                                        <TableCell>Subject</TableCell>
-                                                        <TableCell>Date</TableCell>
-                                                        <TableCell>Tags</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Sender</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Subject</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Date</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Tags</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
@@ -3248,6 +3300,23 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </TableContainer>
                                     </Box>
                                     <Box>
+                                        {selectedDmail && (dmailTab === 'inbox' || dmailTab === 'outbox' || dmailTab === 'drafts') &&
+                                            <Box style={{ padding: 16 }}>
+                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
+                                                            Archive
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
+                                                            Delete
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        }
                                         {selectedDmail ? (
                                             <Paper style={{ padding: 16 }}>
                                                 <TableContainer>
