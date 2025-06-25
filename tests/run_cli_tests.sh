@@ -108,6 +108,50 @@ if command -v sort &> /dev/null; then
 fi
 echo "================================================="
 
+# ========== Write JUnit XML report ==========
+mkdir -p test-results
+JUNIT_FILE="test-results/cli-tests.xml"
+
+{
+  echo '<?xml version="1.0" encoding="UTF-8"?>'
+  echo "<testsuites>"
+  echo "  <testsuite name=\"cli-tests\" tests=\"${#TEST_NAMES[@]}\" failures=\"${#FAIL[@]}\" errors=\"0\">"
+
+  for i in "${!TEST_NAMES[@]}"; do
+    test_name="${TEST_NAMES[$i]}"
+    duration="${TEST_TIMES[$i]}"
+    sanitized_name=$(basename "$test_name" | sed 's/[^a-zA-Z0-9_.-]/_/g')
+
+    echo "    <testcase classname=\"cli-tests\" name=\"$sanitized_name\" time=\"$duration\">"
+
+    if printf '%s\n' "${FAIL[@]}" | grep -q -F -- "$test_name"; then
+      # Get the corresponding failure output
+      fail_index=""
+      for j in "${!FAIL_SCRIPTS[@]}"; do
+        if [ "${FAIL_SCRIPTS[$j]}" = "$test_name" ]; then
+          fail_index=$j
+          break
+        fi
+      done
+      fail_output="${FAIL_OUTPUTS[$fail_index]}"
+      echo "      <failure message=\"Test failed\">"
+      echo "<![CDATA["
+      echo "$fail_output"
+      echo "]]>"
+      echo "      </failure>"
+    fi
+
+    echo "    </testcase>"
+  done
+
+  echo "  </testsuite>"
+  echo "</testsuites>"
+} > "$JUNIT_FILE"
+
+echo
+echo "✅ JUnit results written to: $JUNIT_FILE"
+
+
 # Final exit based on failures
 if [ "${#FAIL[@]}" -gt 0 ]; then
   exit 1
