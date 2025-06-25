@@ -27,11 +27,15 @@ import {
 } from '@mui/material';
 import {
     AccountBalanceWallet,
+    AllInbox,
+    Archive,
     Article,
     AttachFile,
     Badge,
     Clear,
     Groups,
+    Delete,
+    Drafts,
     Email,
     Image,
     Inbox,
@@ -2003,16 +2007,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 filtered[did] = item;
             } else if (dmailTab === 'outbox' && item.tags.includes('sent')) {
                 filtered[did] = item;
+            } else if (dmailTab === 'drafts' && item.tags.includes('draft')) {
+                filtered[did] = item;
+            } else if (dmailTab === 'trash' && item.tags.includes('trash')) {
+                filtered[did] = item;
+            } else if (dmailTab === 'archive' && item.tags.includes('archive')) {
+                filtered[did] = item;
+            } else if (dmailTab === 'all') {
+                filtered[did] = item;
             }
         }
 
         return filtered;
     }, [dmailList, dmailTab]);
-
-
-    async function showDmailFilter() {
-        showAlert(JSON.stringify(filteredDmailList, null, 4));
-    }
 
     return (
         <div className="App">
@@ -3181,11 +3188,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         Import...
                                     </Button>
                                 </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={showDmailFilter}>
-                                        Filtered...
-                                    </Button>
-                                </Grid>
                             </Grid>
                             <Box>
                                 <Tabs
@@ -3198,6 +3200,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 >
                                     <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
                                     <Tab key="outbox" value="outbox" label={'Outbox'} icon={<Outbox />} />
+                                    <Tab key="drafts" value="drafts" label={'Drafts'} icon={<Drafts />} />
+                                    <Tab key="archive" value="archive" label={'Archived'} icon={<Archive />} />
+                                    <Tab key="trash" value="trash" label={'Trash'} icon={<Delete />} />
+                                    <Tab key="all" value="all" label={'All Dmail'} icon={<AllInbox />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
