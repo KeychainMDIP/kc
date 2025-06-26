@@ -70,10 +70,10 @@ const DefaultSchema = {
 export enum DmailTags {
     DMAIL = 'dmail',
     INBOX = 'inbox',
+    DRAFT = 'draft',
     SENT = 'sent',
     ARCHIVED = 'archived',
-    DRAFT = 'draft',
-    TRASH = 'trash',
+    DELETED = 'deleted',
 }
 
 export enum PollTags {

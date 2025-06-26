@@ -60,10 +60,10 @@ import './App.css';
 const DmailTags = {
     DMAIL: 'dmail',
     INBOX: 'inbox',
+    DRAFT: 'draft',
     SENT: 'sent',
     ARCHIVED: 'archived',
-    DRAFT: 'draft',
-    TRASH: 'trash',
+    DELETED: 'deleted',
 };
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
@@ -1193,7 +1193,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.TRASH]);
+            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.DELETED]);
             refreshDmail();
         } catch (error) {
             showError(error);
@@ -1205,7 +1205,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.TRASH));
+            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.DELETED));
             refreshDmail();
         } catch (error) {
             showError(error);
@@ -2067,24 +2067,24 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         for (const [did, item] of Object.entries(dmailList)) {
             if (dmailTab === 'inbox' &&
                 item.tags.includes(DmailTags.INBOX) &&
-                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.DELETED) &&
                 !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
             } else if (dmailTab === 'outbox' &&
                 item.tags.includes(DmailTags.SENT) &&
-                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.DELETED) &&
                 !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
             } else if (dmailTab === 'drafts' &&
                 item.tags.includes(DmailTags.DRAFT) &&
-                !item.tags.includes(DmailTags.TRASH) &&
+                !item.tags.includes(DmailTags.DELETED) &&
                 !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
             } else if (dmailTab === 'archive' &&
                 item.tags.includes(DmailTags.ARCHIVED) &&
-                !item.tags.includes(DmailTags.TRASH)) {
+                !item.tags.includes(DmailTags.DELETED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.TRASH)) {
+            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.DELETED)) {
                 filtered[did] = item;
             }
         }
