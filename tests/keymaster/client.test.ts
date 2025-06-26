@@ -3071,6 +3071,35 @@ describe('sendDmail', () => {
     });
 });
 
+describe('fileDmail', () => {
+    it('should file dmail DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const ok = await keymaster.fileDmail(mockDmailId, ['sent']);
+
+        expect(ok).toBe(true);
+    });
+
+    it('should throw exception on fileDmail server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.fileDmail(mockDmailId, ['sent']);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('removeDmail', () => {
     it('should remove dmail DID', async () => {
         nock(KeymasterURL)
