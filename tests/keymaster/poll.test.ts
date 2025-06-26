@@ -194,7 +194,7 @@ describe('createPoll', () => {
         try {
             const poll = JSON.parse(JSON.stringify(template));
 
-            poll.roster = 'did:test:mock';
+            poll.roster = 'did:mock:roster';
 
             await keymaster.createPoll(poll);
             throw new ExpectedExceptionError();
