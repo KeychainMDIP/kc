@@ -1165,11 +1165,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     async function archiveDmail() {
-        showAlert(`Archiving ${selectedDmailDID}`);
-
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.ARCHIVED]);
+            await keymaster.fileDmail(selectedDmailDID, [...tags, DmailTags.ARCHIVED]);
             refreshDmail();
         } catch (error) {
             showError(error);
@@ -1177,11 +1175,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     async function unarchiveDmail() {
-        showAlert(`Unarchiving ${selectedDmailDID}`);
-
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.ARCHIVED));
+            await keymaster.fileDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.ARCHIVED));
             refreshDmail();
         } catch (error) {
             showError(error);
@@ -1189,11 +1185,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     async function deleteDmail() {
-        showAlert(`Deleting ${selectedDmailDID}`);
-
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, [...tags, DmailTags.DELETED]);
+            await keymaster.fileDmail(selectedDmailDID, [...tags, DmailTags.DELETED]);
             refreshDmail();
         } catch (error) {
             showError(error);
@@ -1201,11 +1195,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     }
 
     async function undeleteDmail() {
-        showAlert(`Undeleting ${selectedDmailDID}`);
-
         try {
             const tags = dmailList[selectedDmailDID]?.tags || [];
-            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.DELETED));
+            await keymaster.fileDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.DELETED));
             refreshDmail();
         } catch (error) {
             showError(error);

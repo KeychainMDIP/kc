@@ -3041,7 +3041,7 @@ export default class Keymaster implements KeymasterInterface {
         return tagSet.size > 0 ? Array.from(tagSet) : [];
     }
 
-    async addToDmail(
+    async fileDmail(
         did: string,
         tags: string[]
     ): Promise<boolean> {
@@ -3058,7 +3058,7 @@ export default class Keymaster implements KeymasterInterface {
         return this.saveWallet(wallet);
     }
 
-    async removeFromDmail(did: string): Promise<boolean> {
+    async removeDmail(did: string): Promise<boolean> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(undefined, wallet);
 
@@ -3147,7 +3147,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
         await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
-        await this.addToDmail(did, [DmailTags.DRAFT]);
+        await this.fileDmail(did, [DmailTags.DRAFT]);
 
         return did;
     }
@@ -3187,20 +3187,10 @@ export default class Keymaster implements KeymasterInterface {
         const notice = await this.createNotice(message, { registry, validUntil });
 
         if (notice) {
-            await this.addToDmail(did, [DmailTags.SENT]);
+            await this.fileDmail(did, [DmailTags.SENT]);
         }
 
         return notice;
-    }
-
-    async removeDmail(did: string): Promise<boolean> {
-        const dmail = await this.getDmailMessage(did);
-
-        if (!dmail) {
-            return false;
-        }
-
-        return this.removeFromDmail(did);
     }
 
     async getDmailMessage(did: string): Promise<DmailMessage | null> {
@@ -3232,7 +3222,7 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
-        return this.addToDmail(did, [DmailTags.INBOX]);
+        return this.fileDmail(did, [DmailTags.INBOX]);
     }
 
     async verifyDIDList(didList: string[]): Promise<string[]> {
