@@ -2378,9 +2378,6 @@ export default class Keymaster implements KeymasterInterface {
 
     async getPoll(id: string): Promise<Poll | null> {
         const asset = await this.resolveAsset(id);
-        if (!asset) {
-            return null;
-        }
 
         // TEMP during did:test, return old version poll
         const castOldAsset = asset as Poll;
