@@ -190,6 +190,18 @@ describe('createPoll', () => {
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: poll.deadline');
         }
+
+        try {
+            const poll = JSON.parse(JSON.stringify(template));
+
+            poll.roster = 'did:test:mock';
+
+            await keymaster.createPoll(poll);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: poll.roster');
+        }
     });
 });
 
