@@ -1206,6 +1206,74 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function clearSendDmail() {
+        setDmailDID('');
+        setDmailTo('');
+        setDmailToList([]);
+        setDmailCc('');
+        setDmailCcList([]);
+        setDmailSubject('');
+        setDmailBody('');
+    }
+
+    async function forwardDmail() {
+        if (!selectedDmail) return;
+
+        clearSendDmail();
+
+        setDmailSubject(`Fwd: ${selectedDmail.message.subject}`);
+        setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
+        setDmailTab('send');
+    }
+
+    async function replyDmail() {
+        if (!selectedDmail) return;
+
+        clearSendDmail();
+
+        setDmailSubject(`Re: ${selectedDmail.message.subject}`);
+        setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
+        setDmailTo(selectedDmail.sender);
+        setDmailTab('send');
+    }
+
+    async function replyAllDmail() {
+        if (!selectedDmail) return;
+
+        clearSendDmail();
+
+        setDmailSubject(`Re: ${selectedDmail.message.subject}`);
+        setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
+        setDmailTo(selectedDmail.sender);
+        setDmailToList(selectedDmail.to);
+        setDmailCcList(selectedDmail.cc);
+        setDmailTab('send');
+    }
+
+    async function editDmail() {
+        if (!selectedDmail) return;
+
+        clearSendDmail();
+
+        setDmailDID(selectedDmailDID);
+
+        if (selectedDmail.to.length === 1) {
+            setDmailTo(selectedDmail.to[0]);
+        } else {
+            setDmailToList(selectedDmail.to);
+        }
+
+        if (selectedDmail.cc.length === 1) {
+            setDmailCc(selectedDmail.cc[0]);
+        } else {
+            setDmailCcList(selectedDmail.cc);
+        }
+
+        setDmailSubject(selectedDmail.message.subject);
+        setDmailBody(selectedDmail.message.body);
+        setDmailTab('send');
+    }
+
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
@@ -3322,7 +3390,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Typography>
                                             </Grid>
                                         </Grid>
-                                        {selectedDmail && (dmailTab === 'inbox' || dmailTab === 'outbox' || dmailTab === 'drafts') &&
+                                        {selectedDmail && dmailTab === 'inbox' &&
                                             <Box style={{ padding: 16 }}>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
@@ -3333,6 +3401,58 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={deleteDmail}>
                                                             Delete
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={forwardDmail}>
+                                                            Forward
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={replyDmail}>
+                                                            Reply
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={replyAllDmail}>
+                                                            Reply-all
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        }
+                                        {selectedDmail && dmailTab === 'outbox' &&
+                                            <Box style={{ padding: 16 }}>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
+                                                            Archive
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
+                                                            Delete
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        }
+                                        {selectedDmail && dmailTab === 'drafts' &&
+                                            <Box style={{ padding: 16 }}>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
+                                                            Archive
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
+                                                            Delete
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={editDmail}>
+                                                            Edit
                                                         </Button>
                                                     </Grid>
                                                 </Grid>

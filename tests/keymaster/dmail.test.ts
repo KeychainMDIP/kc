@@ -259,7 +259,7 @@ describe('listDmail', () => {
         expect(dmails[did].tags).toStrictEqual(['draft']);
     });
 
-    it('should convert unknown DIDs', async () => {
+    it('should leave intact unknown DIDs', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         const mock: DmailMessage = {
@@ -279,11 +279,11 @@ describe('listDmail', () => {
 
         expect(dmails).toBeDefined();
         expect(dmails[did]).toBeDefined();
-        expect(dmails[did].sender).toBe(`Unknown (did:...${bob.slice(-4)})`);
+        expect(dmails[did].sender).toBe(bob);
         expect(dmails[did].date).toBeDefined();
         expect(dmails[did].message).toStrictEqual(mock);
         expect(dmails[did].to).toStrictEqual(['Alice']);
-        expect(dmails[did].cc).toStrictEqual([`Unknown (did:...${bob.slice(-4)})`]);
+        expect(dmails[did].cc).toStrictEqual([bob]);
         expect(dmails[did].tags).toStrictEqual(['inbox']);
     });
 
