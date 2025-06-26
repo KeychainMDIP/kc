@@ -3310,9 +3310,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         </TableContainer>
                                     </Box>
                                     <Box>
+                                        <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1.5em', fontWeight: 'bold' }}>
+                                                    Dmail:
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {selectedDmailDID || 'None selected'}
+                                                </Typography>
+                                            </Grid>
+                                        </Grid>
                                         {selectedDmail && (dmailTab === 'inbox' || dmailTab === 'outbox' || dmailTab === 'drafts') &&
                                             <Box style={{ padding: 16 }}>
-                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={archiveDmail}>
@@ -3329,7 +3340,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         }
                                         {selectedDmail && dmailTab === 'archive' &&
                                             <Box style={{ padding: 16 }}>
-                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={unarchiveDmail}>
@@ -3346,7 +3356,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         }
                                         {selectedDmail && dmailTab === 'trash' &&
                                             <Box style={{ padding: 16 }}>
-                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={undeleteDmail}>
@@ -3356,15 +3365,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                             </Box>
                                         }
-                                        {selectedDmail ? (
+                                        {selectedDmail &&
                                             <Paper style={{ padding: 16 }}>
                                                 <TableContainer>
                                                     <Table size="small">
                                                         <TableBody>
-                                                            <TableRow>
-                                                                <TableCell><b>DID</b></TableCell>
-                                                                <TableCell>{selectedDmailDID}</TableCell>
-                                                            </TableRow>
                                                             <TableRow>
                                                                 <TableCell><b>To</b></TableCell>
                                                                 <TableCell>{selectedDmail.to.join(', ')}</TableCell>
@@ -3402,9 +3407,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     variant="outlined"
                                                 />
                                             </Paper>
-                                        ) : (
-                                            <Typography variant="body2">No Dmail selected.</Typography>
-                                        )}
+                                        }
                                     </Box>
                                 </Box>
                             }
