@@ -1178,6 +1178,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function unarchiveDmail() {
         showAlert(`Unarchiving ${selectedDmailDID}`);
+
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.ARCHIVED));
+            refreshDmail();
+        } catch (error) {
+            showError(error);
+        }
     }
 
     async function deleteDmail() {
@@ -1194,6 +1202,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function undeleteDmail() {
         showAlert(`Undeleting ${selectedDmailDID}`);
+
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+            await keymaster.addToDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.TRASH));
+            refreshDmail();
+        } catch (error) {
+            showError(error);
+        }
     }
 
     async function showMnemonic() {
@@ -2064,9 +2080,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 !item.tags.includes(DmailTags.TRASH) &&
                 !item.tags.includes(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.TRASH)) {
+            } else if (dmailTab === 'archive' &&
+                item.tags.includes(DmailTags.ARCHIVED) &&
+                !item.tags.includes(DmailTags.TRASH)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'archive' && item.tags.includes(DmailTags.ARCHIVED)) {
+            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.TRASH)) {
                 filtered[did] = item;
             }
         }
@@ -3312,6 +3330,35 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={deleteDmail}>
                                                             Delete
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        }
+                                        {selectedDmail && dmailTab === 'archive' &&
+                                            <Box style={{ padding: 16 }}>
+                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={unarchiveDmail}>
+                                                            Unarchive
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
+                                                            Delete
+                                                        </Button>
+                                                    </Grid>
+                                                </Grid>
+                                            </Box>
+                                        }
+                                        {selectedDmail && dmailTab === 'trash' &&
+                                            <Box style={{ padding: 16 }}>
+                                                <Typography variant="h6">Dmail Details ({selectedDmailDID})</Typography>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={undeleteDmail}>
+                                                            Undelete
                                                         </Button>
                                                     </Grid>
                                                 </Grid>
