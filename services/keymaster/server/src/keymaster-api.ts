@@ -5494,7 +5494,7 @@ v1router.delete('/dmail/:id', async (req, res) => {
  * @swagger
  * /dmail/{id}/send:
  *   post:
- *     summary: Mark a Dmail message as sent.
+ *     summary: Create a Notice and mark a Dmail message as sent.
  *     parameters:
  *       - in: path
  *         name: id
@@ -5527,6 +5527,64 @@ v1router.post('/dmail/:id/send', async (req, res) => {
     try {
         const did = await keymaster.sendDmail(req.params.id);
         res.json({ did });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /dmail/{id}/file:
+ *   post:
+ *     summary: File (move) a Dmail message to a different folder by updating its tags.
+ *     description: >
+ *       Updates the tags of a Dmail message, allowing it to be moved between folders such as inbox, archive, or trash.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to file.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: The new tags to assign to the Dmail message (e.g., ["inbox"], ["archived"], ["deleted"]).
+ *             required:
+ *               - tags
+ *     responses:
+ *       200:
+ *         description: Indicates whether the filing operation was successful.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/dmail/:id/file', async (req, res) => {
+    try {
+        const { tags } = req.body;
+        const ok = await keymaster.fileDmail(req.params.id, tags);
+        res.json({ ok });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }

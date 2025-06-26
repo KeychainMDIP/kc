@@ -1212,6 +1212,19 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async fileDmail(
+        did: string,
+        tags: string[]
+    ): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/dmail/${did}/file`, { tags });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async removeDmail(did: string): Promise<boolean> {
         try {
             const response = await axios.delete(`${this.API}/dmail/${did}`);

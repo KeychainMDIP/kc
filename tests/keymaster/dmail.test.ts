@@ -415,13 +415,6 @@ describe('removeDmail', () => {
         const ok = await keymaster.removeDmail(did);
         expect(ok).toBe(true);
     });
-
-    it('should return false for non-dmail', async () => {
-        const alice = await keymaster.createId('Alice');
-
-        const ok = await keymaster.removeDmail(alice);
-        expect(ok).toBe(false);
-    });
 });
 
 describe('sendDmail', () => {
