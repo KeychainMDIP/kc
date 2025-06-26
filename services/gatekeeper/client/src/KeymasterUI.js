@@ -57,6 +57,7 @@ import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
 
+// TBD figure out how to import an enum from keymaster package
 const DmailTags = {
     DMAIL: 'dmail',
     INBOX: 'inbox',
