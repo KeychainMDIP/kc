@@ -1241,12 +1241,36 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         if (!selectedDmail) return;
 
         clearSendDmail();
-        
+
         setDmailSubject(`Re: ${selectedDmail.message.subject}`);
         setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
         setDmailTo(selectedDmail.sender);
         setDmailToList(selectedDmail.to);
         setDmailCcList(selectedDmail.cc);
+        setDmailTab('send');
+    }
+
+    async function editDmail() {
+        if (!selectedDmail) return;
+
+        clearSendDmail();
+
+        setDmailDID(selectedDmailDID);
+
+        if (selectedDmail.to.length === 1) {
+            setDmailTo(selectedDmail.to[0]);
+        } else {
+            setDmailToList(selectedDmail.to);
+        }
+
+        if (selectedDmail.cc.length === 1) {
+            setDmailCc(selectedDmail.cc[0]);
+        } else {
+            setDmailCcList(selectedDmail.cc);
+        }
+
+        setDmailSubject(selectedDmail.message.subject);
+        setDmailBody(selectedDmail.message.body);
         setDmailTab('send');
     }
 
@@ -3424,6 +3448,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={deleteDmail}>
                                                             Delete
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={editDmail}>
+                                                            Edit
                                                         </Button>
                                                     </Grid>
                                                 </Grid>
