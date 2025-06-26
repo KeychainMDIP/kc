@@ -1017,6 +1017,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const dmailList = await keymaster.listDmail();
             setDmailList(dmailList);
             setSelectedDmail(null);
+            setSelectedDmailDID('');
             setDmailSubject('');
             setDmailBody('');
             setDmailCc('');
@@ -3284,7 +3285,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Sender</TableCell>
                                                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Subject</TableCell>
                                                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Date</TableCell>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Tags</TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
@@ -3302,7 +3302,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             <TableCell>{item.sender}</TableCell>
                                                             <TableCell>{item.message.subject}</TableCell>
                                                             <TableCell>{item.date}</TableCell>
-                                                            <TableCell>{item.tags.join(',')}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
