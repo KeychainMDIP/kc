@@ -38,4 +38,11 @@ ENV DENO_DIR=/deno-dir
 EXPOSE 4002
 
 # Run...
-CMD ["run", "-A", "--lock=deno.lock", "--cached-only", "src/index.ts"]
+CMD ["run", \
+     "--allow-read=/deno-dir,/app/services/search-server", \
+     "--allow-write=/app/services/search-server/data", \
+     "--allow-net", \
+     "--allow-env", \
+     "--lock=deno.lock", \
+     "--cached-only", \
+     "src/index.ts"]
