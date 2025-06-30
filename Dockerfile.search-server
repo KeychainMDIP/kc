@@ -1,31 +1,41 @@
-# Use the official Node.js as the base image
-FROM node:22.15.0-bullseye-slim
+# Stage 1 – cache & compile dependencies
+
+# Use the official Deno image
+FROM denoland/deno:2.3.7 AS deps
 
 # Set the working directory
 WORKDIR /app
 
-# Copy packages
-COPY package*.json ./
-COPY packages/ ./packages/
-COPY services/search-server ./search-server/
+# Copy deps
+COPY packages packages
+COPY services/search-server services/search-server
 
-# Install dependencies
-RUN npm ci
-RUN npm run build
+# Pre-compile & cache dependencies
+WORKDIR /app/services/search-server
+RUN deno cache --lock=deno.lock src/index.ts
 
-# Make sure dir is owned by user who will build
-RUN chown -R node:node /app/search-server
+# Stage 2 – runtime
 
-# Switch to node user
-USER node
+FROM denoland/deno:2.3.7
+USER root
+WORKDIR /app
 
-WORKDIR /app/search-server
+# Copy the pre-built dependency cache
+COPY --from=deps /deno-dir /deno-dir
+RUN chown -R deno:deno /deno-dir && chmod -R u+rwX,go+r /deno-dir
 
-RUN npm i
-RUN npm run build
+# Copy complete service source
+COPY --chown=deno:deno packages packages
+COPY --chown=deno:deno services/search-server services/search-server
 
+# Add data directory
+RUN mkdir -p /app/services/search-server/data \
+    && chown -R deno:deno /app/services/search-server/data
+
+USER deno
+WORKDIR /app/services/search-server
+ENV DENO_DIR=/deno-dir
 EXPOSE 4002
 
 # Run...
-CMD ["node", "dist/index.js"]
-
+CMD ["run", "-A", "--lock=deno.lock", "--cached-only", "src/index.ts"]

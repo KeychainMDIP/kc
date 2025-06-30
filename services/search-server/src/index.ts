@@ -42,7 +42,7 @@ async function main() {
     // the app while the indexer is indexing
     indexer.startIndexing();
 
-    v1router.get('/ready', async (req, res) => {
+    v1router.get('/ready', (_req, res) => {
         try {
             res.json({ ready: true });
         } catch (error: any) {
@@ -55,7 +55,8 @@ async function main() {
             const { did } = req.params;
             const doc = await didDb.getDID(did);
             if (!doc) {
-                return res.status(404).send("Not found");
+                res.status(404).send("Not found");
+                return;
             }
             res.json(doc);
         } catch (error) {
@@ -68,14 +69,16 @@ async function main() {
         try {
             const q = req.query.q?.toString() || "";
             if (!q) {
-                return res.json([]);
+                res.json([]);
+                return;
             }
 
             const dids = await didDb.searchDocs(q);
-            return res.json(dids);
+            res.json(dids);
         } catch (error) {
             console.error("/api/search error:", error);
-            return res.status(500).json({ error: String(error) });
+            res.status(500).json({ error: String(error) });
+            return;
         }
     });
 
@@ -83,11 +86,12 @@ async function main() {
         try {
             const where = req.body?.where;
             if (!where || typeof where !== "object") {
-                return res.status(400).json({ error: "`where` must be an object" });
+                res.status(400).json({ error: "`where` must be an object" });
+                return;
             }
 
             const dids = await didDb.queryDocs(where);
-            return res.json(dids);
+            res.json(dids);
         } catch (err) {
             console.error("/query error:", err);
             res.status(500).json({ error: String(err) });
