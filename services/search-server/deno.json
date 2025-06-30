@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "types": [
+      "npm:@types/node",
+      "npm:@types/express",
+      "npm:@types/cors",
+      "npm:@types/dotenv"
+    ]
+  },
+  "tasks": {
+    "dev": "deno run -A src/index.ts"
+  },
+  "imports": {
+    "@mdip/gatekeeper/client": "../../packages/gatekeeper/src/gatekeeper-client.ts",
+    "@mdip/ipfs/types" : "../../packages/ipfs/src/types.ts",
+    "@mdip/cipher/types" : "../../packages/cipher/src/types.ts",
+    "express": "npm:express@4",
+    "cors":    "npm:cors@2",
+    "axios": "npm:axios@1"
+  },
+  "unstable": [
+    "bare-node-builtins",
+    "node-globals",
+    "sloppy-imports"
+  ]
+}

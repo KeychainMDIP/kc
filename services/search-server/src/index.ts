@@ -1,11 +1,9 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import "jsr:@std/dotenv/load";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DidIndexer from "./DidIndexer.js";
-
-dotenv.config();
 
 async function main() {
     const {
