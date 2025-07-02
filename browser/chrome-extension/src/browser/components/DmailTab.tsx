@@ -349,19 +349,22 @@ const DmailTab: React.FC = () => {
             <TableContainer sx={{ maxHeight: 600 }}>
                 <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: 742 }}>
                     <TableBody>
-                        {Object.entries(filteredList()).map(([did, item]) => (
-                            <TableRow
-                                key={did}
-                                hover
-                                selected={selected === item}
-                                onClick={() => setSelected({...item, did})}
-                                sx={{ cursor: "pointer" }}
-                            >
-                                <TableCell sx={senderSx}>{item.sender}</TableCell>
-                                <TableCell sx={subjectSx}>{item.message.subject}</TableCell>
-                                <TableCell sx={dateSx}>{shortDateOrTime(item.date)}</TableCell>
-                            </TableRow>
-                        ))}
+                        {Object.entries(filteredList())
+                            .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                            .map(([did, item]) => (
+                                <TableRow
+                                    key={did}
+                                    hover
+                                    selected={selected === item}
+                                    onClick={() => setSelected({...item, did})}
+                                    sx={{ cursor: "pointer" }}
+                                >
+                                    <TableCell sx={senderSx}>{item.sender}</TableCell>
+                                    <TableCell sx={subjectSx}>{item.message.subject}</TableCell>
+                                    <TableCell sx={dateSx}>{shortDateOrTime(item.date)}</TableCell>
+                                </TableRow>
+                            ))
+                        }
                     </TableBody>
                 </Table>
             </TableContainer>
