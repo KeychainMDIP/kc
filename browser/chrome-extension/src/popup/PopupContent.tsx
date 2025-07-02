@@ -14,20 +14,22 @@ import {
 } from "@mui/material";
 import { TabContext } from "@mui/lab";
 import {
+    AccountBalanceWallet,
     Badge,
     DarkMode,
+    Description,
+    Groups,
+    Email,
+    Image,
     Key,
     LightMode,
-    PermIdentity,
+    Lock,
     MoreVert,
     Message,
     OpenInBrowser,
-    Description,
-    Groups,
-    Image,
+    PermIdentity,
+    Poll,
     Schema,
-    Lock,
-    AccountBalanceWallet,
     Settings,
 } from "@mui/icons-material";
 import { useWalletContext } from "../shared/contexts/WalletProvider";
@@ -105,36 +107,53 @@ const PopupContent = () => {
 
                     <Divider sx={{ my: 0.25 }} />
 
-                    <MenuItem onClick={() => handleMenuClick("documents")} sx={denseItemSx}>
-                        <ListItemIcon>
-                            <Description fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Documents" />
-                    </MenuItem>
-                    <MenuItem onClick={() => handleMenuClick("groups")} sx={denseItemSx}>
-                        <ListItemIcon>
-                            <Groups fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Groups" />
-                    </MenuItem>
-                    <MenuItem onClick={() => handleMenuClick("images")} sx={denseItemSx}>
-                        <ListItemIcon>
-                            <Image fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Images" />
-                    </MenuItem>
-                    <MenuItem onClick={() => handleMenuClick("schemas")} sx={denseItemSx}>
-                        <ListItemIcon>
-                            <Schema fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Schemas" />
-                    </MenuItem>
-                    <MenuItem onClick={() => handleMenuClick("vaults")} sx={denseItemSx}>
-                        <ListItemIcon>
-                            <Lock fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary="Vaults" />
-                    </MenuItem>
+                    {currentId && (
+                        <Box>
+                            <MenuItem onClick={() => handleMenuClick("dmail")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Email fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="DMail" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("documents")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Description fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Documents" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("groups")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Groups fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Groups" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("images")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Image fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Images" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("schemas")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Schema fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Schemas" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("vaults")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Lock fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Vaults" />
+                            </MenuItem>
+                            <MenuItem onClick={() => handleMenuClick("polls")} sx={denseItemSx}>
+                                <ListItemIcon>
+                                    <Poll fontSize="small" />
+                                </ListItemIcon>
+                                <ListItemText primary="Polls" />
+                            </MenuItem>
+                        </Box>
+                    )}
+
                     <MenuItem onClick={() => handleMenuClick("wallet")} sx={denseItemSx}>
                         <ListItemIcon>
                             <AccountBalanceWallet fontSize="small" />
