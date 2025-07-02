@@ -51,7 +51,7 @@ function BrowserContent() {
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
-        const urlTab = urlParams.get("tab") || "";
+        let urlTab = urlParams.get("tab") || "";
         const urlSubTab = urlParams.get("subTab") || "";
         const urlTitle = urlParams.get("title") || "";
         const urlDid = urlParams.get("did") || "";
@@ -61,11 +61,18 @@ function BrowserContent() {
         let initialAssetSubTab = "schemas";
 
         if (assetTabs.includes(urlTab)) {
-            initialTab = "assets";
+            if (currentId) {
+                initialTab = "assets";
+            }
             initialAssetSubTab = urlTab;
         }
 
-        if (!currentId && urlTab === "credentials") {
+        if (!currentId && (
+            urlTab !== "identities" &&
+            urlTab !== "wallet" &&
+            urlTab !== "viewer" &&
+            urlTab !== "settings"
+        )) {
             initialTab = "identities";
         }
 
@@ -122,7 +129,12 @@ function BrowserContent() {
         }
 
         const mappedTab =
-            tab === "credentials" && !currentId
+            (
+                tab !== "identities" &&
+                tab !== "wallet" &&
+                tab !== "viewer" &&
+                tab !== "settings"
+            ) && !currentId
                 ? "identities"
                 : assetTabs.includes(tab ?? "")
                     ? "assets"

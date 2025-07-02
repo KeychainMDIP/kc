@@ -126,6 +126,24 @@ export function UIProvider(
         updateThemeFromStorage,
     } = useThemeContext();
 
+    async function getValidIds() {
+        if (!keymaster) {
+            return [];
+        }
+
+        const allIds = await keymaster.listIds();
+        const valid: string[] = [];
+
+        for (const alias of allIds) {
+            try {
+                await keymaster.resolveDID(alias);
+                valid.push(alias);
+            } catch {}
+        }
+
+        return valid.sort((a, b) => a.localeCompare(b));
+    }
+
     useEffect(() => {
         const refresh = async () => {
             await reloadBrowserWallet();
@@ -247,11 +265,20 @@ export function UIProvider(
             return;
         }
 
-        const nameList = await keymaster.listNames();
+        const allNames = await keymaster.listNames();
+        let nameList : Record<string, string> = {};
+
+        try {
+            for (const [alias, did] of Object.entries(allNames)) {
+                await keymaster.resolveDID(did);
+                nameList[alias] = did;
+            }
+        } catch {}
+
         const names = Object.keys(nameList);
         names.sort((a, b) => a.localeCompare(b))
 
-        const agentList = await keymaster.listIds();
+        const agentList = await getValidIds();
 
         setNameList(nameList);
 
@@ -371,8 +398,7 @@ export function UIProvider(
         await refreshHeld();
         await refreshIssued();
 
-        const ids = await keymaster.listIds();
-        ids.sort((a, b) => a.localeCompare(b));
+        const ids = await getValidIds();
         setIdList(ids);
     }
 
@@ -470,11 +496,8 @@ export function UIProvider(
             await refreshCurrentIDInternal(extensionState.currentId);
         }
 
-        const ids = await keymaster.listIds();
-        if (ids.length) {
-            setIdList(ids);
-            ids.sort((a, b) => a.localeCompare(b));
-        }
+        const ids = await getValidIds();
+        setIdList(ids);
 
         const nameList = await keymaster.listNames();
         setNameList(nameList);
