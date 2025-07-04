@@ -1,18 +1,25 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
+    Alert,
     Autocomplete,
     Box,
     Button,
+    Checkbox,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
     FormControl,
+    FormControlLabel,
     FormLabel,
     Grid,
+    IconButton,
     MenuItem,
     Paper,
+    Radio,
+    RadioGroup,
     Select,
+    Snackbar,
     Tab,
     Tabs,
     TableContainer,
@@ -26,16 +33,19 @@ import {
     Typography,
 } from '@mui/material';
 import {
+    AddCircleOutline,
     AccountBalanceWallet,
     AllInbox,
     Archive,
     Article,
     AttachFile,
     Badge,
+    BarChart,
     Clear,
     Groups,
     Delete,
     Drafts,
+    Edit,
     Email,
     Image,
     Inbox,
@@ -49,6 +59,7 @@ import {
     Outbox,
     PermIdentity,
     PictureAsPdf,
+    Poll,
     Schema,
     Send,
     Token,
@@ -56,6 +67,8 @@ import {
 import axios from 'axios';
 import { Buffer } from 'buffer';
 import './App.css';
+import PollResultsModal from "./PollResultsModal";
+import TextInputModal from "./TextInputModal";
 
 // TBD figure out how to import an enum from keymaster package
 const DmailTags = {
@@ -167,6 +180,42 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [revealLogin, setRevealLogin] = useState(null);
     const [revealDmailOpen, setRevealDmailOpen] = useState(false);
     const [revealDmail, setRevealDmail] = useState(null);
+    const [pollName, setPollName] = useState("");
+    const [description, setDescription] = useState("");
+    const [optionsStr, setOptionsStr] = useState("yes, no, abstain");
+    const [rosterDid, setRosterDid] = useState("");
+    const [deadline, setDeadline] = useState("");
+    const [createdPollDid, setCreatedPollDid] = useState("");
+    const [selectedPollName, setSelectedPollName] = useState("");
+    const [selectedPollDesc, setSelectedPollDesc] = useState("");
+    const [pollOptions, setPollOptions] = useState([]);
+    const [selectedOptionIdx, setSelectedOptionIdx] = useState(0);
+    const [spoil, setSpoil] = useState(false);
+    const [pollDeadline, setPollDeadline] = useState(null);
+    const [pollPublished, setPollPublished] = useState(false);
+    const [pollController, setPollController] = useState("");
+    const [lastBallotDid, setLastBallotDid] = useState("");
+    const [hasVoted, setHasVoted] = useState(false);
+    const [pollResults, setPollResults] = useState(null);
+    const [resultsOpen, setResultsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState("create");
+    const [ballotSent, setBallotSent] = useState(false);
+    const [pollNoticeSent, setPollNoticeSent] = useState(false);
+    const [renameOpen, setRenameOpen] = useState(false);
+    const [renameOldName, setRenameOldName] = useState("");
+    const [pollList, setPollList] = useState([]);
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: "",
+        severity: "warning",
+    });
+
+    const pollExpired = pollDeadline ? Date.now() > pollDeadline.getTime() : false;
+    const selectedPollDid = selectedPollName ? nameList[selectedPollName] ?? "" : "";
+
+    const handleSnackbarClose = () => {
+        setSnackbar((prev) => ({ ...prev, open: false }));
+    };
 
     useEffect(() => {
         checkForChallenge();
@@ -174,12 +223,29 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         // eslint-disable-next-line
     }, []);
 
-    function showAlert(message) {
-        window.alert(message);
+    function showAlert(warning) {
+        setSnackbar({
+            open: true,
+            message: warning,
+            severity: "warning",
+        });
     }
 
     function showError(error) {
-        window.alert(error.error || error);
+        const errorMessage = error.error || error.message || String(error);
+        setSnackbar({
+            open: true,
+            message: errorMessage,
+            severity: "error",
+        });
+    }
+
+    function showSuccess(message) {
+        setSnackbar({
+            open: true,
+            message: message,
+            severity: "success",
+        });
     }
 
     async function checkForChallenge() {
@@ -472,6 +538,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         const imageList = [];
         const documentList = [];
         const vaultList = [];
+        const pollList = [];
 
         for (const name of names) {
             try {
@@ -507,6 +574,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
                 if (data.groupVault) {
                     vaultList.push(name);
+                    continue;
+                }
+
+                if (data.poll) {
+                    pollList.push(name);
                     continue;
                 }
             }
@@ -557,6 +629,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedVaultName('');
             setSelectedVault(null);
         }
+
+        setPollList(pollList);
     }
 
     function getDID(name) {
@@ -1015,8 +1089,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     async function refreshDmail() {
         try {
             await keymaster.refreshNotices();
-            const dmailList = await keymaster.listDmail();
-            setDmailList(dmailList);
+            await refreshInbox();
             setSelectedDmail(null);
             setSelectedDmailDID('');
             setDmailSubject('');
@@ -1908,6 +1981,331 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         return <AttachFile style={iconStyle} />;
     }
 
+    const resetForm = () => {
+        setPollName("");
+        setDescription("");
+        setOptionsStr("yes, no, abstain");
+        setRosterDid("");
+        setDeadline("");
+        setCreatedPollDid("");
+        setPollNoticeSent(false);
+    };
+
+    const arraysEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+    // Check notices and update DMail and polls every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(async() => {
+            try {
+                await keymaster.refreshNotices();
+                await refreshInbox();
+                await refreshPoll();
+            } catch {}
+        }, 30000);
+
+        return () => clearInterval(interval);
+
+    }, [keymaster]);
+
+    async function refreshInbox() {
+        try {
+            const msgs = await keymaster.listDmail();
+            if (JSON.stringify(msgs) !== JSON.stringify(dmailList)) {
+                setDmailList(msgs || {});
+            }
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    async function refreshPoll() {
+        try {
+            const walletNames = await keymaster.listNames();
+            const names = Object.keys(walletNames).sort((a, b) =>
+                a.localeCompare(b)
+            );
+
+            const extraNames = {};
+            const polls = [];
+
+            for (const name of names) {
+                try {
+                    const doc = await keymaster.resolveDID(name);
+                    if (doc?.didDocumentData?.poll) {
+                        polls.push(name);
+                    }
+                } catch {}
+            }
+
+            if (!arraysEqual(polls, pollList)) {
+                for (const n of polls) {
+                    if (!(n in nameList)) {
+                        extraNames[n] = walletNames[n];
+                    }
+                }
+                if (Object.keys(extraNames).length) {
+                    setNameList((prev) => ({ ...prev, ...extraNames }));
+                }
+                setPollList(polls);
+            }
+        } catch {}
+    }
+
+    const buildPoll = async () => {
+        const template = await keymaster.pollTemplate();
+
+        if (!pollName.trim()) {
+            showError("Poll name is required");
+            return null;
+        }
+        if (pollName in nameList) {
+            showError(`Name "${pollName}" is already in use`);
+            return null;
+        }
+        if (!description.trim()) {
+            showError("Description is required");
+            return null;
+        }
+        if (!rosterDid.trim()) {
+            showError("Roster DID / name is required");
+            return null;
+        }
+        if (!deadline) {
+            showError("Deadline is required");
+            return null;
+        }
+        const options = optionsStr
+            .split(/[\,\n]/)
+            .map((o) => o.trim())
+            .filter(Boolean);
+
+        if (options.length < 2 || options.length > 10) {
+            showError("Provide between 2 and 10 options");
+            return null;
+        }
+
+        const roster = nameList[rosterDid] ?? rosterDid;
+
+        return {
+            ...template,
+            description: description.trim(),
+            roster,
+            options,
+            deadline: new Date(deadline).toISOString(),
+        };
+    };
+
+    const handleCreatePoll = async () => {
+        const poll = await buildPoll();
+        if (!poll) {
+            return;
+        }
+
+        try {
+            const did = await keymaster.createPoll(poll, { registry });
+            setCreatedPollDid(did);
+            setPollNoticeSent(false);
+            await keymaster.addName(pollName, did);
+            await refreshNames();
+            showSuccess(`Poll created: ${did}`);
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const handleSendPoll = async () => {
+        if (!createdPollDid) {
+            return;
+        }
+        try {
+            const group = await keymaster.getGroup(nameList[rosterDid] ?? rosterDid);
+            if (!group || group.members.length === 0) {
+                showError("Group not found or empty");
+                return;
+            }
+            const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+            const message = { to: group.members, dids: [createdPollDid] };
+            const notice = await keymaster.createNotice(message, {
+                registry: "hyperswarm",
+                validUntil,
+            });
+            if (notice) {
+                showSuccess("Poll notice sent");
+                setPollNoticeSent(true);
+            } else {
+                showError("Failed to send poll");
+            }
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const handleSelectPoll = async (evt) => {
+        const name = evt.target.value;
+        setSelectedPollName(name);
+        setSelectedPollDesc("");
+        setSelectedOptionIdx(0);
+        setSpoil(false);
+        setHasVoted(false);
+        setLastBallotDid("");
+        setBallotSent(false);
+        setPollController("");
+        setPollResults(null);
+        setPollPublished(false);
+
+        try {
+            const did = nameList[name] ?? "";
+            if (!did) {
+                return;
+            }
+
+            const poll = await keymaster.getPoll(did);
+            setSelectedPollDesc(poll?.description ?? "");
+            setPollOptions(poll?.options ?? []);
+            setPollDeadline(poll?.deadline ? new Date(poll.deadline) : null);
+
+            const didDoc = await keymaster.resolveDID(did);
+            setPollController(didDoc?.didDocument?.controller ?? "");
+
+            if (poll?.results) {
+                setPollResults(poll.results);
+                setPollPublished(true);
+            }
+
+            if (currentDID && poll?.ballots && poll.ballots[currentDID]) {
+                const ballotId = poll.ballots[currentDID].ballot;
+                setLastBallotDid(ballotId);
+                try {
+                    const dec = await keymaster.decryptJSON(ballotId);
+                    if (dec.vote === 0) setSpoil(true);
+                    else setSelectedOptionIdx(dec.vote - 1);
+                    setHasVoted(true);
+                } catch {
+                    /* ignore */
+                }
+            }
+        } catch (e) {
+            showError(e);
+            setPollOptions([]);
+        }
+    };
+
+    const handleVote = async () => {
+        if (!selectedPollDid) {
+            return;
+        }
+        try {
+            const voteVal = selectedOptionIdx + 1;
+            const ballotDid = await keymaster.votePoll(
+                selectedPollDid,
+                voteVal,
+                spoil ? { spoil: true } : undefined
+            );
+            setLastBallotDid(ballotDid);
+
+            if (currentDID && currentDID === pollController) {
+                setBallotSent(true);
+                await keymaster.updatePoll(ballotDid);
+                showSuccess("Poll updated");
+            } else {
+                setBallotSent(false);
+                showSuccess("Ballot created");
+            }
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const handleSendBallot = async () => {
+        if (!lastBallotDid || !pollController) {
+            return;
+        }
+        try {
+            const validUntil = new Date(
+                Date.now() + 7 * 24 * 60 * 60 * 1000
+            ).toISOString();
+            const message = { to: [pollController], dids: [lastBallotDid] };
+            const notice = await keymaster.createNotice(message, {
+                registry: "hyperswarm",
+                validUntil,
+            });
+            if (notice) {
+                showSuccess("Ballot sent");
+                setBallotSent(true);
+            } else {
+                showError("Failed to send ballot");
+            }
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const handleTogglePublish = async () => {
+        if (!selectedPollDid) {
+            return;
+        }
+        try {
+            if (pollPublished) {
+                await keymaster.unpublishPoll(selectedPollDid);
+                setPollPublished(false);
+                setPollResults(null);
+                showSuccess("Poll unpublished");
+            } else {
+                await keymaster.publishPoll(selectedPollDid);
+                const poll = await keymaster.getPoll(selectedPollDid);
+                if (poll?.results) setPollResults(poll.results);
+                setPollPublished(true);
+                showSuccess("Poll published");
+            }
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const handleViewResults = () => {
+        if (!pollResults) {
+            return;
+        }
+        setResultsOpen(true);
+    };
+
+    const handleViewPoll = async () => {
+        if (!selectedPollDid) {
+            return;
+        }
+        try {
+            const view = await keymaster.viewPoll(selectedPollDid);
+            if (view.results) {
+                setPollResults(view.results);
+                setResultsOpen(true);
+            }
+        } catch (e) {
+            showError(e);
+        }
+    };
+
+    const openRenameModal = () => {
+        setRenameOldName(selectedPollName);
+        setRenameOpen(true);
+    };
+
+    const handleRenameSubmit = async (newName) => {
+        setRenameOpen(false);
+        if (!newName || newName === selectedPollName) {
+            return;
+        }
+        try {
+            await keymaster.addName(newName, selectedPollDid);
+            await keymaster.removeName(selectedPollName);
+            await refreshNames();
+            setSelectedPollName(newName);
+            setRenameOldName("");
+            showSuccess("Poll renamed");
+        } catch (e) {
+            showError(e);
+        }
+    };
+
     function RegistrySelect() {
         return (
             <Select
@@ -2156,6 +2554,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     return (
         <div className="App">
+
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={5000}
+                onClose={handleSnackbarClose}
+                anchorOrigin={{ vertical: "top", horizontal: "center" }}
+            >
+                <Alert
+                    onClose={handleSnackbarClose}
+                    severity={snackbar.severity}
+                    sx={{ width: "100%" }}
+                >
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+
             <header className="App-header">
 
                 <h1>{title}</h1>
@@ -2201,6 +2615,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                         }
                         {currentId && !widget &&
                             <Tab key="dmail" value="dmail" label={'Dmail'} icon={<Email />} />
+                        }
+                        {currentId && !widget &&
+                            <Tab key="polls" value="polls" label={'Polls'} icon={<Poll />} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} icon={<Key />} />
@@ -3067,6 +3484,292 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     }
                                 </Box>
                             }
+                        </Box>
+                    }
+                    {tab === 'polls' &&
+                        <Box>
+                            {pollResults && (
+                                <PollResultsModal
+                                    open={resultsOpen}
+                                    onClose={() => setResultsOpen(false)}
+                                    results={pollResults}
+                                />
+                            )}
+                            {renameOpen && (
+                                <TextInputModal
+                                    isOpen={renameOpen}
+                                    title="Rename poll"
+                                    defaultValue={renameOldName}
+                                    onSubmit={handleRenameSubmit}
+                                    onClose={() => setRenameOpen(false)}
+                                />
+                            )}
+
+                            <Tabs
+                                value={activeTab}
+                                onChange={(_, v) => setActiveTab(v)}
+                                indicatorColor="primary"
+                                textColor="primary"
+                                sx={{ mb: 2 }}
+                            >
+                                <Tab label="Create" value="create" icon={<AddCircleOutline />} />
+                                <Tab label="View / Vote" value="view" icon={<BarChart />} />
+                            </Tabs>
+
+                            {activeTab === "create" && (
+                                <Box sx={{ maxWidth: 550 }}>
+                                    <TextField
+                                        fullWidth
+                                        label="Poll name"
+                                        value={pollName}
+                                        onChange={(e) => setPollName(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                        inputProps={{ maxLength: 32 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Description"
+                                        multiline
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                        inputProps={{ maxLength: 200 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Options (comma or newline separated)"
+                                        multiline
+                                        minRows={3}
+                                        value={optionsStr}
+                                        onChange={(e) => setOptionsStr(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                        helperText="Between 2 and 10 options"
+                                    />
+                                    <Autocomplete
+                                        freeSolo
+                                        options={groupList}
+                                        value={rosterDid}
+                                        onInputChange={(_, v) => setRosterDid(v.trim())}
+                                        renderInput={(params) => (
+                                            <TextField {...params} label="Roster DID / name" sx={{ mb: 2 }} />
+                                        )}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        type="datetime-local"
+                                        label="Deadline"
+                                        value={deadline}
+                                        onChange={(e) => setDeadline(e.target.value)}
+                                        sx={{ mb: 2 }}
+                                        InputLabelProps={{ shrink: true }}
+                                    />
+                                    <Select
+                                        value={registry}
+                                        onChange={(e) => setRegistry(e.target.value)}
+                                        sx={{ minWidth: 200, mb: 2 }}
+                                    >
+                                        {registries.map((r) => (
+                                            <MenuItem key={r} value={r}>
+                                                {r}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+
+                                    <Box sx={{ mt: 2 }}>
+                                        <Button
+                                            variant="contained"
+                                            onClick={handleCreatePoll}
+                                            sx={{ mr: 1 }}
+                                        >
+                                            Create
+                                        </Button>
+                                        <Button
+                                            variant="outlined"
+                                            onClick={handleSendPoll}
+                                            disabled={!createdPollDid || pollNoticeSent}
+                                            sx={{ mr: 1 }}
+                                        >
+                                            Send
+                                        </Button>
+                                        <Button variant="text" onClick={resetForm}>
+                                            Clear
+                                        </Button>
+                                    </Box>
+
+                                    {createdPollDid && (
+                                        <Box sx={{ mt: 2 }}>
+                                            <Typography variant="body2">{createdPollDid}</Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
+
+                            {activeTab === "view" && (
+                                <Box sx={{ maxWidth: 650 }}>
+                                    {pollList.length > 0 ? (
+                                        <Box sx={{ mt: 2 }}>
+                                            <Box display="flex" flexDirection="row" sx={{ gap: 1}}>
+                                                <Select
+                                                    value={selectedPollName}
+                                                    onChange={handleSelectPoll}
+                                                    displayEmpty
+                                                    sx={{ minWidth: 220 }}
+                                                >
+                                                    <MenuItem value="">
+                                                        Select poll
+                                                    </MenuItem>
+                                                    {pollList.map((name) => (
+                                                        <MenuItem key={name} value={name}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+
+                                                <Tooltip title="Rename Poll">
+                                                    <span>
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
+                                                            onClick={openRenameModal}
+                                                            disabled={!selectedPollName}
+                                                        >
+                                                            <Edit fontSize="small" />
+                                                        </IconButton>
+                                                    </span>
+                                                </Tooltip>
+
+                                                {currentDID && pollController && currentDID === pollController && (
+                                                    <Box>
+                                                        {pollExpired && (
+                                                            <Button
+                                                                variant="outlined"
+                                                                sx={{ height: 56 }}
+                                                                onClick={handleTogglePublish}
+                                                            >
+                                                                {pollPublished ? "Unpublish" : "Publish"}
+                                                            </Button>
+                                                        )}
+
+                                                        <Button
+                                                            variant="outlined"
+                                                            sx={{ ml: 1, height: 56 }}
+                                                            onClick={handleViewPoll}
+                                                            disabled={!selectedPollDid}
+                                                        >
+                                                            View
+                                                        </Button>
+                                                    </Box>
+                                                )}
+                                            </Box>
+
+                                            {selectedPollDid && (
+                                                <Box>
+                                                    <Box display="flex" flexDirection="row" sx={{ mt: 2, gap: 1}}>
+                                                        <Typography variant="h6">
+                                                            Poll:
+                                                        </Typography>
+                                                        <Typography variant="body1" sx={{ mt: 1, fontFamily: 'Courier' }}>
+                                                            {selectedPollDid}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Typography variant="h6" sx={{ mt: 2 }}>
+                                                        Description
+                                                    </Typography>
+                                                    <Typography variant="body1" sx={{ mt: 2 }}>
+                                                        {selectedPollDesc}
+                                                    </Typography>
+
+                                                    {!pollExpired ? (
+                                                        <Box mt={2}>
+                                                            <Typography variant="h6">
+                                                                {hasVoted ? "Update your vote" : "Cast your vote"}
+                                                            </Typography>
+
+                                                            {pollDeadline && (
+                                                                <Typography
+                                                                    variant="body2"
+                                                                    sx={{ mt: 1, color: pollExpired ? "error.main" : "text.secondary" }}
+                                                                >
+                                                                    Deadline: {pollDeadline.toLocaleString()}
+                                                                </Typography>
+                                                            )}
+
+                                                            {!spoil && (
+                                                                <RadioGroup
+                                                                    value={String(selectedOptionIdx)}
+                                                                    onChange={(_, v) => setSelectedOptionIdx(Number(v))}
+                                                                >
+                                                                    {pollOptions.map((opt, idx) => (
+                                                                        <FormControlLabel
+                                                                            key={idx}
+                                                                            value={String(idx)}
+                                                                            control={<Radio />}
+                                                                            label={opt}
+                                                                        />
+                                                                    ))}
+                                                                </RadioGroup>
+                                                            )}
+
+                                                            <FormControlLabel
+                                                                control={
+                                                                    <Checkbox checked={spoil} onChange={(_, v) => setSpoil(v)} />
+                                                                }
+                                                                label="Spoil ballot"
+                                                            />
+
+                                                            <Box sx={{ mt: 1 }}>
+                                                                <Button variant="contained" onClick={handleVote}>
+                                                                    Vote
+                                                                </Button>
+                                                                {currentDID !== pollController && (
+                                                                    <Button
+                                                                        variant="outlined"
+                                                                        sx={{ ml: 1 }}
+                                                                        disabled={ballotSent}
+                                                                        onClick={handleSendBallot}
+                                                                    >
+                                                                        Send Ballot
+                                                                    </Button>
+                                                                )}
+                                                            </Box>
+
+                                                            {lastBallotDid && (
+                                                                <Box sx={{ mt: 1 }}>
+                                                                    <Typography variant="body2">
+                                                                        Ballot: {lastBallotDid}
+                                                                    </Typography>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                    ) : (
+                                                        <Box sx={{ mt: 2 }}>
+                                                            <Typography variant="h6" sx={{ mt: 1, mb: 1 }}>
+                                                                Poll complete
+                                                            </Typography>
+                                                            {pollPublished ? (
+                                                                <Button
+                                                                    variant="contained"
+                                                                    onClick={handleViewResults}
+                                                                >
+                                                                    View Results
+                                                                </Button>
+                                                            ) : (
+                                                                <Typography variant="body2">
+                                                                    Results not published yet
+                                                                </Typography>
+                                                            )}
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    ) : (
+                                        <Box display="flex" width="100%" justifyContent="center" alignItems="center" mt={2}>
+                                            <Typography variant="h6">No polls found</Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
                         </Box>
                     }
                     {tab === 'credentials' &&

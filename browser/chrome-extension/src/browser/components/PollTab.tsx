@@ -433,8 +433,8 @@ const PollsTab: React.FC = () => {
                 textColor="primary"
                 sx={{ mb: 2 }}
             >
-                <Tab value="create" label="Create Poll" icon={<AddCircleOutline />} />
-                <Tab value="view" label="View Poll" icon={<BarChart />} />
+                <Tab value="create" label="Create" icon={<AddCircleOutline />} />
+                <Tab value="view" label="View / Vote" icon={<BarChart />} />
             </Tabs>
 
             {activeTab === "create" && (
@@ -565,7 +565,7 @@ const PollsTab: React.FC = () => {
 
             {activeTab === "view" && (
                 <Box>
-                    {pollList.length > 0 && (
+                    {pollList.length > 0 ? (
                         <Box sx={{ mt: 2 }}>
                             <Box className="flex-box">
                                 <Select
@@ -649,6 +649,9 @@ const PollsTab: React.FC = () => {
 
                             {selectedPollDid && (
                                 <Box>
+                                    <Typography variant="h6" sx={{ mt: 2 }}>
+                                        Description
+                                    </Typography>
                                     <Typography variant="body1" sx={{ mt: 2 }}>
                                         {selectedPollDesc}
                                     </Typography>
@@ -750,6 +753,10 @@ const PollsTab: React.FC = () => {
                                     )}
                                 </Box>
                             )}
+                        </Box>
+                    ) : (
+                        <Box display="flex" width="100%" justifyContent="center" alignItems="center" mt={2}>
+                            <Typography variant="h6">No polls found</Typography>
                         </Box>
                     )}
                 </Box>
