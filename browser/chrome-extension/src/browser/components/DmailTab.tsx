@@ -130,7 +130,9 @@ const DmailTab: React.FC = () => {
         }
         try {
             const msgs = await keymaster.listDmail();
-            setDmailList(msgs || {});
+            if (JSON.stringify(msgs) !== JSON.stringify(dmailList)) {
+                setDmailList(msgs || {});
+            }
         } catch (err: any) {
             setError(err);
         }

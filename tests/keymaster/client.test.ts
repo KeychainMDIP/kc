@@ -38,8 +38,6 @@ const Endpoints = {
     templates: '/api/v1/templates',
     templates_poll: '/api/v1/templates/poll',
     polls: '/api/v1/polls',
-    polls_vote: '/api/v1/polls/vote',
-    polls_update: '/api/v1/polls/update',
     images: '/api/v1/images',
     documents: '/api/v1/documents',
     groupVaults: `/api/v1/groupVaults`,
@@ -2263,7 +2261,7 @@ describe('votePoll', () => {
 
     it('should vote on poll', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.polls_vote}`)
+            .post(`${Endpoints.polls}/${mockPollId}/vote`)
             .reply(200, { did: mockDID });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2274,7 +2272,7 @@ describe('votePoll', () => {
 
     it('should throw exception on votePoll server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.polls_vote}`)
+            .post(`${Endpoints.polls}/${mockPollId}/vote`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2294,7 +2292,7 @@ describe('updatePoll', () => {
 
     it('should update poll', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.polls_update}`)
+            .put(`${Endpoints.polls}/update`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2305,7 +2303,7 @@ describe('updatePoll', () => {
 
     it('should throw exception on updatePoll server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.polls_update}`)
+            .put(`${Endpoints.polls}/update`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });

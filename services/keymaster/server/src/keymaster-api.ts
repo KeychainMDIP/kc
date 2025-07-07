@@ -3968,9 +3968,18 @@ v1router.get('/polls/:poll/view', async (req, res) => {
 
 /**
  * @swagger
- * /polls/vote:
+ * /polls/{poll}/vote:
  *   post:
  *     summary: Cast a vote in a poll.
+ *     description: >
+ *       Casts a vote in the specified poll. The vote is recorded as a ballot DID, which should be submitted to the poll owner.
+ *     parameters:
+ *       - in: path
+ *         name: poll
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID or name of the poll to vote in.
  *     requestBody:
  *       required: true
  *       content:
@@ -3978,12 +3987,9 @@ v1router.get('/polls/:poll/view', async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               poll:
- *                 type: string
- *                 description: The DID or name of the poll to vote in.
  *               vote:
  *                 type: integer
- *                 description: The numerical option index (1-based). Alternatively, use `spoil` in `options`.
+ *                 description: The numerical option index (1-based). Use 0 or set `spoil` in options to cast a spoiled ballot.
  *               options:
  *                 type: object
  *                 description: Additional vote parameters.
@@ -3994,7 +4000,7 @@ v1router.get('/polls/:poll/view', async (req, res) => {
  *                     description: If true, casts a spoiled ballot (vote=0).
  *                   registry:
  *                     type: string
- *                     description: Where to create the ballot DID (e.g. "local", "hyperswarm").
+ *                     description: Where to create the ballot DID (e.g., "local", "hyperswarm").
  *                   validUntil:
  *                     type: string
  *                     format: date-time
@@ -4015,6 +4021,8 @@ v1router.get('/polls/:poll/view', async (req, res) => {
  *                   controller:
  *                     type: string
  *                     description: Which ID or DID to assign as the ballot’s controller. Defaults to the poll's owner, but usually not changed here.
+ *             required:
+ *               - vote
  *     responses:
  *       200:
  *         description: The DID representing the newly created ballot (to be submitted to the poll owner).
@@ -4035,10 +4043,10 @@ v1router.get('/polls/:poll/view', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/polls/vote', async (req, res) => {
+v1router.post('/polls/:poll/vote', async (req, res) => {
     try {
-        const { poll, vote, options } = req.body;
-        const did = await keymaster.votePoll(poll, vote, options);
+        const { vote, options } = req.body;
+        const did = await keymaster.votePoll(req.params.poll, vote, options);
         res.json({ did });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

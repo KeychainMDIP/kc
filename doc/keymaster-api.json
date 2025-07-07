@@ -4759,9 +4759,21 @@
         }
       }
     },
-    "/polls/vote": {
+    "/polls/{poll}/vote": {
       "post": {
         "summary": "Cast a vote in a poll.",
+        "description": "Casts a vote in the specified poll. The vote is recorded as a ballot DID, which should be submitted to the poll owner.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "poll",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The DID or name of the poll to vote in."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -4769,13 +4781,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "poll": {
-                    "type": "string",
-                    "description": "The DID or name of the poll to vote in."
-                  },
                   "vote": {
                     "type": "integer",
-                    "description": "The numerical option index (1-based). Alternatively, use `spoil` in `options`."
+                    "description": "The numerical option index (1-based). Use 0 or set `spoil` in options to cast a spoiled ballot."
                   },
                   "options": {
                     "type": "object",
@@ -4788,7 +4796,7 @@
                       },
                       "registry": {
                         "type": "string",
-                        "description": "Where to create the ballot DID (e.g. \"local\", \"hyperswarm\")."
+                        "description": "Where to create the ballot DID (e.g., \"local\", \"hyperswarm\")."
                       },
                       "validUntil": {
                         "type": "string",
@@ -4818,7 +4826,10 @@
                       }
                     }
                   }
-                }
+                },
+                "required": [
+                  "vote"
+                ]
               }
             }
           }
