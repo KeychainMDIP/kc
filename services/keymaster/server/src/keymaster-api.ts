@@ -4035,10 +4035,10 @@ v1router.get('/polls/:poll/view', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post('/polls/vote', async (req, res) => {
+v1router.post('/polls/:poll/vote', async (req, res) => {
     try {
-        const { poll, vote, options } = req.body;
-        const did = await keymaster.votePoll(poll, vote, options);
+        const { vote, options } = req.body;
+        const did = await keymaster.votePoll(req.params.poll, vote, options);
         res.json({ did });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

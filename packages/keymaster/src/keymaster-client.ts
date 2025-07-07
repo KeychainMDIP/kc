@@ -876,7 +876,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/polls/vote`, { pollId, vote, options });
+            const response = await axios.post(`${this.API}/polls/${pollId}/vote`, { vote, options });
             return response.data.did;
         }
         catch (error) {
