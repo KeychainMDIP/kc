@@ -1225,6 +1225,48 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function uploadDmailAttachment(event) {
+        try {
+            const fileInput = event.target; // Reference to the input element
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // Reset the input value to allow selecting the same file again
+            fileInput.value = "";
+
+            // Read the file as a binary buffer
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
+
+                    const ok = await keymaster.addGroupVaultItem(dmailDID, file.name, buffer);
+
+                    if (ok) {
+                        showAlert(`Attachment uploaded successfully: ${file.name}`);
+                        //refreshVault(selectedVaultName);
+                    } else {
+                        showAlert(`Error uploading file: ${file.name}`);
+                    }
+                } catch (error) {
+                    // Catch errors from the Keymaster API or other logic
+                    showError(`Error uploading file: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                showError(`Error uploading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            showError(`Error uploading file: ${error}`);
+        }
+    }
+
     async function sendDmail() {
         try {
             const ok = await keymaster.sendDmail(dmailDID);
@@ -1995,12 +2037,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     // Check notices and update DMail and polls every 30 seconds
     useEffect(() => {
-        const interval = setInterval(async() => {
+        const interval = setInterval(async () => {
             try {
                 await keymaster.refreshNotices();
                 await refreshInbox();
                 await refreshPoll();
-            } catch {}
+            } catch { }
         }, 30000);
 
         return () => clearInterval(interval);
@@ -2034,7 +2076,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     if (doc?.didDocumentData?.poll) {
                         polls.push(name);
                     }
-                } catch {}
+                } catch { }
             }
 
             if (!arraysEqual(polls, pollList)) {
@@ -2048,7 +2090,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 }
                 setPollList(polls);
             }
-        } catch {}
+        } catch { }
     }
 
     const buildPoll = async () => {
@@ -3608,7 +3650,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box sx={{ maxWidth: 650 }}>
                                     {pollList.length > 0 ? (
                                         <Box sx={{ mt: 2 }}>
-                                            <Box display="flex" flexDirection="row" sx={{ gap: 1}}>
+                                            <Box display="flex" flexDirection="row" sx={{ gap: 1 }}>
                                                 <Select
                                                     value={selectedPollName}
                                                     onChange={handleSelectPoll}
@@ -3664,7 +3706,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
                                             {selectedPollDid && (
                                                 <Box>
-                                                    <Box display="flex" flexDirection="row" sx={{ mt: 2, gap: 1}}>
+                                                    <Box display="flex" flexDirection="row" sx={{ mt: 2, gap: 1 }}>
                                                         <Typography variant="h6">
                                                             Poll:
                                                         </Typography>
@@ -4351,13 +4393,46 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Grid>
                                         }
                                         {dmailDID &&
+                                            <Box>
+                                                <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                    {dmailDID}
+                                                </Typography>
+                                            </Box>
+                                        }
+                                        {dmailDID &&
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
-                                                    <p>
-                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {dmailDID}
-                                                        </Typography>
-                                                    </p>
+                                                    Attachments:
+                                                    <Button
+                                                        variant="contained"
+                                                        color="primary"
+                                                        sx={{ ml: 2 }}
+                                                        onClick={() => document.getElementById('attachmentUpload').click()}
+                                                    >
+                                                        Upload...
+                                                    </Button>
+                                                    <input
+                                                        type="file"
+                                                        id="attachmentUpload"
+                                                        style={{ display: 'none' }}
+                                                        onChange={uploadDmailAttachment}
+                                                    />
+                                                </Grid>
+                                                <Grid item>1</Grid>
+                                                <Grid item>2</Grid>
+                                                <Grid item>3</Grid>
+                                                <Grid item>4</Grid>
+                                                <Grid item>5</Grid>
+                                                <Grid item>6</Grid>
+                                                <Grid item>7</Grid>
+                                            </Grid>
+                                        }
+                                        {dmailDID &&
+                                            <Grid container direction="column" spacing={1}>
+                                                <Grid item>
+                                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                        {dmailDID}
+                                                    </Typography>
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
