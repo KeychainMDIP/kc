@@ -20,7 +20,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const subTabKey = browserSubTab ?? 'noSubTab';
     const storageKey = `jsonViewerState-${browserTab}-${subTabKey}`;
 
-    const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
+    const [aliasDocs, setAliasDocs] = useState<Record<string, unknown> | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
     const [formDid, setFormDid] = useState<string>("");
@@ -28,6 +28,41 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const [currentTitle, setCurrentTitle] = useState<string>("");
     const { keymaster, setError } = useWalletContext();
     const { openBrowser, setOpenBrowser } = useUIContext();
+    const [canDecrypt,     setCanDecrypt]     = useState(false);
+    const [decryptedCache, setDecryptedCache] = useState<Record<string, unknown>|null>(null);
+
+    const isEncrypted = Boolean(
+        (aliasDocs as any)?.didDocumentData?.encrypted,
+    );
+
+    useEffect(() => {
+        async function checkDecryptability() {
+            setCanDecrypt(false);
+            setDecryptedCache(null);
+
+            if (!keymaster || !isEncrypted) {
+                return;
+            }
+
+            try {
+                const decrypted = await keymaster.decryptJSON(
+                    (aliasDocs as any).didDocument.id,
+                );
+                if (typeof decrypted === 'object' && decrypted !== null) {
+                    setCanDecrypt(true);
+                    setDecryptedCache(decrypted as Record<string, unknown>);
+                }
+            } catch {}
+        }
+        checkDecryptability();
+    }, [aliasDocs, keymaster, isEncrypted]);
+
+    async function handleDecrypt() {
+        if (!canDecrypt || !decryptedCache) {
+            return;
+        }
+        setAliasDocs(decryptedCache);
+    }
 
     useEffect(() => {
         const stored = sessionStorage.getItem(storageKey);
@@ -143,7 +178,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             }
             const versions = docs.didDocumentMetadata.version;
 
-            setAliasDocs(docs);
+            setAliasDocs(docs as Record<string, unknown>);
             if (versions) {
                 setAliasDocsVersion(versions);
                 setAliasDocsVersionMax(versions);
@@ -163,7 +198,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             const docs = await keymaster.resolveDID(currentDid, {
                 atVersion: version,
             });
-            setAliasDocs(docs);
+            setAliasDocs(docs as Record<string, unknown>);
         } catch (error: any) {
             setError(error);
         }
@@ -201,10 +236,19 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                         variant="contained"
                         onClick={() => handleResolveDID()}
                         size="small"
-                        className="button-right"
+                        className="button-center"
                         disabled={!formDid}
                     >
                         Resolve
+                    </Button>
+                    <Button
+                        variant="contained"
+                        onClick={handleDecrypt}
+                        size="small"
+                        className="button-right"
+                        disabled={!canDecrypt}
+                    >
+                        Decrypt
                     </Button>
                 </Box>
             }
@@ -258,7 +302,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                                     }
 
                                     if (type === 'value' &&
-                                        aliasDocs?.didDocumentMetadata?.timestamp?.chain === "TBTC"
+                                        (aliasDocs as MdipDocument)?.didDocumentMetadata?.timestamp?.chain === "TBTC"
                                     ) {
                                         const currentKeyString = String(keyName);
                                         let url = '';

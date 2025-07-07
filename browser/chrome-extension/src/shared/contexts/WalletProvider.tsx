@@ -33,16 +33,18 @@ interface SnackbarState {
 interface WalletContextValue {
     currentId: string;
     setCurrentId: (value: string) => Promise<void>;
+    validId: boolean;
+    setValidId: Dispatch<SetStateAction<boolean>>;
     currentDID: string;
     setCurrentDID: Dispatch<SetStateAction<string>>;
-    selectedId: string;
-    setSelectedId: Dispatch<SetStateAction<string>>;
     registry: string;
     setRegistry: (value: string) => Promise<void>;
     registries: string[];
     setRegistries: Dispatch<SetStateAction<string[]>>;
     idList: string[];
     setIdList: Dispatch<SetStateAction<string[]>>;
+    unresolvedIdList: string[];
+    setUnresolvedIdList: Dispatch<SetStateAction<string[]>>;
     setError(error: string): void;
     setWarning(warning: string): void;
     setSuccess(message: string): void;
@@ -65,12 +67,13 @@ let search: SearchClient | undefined;
 
 export function WalletProvider({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
     const [currentId, setCurrentIdState] = useState<string>("");
+    const [validId, setValidId] = useState<boolean>(false);
     const [currentDID, setCurrentDID] = useState<string>("");
     const [idList, setIdList] = useState<string[]>([]);
+    const [unresolvedIdList, setUnresolvedIdList] = useState<string[]>([]);
     const [manifest, setManifest] = useState<Record<string, unknown> | undefined>(undefined);
     const [registry, setRegistryState] = useState<string>("hyperswarm");
     const [registries, setRegistries] = useState<string[]>([]);
-    const [selectedId, setSelectedId] = useState<string>("");
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [modalAction, setModalAction] = useState<string>("");
     const [isReady, setIsReady] = useState<boolean>(false);
@@ -308,16 +311,18 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const value: WalletContextValue = {
         currentId,
         setCurrentId,
+        validId,
+        setValidId,
         currentDID,
         setCurrentDID,
-        selectedId,
-        setSelectedId,
         registry,
         setRegistry,
         registries,
         setRegistries,
         idList,
         setIdList,
+        unresolvedIdList,
+        setUnresolvedIdList,
         manifest,
         setManifest,
         setError,

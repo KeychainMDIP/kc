@@ -40,6 +40,8 @@ interface CredentialsContextValue {
     setAliasDID: (value: string) => Promise<void>;
     nameList: Record<string, string>;
     setNameList: Dispatch<SetStateAction<Record<string, string>>>;
+    unresolvedList: Record<string, string>;
+    setUnresolvedList: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
     setAgentList: Dispatch<SetStateAction<string[]>>;
     pollList: string[];
@@ -54,6 +56,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [heldList, setHeldList] = useState<string[]>([]);
     const [heldDID, setHeldDIDState] = useState<string>("");
     const [nameList, setNameList] = useState<Record<string, string>>({});
+    const [unresolvedList, setUnresolvedList] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
     const [pollList, setPollList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<string[]>([]);
@@ -150,6 +153,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setAliasDID,
         nameList,
         setNameList,
+        unresolvedList,
+        setUnresolvedList,
         agentList,
         setAgentList,
         pollList,

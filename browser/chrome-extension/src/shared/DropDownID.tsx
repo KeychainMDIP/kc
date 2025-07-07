@@ -20,7 +20,7 @@ const DropDownID = () => {
         isBrowser,
         keymaster,
         setError,
-        setSelectedId,
+        unresolvedIdList,
     } = useWalletContext();
     const {
         handleCopyDID,
@@ -38,7 +38,6 @@ const DropDownID = () => {
             return;
         }
         try {
-            setSelectedId(id);
             await keymaster.setCurrentId(id);
 
             await resetCurrentID();
@@ -61,7 +60,14 @@ const DropDownID = () => {
         await selectId(id);
     }
 
-    const multipleIds = idList && idList.length > 1;
+    const combinedList = [
+        ...idList.map(id => ({ id, unresolved: false })),
+        ...unresolvedIdList
+            .filter(id => !idList.includes(id))
+            .map(id => ({ id, unresolved: true })),
+    ].sort((a, b) => a.id.localeCompare(b.id));
+
+    const multipleIds = combinedList && combinedList.length > 1;
 
     return (
         currentId && (
@@ -123,10 +129,11 @@ const DropDownID = () => {
                                 horizontal: "right",
                             }}
                         >
-                            {idList.map((id) => (
+                            {combinedList.map(({ id, unresolved }) => (
                                 <MenuItem
                                     key={id}
                                     onClick={() => handleSelectID(id)}
+                                    sx={unresolved ? { color: 'red' } : {}}
                                 >
                                     {id}
                                 </MenuItem>

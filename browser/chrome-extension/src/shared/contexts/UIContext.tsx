@@ -75,12 +75,13 @@ export function UIProvider(
         isBrowser,
         setCurrentId,
         setCurrentDID,
+        setValidId,
         setIdList,
+        setUnresolvedIdList,
         keymaster,
         setError,
         storeState,
         setManifest,
-        setSelectedId,
         setRegistries,
         resetWalletState,
         refreshWalletStored,
@@ -104,6 +105,7 @@ export function UIProvider(
         setIssuedList,
         setIssuedString,
         setNameList,
+        setUnresolvedList,
         setGroupList,
         setSchemaList,
         setVaultList,
@@ -125,6 +127,27 @@ export function UIProvider(
     const {
         updateThemeFromStorage,
     } = useThemeContext();
+
+    async function getValidIds() {
+        const valid: string[] = [];
+        const invalid: string[] = [];
+
+        if (!keymaster) {
+            return {valid, invalid};
+        }
+
+        const allIds = await keymaster.listIds();
+        for (const alias of allIds) {
+            try {
+                await keymaster.resolveDID(alias);
+                valid.push(alias);
+            } catch {
+                invalid.push(alias);
+            }
+        }
+
+        return {valid, invalid};
+    }
 
     useEffect(() => {
         const refresh = async () => {
@@ -242,18 +265,42 @@ export function UIProvider(
         }
     }
 
+    async function getNameLists() {
+        let nameList : Record<string, string> = {};
+        let unresolvedList : Record<string, string> = {};
+
+        if (!keymaster) {
+            return { nameList, unresolvedList };
+        }
+
+        const allNames = await keymaster.listNames();
+
+        for (const [alias, did] of Object.entries(allNames)) {
+            try {
+                await keymaster.resolveDID(did);
+                nameList[alias] = did;
+            } catch {
+                unresolvedList[alias] = did;
+            }
+        }
+
+        return { nameList, unresolvedList };
+    }
+
     async function refreshNames() {
         if (!keymaster) {
             return;
         }
 
-        const nameList = await keymaster.listNames();
+        const { nameList, unresolvedList } = await getNameLists();
+
+        setNameList(nameList);
+        setUnresolvedList(unresolvedList);
+
         const names = Object.keys(nameList);
         names.sort((a, b) => a.localeCompare(b))
 
-        const agentList = await keymaster.listIds();
-
-        setNameList(nameList);
+        const { valid: agentList } = await getValidIds();
 
         const schemaList = [];
         const imageList = [];
@@ -365,21 +412,20 @@ export function UIProvider(
             return;
         }
         await setCurrentId(cid);
-        setSelectedId(cid);
         await refreshCurrentDID(cid);
         await refreshNames();
         await refreshHeld();
         await refreshIssued();
 
-        const ids = await keymaster.listIds();
-        ids.sort((a, b) => a.localeCompare(b));
-        setIdList(ids);
+        const { valid, invalid } = await getValidIds();
+        setIdList(valid);
+        setUnresolvedIdList(invalid);
+        setValidId(valid.includes(cid));
     }
 
     function wipeUserState() {
         resetWalletState();
         resetCredentialState();
-        setSelectedId("");
         setCurrentDID("");
         setManifest({});
         setNameList({});
@@ -417,7 +463,7 @@ export function UIProvider(
             if (cid) {
                 await refreshCurrentIDInternal(cid);
             } else {
-                wipeUserState()
+                wipeUserState();
             }
 
             wipeState()
@@ -470,13 +516,11 @@ export function UIProvider(
             await refreshCurrentIDInternal(extensionState.currentId);
         }
 
-        const ids = await keymaster.listIds();
-        if (ids.length) {
-            setIdList(ids);
-            ids.sort((a, b) => a.localeCompare(b));
-        }
+        const { valid, invalid } = await getValidIds();
+        setIdList(valid);
+        setUnresolvedIdList(invalid);
 
-        const nameList = await keymaster.listNames();
+        const { nameList } = await getNameLists();
         setNameList(nameList);
 
         return true;

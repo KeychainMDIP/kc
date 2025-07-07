@@ -22,9 +22,9 @@ import {
     ManageSearch,
     PermIdentity,
     Poll,
+    QuestionMark,
     Schema,
     SwapHoriz,
-    Token,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -50,7 +50,7 @@ function NamedDIDs() {
           | "schema"
           | "image"
           | "document"
-          | "other";
+          | "unknown";
     const [filter, setFilter] = useState<NameKind>("all");
     const {
         isBrowser,
@@ -69,6 +69,7 @@ function NamedDIDs() {
         schemaList,
         setAliasDID,
         setAliasName,
+        unresolvedList,
         vaultList,
     } = useCredentialsContext();
     const {
@@ -196,7 +197,7 @@ function NamedDIDs() {
             };
         }
         return {
-            icon: <Token style={iconStyle} />, kind: "other"
+            icon: <QuestionMark style={iconStyle} />, kind: "unknown"
         };
     }
 
@@ -317,12 +318,12 @@ function NamedDIDs() {
                     <MenuItem value="poll">Polls</MenuItem>
                     <MenuItem value="schema">Schemas</MenuItem>
                     <MenuItem value="vault">Vaults</MenuItem>
-                    <MenuItem value="other">Other</MenuItem>
+                    <MenuItem value="unknown">Unknown</MenuItem>
                 </Select>
             </Box>
 
             {nameList &&
-                Object.entries(nameList)
+                Object.entries({...nameList, ...unresolvedList})
                     .sort(([a], [b]) => a.localeCompare(b))
                     .filter(([name]) => {
                         const { kind } = getNameIcon(name);
@@ -346,6 +347,7 @@ function NamedDIDs() {
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
                                         whiteSpace: "nowrap",
+                                        color: getNameIcon(name).kind === "unknown" ? "red" : "text.primary",
                                     }}
                                 >
                                     {getNameIcon(name).icon}
