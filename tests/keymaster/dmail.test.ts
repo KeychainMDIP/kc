@@ -287,6 +287,33 @@ describe('listDmail', () => {
         expect(dmails[did].tags).toStrictEqual(['inbox']);
     });
 
+    it('should include attachments', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 52',
+            body: 'This is a test dmail message 52.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+
+        const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+        const mockName = 'mockDocument1.txt';
+        const ok = await keymaster.addGroupVaultItem(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toBeDefined();
+        expect(dmails[did]).toBeDefined();
+        expect(dmails[did].attachments).toBeDefined();
+        expect(dmails[did].attachments[mockName]).toBeDefined();
+        expect(dmails[did].attachments[mockName].bytes).toBe(33);
+        expect(dmails[did].attachments[mockName].type).toBe('text/plain');
+    });
+
     it('should retrieve an empty set when no dmails', async () => {
         await keymaster.createId('Alice');
         const dmails = await keymaster.listDmail();

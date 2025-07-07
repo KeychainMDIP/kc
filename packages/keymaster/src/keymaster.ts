@@ -2997,6 +2997,9 @@ export default class Keymaster implements KeymasterInterface {
             const date = docs.didDocumentMetadata?.updated ?? '';
             const to = message.to.map(did => didToName[did] ?? did);
             const cc = message.cc.map(did => didToName[did] ?? did);
+            const attachments = await this.listGroupVaultItems(did);
+
+            delete attachments[DmailTags.DMAIL]; // Remove the dmail item itself from attachments
 
             dmailList[did] = {
                 message,
@@ -3005,6 +3008,7 @@ export default class Keymaster implements KeymasterInterface {
                 tags,
                 sender,
                 date,
+                attachments,
                 docs,
             };
         }

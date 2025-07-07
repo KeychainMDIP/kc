@@ -278,6 +278,7 @@ export interface DmailItem {
     sender: string;
     date: string;
     tags: string[];
+    attachments?: any;
     docs?: any;
 }
 

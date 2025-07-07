@@ -1247,7 +1247,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
                     if (ok) {
                         showAlert(`Attachment uploaded successfully: ${file.name}`);
-                        //refreshVault(selectedVaultName);
+                        refreshInbox();
                     } else {
                         showAlert(`Error uploading file: ${file.name}`);
                     }
@@ -4418,22 +4418,14 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         onChange={uploadDmailAttachment}
                                                     />
                                                 </Grid>
-                                                <Grid item>1</Grid>
-                                                <Grid item>2</Grid>
-                                                <Grid item>3</Grid>
-                                                <Grid item>4</Grid>
-                                                <Grid item>5</Grid>
-                                                <Grid item>6</Grid>
-                                                <Grid item>7</Grid>
+
+                                                {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
+                                                    <Grid item>{getVaultItemIcon(name, item)} {name}</Grid>
+                                                ))}
                                             </Grid>
                                         }
                                         {dmailDID &&
                                             <Grid container direction="column" spacing={1}>
-                                                <Grid item>
-                                                    <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                        {dmailDID}
-                                                    </Typography>
-                                                </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
