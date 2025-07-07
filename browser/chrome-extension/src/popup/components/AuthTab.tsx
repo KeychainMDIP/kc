@@ -107,7 +107,6 @@ function AuthTab() {
                 setWarning("Response is NOT VALID");
             }
         } catch (error: any) {
-            console.error(error);
             setError(error);
         }
     }

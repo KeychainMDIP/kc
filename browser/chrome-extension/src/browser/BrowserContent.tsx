@@ -31,7 +31,7 @@ function BrowserContent() {
     const [menuOpen, setMenuOpen] = useState<boolean>(false);
     const [didRun, setDidRun] = useState<boolean>(false);
     const [refresh, setRefresh] = useState<number>(0);
-    const { currentId, isBrowser } = useWalletContext();
+    const { currentId, validId, isBrowser } = useWalletContext();
     const { openBrowser, setOpenBrowser } = useUIContext();
     const { darkMode } = useThemeContext();
 
@@ -67,7 +67,7 @@ function BrowserContent() {
             initialAssetSubTab = urlTab;
         }
 
-        if (!currentId && (
+        if (!displayComponent && (
             urlTab !== "identities" &&
             urlTab !== "wallet" &&
             urlTab !== "viewer" &&
@@ -175,6 +175,8 @@ function BrowserContent() {
             setAssetSubTab("schemas");
         }
     };
+    
+    const displayComponent = validId && currentId;
 
     return (
         <ThemeProvider theme={theme}>
@@ -193,7 +195,7 @@ function BrowserContent() {
                                     sx={{ gap: 0.25 }}
                                 />
 
-                                {currentId && (
+                                {displayComponent && (
                                     <Tab
                                         icon={<Email />}
                                         label={menuOpen ? "DMail" : ""}
@@ -204,7 +206,7 @@ function BrowserContent() {
                                     />
                                 )}
 
-                                {currentId && (
+                                {displayComponent && (
                                     <Tab
                                         icon={<Badge />}
                                         label={menuOpen ? "Credentials" : ""}
@@ -215,7 +217,7 @@ function BrowserContent() {
                                     />
                                 )}
 
-                                {currentId && (
+                                {displayComponent && (
                                     <Tab
                                         icon={<List />}
                                         label={menuOpen ? "Named DIDs" : ""}
@@ -226,7 +228,7 @@ function BrowserContent() {
                                     />
                                 )}
 
-                                {currentId && (
+                                {displayComponent && (
                                     <Tab
                                         icon={<Poll />}
                                         label={menuOpen ? "Polls" : ""}
@@ -237,7 +239,7 @@ function BrowserContent() {
                                     />
                                 )}
 
-                                {currentId && (
+                                {displayComponent && (
                                     <Tab
                                         icon={<Token />}
                                         label={menuOpen ? "Assets" : ""}
@@ -282,31 +284,31 @@ function BrowserContent() {
                                 <IdentitiesTab />
                             </TabPanel>
 
-                            {currentId && (
+                            {displayComponent && (
                                 <TabPanel value="dmail" sx={{ p: 0 }}>
                                     <DmailTab />
                                 </TabPanel>
                             )}
 
-                            {currentId && (
+                            {displayComponent && (
                                 <TabPanel value="credentials" sx={{ p: 0 }}>
                                     <CredentialsTab subTab={activeSubTab} refresh={refresh} />
                                 </TabPanel>
                             )}
 
-                            {currentId && (
+                            {displayComponent && (
                                 <TabPanel value="names" sx={{ p: 0 }}>
                                     <NamedDIDs />
                                 </TabPanel>
                             )}
 
-                            {currentId && (
+                            {displayComponent && (
                                 <TabPanel value="polls" sx={{ p: 0 }}>
                                     <PollTab />
                                 </TabPanel>
                             )}
 
-                            {currentId && (
+                            {displayComponent && (
                                 <TabPanel value="assets" sx={{ p: 0 }}>
                                     <AssetsTab subTab={assetSubTab} />
                                 </TabPanel>

@@ -46,6 +46,7 @@ const denseItemSx = { minHeight: 32, pl: 1.5, pr: 2 };
 const PopupContent = () => {
     const {
         currentId,
+        validId,
     } = useWalletContext();
     const {
         openBrowserWindow,
@@ -76,14 +77,16 @@ const PopupContent = () => {
         openBrowserWindow({ tab });
     }
 
+    const displayComponent = validId && currentId;
+
     return (
         <TabContext value={selectedTab}>
             <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Tabs value={selectedTab} onChange={handleChange} className="tabs" variant="scrollable" scrollButtons="auto">
                     <Tab sx={{ minWidth: 64, px: 0 }} icon={<PermIdentity />} value="identities" />
-                    {currentId && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Badge />} value="credentials" />}
-                    {currentId && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Key />} value="auth" />}
-                    {currentId && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Message />} value="messages" />}
+                    {displayComponent && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Badge />} value="credentials" />}
+                    {displayComponent && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Key />} value="auth" />}
+                    {displayComponent && <Tab sx={{ minWidth: 64, px: 0 }} icon={<Message />} value="messages" />}
                 </Tabs>
 
                 <IconButton onClick={handleMenuOpen} size="small">
@@ -107,7 +110,7 @@ const PopupContent = () => {
 
                     <Divider sx={{ my: 0.25 }} />
 
-                    {currentId && (
+                    {displayComponent && (
                         <Box>
                             <MenuItem onClick={() => handleMenuClick("dmail")} sx={denseItemSx}>
                                 <ListItemIcon>
@@ -183,7 +186,7 @@ const PopupContent = () => {
             <Stack spacing={0.5} sx={{ mt: 0.5 }}>
                 <PanelHeader title="Identities" tabValue="identities" childComponent={<IdentitiesTab />} />
 
-                {currentId && (
+                {displayComponent && (
                     <>
                         <PanelHeader title="Credentials" tabValue="credentials" childComponent={<HeldTab />} />
                         <PanelHeader title="Auth" tabValue="auth" childComponent={<AuthTab />} />
