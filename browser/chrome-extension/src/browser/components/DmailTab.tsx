@@ -11,15 +11,22 @@ import {
     TableBody,
     TableCell,
     TableContainer,
-    TableHead,
     TableRow,
     Tabs,
-    TextField, Tooltip,
+    TextField,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import {
+    AllInbox,
+    Archive,
+    Clear,
     ContentCopy,
+    Delete,
+    Drafts,
     Inbox,
+    ManageSearch,
+    Outbox,
     Send,
 } from "@mui/icons-material";
 import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
@@ -30,22 +37,74 @@ import TextInputModal from "../../shared/TextInputModal";
 
 const DmailTab: React.FC = () => {
     const {
+        currentId,
         keymaster,
         registries,
         setError,
         setSuccess,
     } = useWalletContext();
     const { agentList } = useCredentialsContext();
-    const { handleCopyDID } = useUIContext();
-    const [activeTab, setActiveTab] = useState<"inbox" | "receive" | "send">("inbox");
+    const { handleCopyDID, openBrowserWindow } = useUIContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
-    const [selected, setSelected] = useState<DmailItem | null>(null);
+    const [selected, setSelected] = useState<DmailItem & { did: string } | null>(null);
     const [sendTo, setSendTo] = useState<string>("");
     const [sendSubject, setSendSubject] = useState<string>("");
     const [sendBody, setSendBody] = useState<string>("");
     const [dmailDid, setDmailDid] = useState<string>("");
     const [importModalOpen, setImportModalOpen] = useState(false);
+    const [sendCc, setSendCc] = useState<string>("");
+    const [sendToList, setSendToList] = useState<string[]>([]);
+    const [sendCcList, setSendCcList] = useState<string[]>([]);
+
+    const TAG = { inbox: "inbox", sent: "sent", draft: "draft", archived: "archived", deleted: "deleted" };
+    type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send";
+
+    const [activeTab, setActiveTab] = useState<Folder>("inbox");
+
+    async function fileTags(did:string,newTags:string[]) {
+        if (!keymaster) {
+            return;
+        }
+        await keymaster.fileDmail(did,newTags);
+        await refreshInbox();
+    }
+
+    const archive = () => {
+        if (!selected) {
+            return;
+        }
+        const { did, tags = [] } = selected;
+        setSelected(null);
+        fileTags(did, [...tags, TAG.archived]);
+    };
+
+    const unarchive = () => {
+        if (!selected) {
+            return;
+        }
+        const { did, tags = [] } = selected;
+        setSelected(null);
+        fileTags(did, tags.filter(t => t !== TAG.archived));
+    };
+
+    const del = () => {
+        if (!selected) {
+            return;
+        }
+        const { did, tags = [] } = selected;
+        setSelected(null);
+        fileTags(did, [...tags, TAG.deleted]);
+    };
+
+    const undelete = () => {
+        if (!selected) {
+            return;
+        }
+        const { did, tags = [] } = selected;
+        setSelected(null);
+        fileTags(did, tags.filter(t => t !== TAG.deleted));
+    };
 
     useEffect(() => {
         refreshInbox();
@@ -58,6 +117,12 @@ const DmailTab: React.FC = () => {
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [keymaster]);
+
+    useEffect(() => {
+        refreshInbox();
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keymaster, currentId]);
 
     async function refreshInbox() {
         if (!keymaster) {
@@ -78,12 +143,21 @@ const DmailTab: React.FC = () => {
             return;
         }
         try {
+            const toArr  = [...sendToList,  sendTo].filter(Boolean);
+            const ccArr  = [...sendCcList,  sendCc].filter(Boolean);
+
+            if (toArr.length === 0) {
+                setError("Add at least one recipient");
+                return;
+            }
+
             const dmail: DmailMessage = {
-                to: [sendTo],
-                cc: [],
+                to: toArr,
+                cc: ccArr,
                 subject: sendSubject,
                 body: sendBody,
             };
+
             const did = await keymaster.createDmail(dmail, { registry });
             setDmailDid(did);
             setSuccess(`Draft created ${did}`);
@@ -97,12 +171,21 @@ const DmailTab: React.FC = () => {
             return;
         }
         try {
+            const toArr  = [...sendToList,  sendTo].filter(Boolean);
+            const ccArr  = [...sendCcList,  sendCc].filter(Boolean);
+
+            if (toArr.length === 0) {
+                setError("Add at least one recipient");
+                return;
+            }
+
             const dmail: DmailMessage = {
-                to: [sendTo],
-                cc: [],
+                to: toArr,
+                cc: ccArr,
                 subject: sendSubject,
                 body: sendBody,
             };
+
             const ok = await keymaster.updateDmail(dmailDid, dmail);
             if (ok) {
                 setSuccess("Dmail updated");
@@ -162,49 +245,217 @@ const DmailTab: React.FC = () => {
         }
     }
 
+    function openCompose(prefill: Partial<DmailMessage>) {
+        setActiveTab("send");
+        setDmailDid("");
+        setSendTo("");
+        setSendCc("");
+        setSendToList(prefill.to ?? []);
+        setSendCcList(prefill.cc ?? []);
+        setSendSubject(prefill.subject || "");
+        setSendBody(prefill.body || "");
+    }
+
+    function handleForward() {
+        if (!selected) {
+            return;
+        }
+        openCompose({
+            subject: `Fwd: ${selected.message.subject}`,
+            body: `\n\n----- Forwarded message -----\n${selected.message.body}`,
+        });
+    }
+
+    function handleReply(replyAll = false) {
+        if (!selected) {
+            return;
+        }
+
+        const toList = [selected.sender];
+        const ccList = replyAll
+            ? [...selected.to, ...selected.cc].filter(did => did !== selected.sender)
+            : [];
+
+        openCompose({
+            to: toList,
+            cc: ccList,
+            subject: `Re: ${selected.message.subject}`,
+            body: `\n\n----- Original message -----\n${selected.message.body}`,
+        });
+    }
+
+    function clearAll() {
+        setSendTo("");
+        setSendCc("");
+        setSendToList([]);
+        setSendCcList([]);
+        setSendSubject("");
+        setSendBody("");
+    }
+
+    function filteredList(): Record<string, DmailItem> {
+        if (activeTab === "all" || activeTab === "send") {
+            return dmailList;
+        }
+
+        const out: Record<string, DmailItem> = {};
+        for (const [did, itm] of Object.entries(dmailList)) {
+            const has = (t:string)=>itm.tags?.includes(t);
+            const not = (t:string)=>!itm.tags?.includes(t);
+            switch (activeTab) {
+            case "inbox":
+                if (has(TAG.inbox)  && not(TAG.archived) && not(TAG.deleted)) {
+                    out[did] = itm;
+                }
+                break;
+            case "outbox":
+                if (has(TAG.sent) && not(TAG.archived) && not(TAG.deleted)) {
+                    out[did] = itm;
+                }
+                break;
+            case "drafts":
+                if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
+                    out[did] = itm;
+                }
+                break;
+            case "archive":
+                if (has(TAG.archived) && not(TAG.deleted)) {
+                    out[did] = itm;
+                }
+                break;
+            case "trash":
+                if (has(TAG.deleted)) {
+                    out[did] = itm;
+                }
+                break;
+            }
+        }
+        return out;
+    }
+
+    // eslint-disable-next-line sonarjs/no-duplicate-string
+    const senderSx = { width: 192, maxWidth: 192, p: "8px 0", boxSizing: "border-box", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+    const subjectSx = { width: 450, maxWidth: 450, p: "8px 0", boxSizing: "border-box", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+    const dateSx = { width: 100, maxWidth: 100, p: "8px 0", boxSizing: "border-box", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+
+    function shortDateOrTime(iso: string) {
+        const d = new Date(iso);
+        const today = new Date();
+        return d.toDateString() === today.toDateString()
+            ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : d.toLocaleDateString();
+    }
+
     const renderInbox = () => (
         <Box display="flex" flexDirection="column" mt={1}>
-            <Box sx={{ mt: 1, mb: 1, display: "flex", gap: 1 }}>
-                <Button variant="outlined" onClick={handleRefresh}>
-                    Refresh
-                </Button>
-
-                <Button variant="outlined" onClick={() => setImportModalOpen(true)}>
-                    Import DID
-                </Button>
-            </Box>
-            <Box>
-                <TableContainer sx={{ maxHeight: 600 }}>
-                    <Table size="small" stickyHeader>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Sender</TableCell>
-                                <TableCell>Subject</TableCell>
-                                <TableCell>Date</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {Object.entries(dmailList).map(([did, item]) => (
+            <TableContainer sx={{ maxHeight: 600 }}>
+                <Table size="small" stickyHeader sx={{ tableLayout: "fixed", width: 742 }}>
+                    <TableBody>
+                        {Object.entries(filteredList())
+                            .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                            .map(([did, item]) => (
                                 <TableRow
                                     key={did}
                                     hover
                                     selected={selected === item}
-                                    onClick={() => setSelected(item)}
+                                    onClick={() => setSelected({...item, did})}
                                     sx={{ cursor: "pointer" }}
                                 >
-                                    <TableCell>{item.sender}</TableCell>
-                                    <TableCell>{item.message.subject}</TableCell>
-                                    <TableCell>{new Date(item.date).toLocaleString()}</TableCell>
+                                    <TableCell sx={senderSx}>{item.sender}</TableCell>
+                                    <TableCell sx={subjectSx}>{item.message.subject}</TableCell>
+                                    <TableCell sx={dateSx}>{shortDateOrTime(item.date)}</TableCell>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </Box>
+                            ))
+                        }
+                    </TableBody>
+                </Table>
+            </TableContainer>
 
             <Box flex={1}>
-                {selected ? (
-                    <Box sx={{ p: 2 }}>
+                {selected && (
+                    <Box sx={{ mt: 2 }}>
+                        <Box display="flex" alignItems="center">
+                            <Box display="flex" flexDirection="row" gap={1} sx={{ mr: 1 }}>
+                                <Typography variant="h6" >
+                                    DMail
+                                </Typography>
+                                <Typography variant="subtitle1" sx={{ fontFamily: 'Courier', pt: 0.5 }}>
+                                    {selected.did}
+                                </Typography>
+                            </Box>
+                            <Tooltip title="Copy DID">
+                                <IconButton
+                                    onClick={() => handleCopyDID(selected.did)}
+                                    size="small"
+                                    sx={{ pt: 0.5 }}
+                                >
+                                    <ContentCopy fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Resolve DID">
+                                <IconButton
+                                    onClick={() =>
+                                        openBrowserWindow({ did: selected.did })
+                                    }
+                                    size="small"
+                                    sx={{
+                                        pt: 0.5,
+                                    }}
+                                >
+                                    <ManageSearch fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
+
+                        <Box sx={{ my: 1 }}>
+                            {activeTab==="inbox" && (
+                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={handleForward}>Forward</Button>
+                                    <Button variant="contained" onClick={() => handleReply(false)}>Reply</Button>
+                                    <Button variant="contained" onClick={() => handleReply(true)}>Reply-all</Button>
+                                    <Button variant="contained" onClick={archive}>Archive</Button>
+                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                </Box>
+                            )}
+
+                            {activeTab==="outbox" && (
+                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={archive}>Archive</Button>
+                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                </Box>
+                            )}
+
+                            {activeTab==="drafts" && (
+                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={()=>{
+                                        setSendTo("");
+                                        setSendCc("");
+                                        setSendToList(selected.to);
+                                        setSendCcList(selected.cc);
+                                        setSendSubject(selected.message.subject);
+                                        setSendBody(selected.message.body);
+                                        setDmailDid(selected.did);
+                                        setActiveTab("send");
+                                    }}>Edit</Button>
+                                    <Button variant="contained" onClick={archive}>Archive</Button>
+                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                </Box>
+                            )}
+
+                            {activeTab==="archive" && (
+                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={unarchive}>Unarchive</Button>
+                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                </Box>
+                            )}
+
+                            {activeTab==="trash" && (
+                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={undelete}>Undelete</Button>
+                                </Box>
+                            )}
+                        </Box>
+
                         <Box display="flex" alignItems="center" mb={1}>
                             <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                 To:
@@ -213,6 +464,34 @@ const DmailTab: React.FC = () => {
                                 {selected.to.join(", ")}
                             </Typography>
                         </Box>
+
+                        <Box display="flex" alignItems="center" mb={1}>
+                            <Typography variant="subtitle2" sx={{ mr: 1 }}>
+                                Cc:
+                            </Typography>
+                            <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
+                                {selected.cc?.join(", ")}
+                            </Typography>
+                        </Box>
+
+                        <Box display="flex" alignItems="center" mb={1}>
+                            <Typography variant="subtitle2" sx={{ mr: 1 }}>
+                                From:
+                            </Typography>
+                            <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
+                                {selected.sender}
+                            </Typography>
+                        </Box>
+
+                        <Box display="flex" alignItems="center" mb={1}>
+                            <Typography variant="subtitle2" sx={{ mr: 1 }}>
+                                Date:
+                            </Typography>
+                            <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
+                                {new Date(selected.date).toLocaleString()}
+                            </Typography>
+                        </Box>
+
                         <Box display="flex" alignItems="center" mb={1}>
                             <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                 Subject:
@@ -234,8 +513,6 @@ const DmailTab: React.FC = () => {
                             }}
                         />
                     </Box>
-                ) : (
-                    <Typography sx={{ p: 2 }}>No DMail selected</Typography>
                 )}
             </Box>
         </Box>
@@ -244,15 +521,75 @@ const DmailTab: React.FC = () => {
     const renderSend = () => (
         <Box mt={2}>
             <Box display="flex" flexDirection="column" gap={2}>
-                <Autocomplete
-                    freeSolo
-                    options={agentList || []}
-                    value={sendTo}
-                    onInputChange={(_, v) => setSendTo(v.trim())}
-                    renderInput={(params) => (
-                        <TextField {...params} label="Recipient (name or DID)" fullWidth />
-                    )}
-                />
+                <Box display="flex" gap={1}>
+                    <Autocomplete
+                        freeSolo
+                        options={agentList || []}
+                        value={sendTo}
+                        sx={{ flex: 1, minWidth: 300 }}
+                        onInputChange={(_, v) => setSendTo(v.trim())}
+                        renderInput={(params) => (
+                            <TextField {...params} label="Recipient (name or DID)" />
+                        )}
+                    />
+
+                    <Button
+                        variant="outlined"
+                        disabled={!sendTo}
+                        onClick={() => {
+                            if (sendTo && !sendToList.includes(sendTo)) {
+                                setSendToList([...sendToList, sendTo]);
+                            }
+                            setSendTo("");
+                        }}
+                    >
+                        Add
+                    </Button>
+                </Box>
+
+                {sendToList.map((r) => (
+                    <Box key={r} display="flex" alignItems="center" gap={1}>
+                        <IconButton size="small" onClick={() => setSendToList(sendToList.filter(x => x !== r))}>
+                            <Clear fontSize="small" />
+                        </IconButton>
+                        <Typography>{r}</Typography>
+                    </Box>
+                ))}
+
+                <Box display="flex" gap={1}>
+                    <Autocomplete
+                        freeSolo
+                        options={agentList || []}
+                        value={sendCc}
+                        sx={{ flex: 1, minWidth: 300 }}
+                        onInputChange={(_, v) => setSendCc(v.trim())}
+                        renderInput={(params) => (
+                            <TextField {...params} label="CC (optional)" />
+                        )}
+                    />
+
+                    <Button
+                        variant="outlined"
+                        disabled={!sendCc}
+                        onClick={() => {
+                            if (sendCc && !sendCcList.includes(sendCc)) {
+                                setSendCcList([...sendCcList, sendCc]);
+                            }
+                            setSendCc("");
+                        }}
+                    >
+                        Add
+                    </Button>
+                </Box>
+
+                {sendCcList.map((r) => (
+                    <Box key={r} display="flex" alignItems="center" gap={1}>
+                        <IconButton size="small" onClick={() => setSendCcList(sendCcList.filter(x => x !== r))}>
+                            <Clear fontSize="small" />
+                        </IconButton>
+                        <Typography>{r}</Typography>
+                    </Box>
+                ))}
 
                 <TextField
                     label="Subject"
@@ -287,7 +624,7 @@ const DmailTab: React.FC = () => {
                     <Button
                         variant="contained"
                         onClick={handleCreate}
-                        disabled={!sendTo || !sendBody || !sendSubject}
+                        disabled={(!sendToList.length && !sendTo) || !sendSubject || !sendBody}
                     >
                         Create
                     </Button>
@@ -298,6 +635,15 @@ const DmailTab: React.FC = () => {
 
                     <Button variant="contained" onClick={handleSend} disabled={!dmailDid}>
                         Send
+                    </Button>
+
+                    <Button
+                        variant="outlined"
+                        color="secondary"
+                        onClick={clearAll}
+                        disabled={!(sendToList.length || sendCcList.length || sendCc || sendTo || sendSubject || sendBody)}
+                    >
+                        Clear
                     </Button>
                 </Box>
 
@@ -331,19 +677,37 @@ const DmailTab: React.FC = () => {
                 onClose={() => setImportModalOpen(false)}
             />
 
+            <Box sx={{ mt: 1, mb: 1, display: "flex", gap: 1 }}>
+                <Button variant="outlined" onClick={handleRefresh}>
+                    Refresh
+                </Button>
+
+                <Button variant="outlined" onClick={() => setImportModalOpen(true)}>
+                    Import
+                </Button>
+            </Box>
+
             <Tabs
                 value={activeTab}
-                onChange={(_, v) => setActiveTab(v)}
+                onChange={(_, v) => {
+                    setSelected(null);
+                    setActiveTab(v);
+                }}
                 indicatorColor="primary"
                 textColor="primary"
                 variant="scrollable"
                 scrollButtons="auto"
             >
-                <Tab label="Inbox" value="inbox" icon={<Inbox />} />
-                <Tab label="Send" value="send" icon={<Send />} />
+                <Tab label="Inbox"   value="inbox"   icon={<Inbox />} />
+                <Tab label="Outbox"  value="outbox"  icon={<Outbox />} />
+                <Tab label="Drafts"  value="drafts"  icon={<Drafts />} />
+                <Tab label="Archive" value="archive" icon={<Archive />} />
+                <Tab label="Trash"   value="trash"   icon={<Delete />} />
+                <Tab label="All"     value="all"     icon={<AllInbox />} />
+                <Tab label="Send"    value="send"    icon={<Send />} />
             </Tabs>
 
-            {activeTab === "inbox" && renderInbox()}
+            {activeTab !== "send" && renderInbox()}
             {activeTab === "send" && renderSend()}
         </Box>
     );

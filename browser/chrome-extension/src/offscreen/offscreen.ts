@@ -27,9 +27,6 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
         sendResponse({ success: true });
     } else if (message.action === "GET_ALL_STATE") {
         sendResponse({ extensionState });
-    } else if (message.action === "GET_STATE") {
-        const val = extensionState[message.key];
-        sendResponse({ value: val });
     } else if (message.action === "CLEAR_ALL_STATE") {
         for (const key in extensionState) {
             delete extensionState[key];
