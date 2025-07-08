@@ -299,7 +299,7 @@ describe('listDmail', () => {
 
         const did = await keymaster.createDmail(mock);
 
-        const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+        const mockDocument = Buffer.from('This is a mock binary document 52.', 'utf-8');
         const mockName = 'mockDocument1.txt';
         const ok = await keymaster.addDmailAttachment(did, mockName, mockDocument);
         expect(ok).toBe(true);
@@ -310,7 +310,7 @@ describe('listDmail', () => {
         expect(dmails[did]).toBeDefined();
         expect(dmails[did].attachments).toBeDefined();
         expect(dmails[did].attachments[mockName]).toBeDefined();
-        expect(dmails[did].attachments[mockName].bytes).toBe(33);
+        expect(dmails[did].attachments[mockName].bytes).toBe(34);
         expect(dmails[did].attachments[mockName].type).toBe('text/plain');
     });
 
@@ -552,7 +552,7 @@ describe('addDmailAttachment', () => {
 });
 
 describe('removeDmailAttachment', () => {
-    const mockDocument = Buffer.from('This is a mock binary document 1.', 'utf-8');
+    const mockDocument = Buffer.from('This is a mock binary document 12.', 'utf-8');
 
     it('should remove an attachment to the dmail', async () => {
         await keymaster.createId('Alice');
@@ -590,5 +590,27 @@ describe('removeDmailAttachment', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: Cannot remove attachment with reserved name "dmail"');
         }
+    });
+});
+
+describe('getDmailAttachment', () => {
+    const mockDocument = Buffer.from('This is a mock binary document 14.', 'utf-8');
+
+    it('should remove an attachment to the dmail', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 14',
+            body: 'This is a test dmail message 14.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        const mockName = 'mockDocument14.txt';
+        await keymaster.addDmailAttachment(did, mockName, mockDocument);
+
+        const attachment = await keymaster.getDmailAttachment(did, mockName);
+        expect(attachment).toStrictEqual(mockDocument);
     });
 });

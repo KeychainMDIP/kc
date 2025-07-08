@@ -207,8 +207,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [pollNoticeSent, setPollNoticeSent] = useState(false);
     const [renamePollOpen, setRenamePollOpen] = useState(false);
     const [renameOldPollName, setRenameOldPollName] = useState("");
-    const [removePollOpen, setRemovePollOpen]   = useState(false);
-    const [removePollName, setRemovePollName]   = useState("");
+    const [removePollOpen, setRemovePollOpen] = useState(false);
+    const [removePollName, setRemovePollName] = useState("");
     const [pollList, setPollList] = useState([]);
     const [canVote, setCanVote] = useState(false);
     const [eligiblePolls, setEligiblePolls] = useState({});
@@ -1294,6 +1294,30 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             await keymaster.removeDmailAttachment(dmailDID, name);
             refreshDmailAttachments();
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function downloadDmailAttachment(name) {
+        try {
+            const buffer = await keymaster.getDmailAttachment(selectedDmailDID, name);
+
+            if (!buffer) {
+                showError(`Attachment ${name} not found in dmail ${selectedDmailDID}`);
+                return;
+            }
+
+            // Create a Blob from the buffer
+            const blob = new Blob([buffer]);
+            // Create a temporary link to trigger the download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = name; // Use the item name as the filename
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
         } catch (error) {
             showError(error);
         }
@@ -2396,7 +2420,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                         map[name] = false;
                         continue;
                     }
-                    const group  = await keymaster.getGroup(poll.roster);
+                    const group = await keymaster.getGroup(poll.roster);
                     map[name] = !!group?.members?.includes(currentDID);
                 } catch {
                     map[name] = false;
@@ -4381,6 +4405,42 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     InputProps={{ readOnly: true }}
                                                     variant="outlined"
                                                 />
+                                                <TableContainer>
+                                                    <Table size="small">
+                                                        <TableBody>
+                                                            <TableRow>
+                                                                <TableCell>
+                                                                    Attachment
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    Size (bytes)
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                            {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
+                                                                <TableRow key={index}>
+                                                                    <TableCell>
+                                                                        {getVaultItemIcon(name, item)}
+                                                                        {name}
+                                                                    </TableCell>
+                                                                    <TableCell>
+                                                                        {item.bytes}
+                                                                    </TableCell>
+                                                                    <TableCell>
+                                                                        <Button
+                                                                            variant="contained"
+                                                                            color="primary"
+                                                                            onClick={() => downloadDmailAttachment(name)}
+                                                                        >
+                                                                            Download
+                                                                        </Button>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))}
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
                                             </Paper>
                                         }
                                     </Box>

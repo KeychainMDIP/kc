@@ -3231,6 +3231,10 @@ export default class Keymaster implements KeymasterInterface {
         return this.removeGroupVaultItem(did, name);
     }
 
+    async getDmailAttachment(did: string, name: string): Promise<Buffer | null> {
+        return this.getGroupVaultItem(did, name);
+    }
+
     async importDmail(did: string): Promise<boolean> {
         const dmail = await this.getDmailMessage(did);
 
