@@ -41,12 +41,14 @@ import {
     AttachFile,
     Badge,
     BarChart,
+    Block,
     Clear,
     Groups,
     Delete,
     Drafts,
     Edit,
     Email,
+    HowToVote,
     Image,
     Inbox,
     Key,
@@ -69,6 +71,7 @@ import { Buffer } from 'buffer';
 import './App.css';
 import PollResultsModal from "./PollResultsModal";
 import TextInputModal from "./TextInputModal";
+import WarningModal from "./WarningModal";
 
 // TBD figure out how to import an enum from keymaster package
 const DmailTags = {
@@ -197,13 +200,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [lastBallotDid, setLastBallotDid] = useState("");
     const [hasVoted, setHasVoted] = useState(false);
     const [pollResults, setPollResults] = useState(null);
-    const [resultsOpen, setResultsOpen] = useState(false);
+    const [pollResultsOpen, setPollResultsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState("create");
     const [ballotSent, setBallotSent] = useState(false);
     const [pollNoticeSent, setPollNoticeSent] = useState(false);
-    const [renameOpen, setRenameOpen] = useState(false);
-    const [renameOldName, setRenameOldName] = useState("");
+    const [renamePollOpen, setRenamePollOpen] = useState(false);
+    const [renameOldPollName, setRenameOldPollName] = useState("");
+    const [removePollOpen, setRemovePollOpen]   = useState(false);
+    const [removePollName, setRemovePollName]   = useState("");
     const [pollList, setPollList] = useState([]);
+    const [canVote, setCanVote] = useState(false);
+    const [eligiblePolls, setEligiblePolls] = useState({});
     const [snackbar, setSnackbar] = useState({
         open: false,
         message: "",
@@ -312,6 +319,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedDocumentName('');
             setSelectedVaultName('');
             setSelectedVault(null);
+            setSelectedPollName("");
+            setSelectedPollDesc("");
+            setPollOptions([]);
+            setPollResults(null);
+            setPollController("");
         } catch (error) {
             showError(error);
         }
@@ -2172,17 +2184,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 setPollPublished(true);
             }
 
+            if (poll) {
+                const group = await keymaster.getGroup(poll.roster);
+                const eligible = !!group?.members?.includes(currentDID);
+                setCanVote(eligible);
+            }
+
             if (currentDID && poll?.ballots && poll.ballots[currentDID]) {
                 const ballotId = poll.ballots[currentDID].ballot;
                 setLastBallotDid(ballotId);
-                try {
-                    const dec = await keymaster.decryptJSON(ballotId);
-                    if (dec.vote === 0) setSpoil(true);
-                    else setSelectedOptionIdx(dec.vote - 1);
-                    setHasVoted(true);
-                } catch {
-                    /* ignore */
-                }
+                setHasVoted(true);
+                setBallotSent(true);
             }
         } catch (e) {
             showError(e);
@@ -2202,7 +2214,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 spoil ? { spoil: true } : undefined
             );
             setLastBallotDid(ballotDid);
-
+            setHasVoted(true);
             if (currentDID && currentDID === pollController) {
                 setBallotSent(true);
                 await keymaster.updatePoll(ballotDid);
@@ -2266,7 +2278,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         if (!pollResults) {
             return;
         }
-        setResultsOpen(true);
+        setPollResultsOpen(true);
     };
 
     const handleViewPoll = async () => {
@@ -2277,20 +2289,66 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const view = await keymaster.viewPoll(selectedPollDid);
             if (view.results) {
                 setPollResults(view.results);
-                setResultsOpen(true);
+                setPollResultsOpen(true);
             }
         } catch (e) {
             showError(e);
         }
     };
 
+    async function confirmRemovePoll() {
+        if (!removePollName) {
+            return;
+        }
+        try {
+            await keymaster.removeName(removePollName);
+            await refreshNames();
+            setSelectedPollName("");
+            setSelectedPollDesc("");
+            setPollOptions([]);
+            setPollResults(null);
+            setPollController("");
+            showSuccess(`Removed '${removePollName}'`);
+        } catch (err) {
+            showError(err);
+        }
+        setRemovePollOpen(false);
+        setRemovePollName("");
+    }
+
+    useEffect(() => {
+        if (!keymaster || !currentDID || pollList.length === 0) {
+            return;
+        }
+
+        (async () => {
+            const map = {};
+
+            for (const name of pollList) {
+                const did = nameList[name];
+                try {
+                    const poll = await keymaster.getPoll(did);
+                    if (!poll) {
+                        map[name] = false;
+                        continue;
+                    }
+                    const group  = await keymaster.getGroup(poll.roster);
+                    map[name] = !!group?.members?.includes(currentDID);
+                } catch {
+                    map[name] = false;
+                }
+            }
+            setEligiblePolls(map);
+        })();
+    }, [pollList, nameList, keymaster, currentDID]);
+
     const openRenameModal = () => {
-        setRenameOldName(selectedPollName);
-        setRenameOpen(true);
+        setRenameOldPollName(selectedPollName);
+        setRenamePollOpen(true);
     };
 
     const handleRenameSubmit = async (newName) => {
-        setRenameOpen(false);
+        setRenamePollOpen(false);
         if (!newName || newName === selectedPollName) {
             return;
         }
@@ -2299,7 +2357,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             await keymaster.removeName(selectedPollName);
             await refreshNames();
             setSelectedPollName(newName);
-            setRenameOldName("");
+            setRenameOldPollName("");
             showSuccess("Poll renamed");
         } catch (e) {
             showError(e);
@@ -3490,20 +3548,25 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                         <Box>
                             {pollResults && (
                                 <PollResultsModal
-                                    open={resultsOpen}
-                                    onClose={() => setResultsOpen(false)}
+                                    open={pollResultsOpen}
+                                    onClose={() => setPollResultsOpen(false)}
                                     results={pollResults}
                                 />
                             )}
-                            {renameOpen && (
-                                <TextInputModal
-                                    isOpen={renameOpen}
-                                    title="Rename poll"
-                                    defaultValue={renameOldName}
-                                    onSubmit={handleRenameSubmit}
-                                    onClose={() => setRenameOpen(false)}
-                                />
-                            )}
+                            <TextInputModal
+                                isOpen={renamePollOpen}
+                                title="Rename poll"
+                                defaultValue={renameOldPollName}
+                                onSubmit={handleRenameSubmit}
+                                onClose={() => setRenamePollOpen(false)}
+                            />
+                            <WarningModal
+                                title="Remove Poll"
+                                warningText={`Are you sure you want to remove '${removePollName}'?`}
+                                isOpen={removePollOpen}
+                                onClose={() => setRemovePollOpen(false)}
+                                onSubmit={confirmRemovePoll}
+                            />
 
                             <Tabs
                                 value={activeTab}
@@ -3620,6 +3683,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </MenuItem>
                                                     {pollList.map((name) => (
                                                         <MenuItem key={name} value={name}>
+                                                            {eligiblePolls[name] ? (
+                                                                <HowToVote fontSize="small" sx={{ mr: 1 }} />
+                                                            ) : (
+                                                                <Block fontSize="small" sx={{ mr: 1 }} />
+                                                            )}
                                                             {name}
                                                         </MenuItem>
                                                     ))}
@@ -3634,6 +3702,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             disabled={!selectedPollName}
                                                         >
                                                             <Edit fontSize="small" />
+                                                        </IconButton>
+                                                    </span>
+                                                </Tooltip>
+
+                                                <Tooltip title="Delete Poll">
+                                                    <span>
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
+                                                            disabled={!selectedPollName}
+                                                            onClick={() => {
+                                                                setRemovePollName(selectedPollName);
+                                                                setRemovePollOpen(true);
+                                                            }}
+                                                        >
+                                                            <Delete fontSize="small" />
                                                         </IconButton>
                                                     </span>
                                                 </Tooltip>
@@ -3710,28 +3794,32 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 </RadioGroup>
                                                             )}
 
-                                                            <FormControlLabel
-                                                                control={
-                                                                    <Checkbox checked={spoil} onChange={(_, v) => setSpoil(v)} />
-                                                                }
-                                                                label="Spoil ballot"
-                                                            />
+                                                            {canVote &&
+                                                                <Box>
+                                                                    <FormControlLabel
+                                                                        control={
+                                                                            <Checkbox checked={spoil} onChange={(_, v) => setSpoil(v)} />
+                                                                        }
+                                                                        label="Spoil ballot"
+                                                                    />
 
-                                                            <Box sx={{ mt: 1 }}>
-                                                                <Button variant="contained" onClick={handleVote}>
-                                                                    Vote
-                                                                </Button>
-                                                                {currentDID !== pollController && (
-                                                                    <Button
-                                                                        variant="outlined"
-                                                                        sx={{ ml: 1 }}
-                                                                        disabled={ballotSent}
-                                                                        onClick={handleSendBallot}
-                                                                    >
-                                                                        Send Ballot
-                                                                    </Button>
-                                                                )}
-                                                            </Box>
+                                                                    <Box sx={{ mt: 1 }}>
+                                                                        <Button variant="contained" onClick={handleVote}>
+                                                                            Vote
+                                                                        </Button>
+                                                                        {currentDID !== pollController && (
+                                                                            <Button
+                                                                                variant="outlined"
+                                                                                sx={{ ml: 1 }}
+                                                                                disabled={ballotSent}
+                                                                                onClick={handleSendBallot}
+                                                                            >
+                                                                                Send Ballot
+                                                                            </Button>
+                                                                        )}
+                                                                    </Box>
+                                                                </Box>
+                                                            }
 
                                                             {lastBallotDid && (
                                                                 <Box sx={{ mt: 1 }}>

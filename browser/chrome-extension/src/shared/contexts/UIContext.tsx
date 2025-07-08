@@ -3,6 +3,7 @@ import React, {
     Dispatch,
     ReactNode,
     SetStateAction,
+    useCallback,
     useContext,
     useEffect,
     useState
@@ -32,6 +33,7 @@ interface UIContextValue {
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
+    refreshInbox: () => Promise<void>;
     wipAllStates: () => void;
 }
 
@@ -120,6 +122,7 @@ export function UIProvider(
         setIssuedEdit,
         resetCredentialState,
         refreshCredentialsStored,
+        setDmailList,
     } = useCredentialsContext();
     const {
         refreshMessageStored
@@ -127,6 +130,86 @@ export function UIProvider(
     const {
         updateThemeFromStorage,
     } = useThemeContext();
+
+    function arraysEqual(a: string[], b: string[]): boolean {
+        return a.length === b.length && a.every((v, i) => v === b[i]);
+    }
+
+    const refreshInbox = useCallback( async() => {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            const msgs = await keymaster.listDmail();
+            setDmailList(prev =>
+                JSON.stringify(prev) === JSON.stringify(msgs) ? prev : msgs
+            );
+        } catch (err: any) {
+            setError(err);
+        }
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keymaster]);
+
+    const refreshPoll = useCallback(async () => {
+        if (!keymaster) {
+            return;
+        }
+
+        const walletNames = await keymaster.listNames();
+        const names = Object.keys(walletNames);
+        names.sort((a, b) => a.localeCompare(b));
+        const polls: string[] = [];
+
+        for (const name of names) {
+            try {
+                const doc = await keymaster.resolveDID(name);
+                const data = doc.didDocumentData as Record<string, unknown>;
+
+                if (data.poll) {
+                    polls.push(name);
+                }
+            }
+            catch {}
+        }
+
+        setPollList(prevPolls => {
+            if (arraysEqual(prevPolls, polls)) {
+                return prevPolls;
+            }
+
+            setNameList(prevNames => {
+                const extraNames: Record<string, string> = {};
+                for (const name of polls) {
+                    if (!(name in prevNames)) {
+                        extraNames[name] = walletNames[name];
+                    }
+                }
+                return Object.keys(extraNames).length ? { ...prevNames, ...extraNames } : prevNames;
+            });
+
+            return polls;
+        });
+
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keymaster]);
+
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            if (!keymaster) {
+                return;
+            }
+
+            try {
+                await keymaster.refreshNotices();
+                await refreshPoll();
+                await refreshInbox();
+            } catch {}
+        }, 10000);
+
+        return () => clearInterval(interval);
+
+    }, [keymaster, refreshPoll, refreshInbox]);
 
     async function getValidIds() {
         const valid: string[] = [];
@@ -566,6 +649,7 @@ export function UIProvider(
         resetCurrentID,
         refreshHeld,
         refreshNames,
+        refreshInbox,
         wipAllStates,
     }
 

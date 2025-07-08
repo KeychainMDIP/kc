@@ -3326,7 +3326,10 @@ export default class Keymaster implements KeymasterInterface {
             const poll = await this.getPoll(noticeDID);
 
             if (poll) {
-                await this.addUnnamedPoll(noticeDID);
+                const names = await this.listNames();
+                if (!Object.values(names).includes(noticeDID)) {
+                    await this.addUnnamedPoll(noticeDID);
+                }
                 await this.addToNotices(did, [PollTags.POLL]);
 
                 continue;
