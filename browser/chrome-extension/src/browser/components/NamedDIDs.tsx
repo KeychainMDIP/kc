@@ -103,8 +103,7 @@ function NamedDIDs() {
         }
         try {
             await keymaster.removeName(removeName);
-            await refreshNames();
-            requestBrowserRefresh(isBrowser);
+            await refreshNames()
         } catch (error: any) {
             setError(error);
         }
