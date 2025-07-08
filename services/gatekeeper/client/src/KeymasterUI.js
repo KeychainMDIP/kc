@@ -151,6 +151,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailToList, setDmailToList] = useState([]);
     const [dmailCcList, setDmailCcList] = useState([]);
     const [dmailDID, setDmailDID] = useState('');
+    const [dmailAttachments, setDmailAttachments] = useState({});
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -1095,6 +1096,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setDmailSubject('');
             setDmailBody('');
             setDmailCc('');
+            setDmailAttachments({});
             setDmailDID('');
         } catch (error) {
             showError(error);
@@ -1225,6 +1227,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    async function refreshDmailAttachments() {
+        try {
+            const msgs = await keymaster.listDmail();
+
+            if (msgs && msgs[dmailDID]) {
+                const attachments = msgs[dmailDID].attachments || {};
+                setDmailAttachments(attachments);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
     async function uploadDmailAttachment(event) {
         try {
             const fileInput = event.target; // Reference to the input element
@@ -1246,10 +1261,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const ok = await keymaster.addGroupVaultItem(dmailDID, file.name, buffer);
 
                     if (ok) {
-                        showAlert(`Attachment uploaded successfully: ${file.name}`);
-                        refreshInbox();
+                        showSuccess(`Attachment uploaded successfully: ${file.name}`);
+                        refreshDmailAttachments();
                     } else {
-                        showAlert(`Error uploading file: ${file.name}`);
+                        showError(`Error uploading file: ${file.name}`);
                     }
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
@@ -1264,6 +1279,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             reader.readAsArrayBuffer(file);
         } catch (error) {
             showError(`Error uploading file: ${error}`);
+        }
+    }
+
+    async function removeDmailAttachment(name) {
+        try {
+            await keymaster.removeGroupVaultItem(dmailDID, name);
+            refreshDmailAttachments();
+        } catch (error) {
+            showError(error);
         }
     }
 
@@ -1329,6 +1353,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailCcList([]);
         setDmailSubject('');
         setDmailBody('');
+        setDmailAttachments({});
     }
 
     async function forwardDmail() {
@@ -1386,6 +1411,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
         setDmailSubject(selectedDmail.message.subject);
         setDmailBody(selectedDmail.message.body);
+        setDmailAttachments(selectedDmail.attachments || {});
         setDmailTab('send');
     }
 
@@ -1863,10 +1889,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const ok = await keymaster.addGroupVaultItem(selectedVaultName, file.name, buffer);
 
                     if (ok) {
-                        showAlert(`Item uploaded successfully: ${file.name}`);
+                        showSuccess(`Item uploaded successfully: ${file.name}`);
                         refreshVault(selectedVaultName);
                     } else {
-                        showAlert(`Error uploading file: ${file.name}`);
+                        showError(`Error uploading file: ${file.name}`);
                     }
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
@@ -4400,45 +4426,52 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Box>
                                         }
                                         {dmailDID &&
-                                            <Grid container direction="column" spacing={1}>
-                                                <Grid item>
-                                                    Attachments:
-                                                    <Button
-                                                        variant="contained"
-                                                        color="primary"
-                                                        sx={{ ml: 2 }}
-                                                        onClick={() => document.getElementById('attachmentUpload').click()}
-                                                    >
-                                                        Upload...
-                                                    </Button>
-                                                    <input
-                                                        type="file"
-                                                        id="attachmentUpload"
-                                                        style={{ display: 'none' }}
-                                                        onChange={uploadDmailAttachment}
-                                                    />
-                                                </Grid>
+                                            <Box>
+                                                <Grid container direction="column" spacing={1}>
+                                                    <Grid item>
+                                                        Attachments:
+                                                        <Button
+                                                            variant="contained"
+                                                            color="primary"
+                                                            sx={{ ml: 2 }}
+                                                            onClick={() => document.getElementById('attachmentUpload').click()}
+                                                        >
+                                                            Upload...
+                                                        </Button>
+                                                        <input
+                                                            type="file"
+                                                            id="attachmentUpload"
+                                                            style={{ display: 'none' }}
+                                                            onChange={uploadDmailAttachment}
+                                                        />
+                                                    </Grid>
 
-                                                {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
-                                                    <Grid item>{getVaultItemIcon(name, item)} {name}</Grid>
-                                                ))}
-                                            </Grid>
+                                                    {Object.entries(dmailAttachments).map(([name, item], index) => (
+                                                        <Grid item>
+                                                            <Button onClick={() => removeDmailAttachment(name)}><Clear /></Button>
+                                                            {getVaultItemIcon(name, item)} {name}
+                                                        </Grid>
+                                                    ))}
+                                                </Grid>
+                                            </Box>
                                         }
                                         {dmailDID &&
-                                            <Grid container direction="column" spacing={1}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
-                                                            Update Dmail
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
-                                                            Send Dmail
-                                                        </Button>
+                                            <Box>
+                                                <Grid container direction="column" spacing={1}>
+                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
+                                                                Update Dmail
+                                                            </Button>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
+                                                                Send Dmail
+                                                            </Button>
+                                                        </Grid>
                                                     </Grid>
                                                 </Grid>
-                                            </Grid>
+                                            </Box>
                                         }
                                     </Grid>
                                 </Box>
