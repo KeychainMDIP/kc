@@ -226,22 +226,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (!keymasterRef.current) {
-                return;
-            }
-
-            try {
-                keymasterRef.current.refreshNotices();
-            } catch {}
-        }, 30000);
-
-        return () => clearInterval(interval);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keymasterRef]);
-
     async function clearStoredPassphrase() {
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
     }

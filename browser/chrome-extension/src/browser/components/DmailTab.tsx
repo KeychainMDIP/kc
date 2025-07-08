@@ -36,17 +36,7 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 import TextInputModal from "../../shared/TextInputModal";
 
 const DmailTab: React.FC = () => {
-    const {
-        currentId,
-        keymaster,
-        registries,
-        setError,
-        setSuccess,
-    } = useWalletContext();
-    const { agentList } = useCredentialsContext();
-    const { handleCopyDID, openBrowserWindow } = useUIContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
-    const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
     const [selected, setSelected] = useState<DmailItem & { did: string } | null>(null);
     const [sendTo, setSendTo] = useState<string>("");
     const [sendSubject, setSendSubject] = useState<string>("");
@@ -56,6 +46,22 @@ const DmailTab: React.FC = () => {
     const [sendCc, setSendCc] = useState<string>("");
     const [sendToList, setSendToList] = useState<string[]>([]);
     const [sendCcList, setSendCcList] = useState<string[]>([]);
+    const {
+        currentId,
+        keymaster,
+        registries,
+        setError,
+        setSuccess,
+    } = useWalletContext();
+    const {
+        agentList,
+        dmailList,
+    } = useCredentialsContext();
+    const {
+        handleCopyDID,
+        openBrowserWindow,
+        refreshInbox,
+    } = useUIContext();
 
     const TAG = { inbox: "inbox", sent: "sent", draft: "draft", archived: "archived", deleted: "deleted" };
     type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send";
@@ -70,73 +76,47 @@ const DmailTab: React.FC = () => {
         await refreshInbox();
     }
 
-    const archive = () => {
+    const archive = async () => {
         if (!selected) {
             return;
         }
         const { did, tags = [] } = selected;
         setSelected(null);
-        fileTags(did, [...tags, TAG.archived]);
+        await fileTags(did, [...tags, TAG.archived]);
     };
 
-    const unarchive = () => {
+    const unarchive = async () => {
         if (!selected) {
             return;
         }
         const { did, tags = [] } = selected;
         setSelected(null);
-        fileTags(did, tags.filter(t => t !== TAG.archived));
+        await fileTags(did, tags.filter(t => t !== TAG.archived));
     };
 
-    const del = () => {
+    const del = async () => {
         if (!selected) {
             return;
         }
         const { did, tags = [] } = selected;
         setSelected(null);
-        fileTags(did, [...tags, TAG.deleted]);
+        await fileTags(did, [...tags, TAG.deleted]);
     };
 
-    const undelete = () => {
+    const undelete = async () => {
         if (!selected) {
             return;
         }
         const { did, tags = [] } = selected;
         setSelected(null);
-        fileTags(did, tags.filter(t => t !== TAG.deleted));
+        await fileTags(did, tags.filter(t => t !== TAG.deleted));
     };
-
-    useEffect(() => {
-        refreshInbox();
-
-        const interval = setInterval(() => {
-            refreshInbox();
-        }, 30000);
-
-        return () => clearInterval(interval);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keymaster]);
 
     useEffect(() => {
         refreshInbox();
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [keymaster, currentId]);
-
-    async function refreshInbox() {
-        if (!keymaster) {
-            return;
-        }
-        try {
-            const msgs = await keymaster.listDmail();
-            if (JSON.stringify(msgs) !== JSON.stringify(dmailList)) {
-                setDmailList(msgs || {});
-            }
-        } catch (err: any) {
-            setError(err);
-        }
-    }
 
     async function handleCreate() {
         if (!keymaster) {

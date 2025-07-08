@@ -1,5 +1,6 @@
 import React, { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState } from "react";
 import { useWalletContext } from "./WalletProvider";
+import {DmailItem} from "@mdip/keymaster/types";
 
 interface CredentialsContextValue {
     heldDID: string;
@@ -34,6 +35,8 @@ interface CredentialsContextValue {
     setIssuedEdit: Dispatch<SetStateAction<boolean>>;
     selectedIssued: string;
     setSelectedIssued: Dispatch<SetStateAction<string>>;
+    dmailList: Record<string, DmailItem>;
+    setDmailList: Dispatch<SetStateAction<Record<string, DmailItem>>>;
     aliasName: string;
     setAliasName: (value: string) => Promise<void>;
     aliasDID: string;
@@ -75,6 +78,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const [credentialString, setCredentialString] = useState<string>("");
     const [aliasName, setAliasNameState] = useState<string>("");
     const [aliasDID, setAliasDIDState] = useState<string>("");
+    const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
     const {
         storeState,
     } = useWalletContext();
@@ -161,6 +165,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setPollList,
         resetCredentialState,
         refreshCredentialsStored,
+        dmailList,
+        setDmailList,
     }
 
     return (

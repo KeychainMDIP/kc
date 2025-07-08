@@ -18,11 +18,14 @@ import {
     Tab,
 } from "@mui/material";
 import {
-    ContentCopy,
-    ManageSearch,
     AddCircleOutline,
     BarChart,
+    Block,
+    ContentCopy,
+    Delete,
     Edit,
+    HowToVote,
+    ManageSearch,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -30,10 +33,12 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 import PollResultsModal from "./PollResultsModal";
 import {NoticeMessage, Poll, PollResults} from "@mdip/keymaster/types";
 import TextInputModal from "../../shared/TextInputModal";
+import WarningModal from "../../shared/WarningModal";
 
 const PollsTab: React.FC = () => {
     const {
         currentDID,
+        currentId,
         keymaster,
         registries,
         setError,
@@ -43,8 +48,6 @@ const PollsTab: React.FC = () => {
         groupList,
         nameList,
         pollList,
-        setPollList,
-        setNameList,
     } = useCredentialsContext();
     const {
         handleCopyDID,
@@ -75,9 +78,67 @@ const PollsTab: React.FC = () => {
     const [pollNoticeSent, setPollNoticeSent] = useState<boolean>(false);
     const [renameOpen, setRenameOpen] = useState<boolean>(false);
     const [renameOldName, setRenameOldName] = useState<string>("");
+    const [removeOpen, setRemoveOpen]   = useState(false);
+    const [removeName, setRemoveName]   = useState<string>("");
+    const [canVote, setCanVote] = useState<boolean>(false);
+    const [eligiblePolls, setEligiblePolls] = useState<Record<string, boolean>>({});
 
     const pollExpired = pollDeadline ? Date.now() > pollDeadline.getTime() : false;
     const selectedPollDid = selectedPollName ? nameList[selectedPollName] ?? "" : "";
+
+    useEffect(() => {
+        if (!keymaster || !currentDID || pollList.length === 0) {
+            return;
+        }
+
+        (async () => {
+            const map: Record<string, boolean> = {};
+
+            for (const name of pollList) {
+                const did = nameList[name];
+                try {
+                    const poll= await keymaster.getPoll(did);
+                    if (!poll) {
+                        map[name] = false;
+                        continue;
+                    }
+                    const group  = await keymaster.getGroup(poll.roster);
+                    map[name] = !!group?.members?.includes(currentDID);
+                } catch {
+                    map[name] = false;
+                }
+            }
+            setEligiblePolls(map);
+        })();
+    }, [pollList, nameList, keymaster, currentDID]);
+
+    function clearPollList() {
+        setSelectedPollName("");
+        setSelectedPollDesc("");
+        setPollOptions([]);
+        setPollResults(null);
+        setPollController("");
+    }
+
+    useEffect(() => {
+        clearPollList();
+    }, [currentId]);
+
+    async function confirmRemovePoll() {
+        if (!keymaster || !removeName) {
+            return;
+        }
+        try {
+            await keymaster.removeName(removeName);
+            await refreshNames();
+            clearPollList();
+            setSuccess(`Removed '${removeName}'`);
+        } catch (err: any) {
+            setError(err);
+        }
+        setRemoveOpen(false);
+        setRemoveName("");
+    }
 
     const resetForm = () => {
         setPollName("");
@@ -88,59 +149,6 @@ const PollsTab: React.FC = () => {
         setCreatedPollDid("");
         setPollNoticeSent(false);
     };
-
-    function arraysEqual(a: string[], b: string[]): boolean {
-        return a.length === b.length && a.every((v, i) => v === b[i]);
-    }
-
-    useEffect(() => {
-        async function refreshPoll() {
-            if (!keymaster) {
-                return;
-            }
-
-            const walletNames = await keymaster.listNames();
-            const names = Object.keys(walletNames);
-            names.sort((a, b) => a.localeCompare(b));
-            const extraNames: Record<string, string> = {};
-
-            const polls = [];
-
-            for (const name of names) {
-                try {
-                    const doc = await keymaster.resolveDID(name);
-                    const data = doc.didDocumentData as Record<string, unknown>;
-
-                    if (data.poll) {
-                        polls.push(name);
-                    }
-                }
-                catch {}
-            }
-
-            if (!arraysEqual(polls, pollList)) {
-                for (const name of polls) {
-                    if (!(name in nameList)) {
-                        extraNames[name] = walletNames[name];
-                    }
-                }
-
-                if (Object.keys(extraNames).length) {
-                    setNameList((prev) => ({ ...prev, ...extraNames }));
-                }
-
-                setPollList(polls);
-            }
-        }
-
-        const interval = setInterval(() => {
-            refreshPoll();
-        }, 30000);
-
-        return () => clearInterval(interval);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keymaster]);
 
     const buildPoll = async (): Promise<Poll | null> => {
         if (!keymaster) {
@@ -239,6 +247,12 @@ const PollsTab: React.FC = () => {
                     setPollController(didDoc.didDocument?.controller ?? "");
                 }
 
+                if (poll) {
+                    const group = await keymaster.getGroup(poll.roster);
+                    const eligible = !!group?.members?.includes(currentDID);
+                    setCanVote(eligible);
+                }
+
                 if (poll?.results) {
                     setPollResults(poll.results);
                     setPollPublished(true);
@@ -247,15 +261,8 @@ const PollsTab: React.FC = () => {
                 if (currentDID && poll?.ballots && poll.ballots[currentDID]) {
                     const ballotId = poll.ballots[currentDID].ballot;
                     setLastBallotDid(ballotId);
-                    try {
-                        const decrypted = await keymaster.decryptJSON(ballotId) as { vote: number };
-                        if (decrypted.vote === 0) {
-                            setSpoil(true);
-                        } else {
-                            setSelectedOptionIdx(decrypted.vote - 1);
-                        }
-                        setHasVoted(true);
-                    } catch { }
+                    setHasVoted(true);
+                    setBallotSent(true);
                 }
             }
         } catch (error: any) {
@@ -276,6 +283,7 @@ const PollsTab: React.FC = () => {
                 spoil ? { spoil: true } : undefined
             );
             setLastBallotDid(ballotDid);
+            setHasVoted(true);
             if (currentDID && pollController && currentDID === pollController) {
                 setBallotSent(true);
                 await keymaster.updatePoll(ballotDid);
@@ -407,6 +415,14 @@ const PollsTab: React.FC = () => {
 
     return (
         <Box>
+            <WarningModal
+                title="Remove Poll"
+                warningText={`Are you sure you want to remove '${removeName}'?`}
+                isOpen={removeOpen}
+                onClose={() => setRemoveOpen(false)}
+                onSubmit={confirmRemovePoll}
+            />
+
             {pollResults && (
                 <PollResultsModal
                     open={resultsOpen}
@@ -579,6 +595,11 @@ const PollsTab: React.FC = () => {
                                     </MenuItem>
                                     {pollList.map((name: string) => (
                                         <MenuItem key={name} value={name}>
+                                            {eligiblePolls[name] ? (
+                                                <HowToVote fontSize="small" sx={{ mr: 1 }} />
+                                            ) : (
+                                                <Block fontSize="small" sx={{ mr: 1 }} />
+                                            )}
                                             {name}
                                         </MenuItem>
                                     ))}
@@ -593,6 +614,22 @@ const PollsTab: React.FC = () => {
                                             sx={{ mt: 1, ml: 1, px: 0.5 }}
                                         >
                                             <Edit fontSize="small" />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
+
+                                <Tooltip title="Delete Poll">
+                                    <span>
+                                        <IconButton
+                                            size="small"
+                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
+                                            disabled={!selectedPollName}
+                                            onClick={() => {
+                                                setRemoveName(selectedPollName);
+                                                setRemoveOpen(true);
+                                            }}
+                                        >
+                                            <Delete fontSize="small" />
                                         </IconButton>
                                     </span>
                                 </Tooltip>
@@ -689,30 +726,34 @@ const PollsTab: React.FC = () => {
                                                 </RadioGroup>
                                             )}
 
-                                            <FormControlLabel
-                                                control={<Checkbox checked={spoil} onChange={(_, v) => setSpoil(v)} />}
-                                                label="Spoil ballot"
-                                            />
+                                            {canVote &&
+                                                <Box>
+                                                    <FormControlLabel
+                                                        control={<Checkbox checked={spoil} onChange={(_, v) => setSpoil(v)} />}
+                                                        label="Spoil ballot"
+                                                    />
 
-                                            <Button
-                                                variant="contained"
-                                                sx={{ height: 56 }}
-                                                onClick={handleVote}
-                                            >
-                                                Vote
-                                            </Button>
+                                                    <Button
+                                                        variant="contained"
+                                                        sx={{ height: 56 }}
+                                                        onClick={handleVote}
+                                                    >
+                                                        Vote
+                                                    </Button>
 
-                                            {currentDID !== pollController && (
-                                                <Button
-                                                    variant="contained"
-                                                    color="secondary"
-                                                    sx={{ height: 56, ml: 1 }}
-                                                    disabled={!lastBallotDid || ballotSent}
-                                                    onClick={handleSendBallot}
-                                                >
-                                                    Send Ballot
-                                                </Button>
-                                            )}
+                                                    {currentDID !== pollController && (
+                                                        <Button
+                                                            variant="contained"
+                                                            color="secondary"
+                                                            sx={{ height: 56, ml: 1 }}
+                                                            disabled={!lastBallotDid || ballotSent}
+                                                            onClick={handleSendBallot}
+                                                        >
+                                                            Send Ballot
+                                                        </Button>
+                                                    )}
+                                                </Box>
+                                            }
 
                                             {lastBallotDid && (
                                                 <Box display="flex" alignItems="center" mt={1}>
