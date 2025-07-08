@@ -768,7 +768,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             if (newController) {
                 await keymaster.transferAsset(name, newController);
                 resolveName(name);
-                showAlert(`Transferred ${name} to ${newController}`);
+                showSuccess(`Transferred ${name} to ${newController}`);
             }
         } catch (error) {
             showError(error);
@@ -1114,7 +1114,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const ok = await keymaster.importDmail(did);
 
             if (ok) {
-                showAlert("Dmail import successful");
+                showSuccess("Dmail import successful");
                 refreshDmail();
             } else {
                 showError("Dmail import failed");
@@ -1218,7 +1218,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const ok = await keymaster.updateDmail(dmailDID, dmail);
             if (ok) {
-                showAlert("Dmail updated successfully");
+                showSuccess("Dmail updated successfully");
             } else {
                 showError("Dmail update failed");
             }
@@ -1229,12 +1229,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshDmailAttachments() {
         try {
-            const msgs = await keymaster.listDmail();
-
-            if (msgs && msgs[dmailDID]) {
-                const attachments = msgs[dmailDID].attachments || {};
-                setDmailAttachments(attachments);
-            }
+            const attachments = await keymaster.listDmailAttachments(dmailDID);
+            setDmailAttachments(attachments || {});
         } catch (error) {
             showError(error);
         }
@@ -1258,7 +1254,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const arrayBuffer = e.target.result;
                     const buffer = Buffer.from(arrayBuffer);
 
-                    const ok = await keymaster.addGroupVaultItem(dmailDID, file.name, buffer);
+                    const ok = await keymaster.addDmailAttachment(dmailDID, file.name, buffer);
 
                     if (ok) {
                         showSuccess(`Attachment uploaded successfully: ${file.name}`);
@@ -1284,7 +1280,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function removeDmailAttachment(name) {
         try {
-            await keymaster.removeGroupVaultItem(dmailDID, name);
+            await keymaster.removeDmailAttachment(dmailDID, name);
             refreshDmailAttachments();
         } catch (error) {
             showError(error);
@@ -1296,7 +1292,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const ok = await keymaster.sendDmail(dmailDID);
 
             if (ok) {
-                showAlert("Dmail sent successfully");
+                showSuccess("Dmail sent successfully");
             } else {
                 showError("Dmail send failed");
             }
@@ -1589,7 +1585,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
 
                     await keymaster.addName(name, did);
-                    showAlert(`Image uploaded successfully: ${name}`);
+                    showSuccess(`Image uploaded successfully: ${name}`);
 
                     refreshNames();
                     selectImage(name);
@@ -1629,7 +1625,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
                     await keymaster.updateImage(selectedImageName, buffer);
 
-                    showAlert(`Image updated successfully`);
+                    showSuccess(`Image updated successfully`);
                     selectImage(selectedImageName);
                 } catch (error) {
                     showError(`Error processing image: ${error}`);
@@ -1709,7 +1705,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
 
                     await keymaster.createDocument(buffer, { registry, name, filename: file.name });
-                    showAlert(`Document uploaded successfully: ${name}`);
+                    showSuccess(`Document uploaded successfully: ${name}`);
                     refreshNames();
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
@@ -1746,7 +1742,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const buffer = Buffer.from(arrayBuffer);
 
                     await keymaster.updateDocument(selectedDocumentName, buffer, { filename: file.name });
-                    showAlert(`Document updated successfully`);
+                    showSuccess(`Document updated successfully`);
                     selectDocument(selectedDocumentName);
                 } catch (error) {
                     // Catch errors from the Keymaster API or other logic
@@ -1936,10 +1932,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setEditLoginOpen(false);
 
             if (ok) {
-                showAlert(`Login added successfully: ${service}`);
+                showSuccess(`Login added successfully: ${service}`);
                 refreshVault(selectedVaultName);
             } else {
-                showAlert(`Error adding login: ${service}`);
+                showError(`Error adding login: ${service}`);
             }
         } catch (error) {
             showError(error);

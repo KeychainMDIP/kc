@@ -2997,9 +2997,7 @@ export default class Keymaster implements KeymasterInterface {
             const date = docs.didDocumentMetadata?.updated ?? '';
             const to = message.to.map(did => didToName[did] ?? did);
             const cc = message.cc.map(did => didToName[did] ?? did);
-            const attachments = await this.listGroupVaultItems(did);
-
-            delete attachments[DmailTags.DMAIL]; // Remove the dmail item itself from attachments
+            const attachments = await this.listDmailAttachments(did);
 
             dmailList[did] = {
                 message,
@@ -3207,6 +3205,30 @@ export default class Keymaster implements KeymasterInterface {
         catch (error) {
             return null;
         }
+    }
+
+    async listDmailAttachments(did: string): Promise<Record<string, any>> {
+        let items = await this.listGroupVaultItems(did);
+
+        delete items[DmailTags.DMAIL]; // Remove the dmail item itself from attachments
+
+        return items;
+    }
+
+    async addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean> {
+        if (name === DmailTags.DMAIL) {
+            throw new InvalidParameterError('Cannot add attachment with reserved name "dmail"');
+        }
+
+        return this.addGroupVaultItem(did, name, buffer);
+    }
+
+    async removeDmailAttachment(did: string, name: string): Promise<boolean> {
+        if (name === DmailTags.DMAIL) {
+            throw new InvalidParameterError('Cannot remove attachment with reserved name "dmail"');
+        }
+
+        return this.removeGroupVaultItem(did, name);
     }
 
     async importDmail(did: string): Promise<boolean> {
