@@ -1241,8 +1241,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function refreshDmailAttachments() {
         try {
-            const attachments = await keymaster.listDmailAttachments(dmailDID);
-            setDmailAttachments(attachments || {});
+            const attachments = await keymaster.listDmailAttachments(dmailDID) || {};
+            setDmailAttachments(attachments);
+            dmailList[dmailDID].attachments = attachments;
         } catch (error) {
             showError(error);
         }
@@ -4227,7 +4228,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 <Box>
                                     <Box>
                                         <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
-                                            <Table size="small">
+                                            <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
                                                 <TableHead>
                                                     <TableRow>
                                                         <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Sender</TableCell>
@@ -4367,7 +4368,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         {selectedDmail &&
                                             <Paper style={{ padding: 16 }}>
                                                 <TableContainer>
-                                                    <Table size="small">
+                                                    <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
                                                         <TableBody>
                                                             <TableRow>
                                                                 <TableCell><b>To</b></TableCell>
@@ -4406,16 +4407,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     variant="outlined"
                                                 />
                                                 <TableContainer>
-                                                    <Table size="small">
+                                                    <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
                                                         <TableBody>
                                                             <TableRow>
-                                                                <TableCell>
+                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                                                                     Attachment
                                                                 </TableCell>
-                                                                <TableCell>
+                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                                                                     Size (bytes)
                                                                 </TableCell>
-                                                                <TableCell>
+                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                                                                 </TableCell>
                                                             </TableRow>
                                                             {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
