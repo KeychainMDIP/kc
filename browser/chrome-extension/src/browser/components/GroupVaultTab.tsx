@@ -12,12 +12,10 @@ import {
 } from "@mui/material";
 import {
     AttachFile,
-    ContentCopy,
     Edit,
     Email,
     Image,
     Login,
-    ManageSearch,
     PictureAsPdf,
     Token,
 } from "@mui/icons-material";
@@ -29,6 +27,7 @@ import WarningModal from "../../shared/WarningModal";
 import TextInputModal from "../../shared/TextInputModal";
 import DmailDialog from "./DmailDialog";
 import { DmailMessage } from '@mdip/keymaster/types';
+import CopyResolveDID from "../../shared/CopyResolveDID";
 
 function GroupVaultTab() {
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -71,8 +70,6 @@ function GroupVaultTab() {
         vaultList,
     } = useCredentialsContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         refreshNames,
     } = useUIContext();
 
@@ -405,31 +402,7 @@ function GroupVaultTab() {
                     Remove
                 </Button>
             }
-            <Tooltip title="Copy DID">
-                <IconButton
-                    onClick={() => handleCopyDID(did)}
-                    size="small"
-                    sx={{
-                        px: 0.5,
-                        ml: 1,
-                    }}
-                >
-                    <ContentCopy fontSize="small" />
-                </IconButton>
-            </Tooltip>
-            <Tooltip title="Resolve DID">
-                <IconButton
-                    onClick={() =>
-                        openBrowserWindow({ did })
-                    }
-                    size="small"
-                    sx={{
-                        px: 0.5,
-                    }}
-                >
-                    <ManageSearch fontSize="small" />
-                </IconButton>
-            </Tooltip>
+            <CopyResolveDID did={did} />
         </Box>
     );
 
@@ -625,33 +598,7 @@ function GroupVaultTab() {
                             </span>
                         </Tooltip>
 
-                        <Tooltip title="Copy DID">
-                            <span>
-                                <IconButton
-                                    onClick={() => handleCopyDID(groupVaultDID)}
-                                    size="small"
-                                    sx={{ ml: 1 }}
-                                    disabled={!selectedVaultName}
-                                >
-                                    <ContentCopy fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-
-                        <Tooltip title="Resolve DID">
-                            <span>
-                                <IconButton
-                                    size="small"
-                                    onClick={() =>
-                                        openBrowserWindow({ did: groupVaultDID })
-                                    }
-                                    disabled={!selectedVaultName}
-                                    sx={{ ml: 1 }}
-                                >
-                                    <ManageSearch fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
+                        <CopyResolveDID did={groupVaultDID} />
                     </Box>
                 )}
 

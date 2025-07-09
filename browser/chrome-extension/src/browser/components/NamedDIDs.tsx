@@ -13,13 +13,11 @@ import WarningModal from "../../shared/WarningModal";
 import {
     Article,
     Block,
-    ContentCopy,
     Delete,
     Edit,
     Groups,
     Image,
     Lock,
-    ManageSearch,
     PermIdentity,
     Poll,
     QuestionMark,
@@ -31,6 +29,7 @@ import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { requestBrowserRefresh } from "../../shared/sharedScripts";
 import TextInputModal from "../../shared/TextInputModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
 
 function NamedDIDs() {
     const [removeOpen, setRemoveOpen] = useState<boolean>(false);
@@ -73,7 +72,6 @@ function NamedDIDs() {
         vaultList,
     } = useCredentialsContext();
     const {
-        handleCopyDID,
         openBrowserWindow,
         refreshNames,
     } = useUIContext();
@@ -353,24 +351,7 @@ function NamedDIDs() {
                                     {name}
                                 </Typography>
                                 <Box display="flex" alignItems="center">
-                                    <Tooltip title="Copy">
-                                        <IconButton
-                                            onClick={() => handleCopyDID(did)}
-                                            size="small"
-                                        >
-                                            <ContentCopy fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Resolve">
-                                        <IconButton
-                                            onClick={() =>
-                                                openBrowserWindow({ title: name, did })
-                                            }
-                                            size="small"
-                                        >
-                                            <ManageSearch fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
+                                    <CopyResolveDID did={did} />
                                     <Tooltip title="Rename">
                                         <IconButton
                                             onClick={() => openRenameModal(name, did)}

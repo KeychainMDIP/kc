@@ -21,11 +21,9 @@ import {
     AddCircleOutline,
     BarChart,
     Block,
-    ContentCopy,
     Delete,
     Edit,
     HowToVote,
-    ManageSearch,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -34,6 +32,8 @@ import PollResultsModal from "./PollResultsModal";
 import {NoticeMessage, Poll, PollResults} from "@mdip/keymaster/types";
 import TextInputModal from "../../shared/TextInputModal";
 import WarningModal from "../../shared/WarningModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
+import DisplayDID from "../../shared/DisplayDID";
 
 const PollsTab: React.FC = () => {
     const {
@@ -50,8 +50,6 @@ const PollsTab: React.FC = () => {
         pollList,
     } = useCredentialsContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         refreshNames
     } = useUIContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
@@ -566,16 +564,9 @@ const PollsTab: React.FC = () => {
                         </Button>
                     </Box>
 
-                    {createdPollDid && (
-                        <Box display="flex" alignItems="center" mt={2}>
-                            <Typography variant="body2" sx={{ mr: 1 }}>
-                                {createdPollDid}
-                            </Typography>
-                            <IconButton onClick={() => handleCopyDID(createdPollDid)} size="small" sx={{ px: 0.5 }}>
-                                <ContentCopy fontSize="small" />
-                            </IconButton>
-                        </Box>
-                    )}
+                    {createdPollDid &&
+                        <DisplayDID did={createdPollDid} />
+                    }
                 </Box>
             )}
 
@@ -611,7 +602,7 @@ const PollsTab: React.FC = () => {
                                             size="small"
                                             onClick={openRenameModal}
                                             disabled={!selectedPollName}
-                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
+                                            sx={{ mt: 1, ml: 1 }}
                                         >
                                             <Edit fontSize="small" />
                                         </IconButton>
@@ -622,7 +613,7 @@ const PollsTab: React.FC = () => {
                                     <span>
                                         <IconButton
                                             size="small"
-                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
+                                            sx={{ mt: 1, ml: 1 }}
                                             disabled={!selectedPollName}
                                             onClick={() => {
                                                 setRemoveName(selectedPollName);
@@ -634,31 +625,9 @@ const PollsTab: React.FC = () => {
                                     </span>
                                 </Tooltip>
 
-                                <Tooltip title="Copy DID">
-                                    <span>
-                                        <IconButton
-                                            onClick={() => handleCopyDID(selectedPollDid)}
-                                            size="small"
-                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
-                                            disabled={!selectedPollDid}
-                                        >
-                                            <ContentCopy fontSize="small" />
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
-
-                                <Tooltip title="Resolve DID">
-                                    <span>
-                                        <IconButton
-                                            onClick={() => openBrowserWindow({ did: selectedPollDid })}
-                                            size="small"
-                                            disabled={!selectedPollDid}
-                                            sx={{ mt: 1, ml: 1, px: 0.5 }}
-                                        >
-                                            <ManageSearch fontSize="small" />
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
+                                <Box sx={{ mt: 1 }}>
+                                    <CopyResolveDID did={selectedPollDid} />
+                                </Box>
 
                                 {currentDID && pollController && currentDID === pollController && (
                                     <Box>
@@ -752,23 +721,14 @@ const PollsTab: React.FC = () => {
                                                             Send Ballot
                                                         </Button>
                                                     )}
+
+                                                    {lastBallotDid && (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <DisplayDID did={lastBallotDid} />
+                                                        </Box>
+                                                    )}
                                                 </Box>
                                             }
-
-                                            {lastBallotDid && (
-                                                <Box display="flex" alignItems="center" mt={1}>
-                                                    <Typography variant="body2" sx={{ mr: 1 }}>
-                                                        Ballot: {lastBallotDid}
-                                                    </Typography>
-                                                    <IconButton
-                                                        onClick={() => handleCopyDID(lastBallotDid)}
-                                                        size="small"
-                                                        sx={{ px: 0.5 }}
-                                                    >
-                                                        <ContentCopy fontSize="small" />
-                                                    </IconButton>
-                                                </Box>
-                                            )}
                                         </Box>
                                     ) : (
                                         <Box mt={2}>

@@ -1,18 +1,11 @@
 import React from "react";
 import {
     Box,
-    IconButton,
-    Tooltip,
     Typography
 } from "@mui/material";
-import { ContentCopy } from "@mui/icons-material";
-import { useUIContext } from "./contexts/UIContext";
+import CopyResolveDID from "./CopyResolveDID";
 
 const DisplayDID = ({ did }: { did: string }) => {
-    const {
-        handleCopyDID,
-    } = useUIContext();
-
     return (
         <Box
             display="flex"
@@ -22,7 +15,6 @@ const DisplayDID = ({ did }: { did: string }) => {
             <Typography
                 noWrap
                 sx={{
-                    fontSize: '1.5em',
                     fontFamily: "Courier, monospace",
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -34,18 +26,7 @@ const DisplayDID = ({ did }: { did: string }) => {
                 {did}
             </Typography>
 
-            <Tooltip title="Copy DID">
-                <IconButton
-                    onClick={() => handleCopyDID(did)}
-                    size="small"
-                    sx={{
-                        px: 0.5,
-                        ml: 1,
-                    }}
-                >
-                    <ContentCopy fontSize="small" />
-                </IconButton>
-            </Tooltip>
+            <CopyResolveDID did={did} />
         </Box>
     );
 };
