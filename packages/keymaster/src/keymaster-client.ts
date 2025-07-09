@@ -1245,6 +1245,70 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async listDmailAttachments(did: string): Promise<Record<string, any>> {
+        try {
+            const response = await axios.get(`${this.API}/dmail/${did}/attachments`);
+            return response.data.attachments;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean> {
+        try {
+            const response = await axios.post(`${this.API}/dmail/${did}/attachments`, buffer, {
+                headers: {
+                    // eslint-disable-next-line
+                    'Content-Type': 'application/octet-stream',
+                    'X-Options': JSON.stringify({ name }), // Pass name as a custom header
+                }
+            });
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async removeDmailAttachment(did: string, name: string): Promise<boolean> {
+        try {
+            const response = await axios.delete(`${this.API}/dmail/${did}/attachments/${name}`);
+            return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async getDmailAttachment(did: string, name: string): Promise<Buffer | null> {
+        try {
+            const response = await axios.get(`${this.API}/dmail/${did}/attachments/${name}`, {
+                responseType: 'arraybuffer'
+            });
+
+            if (!response.data || (Buffer.isBuffer(response.data) && response.data.length === 0)) {
+                return null;
+            }
+
+            return Buffer.from(response.data);
+        } catch (error) {
+            const axiosError = error as AxiosError;
+
+            // Return null for 404 Not Found
+            if (axiosError.response && axiosError.response.status === 404) {
+                return null;
+            }
+
+            if (axiosError.response && axiosError.response.data instanceof Uint8Array) {
+                const textDecoder = new TextDecoder();
+                const errorMessage = textDecoder.decode(axiosError.response.data);
+                axiosError.response.data = JSON.parse(errorMessage);
+            }
+            throwError(axiosError);
+        }
+    }
+
     async importDmail(did: string): Promise<boolean> {
         try {
             const response = await axios.post(`${this.API}/dmail/import`, { did });

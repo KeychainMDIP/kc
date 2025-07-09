@@ -3127,6 +3127,158 @@ describe('removeDmail', () => {
     });
 });
 
+describe('addDmailAttachment', () => {
+    const mockDmailId = 'dmail1';
+    const mockName = 'mockName';
+    const mockBuffer = Buffer.from('mockBuffer');
+
+    it('should add dmail attachment', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.addDmailAttachment(mockDmailId, mockName, mockBuffer);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on addDmailAttachment server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.addDmailAttachment(mockDmailId, mockName, mockBuffer);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('removeDmailAttachment', () => {
+    const mockDmailId = 'dmail2';
+    const mockName = 'mockName';
+
+    it('should remove dmail attachment', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.dmail}/${mockDmailId}/attachments/${mockName}`)
+            .reply(200, { ok: true });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const result = await keymaster.removeDmailAttachment(mockDmailId, mockName);
+
+        expect(result).toBe(true);
+    });
+
+    it('should throw exception on removeDmailAttachment server error', async () => {
+        nock(KeymasterURL)
+            .delete(`${Endpoints.dmail}/${mockDmailId}/attachments/${mockName}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.removeDmailAttachment(mockDmailId, mockName);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('listDmailAttachments', () => {
+    const mockDmailId = 'dmail3';
+    const mockAttachments = { item1: 'item1', item2: 'item2' };
+
+    it('should list vault items', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .reply(200, { attachments: mockAttachments });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listDmailAttachments(mockDmailId);
+
+        expect(items).toStrictEqual(mockAttachments);
+    });
+
+    it('should throw exception on listDmailAttachments server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.listDmailAttachments(mockDmailId);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('getDmailAttachment', () => {
+    const mockVaultId = 'vault7';
+    const mockName = 'mockName';
+    const mockData = Buffer.from('mockData');
+
+    it('should return attachment data', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockVaultId}/attachments/${mockName}`)
+            .reply(200, mockData);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getDmailAttachment(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(mockData);
+    });
+
+    it('should return null when missing data', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockVaultId}/attachments/${mockName}`)
+            .reply(200);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getDmailAttachment(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(null);
+    });
+
+    it('should return null on 404 not found', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockVaultId}/attachments/${mockName}`)
+            .reply(404);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getDmailAttachment(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(null);
+    });
+
+    it('should throw exception on getDmailAttachment server error', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockVaultId}/attachments/${mockName}`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.getDmailAttachment(mockVaultId, mockName);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('importDmail', () => {
     it('should import dmail DID', async () => {
         nock(KeymasterURL)

@@ -5598,6 +5598,53 @@ v1router.post('/dmail/:id/file', async (req, res) => {
     }
 });
 
+v1router.get('/dmail/:id/attachments', async (req, res) => {
+    try {
+        const dmailId = req.params.id;
+        const attachments = await keymaster.listDmailAttachments(dmailId);
+        res.json({ attachments });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.post('/dmail/:id/attachments', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+    try {
+        const dmailId = req.params.id;
+        const data = req.body;
+        const headers = req.headers;
+        const options = typeof headers['x-options'] === 'string' ? JSON.parse(headers['x-options']) : {};
+        const { name } = options;
+        const ok = await keymaster.addDmailAttachment(dmailId, name, data);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.delete('/dmail/:id/attachments/:name', async (req, res) => {
+    try {
+        const dmailId = req.params.id;
+        const name = req.params.name;
+        const ok = await keymaster.removeDmailAttachment(dmailId, name);
+        res.json({ ok });
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
+v1router.get('/dmail/:id/attachments/:name', async (req, res) => {
+    try {
+        const dmailId = req.params.id;
+        const name = req.params.name;
+        const response = await keymaster.getDmailAttachment(dmailId, name);
+        res.set('Content-Type', 'application/octet-stream');
+        res.send(response);
+    } catch (error: any) {
+        res.status(404).send(error.toString());
+    }
+});
+
 /**
  * @swagger
  * /notices:
