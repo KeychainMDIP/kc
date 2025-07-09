@@ -5598,6 +5598,39 @@ v1router.post('/dmail/:id/file', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /dmail/{id}/attachments:
+ *   get:
+ *     summary: List all attachments for a specific Dmail message.
+ *     description: Returns a mapping of attachment names to their metadata for the specified Dmail DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message whose attachments should be listed.
+ *     responses:
+ *       200:
+ *         description: A mapping of attachment names to their metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 attachments:
+ *                   type: object
+ *                   additionalProperties:
+ *                     type: object
+ *                   description: An object where each key is an attachment name, and each value is the associated metadata.
+ *       404:
+ *         description: Dmail message or attachments not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.get('/dmail/:id/attachments', async (req, res) => {
     try {
         const dmailId = req.params.id;
@@ -5608,6 +5641,54 @@ v1router.get('/dmail/:id/attachments', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /dmail/{id}/attachments:
+ *   post:
+ *     summary: Add an attachment to a specific Dmail message.
+ *     description: >
+ *       Uploads a binary attachment and associates it with the specified Dmail message. The attachment name must be provided in the X-Options header as JSON.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message to attach the file to.
+ *       - in: header
+ *         name: X-Options
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: >
+ *           A JSON string containing additional options, including the attachment name.
+ *           Example: {"name":"myfile.txt"}
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/octet-stream:
+ *           schema:
+ *             type: string
+ *             format: binary
+ *           description: The binary data of the attachment to upload.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the attachment was successfully added.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the attachment was added, otherwise false.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.post('/dmail/:id/attachments', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
         const dmailId = req.params.id;
@@ -5622,6 +5703,43 @@ v1router.post('/dmail/:id/attachments', express.raw({ type: 'application/octet-s
     }
 });
 
+/**
+ * @swagger
+ * /dmail/{id}/attachments/{name}:
+ *   delete:
+ *     summary: Remove an attachment from a specific Dmail message.
+ *     description: Deletes the specified attachment from the Dmail message identified by its DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message.
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the attachment to remove.
+ *     responses:
+ *       200:
+ *         description: Indicates whether the attachment was successfully removed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   description: true if the attachment was removed, otherwise false.
+ *       404:
+ *         description: Dmail message or attachment not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.delete('/dmail/:id/attachments/:name', async (req, res) => {
     try {
         const dmailId = req.params.id;
@@ -5633,6 +5751,40 @@ v1router.delete('/dmail/:id/attachments/:name', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /dmail/{id}/attachments/{name}:
+ *   get:
+ *     summary: Download a specific attachment from a Dmail message.
+ *     description: Returns the binary data for the specified attachment associated with the given Dmail DID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the Dmail message.
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the attachment to download.
+ *     responses:
+ *       200:
+ *         description: The binary data of the requested attachment.
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: Attachment or Dmail message not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 v1router.get('/dmail/:id/attachments/:name', async (req, res) => {
     try {
         const dmailId = req.params.id;

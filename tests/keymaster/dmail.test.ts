@@ -596,7 +596,7 @@ describe('removeDmailAttachment', () => {
 describe('getDmailAttachment', () => {
     const mockDocument = Buffer.from('This is a mock binary document 14.', 'utf-8');
 
-    it('should remove an attachment to the dmail', async () => {
+    it('should retrieve an attachment', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Bob');
         const mock1: DmailMessage = {
