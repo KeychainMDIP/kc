@@ -287,6 +287,33 @@ describe('listDmail', () => {
         expect(dmails[did].tags).toStrictEqual(['inbox']);
     });
 
+    it('should include attachments', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const mock: DmailMessage = {
+            to: [alice],
+            cc: [bob],
+            subject: 'Test Dmail 52',
+            body: 'This is a test dmail message 52.',
+        };
+
+        const did = await keymaster.createDmail(mock);
+
+        const mockDocument = Buffer.from('This is a mock binary document 52.', 'utf-8');
+        const mockName = 'mockDocument1.txt';
+        const ok = await keymaster.addDmailAttachment(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+
+        const dmails = await keymaster.listDmail();
+
+        expect(dmails).toBeDefined();
+        expect(dmails[did]).toBeDefined();
+        expect(dmails[did].attachments).toBeDefined();
+        expect(dmails[did].attachments[mockName]).toBeDefined();
+        expect(dmails[did].attachments[mockName].bytes).toBe(34);
+        expect(dmails[did].attachments[mockName].type).toBe('text/plain');
+    });
+
     it('should retrieve an empty set when no dmails', async () => {
         await keymaster.createId('Alice');
         const dmails = await keymaster.listDmail();
@@ -328,7 +355,7 @@ describe('getDmailMessage', () => {
         expect(dmail).toStrictEqual(mock);
     });
 
-    it('should retrieve null if DID is not a GroupVault', async () => {
+    it('should retrieve null if DID is not a dmail', async () => {
         const alice = await keymaster.createId('Alice');
         const dmail = await keymaster.getDmailMessage(alice);
 
@@ -480,5 +507,110 @@ describe('importDmail', () => {
 
         const ok = await keymaster.importDmail(alice);
         expect(ok).toBe(false);
+    });
+});
+
+describe('addDmailAttachment', () => {
+    const mockDocument = Buffer.from('This is a mock binary document 11.', 'utf-8');
+
+    it('should add an attachment to the dmail', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 11',
+            body: 'This is a test dmail message 11.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        const mockName = 'mockDocument11.txt';
+
+        const ok = await keymaster.addDmailAttachment(did, mockName, mockDocument);
+        expect(ok).toBe(true);
+    });
+
+    it('should throw an exception if invalid attachment name', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 111',
+            body: 'This is a test dmail message 111.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+
+        try {
+            await keymaster.addDmailAttachment(did, 'dmail', mockDocument);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: Cannot add attachment with reserved name "dmail"');
+        }
+    });
+});
+
+describe('removeDmailAttachment', () => {
+    const mockDocument = Buffer.from('This is a mock binary document 12.', 'utf-8');
+
+    it('should remove an attachment to the dmail', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 12',
+            body: 'This is a test dmail message 12.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        const mockName = 'mockDocument1.txt';
+
+        await keymaster.addDmailAttachment(did, mockName, mockDocument);
+        const ok = await keymaster.removeDmailAttachment(did, mockName);
+        expect(ok).toBe(true);
+    });
+
+    it('should throw an exception if invalid attachment name', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 13',
+            body: 'This is a test dmail message 13.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+
+        try {
+            await keymaster.removeDmailAttachment(did, 'dmail');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: Cannot remove attachment with reserved name "dmail"');
+        }
+    });
+});
+
+describe('getDmailAttachment', () => {
+    const mockDocument = Buffer.from('This is a mock binary document 14.', 'utf-8');
+
+    it('should retrieve an attachment', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const mock1: DmailMessage = {
+            to: ['Alice'],
+            cc: [],
+            subject: 'Test Dmail 14',
+            body: 'This is a test dmail message 14.',
+        };
+
+        const did = await keymaster.createDmail(mock1);
+        const mockName = 'mockDocument14.txt';
+        await keymaster.addDmailAttachment(did, mockName, mockDocument);
+
+        const attachment = await keymaster.getDmailAttachment(did, mockName);
+        expect(attachment).toStrictEqual(mockDocument);
     });
 });
