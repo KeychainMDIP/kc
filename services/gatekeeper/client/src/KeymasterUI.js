@@ -4406,42 +4406,44 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     InputProps={{ readOnly: true }}
                                                     variant="outlined"
                                                 />
-                                                <TableContainer>
-                                                    <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
-                                                        <TableBody>
-                                                            <TableRow>
-                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                                                                    Attachment
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                                                                    Size (bytes)
-                                                                </TableCell>
-                                                                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                                                                </TableCell>
-                                                            </TableRow>
-                                                            {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
-                                                                <TableRow key={index}>
-                                                                    <TableCell>
-                                                                        {getVaultItemIcon(name, item)}
-                                                                        {name}
+                                                {selectedDmail.attachments && Object.keys(selectedDmail.attachments).length > 0 &&
+                                                    <TableContainer>
+                                                        <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
+                                                            <TableBody>
+                                                                <TableRow>
+                                                                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                                        Attachment
                                                                     </TableCell>
-                                                                    <TableCell>
-                                                                        {item.bytes}
+                                                                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                                        Size (bytes)
                                                                     </TableCell>
-                                                                    <TableCell>
-                                                                        <Button
-                                                                            variant="contained"
-                                                                            color="primary"
-                                                                            onClick={() => downloadDmailAttachment(name)}
-                                                                        >
-                                                                            Download
-                                                                        </Button>
+                                                                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                                                                     </TableCell>
                                                                 </TableRow>
-                                                            ))}
-                                                        </TableBody>
-                                                    </Table>
-                                                </TableContainer>
+                                                                {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
+                                                                    <TableRow key={index}>
+                                                                        <TableCell>
+                                                                            {getVaultItemIcon(name, item)}
+                                                                            {name}
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            {item.bytes}
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            <Button
+                                                                                variant="contained"
+                                                                                color="primary"
+                                                                                onClick={() => downloadDmailAttachment(name)}
+                                                                            >
+                                                                                Download
+                                                                            </Button>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    </TableContainer>
+                                                }
                                             </Paper>
                                         }
                                     </Box>
@@ -4568,10 +4570,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
                                                     {dmailDID}
                                                 </Typography>
-                                            </Box>
-                                        }
-                                        {dmailDID &&
-                                            <Box>
+                                                <p></p>
                                                 <Grid container direction="column" spacing={1}>
                                                     <Grid item>
                                                         Attachments:
@@ -4598,22 +4597,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         </Grid>
                                                     ))}
                                                 </Grid>
-                                            </Box>
-                                        }
-                                        {dmailDID &&
-                                            <Box>
-                                                <Grid container direction="column" spacing={1}>
-                                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
-                                                                Update Dmail
-                                                            </Button>
-                                                        </Grid>
-                                                        <Grid item>
-                                                            <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
-                                                                Send Dmail
-                                                            </Button>
-                                                        </Grid>
+                                                <p></p>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
+                                                            Update Dmail
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
+                                                            Send Dmail
+                                                        </Button>
                                                     </Grid>
                                                 </Grid>
                                             </Box>
