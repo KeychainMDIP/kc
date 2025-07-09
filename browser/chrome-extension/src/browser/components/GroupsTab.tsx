@@ -1,14 +1,13 @@
 import React, { useState } from "react";
-import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip } from "@mui/material";
+import {Box, Button, Divider, IconButton, MenuItem, Select, TextField, Tooltip, Typography} from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
-import {ContentCopy, Edit, ManageSearch} from "@mui/icons-material";
+import {Delete, Edit} from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
-import JsonViewer from "./JsonViewer";
-import DisplayDID from "../../shared/DisplayDID";
 import { Group } from '@mdip/keymaster/types'
 import TextInputModal from "../../shared/TextInputModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
 
 const GroupsTab = () => {
     const {
@@ -23,7 +22,6 @@ const GroupsTab = () => {
     } = useCredentialsContext();
     const {
         refreshNames,
-        handleCopyDID,
         setOpenBrowser,
         openBrowserWindow,
     } = useUIContext();
@@ -89,21 +87,6 @@ const GroupsTab = () => {
 
     function populateCopyButton(name: string) {
         setGroupDID(nameList[name]);
-    }
-
-    async function resolveMember(did: string) {
-        try {
-            setJsonDID(did);
-            if (setOpenBrowser) {
-                setOpenBrowser({
-                    title: "",
-                    did,
-                    tab: "groups",
-                });
-            }
-        } catch (error: any) {
-            setError(error);
-        }
     }
 
     async function addMember(did: string) {
@@ -272,38 +255,12 @@ const GroupsTab = () => {
                             </span>
                         </Tooltip>
 
-                        <Tooltip title="Copy DID">
-                            <span>
-                                <IconButton
-                                    onClick={() => handleCopyDID(groupDID)}
-                                    size="small"
-                                    sx={{ ml: 1 }}
-                                    disabled={!selectedGroupName}
-                                >
-                                    <ContentCopy fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-
-                        <Tooltip title="Resolve DID">
-                            <span>
-                                <IconButton
-                                    size="small"
-                                    onClick={() =>
-                                        openBrowserWindow({ did: groupDID })
-                                    }
-                                    disabled={!selectedGroupName}
-                                    sx={{ ml: 1 }}
-                                >
-                                    <ManageSearch fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
+                        <CopyResolveDID did={groupDID} />
                     </Box>
                 }
                 {selectedGroup &&
                     <Box display="flex" flexDirection="column">
-                        <Box display="flex" flexDirection="row" sx={{ mb: 2, mt: 2 }}>
+                        <Box display="flex" flexDirection="row" sx={{ mb: 1, mt: 2 }}>
                             <TextField
                                 label="DID"
                                 sx={{ width: '300px' }}
@@ -320,7 +277,7 @@ const GroupsTab = () => {
                             <Button
                                 variant="contained"
                                 color="primary"
-                                onClick={() => resolveMember(memberDID)}
+                                onClick={() => openBrowserWindow({ did: memberDID })}
                                 disabled={!memberDID}
                                 className="button-center"
                             >
@@ -336,30 +293,32 @@ const GroupsTab = () => {
                                 Add
                             </Button>
                         </Box>
-                        {selectedGroup.members.map((did: string, index: number) => (
-                            <Box key={index} display="flex" flexDirection="row" alignItems="center" sx={{ mb: 2 }}>
-                                <DisplayDID did={did} />
-                                <Box display="flex" flexDirection="row" sx={{ gap: 0 }}>
-                                    <Button
-                                        variant="contained"
-                                        color="primary"
-                                        onClick={() => resolveMember(did)}
-                                        className="button-left"
-                                    >
-                                        Resolve
-                                    </Button>
-                                    <Button
-                                        variant="contained"
-                                        color="primary"
-                                        onClick={() => handleRemoveMember(did)}
-                                        className="button-right"
-                                    >
-                                        Remove
-                                    </Button>
+                        {selectedGroup.members.map((did: string, index: number) => {
+                            const alias = Object.keys(nameList).find((n) => nameList[n] === did) ?? undefined;
+
+                            return (
+                                <Box>
+                                    <Box key={index} display="flex" alignItems="center" justifyContent="space-between" sx={{my: 1}}>
+                                        <Typography sx={{ fontFamily: alias ? "text.primary" : "Courier, monospace" }}
+                                        >
+                                            {alias ?? did}
+                                        </Typography>
+                                        <Box display="flex" flexDirection="row">
+                                            <CopyResolveDID did={did} />
+                                            <Tooltip title="Delete">
+                                                <IconButton
+                                                    onClick={() => handleRemoveMember(did)}
+                                                    size="small"
+                                                >
+                                                    <Delete />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    </Box>
+                                    <Divider />
                                 </Box>
-                            </Box>
-                        ))}
-                        <JsonViewer browserTab="groups" />
+                            );
+                        })}
                     </Box>
                 }
             </Box>

@@ -1,19 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
-import { useUIContext } from "../../shared/contexts/UIContext";
 import CredentialForm from "./CredentialForm";
 import {
     Box,
     Button,
     Select,
     MenuItem,
-    InputAdornment,
-    TextField,
-    Tooltip,
-    IconButton,
 } from "@mui/material";
-import { ContentCopy } from "@mui/icons-material";
+import DisplayDID from "../../shared/DisplayDID";
 
 function IssueTab() {
     const {
@@ -36,9 +31,6 @@ function IssueTab() {
         setCredentialSubject,
         setIssuedList,
     } = useCredentialsContext();
-    const {
-        handleCopyDID,
-    } = useUIContext();
 
     const [schemaObject, setSchemaObject] = useState<any>(null);
     const [isFormValid, setIsFormValid] = useState<boolean>(false);
@@ -195,41 +187,9 @@ function IssueTab() {
                             ))}
                         </Select>
                     </Box>
-                    {credentialDID && (
-                        <TextField
-                            value={credentialDID}
-                            variant="outlined"
-                            fullWidth
-                            size="small"
-                            className="text-field"
-                            slotProps={{
-                                input: {
-                                    readOnly: true,
-                                    style: {
-                                        fontSize: "1.5em",
-                                        fontFamily: "Courier, monospace",
-                                    },
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <Tooltip title="Copy DID">
-                                                <IconButton
-                                                    onClick={() =>
-                                                        handleCopyDID(
-                                                            credentialDID,
-                                                        )
-                                                    }
-                                                    size="small"
-                                                    sx={{ px: 0.5 }}
-                                                >
-                                                    <ContentCopy fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </InputAdornment>
-                                    ),
-                                },
-                            }}
-                        />
-                    )}
+                    {credentialDID &&
+                        <DisplayDID did={credentialDID} />
+                    }
                 </>
             )}
         </Box>

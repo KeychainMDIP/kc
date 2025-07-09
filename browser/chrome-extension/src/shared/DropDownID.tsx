@@ -2,15 +2,14 @@ import React, { useState } from "react";
 import {
     Box,
     Button,
-    IconButton,
     Menu,
     MenuItem,
-    Tooltip,
 } from "@mui/material";
-import { ArrowDropDown, ContentCopy, ManageSearch } from "@mui/icons-material";
+import { ArrowDropDown } from "@mui/icons-material";
 import { useWalletContext } from "./contexts/WalletProvider";
 import { useUIContext } from "./contexts/UIContext";
 import { requestBrowserRefresh } from './sharedScripts'
+import CopyResolveDID from "./CopyResolveDID";
 
 const DropDownID = () => {
     const {
@@ -23,8 +22,6 @@ const DropDownID = () => {
         unresolvedIdList,
     } = useWalletContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         resetCurrentID,
     } = useUIContext();
 
@@ -72,34 +69,7 @@ const DropDownID = () => {
     return (
         currentId && (
             <Box display="flex" alignItems="center" gap={0}>
-                {currentDID && (
-                    <>
-                        <Tooltip title="Copy DID">
-                            <IconButton
-                                onClick={() => handleCopyDID(currentDID)}
-                                size="small"
-                                sx={{
-                                    px: 0.5,
-                                }}
-                            >
-                                <ContentCopy fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Resolve DID">
-                            <IconButton
-                                onClick={() =>
-                                    openBrowserWindow({ title: currentId, did: currentDID })
-                                }
-                                size="small"
-                                sx={{
-                                    px: 0.5,
-                                }}
-                            >
-                                <ManageSearch fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                    </>
-                )}
+                <CopyResolveDID did={currentDID} />
 
                 {multipleIds ? (
                     <>
