@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import {useEffect, useState, useMemo, useCallback} from 'react';
 import {
     Alert,
     Autocomplete,
@@ -2094,21 +2094,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     const arraysEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
-    // Check notices and update DMail and polls every 30 seconds
-    useEffect(() => {
-        const interval = setInterval(async () => {
-            try {
-                await keymaster.refreshNotices();
-                await refreshInbox();
-                await refreshPoll();
-            } catch { }
-        }, 30000);
-
-        return () => clearInterval(interval);
-
-    }, [keymaster]);
-
-    async function refreshInbox() {
+    const refreshInbox = useCallback( async() => {
         try {
             const msgs = await keymaster.listDmail();
             if (JSON.stringify(msgs) !== JSON.stringify(dmailList)) {
@@ -2117,9 +2103,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         } catch (err) {
             showError(err);
         }
-    }
+    }, [keymaster, dmailList]);
 
-    async function refreshPoll() {
+    const refreshPoll = useCallback( async() => {
         try {
             const walletNames = await keymaster.listNames();
             const names = Object.keys(walletNames).sort((a, b) =>
@@ -2149,8 +2135,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 }
                 setPollList(polls);
             }
-        } catch { }
-    }
+        } catch {}
+    }, [keymaster, nameList, pollList]);
+
+    // Check notices and update DMail and polls every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(async() => {
+            try {
+                await keymaster.refreshNotices();
+                await refreshInbox();
+                await refreshPoll();
+            } catch {}
+        }, 30000);
+
+        return () => clearInterval(interval);
+
+    }, [keymaster, refreshInbox, refreshPoll]);
 
     const buildPoll = async () => {
         const template = await keymaster.pollTemplate();
@@ -2176,7 +2176,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             return null;
         }
         const options = optionsStr
-            .split(/[\,\n]/)
+            .split(/[,\n]/)
             .map((o) => o.trim())
             .filter(Boolean);
 

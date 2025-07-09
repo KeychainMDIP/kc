@@ -3,8 +3,9 @@ import { Box, Button, IconButton, MenuItem, Select, TextField, Tooltip } from "@
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
-import {ContentCopy, Edit, ManageSearch} from "@mui/icons-material";
+import { Edit } from "@mui/icons-material";
 import TextInputModal from "../../shared/TextInputModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
 
 const SchemaTab = ()=> {
     const {
@@ -14,8 +15,6 @@ const SchemaTab = ()=> {
         setSuccess,
     } = useWalletContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         refreshNames,
     } = useUIContext();
     const {
@@ -193,33 +192,7 @@ const SchemaTab = ()=> {
                         </span>
                     </Tooltip>
 
-                    <Tooltip title="Copy DID">
-                        <span>
-                            <IconButton
-                                onClick={() => handleCopyDID(schemaDID)}
-                                size="small"
-                                disabled={!selectedSchemaName}
-                                sx={{ ml: 1 }}
-                            >
-                                <ContentCopy fontSize="small" />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
-
-                    <Tooltip title="Resolve DID">
-                        <span>
-                            <IconButton
-                                size="small"
-                                onClick={() =>
-                                    openBrowserWindow({ did: schemaDID })
-                                }
-                                disabled={!selectedSchemaName}
-                                sx={{ ml: 1 }}
-                            >
-                                <ManageSearch fontSize="small" />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
+                    <CopyResolveDID did={schemaDID} />
                 </Box>
             }
             {schemaString &&

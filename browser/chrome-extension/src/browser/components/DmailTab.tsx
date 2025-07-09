@@ -14,18 +14,15 @@ import {
     TableRow,
     Tabs,
     TextField,
-    Tooltip,
     Typography,
 } from "@mui/material";
 import {
     AllInbox,
     Archive,
     Clear,
-    ContentCopy,
     Delete,
     Drafts,
     Inbox,
-    ManageSearch,
     Outbox,
     Send,
 } from "@mui/icons-material";
@@ -34,6 +31,8 @@ import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import TextInputModal from "../../shared/TextInputModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
+import CopyDID from "../../shared/CopyDID";
 
 const DmailTab: React.FC = () => {
     const [registry, setRegistry] = useState<string>("hyperswarm");
@@ -58,8 +57,6 @@ const DmailTab: React.FC = () => {
         dmailList,
     } = useCredentialsContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         refreshInbox,
     } = useUIContext();
 
@@ -363,28 +360,7 @@ const DmailTab: React.FC = () => {
                                     {selected.did}
                                 </Typography>
                             </Box>
-                            <Tooltip title="Copy DID">
-                                <IconButton
-                                    onClick={() => handleCopyDID(selected.did)}
-                                    size="small"
-                                    sx={{ pt: 0.5 }}
-                                >
-                                    <ContentCopy fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Resolve DID">
-                                <IconButton
-                                    onClick={() =>
-                                        openBrowserWindow({ did: selected.did })
-                                    }
-                                    size="small"
-                                    sx={{
-                                        pt: 0.5,
-                                    }}
-                                >
-                                    <ManageSearch fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
+                            <CopyResolveDID did={selected.did} />
                         </Box>
 
                         <Box sx={{ my: 1 }}>
@@ -630,15 +606,7 @@ const DmailTab: React.FC = () => {
                 {dmailDid && (
                     <Box display="flex" alignItems="center" gap={1}>
                         <Typography sx={{ fontFamily: 'monospace' }}>{dmailDid}</Typography>
-                        <Tooltip title="Copy DID">
-                            <IconButton
-                                onClick={() => handleCopyDID(dmailDid)}
-                                size="small"
-                                sx={{ px: 0.5 }}
-                            >
-                                <ContentCopy fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
+                        <CopyDID did={dmailDid} />
                     </Box>
                 )}
             </Box>

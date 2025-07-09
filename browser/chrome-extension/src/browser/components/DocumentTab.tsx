@@ -1,6 +1,6 @@
 import React, { ChangeEvent, useEffect, useState } from "react";
 import {Box, Button, IconButton, MenuItem, Select, Tooltip} from "@mui/material";
-import { Edit, ContentCopy, ManageSearch } from "@mui/icons-material";
+import { Edit } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
@@ -9,6 +9,7 @@ import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
 import TextInputModal from "../../shared/TextInputModal";
+import CopyResolveDID from "../../shared/CopyResolveDID";
 
 const gatekeeper = new GatekeeperClient();
 
@@ -20,8 +21,6 @@ const DocumentTab = () => {
         setSuccess,
     } = useWalletContext();
     const {
-        handleCopyDID,
-        openBrowserWindow,
         refreshNames,
     } = useUIContext();
     const {
@@ -341,27 +340,7 @@ const DocumentTab = () => {
                             </span>
                         </Tooltip>
 
-                        <Tooltip title="Copy DID">
-                            <span>
-                                <IconButton size="small"
-                                    onClick={() => handleCopyDID(nameList[selectedDocumentName])}
-                                    disabled={!selectedDocumentName}
-                                    sx={{ ml: 1 }}>
-                                    <ContentCopy fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
-
-                        <Tooltip title="Resolve DID">
-                            <span>
-                                <IconButton size="small"
-                                    onClick={() => openBrowserWindow({ did: nameList[selectedDocumentName] })}
-                                    disabled={!selectedDocumentName}
-                                    sx={{ ml: 1 }}>
-                                    <ManageSearch fontSize="small" />
-                                </IconButton>
-                            </span>
-                        </Tooltip>
+                        <CopyResolveDID did={nameList[selectedDocumentName]} />
                     </Box>
                     {selectedDocument && selectedDocumentDocs && selectedDocumentDataUrl && (
                         <Box sx={{ mt: 2 }}>
