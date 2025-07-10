@@ -594,6 +594,7 @@ export function UIProvider(
                 await refreshCredentialsStored(extensionState);
             } catch {}
         })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function refreshAll() {
