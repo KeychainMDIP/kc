@@ -348,42 +348,24 @@ export function UIProvider(
         }
     }
 
-    async function getNameLists() {
-        let nameList : Record<string, string> = {};
-        let unresolvedList : Record<string, string> = {};
-
-        if (!keymaster) {
-            return { nameList, unresolvedList };
-        }
-
-        const allNames = await keymaster.listNames();
-
-        for (const [alias, did] of Object.entries(allNames)) {
-            try {
-                await keymaster.resolveDID(did);
-                nameList[alias] = did;
-            } catch {
-                unresolvedList[alias] = did;
-            }
-        }
-
-        return { nameList, unresolvedList };
-    }
-
-    async function refreshNames() {
+    async function refreshNames(cid?: string) {
         if (!keymaster) {
             return;
         }
 
-        const { nameList, unresolvedList } = await getNameLists();
+        let nameList : Record<string, string> = {};
+        let unresolvedList : Record<string, string> = {};
 
-        setNameList(nameList);
-        setUnresolvedList(unresolvedList);
+        const allNames = await keymaster.listNames();
+        const allNamesSorted = Object.fromEntries(
+            Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        );
 
-        const names = Object.keys(nameList);
-        names.sort((a, b) => a.localeCompare(b))
+        const { valid: agentList, invalid } = await getValidIds();
 
-        const { valid: agentList } = await getValidIds();
+        setIdList([...agentList]);
+        setUnresolvedIdList(invalid);
+        setValidId(agentList.includes(cid ?? currentId));
 
         const schemaList = [];
         const imageList = [];
@@ -392,9 +374,10 @@ export function UIProvider(
         const pollList = [];
         const documentList = [];
 
-        for (const name of names) {
+        for (const [name, did] of Object.entries(allNamesSorted)) {
             try {
                 const doc = await keymaster.resolveDID(name);
+                nameList[name] = did;
                 const data = doc.didDocumentData as Record<string, unknown>;
 
                 if (doc.mdip?.type === 'agent') {
@@ -432,8 +415,13 @@ export function UIProvider(
                     continue;
                 }
             }
-            catch {}
+            catch {
+                unresolvedList[name] = did;
+            }
         }
+
+        setNameList(nameList);
+        setUnresolvedList(unresolvedList);
 
         const uniqueSortedAgents = [...new Set(agentList)]
             .sort((a, b) => a.localeCompare(b));
@@ -496,14 +484,9 @@ export function UIProvider(
         }
         await setCurrentId(cid);
         await refreshCurrentDID(cid);
-        await refreshNames();
+        await refreshNames(cid);
         await refreshHeld();
         await refreshIssued();
-
-        const { valid, invalid } = await getValidIds();
-        setIdList(valid);
-        setUnresolvedIdList(invalid);
-        setValidId(valid.includes(cid));
     }
 
     function wipeUserState() {
@@ -579,6 +562,7 @@ export function UIProvider(
                 await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
                 return false;
             }
+            await refreshCurrentIDInternal(extensionState.currentId);
         } else {
             // We switched user in the browser so no currentId stored
             const cid = await keymaster.getCurrentId();
@@ -587,27 +571,30 @@ export function UIProvider(
             }
         }
 
-        setPendingTab(extensionState.selectedTab);
-        setPendingMessageTab(extensionState.selectedMessageTab);
-
-        await refreshAuthStored(extensionState);
-        await refreshWalletStored(extensionState);
-        await refreshMessageStored(extensionState);
-        await refreshCredentialsStored(extensionState);
-
-        if (extensionState.currentId) {
-            await refreshCurrentIDInternal(extensionState.currentId);
-        }
-
-        const { valid, invalid } = await getValidIds();
-        setIdList(valid);
-        setUnresolvedIdList(invalid);
-
-        const { nameList } = await getNameLists();
-        setNameList(nameList);
-
         return true;
     }
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const { extensionState } = await chrome.runtime.sendMessage({
+                    action: "GET_ALL_STATE",
+                });
+
+                if (extensionState?.selectedTab) {
+                    setPendingTab(extensionState.selectedTab);
+                }
+                if (extensionState?.selectedMessageTab) {
+                    setPendingMessageTab(extensionState.selectedMessageTab);
+                }
+
+                await refreshAuthStored(extensionState);
+                await refreshWalletStored(extensionState);
+                await refreshMessageStored(extensionState);
+                await refreshCredentialsStored(extensionState);
+            } catch {}
+        })();
+    }, []);
 
     async function refreshAll() {
         if (!keymaster) {
