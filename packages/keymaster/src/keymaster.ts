@@ -3215,7 +3215,11 @@ export default class Keymaster implements KeymasterInterface {
         return items;
     }
 
-    async addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean> {
+    async addDmailAttachment(
+        did: string,
+        name: string,
+        buffer: Buffer
+    ): Promise<boolean> {
         if (name === DmailTags.DMAIL) {
             throw new InvalidParameterError('Cannot add attachment with reserved name "dmail"');
         }
@@ -3223,7 +3227,10 @@ export default class Keymaster implements KeymasterInterface {
         return this.addGroupVaultItem(did, name, buffer);
     }
 
-    async removeDmailAttachment(did: string, name: string): Promise<boolean> {
+    async removeDmailAttachment(
+        did: string,
+        name: string
+    ): Promise<boolean> {
         if (name === DmailTags.DMAIL) {
             throw new InvalidParameterError('Cannot remove attachment with reserved name "dmail"');
         }
@@ -3231,7 +3238,10 @@ export default class Keymaster implements KeymasterInterface {
         return this.removeGroupVaultItem(did, name);
     }
 
-    async getDmailAttachment(did: string, name: string): Promise<Buffer | null> {
+    async getDmailAttachment(
+        did: string,
+        name: string
+    ): Promise<Buffer | null> {
         return this.getGroupVaultItem(did, name);
     }
 

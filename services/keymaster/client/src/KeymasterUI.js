@@ -1107,6 +1107,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             setSelectedDmailDID('');
             setDmailSubject('');
             setDmailBody('');
+            setDmailTo('');
             setDmailCc('');
             setDmailAttachments({});
             setDmailDID('');
@@ -1373,6 +1374,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const tags = dmailList[selectedDmailDID]?.tags || [];
             await keymaster.fileDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.DELETED));
             refreshDmail();
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function revokeDmail() {
+        try {
+            if (window.confirm(`Revoke Dmail?`)) {
+                await keymaster.removeDmail(dmailDID);
+                await keymaster.revokeDID(dmailDID);
+                refreshDmail();
+            }
         } catch (error) {
             showError(error);
         }
@@ -4314,6 +4327,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             Delete
                                                         </Button>
                                                     </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={editDmail}>
+                                                            Edit
+                                                        </Button>
+                                                    </Grid>
                                                 </Grid>
                                             </Box>
                                         }
@@ -4607,6 +4625,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
                                                             Send Dmail
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={revokeDmail} disabled={!dmailDID}>
+                                                            Revoke Dmail...
                                                         </Button>
                                                     </Grid>
                                                 </Grid>

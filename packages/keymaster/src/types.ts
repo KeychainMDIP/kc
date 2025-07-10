@@ -406,11 +406,16 @@ export interface KeymasterInterface {
     // Dmail
     createDmail(message: DmailMessage, options?: CreateAssetOptions): Promise<string>;
     updateDmail(did: string, message: DmailMessage): Promise<boolean>;
+    fileDmail(did: string, tags: string[]): Promise<boolean>
     removeDmail(did: string): Promise<boolean>;
     importDmail(did: string): Promise<boolean>;
     getDmailMessage(did: string): Promise<DmailMessage | null>;
     listDmail(): Promise<Record<string, DmailItem>>;
     sendDmail(did: string): Promise<string | null>;
+    addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean>;
+    removeDmailAttachment(did: string, name: string): Promise<boolean>;
+    listDmailAttachments(did: string): Promise<Record<string, any>>;
+    getDmailAttachment(did: string, name: string): Promise<Buffer | null>;
 
     // Notices
     createNotice(message: NoticeMessage, options: CreateAssetOptions): Promise<string>;
