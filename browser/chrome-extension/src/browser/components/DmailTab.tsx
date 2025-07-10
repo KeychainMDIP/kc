@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, {ChangeEvent, useEffect, useState} from "react";
 import {
     Autocomplete,
     Box,
@@ -45,6 +45,7 @@ const DmailTab: React.FC = () => {
     const [sendCc, setSendCc] = useState<string>("");
     const [sendToList, setSendToList] = useState<string[]>([]);
     const [sendCcList, setSendCcList] = useState<string[]>([]);
+    const [dmailAttachments, setDmailAttachments] = useState({});
     const {
         currentId,
         keymaster,
@@ -57,6 +58,7 @@ const DmailTab: React.FC = () => {
         dmailList,
     } = useCredentialsContext();
     const {
+        getVaultItemIcon,
         refreshInbox,
     } = useUIContext();
 
@@ -137,6 +139,7 @@ const DmailTab: React.FC = () => {
 
             const did = await keymaster.createDmail(dmail, { registry });
             setDmailDid(did);
+            await refreshDmailAttachments();
             setSuccess(`Draft created ${did}`);
         } catch (err: any) {
             setError(err);
@@ -268,6 +271,8 @@ const DmailTab: React.FC = () => {
         setSendCcList([]);
         setSendSubject("");
         setSendBody("");
+        setDmailDid("");
+        setDmailAttachments({});
     }
 
     function filteredList(): Record<string, DmailItem> {
@@ -308,6 +313,125 @@ const DmailTab: React.FC = () => {
             }
         }
         return out;
+    }
+
+    useEffect(() => {
+        if (dmailDid) {
+            refreshDmailAttachments();
+        } else {
+            setDmailAttachments({});
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dmailDid]);
+
+    async function refreshDmailAttachments() {
+        if (!keymaster || !dmailDid) {
+            return;
+        }
+
+        try {
+            const attachments = await keymaster.listDmailAttachments(dmailDid) || {};
+            setDmailAttachments(attachments);
+            if (dmailList[dmailDid]) {
+                dmailList[dmailDid].attachments = attachments;
+            }
+        } catch (error: any) {
+            setError(error);
+        }
+    }
+
+    async function uploadDmailAttachment(event: ChangeEvent<HTMLInputElement>) {
+        if (!keymaster) {
+            return;
+        }
+
+        try {
+            const fileInput = event.target;
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+
+            const file = fileInput.files[0];
+            fileInput.value = "";
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    if (!e.target || !e.target.result) {
+                        setError("Unexpected file reader result");
+                        return;
+                    }
+                    const arrayBuffer = e.target.result;
+                    let buffer: Buffer;
+                    if (arrayBuffer instanceof ArrayBuffer) {
+                        buffer = Buffer.from(arrayBuffer);
+                    } else {
+                        setError("Unexpected file reader result type");
+                        return;
+                    }
+
+                    const ok = await keymaster.addDmailAttachment(dmailDid, file.name, buffer);
+
+                    if (ok) {
+                        setSuccess(`Attachment uploaded successfully: ${file.name}`);
+                        await refreshDmailAttachments();
+                    } else {
+                        setError(`Error uploading file: ${file.name}`);
+                    }
+                } catch (error) {
+                    setError(`Error uploading file: ${error}`);
+                }
+            };
+
+            reader.onerror = (error) => {
+                setError(`Error uploading file: ${error}`);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            setError(`Error uploading file: ${error}`);
+        }
+    }
+
+    async function removeDmailAttachment(name: string) {
+        if (!keymaster || !dmailDid) {
+            return;
+        }
+
+        try {
+            await keymaster.removeDmailAttachment(dmailDid, name);
+            await refreshDmailAttachments();
+        } catch (error: any) {
+            setError(error);
+        }
+    }
+
+    async function downloadDmailAttachment(name: string) {
+        if (!keymaster || !selected?.did) {
+            return;
+        }
+
+        try {
+            const buffer = await keymaster.getDmailAttachment(selected.did, name);
+
+            if (!buffer) {
+                setError(`Attachment ${name} not found in DMail ${selected.did}`);
+                return;
+            }
+
+            // Create a Blob from the buffer
+            const blob = new Blob([buffer]);
+            // Create a temporary link to trigger the download
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = name; // Use the item name as the filename
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (error: any) {
+            setError(error);
+        }
     }
 
     // eslint-disable-next-line sonarjs/no-duplicate-string
@@ -383,7 +507,7 @@ const DmailTab: React.FC = () => {
 
                             {activeTab==="drafts" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={()=>{
+                                    <Button variant="contained" onClick={async ()=>{
                                         setSendTo("");
                                         setSendCc("");
                                         setSendToList(selected.to);
@@ -391,6 +515,7 @@ const DmailTab: React.FC = () => {
                                         setSendSubject(selected.message.subject);
                                         setSendBody(selected.message.body);
                                         setDmailDid(selected.did);
+                                        await refreshDmailAttachments();
                                         setActiveTab("send");
                                     }}>Edit</Button>
                                     <Button variant="contained" onClick={archive}>Archive</Button>
@@ -456,6 +581,27 @@ const DmailTab: React.FC = () => {
                                 {selected.message.subject}
                             </Typography>
                         </Box>
+
+                        {selected.attachments && Object.keys(selected.attachments).length > 0 && (
+                            <Box mb={2}>
+                                <Typography variant="subtitle2">Attachments:</Typography>
+                                {Object.entries(selected.attachments).map(([name, item]: [string, any]) => (
+                                    <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
+                                        {getVaultItemIcon(name, item)}
+                                        <Typography>{name}</Typography>
+                                        <Typography>{item.bytes} bytes</Typography>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() => downloadDmailAttachment(name)}
+                                        >
+                                            Download
+                                        </Button>
+                                    </Box>
+                                ))}
+                            </Box>
+                        )}
+
                         <TextField
                             value={selected.message.body}
                             multiline
@@ -604,9 +750,48 @@ const DmailTab: React.FC = () => {
                 </Box>
 
                 {dmailDid && (
-                    <Box display="flex" alignItems="center" gap={1}>
-                        <Typography sx={{ fontFamily: 'monospace' }}>{dmailDid}</Typography>
-                        <CopyDID did={dmailDid} />
+                    <Box>
+                        <Box display="flex" flexDirection="column" gap={1}>
+                            <Button
+                                variant="outlined"
+                                component="label"
+                                sx={{ width: 200 }}
+                                onClick={() => document.getElementById("attachmentUpload")!.click()}
+                            >
+                                Add attachment
+                            </Button>
+
+                            <input
+                                hidden
+                                type="file"
+                                onChange={uploadDmailAttachment}
+                                id="attachmentUpload"
+                            />
+
+                            {Object.keys(dmailAttachments).length > 0 && (
+                                <Box>
+                                    {Object.entries(dmailAttachments).map(([name, item]) => (
+                                        <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
+                                            {getVaultItemIcon(name, item)}
+                                            <Typography>{name}</Typography>
+                                            <Button
+                                                size="small"
+                                                color="error"
+                                                variant="outlined"
+                                                onClick={() => removeDmailAttachment(name)}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+
+                        <Box display="flex" alignItems="center" gap={1} sx={{ mt: 1 }}>
+                            <Typography sx={{ fontFamily: 'monospace' }}>{dmailDid}</Typography>
+                            <CopyDID did={dmailDid} />
+                        </Box>
                     </Box>
                 )}
             </Box>
