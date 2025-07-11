@@ -48,6 +48,7 @@ function BrowserContent() {
     const [assetSubTab, setAssetSubTab] = useState<string>("schemas");
 
     const assetTabs = ["groups", "schemas", "images", "documents", "vaults"];
+    const displayComponent = validId && currentId !== "";
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -138,7 +139,8 @@ function BrowserContent() {
                 ? "identities"
                 : assetTabs.includes(tab ?? "")
                     ? "assets"
-                    : tab || "viewer";
+                    : tab || "identities";
+
         setActiveTab(mappedTab);
 
         if (assetTabs.includes(tab ?? "")) {
@@ -153,21 +155,21 @@ function BrowserContent() {
     }, [openBrowser]);
 
     useEffect(() => {
-        if (didRun || !currentId) {
+        if (didRun || !currentId || !validId) {
             return;
         }
 
         const urlParams = new URLSearchParams(window.location.search);
-        const paramTab = urlParams.get("tab") || "";
-        if (assetTabs.includes(paramTab)) {
+        const tab = urlParams.get("tab") || "";
+        if (assetTabs.includes(tab)) {
             setActiveTab("assets");
-            setAssetSubTab(paramTab);
-        } else if (paramTab) {
-            setActiveTab(paramTab);
+            setAssetSubTab(tab);
+        } else if (tab) {
+            setActiveTab(tab);
         }
         setDidRun(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [didRun, currentId]);
+    }, [didRun, currentId, validId]);
 
     const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
         setActiveTab(newValue);
@@ -175,8 +177,6 @@ function BrowserContent() {
             setAssetSubTab("schemas");
         }
     };
-    
-    const displayComponent = validId && currentId;
 
     return (
         <ThemeProvider theme={theme}>

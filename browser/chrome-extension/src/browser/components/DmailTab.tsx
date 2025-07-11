@@ -31,6 +31,7 @@ import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import TextInputModal from "../../shared/TextInputModal";
+import WarningModal from "../../shared/WarningModal";
 import CopyResolveDID from "../../shared/CopyResolveDID";
 import CopyDID from "../../shared/CopyDID";
 
@@ -45,7 +46,8 @@ const DmailTab: React.FC = () => {
     const [sendCc, setSendCc] = useState<string>("");
     const [sendToList, setSendToList] = useState<string[]>([]);
     const [sendCcList, setSendCcList] = useState<string[]>([]);
-    const [dmailAttachments, setDmailAttachments] = useState({});
+    const [dmailAttachments, setDmailAttachments] = useState<Record<string, any>>({});
+    const [revokeOpen, setRevokeOpen] = useState<boolean>(false);
     const {
         currentId,
         keymaster,
@@ -145,6 +147,23 @@ const DmailTab: React.FC = () => {
             setError(err);
         }
     }
+
+    const confirmRevoke = async () => {
+        if (!keymaster || !dmailDid) {
+            setRevokeOpen(false);
+            return;
+        }
+        try {
+            await keymaster.removeDmail(dmailDid);
+            await keymaster.revokeDID(dmailDid);
+            await refreshInbox();
+            clearAll();
+            setSuccess("DMail revoked");
+        } catch (err: any) {
+            setError(err);
+        }
+        setRevokeOpen(false);
+    };
 
     async function handleUpdate() {
         if (!keymaster || !dmailDid) {
@@ -406,6 +425,18 @@ const DmailTab: React.FC = () => {
         }
     }
 
+    async function editDmail(selected: DmailItem & { did: string }) {
+        setSendTo("");
+        setSendCc("");
+        setSendToList(selected.to);
+        setSendCcList(selected.cc);
+        setSendSubject(selected.message.subject);
+        setSendBody(selected.message.body);
+        setDmailDid(selected.did);
+        await refreshDmailAttachments();
+        setActiveTab("send");
+    }
+
     async function downloadDmailAttachment(name: string) {
         if (!keymaster || !selected?.did) {
             return;
@@ -500,6 +531,7 @@ const DmailTab: React.FC = () => {
 
                             {activeTab==="outbox" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
+                                    <Button variant="contained" onClick={()=> editDmail(selected)}>Edit</Button>
                                     <Button variant="contained" onClick={archive}>Archive</Button>
                                     <Button variant="contained" onClick={del}>Delete</Button>
                                 </Box>
@@ -507,17 +539,7 @@ const DmailTab: React.FC = () => {
 
                             {activeTab==="drafts" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={async ()=>{
-                                        setSendTo("");
-                                        setSendCc("");
-                                        setSendToList(selected.to);
-                                        setSendCcList(selected.cc);
-                                        setSendSubject(selected.message.subject);
-                                        setSendBody(selected.message.body);
-                                        setDmailDid(selected.did);
-                                        await refreshDmailAttachments();
-                                        setActiveTab("send");
-                                    }}>Edit</Button>
+                                    <Button variant="contained" onClick={()=> editDmail(selected)}>Edit</Button>
                                     <Button variant="contained" onClick={archive}>Archive</Button>
                                     <Button variant="contained" onClick={del}>Delete</Button>
                                 </Box>
@@ -739,6 +761,10 @@ const DmailTab: React.FC = () => {
                         Send
                     </Button>
 
+                    <Button variant="contained" color="primary" onClick={() => setRevokeOpen(true)} disabled={!dmailDid}>
+                        Revoke
+                    </Button>
+
                     <Button
                         variant="outlined"
                         color="secondary"
@@ -800,6 +826,14 @@ const DmailTab: React.FC = () => {
 
     return (
         <Box>
+            <WarningModal
+                isOpen={revokeOpen}
+                title="Revoke DMail"
+                warningText="Are you sure you want to revoke this DMail?"
+                onSubmit={confirmRevoke}
+                onClose={() => setRevokeOpen(false)}
+            />
+
             <TextInputModal
                 isOpen={importModalOpen}
                 title="Import DMail"

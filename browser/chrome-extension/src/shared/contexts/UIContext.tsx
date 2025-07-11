@@ -242,6 +242,9 @@ export function UIProvider(
     }
 
     useEffect(() => {
+        if (!refreshFlag) {
+            return;
+        }
         const refresh = async () => {
             await reloadBrowserWallet();
             await refreshAll();
@@ -492,9 +495,9 @@ export function UIProvider(
             return;
         }
         await setCurrentId(cid);
+        await refreshHeld();
         await refreshCurrentDID(cid);
         await refreshNames(cid);
-        await refreshHeld();
         await refreshIssued();
     }
 
