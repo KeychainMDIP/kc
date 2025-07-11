@@ -8,6 +8,14 @@ import React, {
     useEffect,
     useState
 } from "react";
+import {
+    AttachFile,
+    Email,
+    Image,
+    Login,
+    PictureAsPdf,
+    Token,
+} from '@mui/icons-material';
 import { useWalletContext } from "./WalletProvider";
 import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
@@ -29,6 +37,7 @@ interface UIContextValue {
     setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>> | undefined;
     openBrowserWindow: (options: openBrowserValues) => void;
     handleCopyDID: (did: string) => void;
+    getVaultItemIcon: (name: string, item: any) => React.ReactNode;
     refreshAll: () => Promise<void>;
     resetCurrentID: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -624,6 +633,37 @@ export function UIProvider(
         });
     }
 
+    function getVaultItemIcon(name: string, item: any) {
+        const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
+
+        if (!item || !item.type) {
+            return <AttachFile style={iconStyle} />;
+        }
+
+        if (item.type.startsWith('image/')) {
+            return <Image style={iconStyle} />;
+        }
+
+        if (item.type === 'application/pdf') {
+            return <PictureAsPdf style={iconStyle} />;
+        }
+
+        if (item.type === 'application/json') {
+            if (name.startsWith('login:')) {
+                return <Login style={iconStyle} />;
+            }
+
+            if (name === 'dmail') {
+                return <Email style={iconStyle} />;
+            }
+
+            return <Token style={iconStyle} />;
+        }
+
+        // Add more types as needed, e.g. images, PDF, etc.
+        return <AttachFile style={iconStyle} />;
+    }
+
     const value: UIContextValue = {
         selectedTab,
         setSelectedTab,
@@ -633,6 +673,7 @@ export function UIProvider(
         openBrowser,
         setOpenBrowser,
         handleCopyDID,
+        getVaultItemIcon,
         refreshAll,
         resetCurrentID,
         refreshHeld,
