@@ -204,21 +204,31 @@ export function UIProvider(
     }, [keymaster]);
 
     useEffect(() => {
-        const interval = setInterval(async () => {
-            if (!keymaster) {
-                return;
-            }
+        if (!keymaster) {
+            return;
+        }
 
+        const refresh = async () => {
             try {
                 await keymaster.refreshNotices();
                 await refreshPoll();
                 await refreshInbox();
             } catch {}
+        }
+
+        refresh();
+
+        const interval = setInterval(async () => {
+            if (!keymaster) {
+                return;
+            }
+            await refresh();
         }, 10000);
 
         return () => clearInterval(interval);
 
-    }, [keymaster, refreshPoll, refreshInbox]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keymaster]);
 
     async function getValidIds() {
         const valid: string[] = [];
@@ -242,6 +252,9 @@ export function UIProvider(
     }
 
     useEffect(() => {
+        if (!refreshFlag) {
+            return;
+        }
         const refresh = async () => {
             await reloadBrowserWallet();
             await refreshAll();
@@ -492,9 +505,9 @@ export function UIProvider(
             return;
         }
         await setCurrentId(cid);
+        await refreshHeld();
         await refreshCurrentDID(cid);
         await refreshNames(cid);
-        await refreshHeld();
         await refreshIssued();
     }
 
