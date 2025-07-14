@@ -4,6 +4,7 @@ import {
     Box,
     Button,
     IconButton,
+    InputAdornment,
     MenuItem,
     Select,
     Tab,
@@ -14,6 +15,7 @@ import {
     TableRow,
     Tabs,
     TextField,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import {
@@ -24,7 +26,11 @@ import {
     Drafts,
     Inbox,
     Outbox,
+    Refresh,
+    Search,
     Send,
+    Tune,
+    UploadFile,
 } from "@mui/icons-material";
 import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
@@ -34,6 +40,7 @@ import TextInputModal from "../../shared/TextInputModal";
 import WarningModal from "../../shared/WarningModal";
 import CopyResolveDID from "../../shared/CopyResolveDID";
 import CopyDID from "../../shared/CopyDID";
+import DmailSearchModal, { AdvancedSearchParams } from "./DmailSearchModal";
 
 const DmailTab: React.FC = () => {
     const [registry, setRegistry] = useState<string>("hyperswarm");
@@ -48,6 +55,9 @@ const DmailTab: React.FC = () => {
     const [sendCcList, setSendCcList] = useState<string[]>([]);
     const [dmailAttachments, setDmailAttachments] = useState<Record<string, any>>({});
     const [revokeOpen, setRevokeOpen] = useState<boolean>(false);
+    const [searchQuery, setSearchQuery] = useState<string>("");
+    const [searchResults, setSearchResults] = useState<Record<string, DmailItem>>({});
+    const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(false);
     const {
         currentId,
         keymaster,
@@ -65,7 +75,7 @@ const DmailTab: React.FC = () => {
     } = useUIContext();
 
     const TAG = { inbox: "inbox", sent: "sent", draft: "draft", archived: "archived", deleted: "deleted" };
-    type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send";
+    type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send" | "results";
 
     const [activeTab, setActiveTab] = useState<Folder>("inbox");
 
@@ -299,6 +309,10 @@ const DmailTab: React.FC = () => {
             return dmailList;
         }
 
+        if (activeTab === "results") {
+            return searchResults;
+        }
+
         const out: Record<string, DmailItem> = {};
         for (const [did, itm] of Object.entries(dmailList)) {
             const has = (t:string)=>itm.tags?.includes(t);
@@ -463,6 +477,61 @@ const DmailTab: React.FC = () => {
         } catch (error: any) {
             setError(error);
         }
+    }
+
+    function runSimpleSearch(term: string) {
+        const q = term.trim().toLowerCase();
+        const res: Record<string, DmailItem> = {};
+
+        if (!q) {
+            setSearchResults(res);
+            return;
+        }
+
+        Object.entries(dmailList).forEach(([did, itm]) => {
+            const body = itm.message.body.toLowerCase();
+            const subj = itm.message.subject.toLowerCase();
+            const from = itm.sender.toLowerCase();
+            const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
+
+            if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
+                res[did] = itm;
+            }
+        });
+
+        setSearchResults(res);
+        setActiveTab("results");
+    }
+
+    function runAdvancedSearch(p: AdvancedSearchParams) {
+        const res: Record<string, DmailItem> = {};
+
+        Object.entries(dmailList).forEach(([did, itm]) => {
+            if (p.from && !itm.sender.toLowerCase().includes(p.from.toLowerCase())) {
+                return;
+            }
+            if (p.to) {
+                const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
+                if (!tocc.includes(p.to.toLowerCase())) {
+                    return;
+                }
+            }
+            if (p.subject && !itm.message.subject.toLowerCase().includes(p.subject.toLowerCase())) {
+                return;
+            }
+            if (p.body && !itm.message.body.toLowerCase().includes(p.body.toLowerCase())) {
+                return;
+            }
+            if (p.hasAttach && (!itm.attachments || Object.keys(itm.attachments).length === 0)) {
+                return;
+            }
+
+            res[did] = itm;
+        });
+
+        setSearchResults(res);
+        setAdvancedOpen(false);
+        setActiveTab("results");
     }
 
     // eslint-disable-next-line sonarjs/no-duplicate-string
@@ -844,14 +913,48 @@ const DmailTab: React.FC = () => {
                 onClose={() => setImportModalOpen(false)}
             />
 
-            <Box sx={{ mt: 1, mb: 1, display: "flex", gap: 1 }}>
-                <Button variant="outlined" onClick={handleRefresh}>
-                    Refresh
-                </Button>
+            <DmailSearchModal
+                open={advancedOpen}
+                onClose={() => setAdvancedOpen(false)}
+                onSearch={runAdvancedSearch}
+            />
 
-                <Button variant="outlined" onClick={() => setImportModalOpen(true)}>
-                    Import
-                </Button>
+            <Box sx={{ mt: 1, mb: 1, display: "flex", alignItems: "center", gap: 1 }}>
+                <Tooltip title="Refresh">
+                    <IconButton onClick={handleRefresh}>
+                        <Refresh />
+                    </IconButton>
+                </Tooltip>
+
+                <Tooltip title="Import DMail">
+                    <IconButton onClick={() => setImportModalOpen(true)}>
+                        <UploadFile />
+                    </IconButton>
+                </Tooltip>
+
+                <TextField
+                    variant="outlined"
+                    size="small"
+                    placeholder="Search…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            runSimpleSearch(searchQuery);
+                        }
+                    }}
+                    InputProps={{
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <Tooltip title="Advanced search">
+                                    <IconButton onClick={() => setAdvancedOpen(true)}>
+                                        <Tune />
+                                    </IconButton>
+                                </Tooltip>
+                            </InputAdornment>
+                        )
+                    }}
+                />
             </Box>
 
             <Tabs
@@ -871,6 +974,9 @@ const DmailTab: React.FC = () => {
                 <Tab label="Archive" value="archive" icon={<Archive />} />
                 <Tab label="Trash"   value="trash"   icon={<Delete />} />
                 <Tab label="All"     value="all"     icon={<AllInbox />} />
+                {Object.keys(searchResults).length > 0 && (
+                    <Tab label="Results" value="results" icon={<Search />} />
+                )}
                 <Tab label="Send"    value="send"    icon={<Send />} />
             </Tabs>
 
