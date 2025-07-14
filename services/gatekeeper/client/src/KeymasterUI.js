@@ -1,4 +1,4 @@
-import {useEffect, useState, useMemo, useCallback} from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
     Alert,
     Autocomplete,
@@ -81,6 +81,7 @@ const DmailTags = {
     SENT: 'sent',
     ARCHIVED: 'archived',
     DELETED: 'deleted',
+    UNREAD: 'unread',
 };
 
 function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
@@ -1099,11 +1100,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    useEffect(() => {
+        if (selectedDmailDID && dmailList[selectedDmailDID]) {
+            setSelectedDmail(dmailList[selectedDmailDID]);
+        } else {
+            setSelectedDmail(null);
+        }
+    }, [selectedDmailDID, dmailList]);
+
     async function refreshDmail() {
         try {
             await keymaster.refreshNotices();
             await refreshInbox();
-            setSelectedDmail(null);
             setSelectedDmailDID('');
             setDmailSubject('');
             setDmailBody('');
@@ -1459,6 +1467,40 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailBody(selectedDmail.message.body);
         setDmailAttachments(selectedDmail.attachments || {});
         setDmailTab('send');
+    }
+
+    function isDmailUnread(item) {
+        return item.tags && item.tags.includes(DmailTags.UNREAD);
+    }
+
+    async function markDmailUnread() {
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+
+            if (!tags.includes(DmailTags.UNREAD)) {
+                const selectedDID = selectedDmailDID;
+                await keymaster.fileDmail(selectedDmailDID, [...tags, DmailTags.UNREAD]);
+                await refreshDmail();
+                setSelectedDmailDID(selectedDID);
+            }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function markDmailRead() {
+        try {
+            const tags = dmailList[selectedDmailDID]?.tags || [];
+
+            if (tags.includes(DmailTags.UNREAD)) {
+                const selectedDID = selectedDmailDID;
+                await keymaster.fileDmail(selectedDmailDID, tags.filter(tag => tag !== DmailTags.UNREAD));
+                await refreshDmail();
+                setSelectedDmailDID(selectedDID);
+            }
+        } catch (error) {
+            showError(error);
+        }
     }
 
     async function showMnemonic() {
@@ -2107,7 +2149,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     const arraysEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
-    const refreshInbox = useCallback( async() => {
+    const refreshInbox = useCallback(async () => {
         try {
             const msgs = await keymaster.listDmail();
             if (JSON.stringify(msgs) !== JSON.stringify(dmailList)) {
@@ -2118,7 +2160,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }, [keymaster, dmailList]);
 
-    const refreshPoll = useCallback( async() => {
+    const refreshPoll = useCallback(async () => {
         try {
             const walletNames = await keymaster.listNames();
             const names = Object.keys(walletNames).sort((a, b) =>
@@ -2148,17 +2190,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 }
                 setPollList(polls);
             }
-        } catch {}
+        } catch { }
     }, [keymaster, nameList, pollList]);
 
     // Check notices and update DMail and polls every 30 seconds
     useEffect(() => {
-        const interval = setInterval(async() => {
+        const interval = setInterval(async () => {
             try {
                 await keymaster.refreshNotices();
                 await refreshInbox();
                 await refreshPoll();
-            } catch {}
+            } catch { }
         }, 30000);
 
         return () => clearInterval(interval);
@@ -4220,7 +4262,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     value={dmailTab}
                                     onChange={(event, newTab) => {
                                         setDmailTab(newTab);
-                                        setSelectedDmail(null);
                                         setSelectedDmailDID('');
                                     }}
                                     indicatorColor="primary"
@@ -4255,15 +4296,22 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             key={did}
                                                             hover
                                                             selected={selectedDmail && selectedDmail === item}
-                                                            onClick={() => {
-                                                                setSelectedDmail(item);
-                                                                setSelectedDmailDID(did);
-                                                            }}
+                                                            onClick={() => setSelectedDmailDID(did)}
                                                             style={{ cursor: 'pointer' }}
                                                         >
-                                                            <TableCell>{item.sender}</TableCell>
-                                                            <TableCell>{item.message.subject}</TableCell>
-                                                            <TableCell>{item.date}</TableCell>
+                                                            {isDmailUnread(item) ? (
+                                                                <>
+                                                                    <TableCell sx={{ fontWeight: 'bold', color: 'blue' }}>{item.sender}</TableCell>
+                                                                    <TableCell sx={{ fontWeight: 'bold', color: 'blue' }}>{item.message.subject}</TableCell>
+                                                                    <TableCell sx={{ fontWeight: 'bold', color: 'blue' }}>{item.date}</TableCell>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <TableCell>{item.sender}</TableCell>
+                                                                    <TableCell>{item.message.subject}</TableCell>
+                                                                    <TableCell>{item.date}</TableCell>
+                                                                </>
+                                                            )}
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
@@ -4286,6 +4334,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         {selectedDmail && dmailTab === 'inbox' &&
                                             <Box style={{ padding: 16 }}>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        {isDmailUnread(selectedDmail) ? (
+                                                            <Button variant="contained" color="primary" onClick={markDmailRead}>
+                                                                Mark as Read
+                                                            </Button>
+                                                        ) : (
+                                                            <Button variant="contained" color="primary" onClick={markDmailUnread}>
+                                                                Mark as Unread
+                                                            </Button>
+                                                        )}
+                                                    </Grid>
                                                     <Grid item>
                                                         <Button variant="contained" color="primary" onClick={archiveDmail}>
                                                             Archive

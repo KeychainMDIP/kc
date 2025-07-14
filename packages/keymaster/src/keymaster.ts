@@ -74,6 +74,7 @@ export enum DmailTags {
     SENT = 'sent',
     ARCHIVED = 'archived',
     DELETED = 'deleted',
+    UNREAD = 'unread',
 }
 
 export enum PollTags {
@@ -3252,7 +3253,7 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
-        return this.fileDmail(did, [DmailTags.INBOX]);
+        return this.fileDmail(did, [DmailTags.INBOX, DmailTags.UNREAD]);
     }
 
     async verifyDIDList(didList: string[]): Promise<string[]> {
