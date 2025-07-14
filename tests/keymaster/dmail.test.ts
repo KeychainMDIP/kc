@@ -284,7 +284,7 @@ describe('listDmail', () => {
         expect(dmails[did].message).toStrictEqual(mock);
         expect(dmails[did].to).toStrictEqual(['Alice']);
         expect(dmails[did].cc).toStrictEqual([bob]);
-        expect(dmails[did].tags).toStrictEqual(['inbox']);
+        expect(dmails[did].tags).toStrictEqual([DmailTags.INBOX, DmailTags.UNREAD]);
     });
 
     it('should include attachments', async () => {
@@ -499,7 +499,7 @@ describe('importDmail', () => {
         expect(ok).toBe(true);
 
         const dmails = await keymaster.listDmail();
-        expect(dmails[did].tags).toStrictEqual(['inbox']);
+        expect(dmails[did].tags).toStrictEqual([DmailTags.INBOX, DmailTags.UNREAD]);
     });
 
     it('should return false for invalid dmail', async () => {
