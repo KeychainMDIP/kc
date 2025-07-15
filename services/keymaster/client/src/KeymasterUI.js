@@ -25,9 +25,10 @@ import {
     TableContainer,
     Table,
     TableBody,
+    TableCell,
     TableHead,
     TableRow,
-    TableCell,
+    TableSortLabel,
     TextField,
     Tooltip,
     Typography,
@@ -156,6 +157,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailCcList, setDmailCcList] = useState([]);
     const [dmailDID, setDmailDID] = useState('');
     const [dmailAttachments, setDmailAttachments] = useState({});
+    const [dmailSortBy, setDmailSortBy] = useState('date');
+    const [dmailSortOrder, setDmailSortOrder] = useState('desc');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -2754,6 +2757,33 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         return filtered;
     }, [dmailList, dmailTab]);
 
+    const sortedDmailEntries = useMemo(() => {
+        const entries = Object.entries(filteredDmailList);
+        const column = dmailSortBy;
+        const direction = dmailSortOrder;
+
+        const compare = (a, b) => {
+            const [_, itemA] = a;
+            const [__, itemB] = b;
+            let valA, valB;
+            if (column === 'sender') {
+                valA = itemA.sender?.toLowerCase() || '';
+                valB = itemB.sender?.toLowerCase() || '';
+            } else if (column === 'subject') {
+                valA = itemA.message?.subject?.toLowerCase() || '';
+                valB = itemB.message?.subject?.toLowerCase() || '';
+            } else if (column === 'date') {
+                valA = new Date(itemA.date);
+                valB = new Date(itemB.date);
+            }
+            if (valA < valB) return direction === 'asc' ? -1 : 1;
+            if (valA > valB) return direction === 'asc' ? 1 : -1;
+            return 0;
+        };
+
+        return entries.sort(compare);
+    }, [filteredDmailList, dmailSortBy, dmailSortOrder]);
+
     return (
         <div className="App">
 
@@ -4285,13 +4315,46 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Sender</TableCell>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Subject</TableCell>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Date</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'sender'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('sender');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Sender
+                                                            </TableSortLabel>
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'subject'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('subject');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Subject
+                                                            </TableSortLabel>
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'date'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('date');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Date
+                                                            </TableSortLabel>
+                                                        </TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(filteredDmailList).map(([did, item], idx) => (
+                                                    {sortedDmailEntries.map(([did, item], idx) => (
                                                         <TableRow
                                                             key={did}
                                                             hover
