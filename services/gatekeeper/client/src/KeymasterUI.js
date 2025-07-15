@@ -4694,14 +4694,21 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         {!dmailDID &&
-                                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
-                                                        Create Dmail
-                                                    </Button>
+                                            <Grid item>
+                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
+                                                            Create Dmail
+                                                        </Button>
+                                                    </Grid>
+                                                    <Grid item>
+                                                        <RegistrySelect />
+                                                    </Grid>
                                                 </Grid>
                                                 <Grid item>
-                                                    <RegistrySelect />
+                                                    <Button variant="contained" color="primary" onClick={clearSendDmail}>
+                                                        Clear Dmail
+                                                    </Button>
                                                 </Grid>
                                             </Grid>
                                         }
