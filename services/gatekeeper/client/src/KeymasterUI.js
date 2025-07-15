@@ -25,9 +25,10 @@ import {
     TableContainer,
     Table,
     TableBody,
+    TableCell,
     TableHead,
     TableRow,
-    TableCell,
+    TableSortLabel,
     TextField,
     Tooltip,
     Typography,
@@ -4314,9 +4315,42 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             <Table size="small" sx={{ tableLayout: 'auto', width: 'auto' }}>
                                                 <TableHead>
                                                     <TableRow>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Sender</TableCell>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Subject</TableCell>
-                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>Date</TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'sender'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('sender');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Sender
+                                                            </TableSortLabel>
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'subject'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('subject');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Subject
+                                                            </TableSortLabel>
+                                                        </TableCell>
+                                                        <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                                                            <TableSortLabel
+                                                                active={dmailSortBy === 'date'}
+                                                                direction={dmailSortOrder}
+                                                                onClick={() => {
+                                                                    setDmailSortBy('date');
+                                                                    setDmailSortOrder(dmailSortOrder === 'asc' ? 'desc' : 'asc');
+                                                                }}
+                                                            >
+                                                                Date
+                                                            </TableSortLabel>
+                                                        </TableCell>
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
