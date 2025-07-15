@@ -159,6 +159,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailAttachments, setDmailAttachments] = useState({});
     const [dmailSortBy, setDmailSortBy] = useState('date');
     const [dmailSortOrder, setDmailSortOrder] = useState('desc');
+    const [dmailForwarding, setDmailForwarding] = useState('');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -1115,13 +1116,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             await keymaster.refreshNotices();
             await refreshInbox();
+            await clearSendDmail();
             setSelectedDmailDID('');
-            setDmailSubject('');
-            setDmailBody('');
-            setDmailTo('');
-            setDmailCc('');
-            setDmailAttachments({});
-            setDmailDID('');
         } catch (error) {
             showError(error);
         }
@@ -1230,6 +1226,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const did = await keymaster.createDmail(dmail, { registry });
             setDmailDID(did);
+
+            if (dmailForwarding) {
+                const attachments = await keymaster.listDmailAttachments(dmailForwarding) || {};
+                for (const name of Object.keys(attachments)) {
+                    const buffer = await keymaster.getDmailAttachment(dmailForwarding, name);
+                    await keymaster.addDmailAttachment(did, name, buffer);
+                }
+
+                setDmailAttachments(await keymaster.listDmailAttachments(did) || {});
+            }
         } catch (error) {
             showError(error);
         }
@@ -1411,6 +1417,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailSubject('');
         setDmailBody('');
         setDmailAttachments({});
+        setDmailForwarding('');
     }
 
     async function forwardDmail() {
@@ -1418,6 +1425,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
         clearSendDmail();
 
+        setDmailForwarding(selectedDmailDID);
         setDmailSubject(`Fwd: ${selectedDmail.message.subject}`);
         setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
         setDmailTab('send');
@@ -2763,8 +2771,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         const direction = dmailSortOrder;
 
         const compare = (a, b) => {
-            const [_, itemA] = a;
-            const [__, itemB] = b;
+            const itemA = a[1];
+            const itemB = b[1];
             let valA, valB;
             if (column === 'sender') {
                 valA = itemA.sender?.toLowerCase() || '';
