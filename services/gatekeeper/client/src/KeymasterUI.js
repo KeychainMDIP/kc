@@ -156,6 +156,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailCcList, setDmailCcList] = useState([]);
     const [dmailDID, setDmailDID] = useState('');
     const [dmailAttachments, setDmailAttachments] = useState({});
+    const [dmailSortBy, setDmailSortBy] = useState('date');
+    const [dmailSortOrder, setDmailSortOrder] = useState('desc');
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -2754,6 +2756,33 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         return filtered;
     }, [dmailList, dmailTab]);
 
+    const sortedDmailEntries = useMemo(() => {
+        const entries = Object.entries(filteredDmailList);
+        const column = dmailSortBy;
+        const direction = dmailSortOrder;
+
+        const compare = (a, b) => {
+            const [_, itemA] = a;
+            const [__, itemB] = b;
+            let valA, valB;
+            if (column === 'sender') {
+                valA = itemA.sender?.toLowerCase() || '';
+                valB = itemB.sender?.toLowerCase() || '';
+            } else if (column === 'subject') {
+                valA = itemA.message?.subject?.toLowerCase() || '';
+                valB = itemB.message?.subject?.toLowerCase() || '';
+            } else if (column === 'date') {
+                valA = new Date(itemA.date);
+                valB = new Date(itemB.date);
+            }
+            if (valA < valB) return direction === 'asc' ? -1 : 1;
+            if (valA > valB) return direction === 'asc' ? 1 : -1;
+            return 0;
+        };
+
+        return entries.sort(compare);
+    }, [filteredDmailList, dmailSortBy, dmailSortOrder]);
+
     return (
         <div className="App">
 
@@ -4291,7 +4320,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(filteredDmailList).map(([did, item], idx) => (
+                                                    {sortedDmailEntries.map(([did, item], idx) => (
                                                         <TableRow
                                                             key={did}
                                                             hover
