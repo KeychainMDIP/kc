@@ -58,6 +58,7 @@ const DmailTab: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [searchResults, setSearchResults] = useState<Record<string, DmailItem>>({});
     const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(false);
+    const [forwardSourceDid, setForwardSourceDid] = useState<string | null>(null);
     const {
         currentId,
         keymaster,
@@ -74,7 +75,14 @@ const DmailTab: React.FC = () => {
         refreshInbox,
     } = useUIContext();
 
-    const TAG = { inbox: "inbox", sent: "sent", draft: "draft", archived: "archived", deleted: "deleted" };
+    const TAG = {
+        inbox: "inbox",
+        sent: "sent",
+        draft: "draft",
+        archived: "archived",
+        deleted: "deleted",
+        unread: "unread"
+    };
     type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send" | "results";
 
     const [activeTab, setActiveTab] = useState<Folder>("inbox");
@@ -151,7 +159,21 @@ const DmailTab: React.FC = () => {
 
             const did = await keymaster.createDmail(dmail, { registry });
             setDmailDid(did);
-            await refreshDmailAttachments();
+
+            const pendingAtt = { ...dmailAttachments };
+
+            if (forwardSourceDid && Object.keys(pendingAtt).length) {
+                for (const name of Object.keys(pendingAtt)) {
+                    const buf = await keymaster.getDmailAttachment(forwardSourceDid, name);
+                    if (buf) {
+                        await keymaster.addDmailAttachment(did, name, buf);
+                    }
+                }
+            }
+
+            setForwardSourceDid(null);
+            setDmailAttachments(pendingAtt);
+            refreshDmailAttachments().catch(() => undefined);
             setSuccess(`Draft created ${did}`);
         } catch (err: any) {
             setError(err);
@@ -273,6 +295,8 @@ const DmailTab: React.FC = () => {
             subject: `Fwd: ${selected.message.subject}`,
             body: `\n\n----- Forwarded message -----\n${selected.message.body}`,
         });
+        setDmailAttachments(selected.attachments ?? {});
+        setForwardSourceDid(selected.did);
     }
 
     function handleReply(replyAll = false) {
@@ -302,6 +326,7 @@ const DmailTab: React.FC = () => {
         setSendBody("");
         setDmailDid("");
         setDmailAttachments({});
+        setForwardSourceDid(null);
     }
 
     function filteredList(): Record<string, DmailItem> {
@@ -479,6 +504,14 @@ const DmailTab: React.FC = () => {
         }
     }
 
+    async function markAsRead(did: string, tags: string[] = []) {
+        if (!keymaster || !tags.includes(TAG.unread)) {
+            return;
+        }
+        await fileTags(did, tags.filter(t => t !== TAG.unread));
+        await refreshInbox();
+    }
+
     function runSimpleSearch(term: string) {
         const q = term.trim().toLowerCase();
         const res: Record<string, DmailItem> = {};
@@ -547,6 +580,30 @@ const DmailTab: React.FC = () => {
             : d.toLocaleDateString();
     }
 
+    function classifyFolder(item: DmailItem): Folder {
+        const tags = item.tags ?? [];
+
+        if (tags.includes(TAG.deleted)) {
+            return "trash";
+        }
+        if (tags.includes(TAG.archived)) {
+            return "archive";
+        }
+        if (tags.includes(TAG.draft)) {
+            return "drafts";
+        }
+        if (tags.includes(TAG.sent)) {
+            return "outbox";
+        }
+        if (tags.includes(TAG.inbox)) {
+            return "inbox";
+        }
+
+        return "all";
+    }
+
+    const cat: Folder = activeTab === "results" && selected ? classifyFolder(selected) : activeTab;
+
     const renderInbox = () => (
         <Box display="flex" flexDirection="column" mt={1}>
             <TableContainer sx={{ maxHeight: 600 }}>
@@ -554,19 +611,25 @@ const DmailTab: React.FC = () => {
                     <TableBody>
                         {Object.entries(filteredList())
                             .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                            .map(([did, item]) => (
-                                <TableRow
-                                    key={did}
-                                    hover
-                                    selected={selected === item}
-                                    onClick={() => setSelected({...item, did})}
-                                    sx={{ cursor: "pointer" }}
-                                >
-                                    <TableCell sx={senderSx}>{item.sender}</TableCell>
-                                    <TableCell sx={subjectSx}>{item.message.subject}</TableCell>
-                                    <TableCell sx={dateSx}>{shortDateOrTime(item.date)}</TableCell>
-                                </TableRow>
-                            ))
+                            .map(([did, item]) => {
+                                const unread = item.tags?.includes(TAG.unread);
+                                return (
+                                    <TableRow
+                                        key={did}
+                                        hover
+                                        selected={selected === item}
+                                        onClick={() => {
+                                            setSelected({ ...item, did });
+                                            markAsRead(did, item.tags);
+                                        }}
+                                        sx={{ cursor: "pointer" }}
+                                    >
+                                        <TableCell sx={{...senderSx, fontWeight: unread ? 600 : 400 }}>{item.sender}</TableCell>
+                                        <TableCell sx={{...subjectSx, fontWeight: unread ? 600 : 400 }}>{item.message.subject}</TableCell>
+                                        <TableCell sx={{...dateSx, fontWeight: unread ? 600 : 400 }}>{shortDateOrTime(item.date)}</TableCell>
+                                    </TableRow>
+                                );
+                            })
                         }
                     </TableBody>
                 </Table>
@@ -588,7 +651,7 @@ const DmailTab: React.FC = () => {
                         </Box>
 
                         <Box sx={{ my: 1 }}>
-                            {activeTab==="inbox" && (
+                            {cat==="inbox" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
                                     <Button variant="contained" onClick={handleForward}>Forward</Button>
                                     <Button variant="contained" onClick={() => handleReply(false)}>Reply</Button>
@@ -598,7 +661,7 @@ const DmailTab: React.FC = () => {
                                 </Box>
                             )}
 
-                            {activeTab==="outbox" && (
+                            {(cat==="outbox" || cat==="drafts") && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
                                     <Button variant="contained" onClick={()=> editDmail(selected)}>Edit</Button>
                                     <Button variant="contained" onClick={archive}>Archive</Button>
@@ -606,22 +669,14 @@ const DmailTab: React.FC = () => {
                                 </Box>
                             )}
 
-                            {activeTab==="drafts" && (
-                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={()=> editDmail(selected)}>Edit</Button>
-                                    <Button variant="contained" onClick={archive}>Archive</Button>
-                                    <Button variant="contained" onClick={del}>Delete</Button>
-                                </Box>
-                            )}
-
-                            {activeTab==="archive" && (
+                            {cat==="archive" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
                                     <Button variant="contained" onClick={unarchive}>Unarchive</Button>
                                     <Button variant="contained" onClick={del}>Delete</Button>
                                 </Box>
                             )}
 
-                            {activeTab==="trash" && (
+                            {cat==="trash" && (
                                 <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
                                     <Button variant="contained" onClick={undelete}>Undelete</Button>
                                 </Box>
@@ -844,49 +899,49 @@ const DmailTab: React.FC = () => {
                     </Button>
                 </Box>
 
-                {dmailDid && (
-                    <Box>
-                        <Box display="flex" flexDirection="column" gap={1}>
-                            <Button
-                                variant="outlined"
-                                component="label"
-                                sx={{ width: 200 }}
-                                onClick={() => document.getElementById("attachmentUpload")!.click()}
-                            >
-                                Add attachment
-                            </Button>
+                <Box display="flex" flexDirection="column" gap={1}>
+                    <Button
+                        variant="outlined"
+                        component="label"
+                        sx={{ width: 200 }}
+                        disabled={!dmailDid}
+                        onClick={() => dmailDid && document.getElementById("attachmentUpload")!.click()}
+                    >
+                        Add attachment
+                    </Button>
 
-                            <input
-                                hidden
-                                type="file"
-                                onChange={uploadDmailAttachment}
-                                id="attachmentUpload"
-                            />
+                    <input
+                        hidden
+                        type="file"
+                        onChange={uploadDmailAttachment}
+                        id="attachmentUpload"
+                    />
 
-                            {Object.keys(dmailAttachments).length > 0 && (
-                                <Box>
-                                    {Object.entries(dmailAttachments).map(([name, item]) => (
-                                        <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
-                                            {getVaultItemIcon(name, item)}
-                                            <Typography>{name}</Typography>
-                                            <Button
-                                                size="small"
-                                                color="error"
-                                                variant="outlined"
-                                                onClick={() => removeDmailAttachment(name)}
-                                            >
-                                                Remove
-                                            </Button>
-                                        </Box>
-                                    ))}
+                    {Object.keys(dmailAttachments).length > 0 && (
+                        <Box>
+                            {Object.entries(dmailAttachments).map(([name, item]) => (
+                                <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
+                                    {getVaultItemIcon(name, item)}
+                                    <Typography>{name}</Typography>
+                                    <Button
+                                        size="small"
+                                        color="error"
+                                        variant="outlined"
+                                        disabled={!dmailDid}
+                                        onClick={() => dmailDid && removeDmailAttachment(name)}
+                                    >
+                                        Remove
+                                    </Button>
                                 </Box>
-                            )}
+                            ))}
                         </Box>
+                    )}
+                </Box>
 
-                        <Box display="flex" alignItems="center" gap={1} sx={{ mt: 1 }}>
-                            <Typography sx={{ fontFamily: 'monospace' }}>{dmailDid}</Typography>
-                            <CopyDID did={dmailDid} />
-                        </Box>
+                {dmailDid && (
+                    <Box display="flex" alignItems="center" gap={1} sx={{ mt: 1 }}>
+                        <Typography sx={{ fontFamily: 'monospace' }}>{dmailDid}</Typography>
+                        <CopyDID did={dmailDid} />
                     </Box>
                 )}
             </Box>
