@@ -64,6 +64,7 @@ import {
     PictureAsPdf,
     Poll,
     Schema,
+    Search,
     Send,
     Token,
 } from "@mui/icons-material";
@@ -160,6 +161,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailSortBy, setDmailSortBy] = useState('date');
     const [dmailSortOrder, setDmailSortOrder] = useState('desc');
     const [dmailForwarding, setDmailForwarding] = useState('');
+    const [dmailSearchQuery, setDmailSearchQuery] = useState('');
+    const [dmailSearchResults, setDmailSearchResults] = useState({});
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -1514,6 +1517,30 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    function runSimpleDmailSearch(term) {
+        const q = term.trim().toLowerCase();
+        const res = {};
+
+        if (!q) {
+            setDmailSearchResults(res);
+            return;
+        }
+
+        Object.entries(dmailList).forEach(([did, item]) => {
+            const body = item.message.body.toLowerCase();
+            const subj = item.message.subject.toLowerCase();
+            const from = item.sender.toLowerCase();
+            const tocc = [...item.to, ...(item.cc ?? [])].join(", ").toLowerCase();
+
+            if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
+                res[did] = item;
+            }
+        });
+
+        setDmailSearchResults(res);
+        setDmailTab("results");
+    }
+
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
@@ -2735,6 +2762,10 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             return dmailList;
         }
 
+        if (dmailTab === "results") {
+            return dmailSearchResults;
+        }
+
         let filtered = {};
 
         for (const [did, item] of Object.entries(dmailList)) {
@@ -2763,7 +2794,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
 
         return filtered;
-    }, [dmailList, dmailTab]);
+    }, [dmailList, dmailSearchResults, dmailTab]);
 
     const sortedDmailEntries = useMemo(() => {
         const entries = Object.entries(filteredDmailList);
@@ -4294,6 +4325,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                         Import...
                                     </Button>
                                 </Grid>
+                                <Grid item>
+                                    <TextField
+                                        variant="outlined"
+                                        size="small"
+                                        placeholder="Search…"
+                                        value={dmailSearchQuery}
+                                        onChange={(e) => setDmailSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                runSimpleDmailSearch(dmailSearchQuery);
+                                            }
+                                        }}
+                                    />
+                                </Grid>
                             </Grid>
                             <Box>
                                 <Tabs
@@ -4313,6 +4358,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="archive" value="archive" label={'Archived'} icon={<Archive />} />
                                     <Tab key="trash" value="trash" label={'Trash'} icon={<Delete />} />
                                     <Tab key="all" value="all" label={'All Dmail'} icon={<AllInbox />} />
+                                    {Object.keys(dmailSearchResults).length > 0 && (
+                                        <Tab label="Results" value="results" icon={<Search />} />
+                                    )}
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
