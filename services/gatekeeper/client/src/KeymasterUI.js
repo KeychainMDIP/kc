@@ -46,6 +46,7 @@ import {
     Clear,
     Groups,
     Delete,
+    Download,
     Drafts,
     Edit,
     Email,
@@ -63,6 +64,7 @@ import {
     PermIdentity,
     PictureAsPdf,
     Poll,
+    Refresh,
     Schema,
     Search,
     Send,
@@ -1517,28 +1519,30 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    function runSimpleDmailSearch(term) {
-        const q = term.trim().toLowerCase();
+    async function searchDmail() {
+        const q = dmailSearchQuery.trim().toLowerCase();
         const res = {};
 
-        if (!q) {
-            setDmailSearchResults(res);
-            return;
+        if (q) {
+            Object.entries(dmailList).forEach(([did, item]) => {
+                const body = item.message.body.toLowerCase();
+                const subj = item.message.subject.toLowerCase();
+                const from = item.sender.toLowerCase();
+                const tocc = [...item.to, ...(item.cc ?? [])].join(", ").toLowerCase();
+
+                if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
+                    res[did] = item;
+                }
+            });
         }
 
-        Object.entries(dmailList).forEach(([did, item]) => {
-            const body = item.message.body.toLowerCase();
-            const subj = item.message.subject.toLowerCase();
-            const from = item.sender.toLowerCase();
-            const tocc = [...item.to, ...(item.cc ?? [])].join(", ").toLowerCase();
-
-            if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
-                res[did] = item;
-            }
-        });
-
         setDmailSearchResults(res);
-        setDmailTab("results");
+        setDmailTab('results');
+    }
+
+    async function clearDmailSearch() {
+        setDmailSearchQuery('');
+        setDmailSearchResults({});
     }
 
     async function showMnemonic() {
@@ -2769,26 +2773,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         let filtered = {};
 
         for (const [did, item] of Object.entries(dmailList)) {
-            if (dmailTab === 'inbox' &&
-                item.tags.includes(DmailTags.INBOX) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            const has = (tag) => item.tags.includes(tag);
+            const not = (tag) => !has(tag);
+
+            if (dmailTab === 'inbox' && has(DmailTags.INBOX) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'outbox' &&
-                item.tags.includes(DmailTags.SENT) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            } else if (dmailTab === 'outbox' && has(DmailTags.SENT) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'drafts' &&
-                item.tags.includes(DmailTags.DRAFT) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            } else if (dmailTab === 'drafts' && has(DmailTags.DRAFT) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'archive' &&
-                item.tags.includes(DmailTags.ARCHIVED) &&
-                !item.tags.includes(DmailTags.DELETED)) {
+            } else if (dmailTab === 'archive' && has(DmailTags.ARCHIVED) && not(DmailTags.DELETED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.DELETED)) {
+            } else if (dmailTab === 'trash' && has(DmailTags.DELETED)) {
                 filtered[did] = item;
             }
         }
@@ -4314,32 +4310,44 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
                     {tab === 'dmail' &&
                         <Box>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={refreshDmail}>
-                                        Refresh
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={importDmail}>
-                                        Import...
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <TextField
-                                        variant="outlined"
-                                        size="small"
-                                        placeholder="Search…"
-                                        value={dmailSearchQuery}
-                                        onChange={(e) => setDmailSearchQuery(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                                runSimpleDmailSearch(dmailSearchQuery);
-                                            }
-                                        }}
-                                    />
-                                </Grid>
-                            </Grid>
+                            <Box sx={{ mt: 1, mb: 1, display: "flex", alignItems: "center", gap: 1 }}>
+                                <Tooltip title="Refresh DMail">
+                                    <IconButton onClick={refreshDmail}>
+                                        <Refresh />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <Tooltip title="Import DMail">
+                                    <IconButton onClick={importDmail}>
+                                        <Download />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <TextField
+                                    variant="outlined"
+                                    size="small"
+                                    placeholder="Search…"
+                                    value={dmailSearchQuery}
+                                    onChange={(e) => setDmailSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            searchDmail();
+                                        }
+                                    }}
+                                />
+
+                                <Tooltip title="Search DMail">
+                                    <IconButton onClick={searchDmail}>
+                                        <Search />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <Tooltip title="Clear Search">
+                                    <IconButton onClick={clearDmailSearch}>
+                                        <Clear />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
                             <Box>
                                 <Tabs
                                     value={dmailTab}
@@ -4358,9 +4366,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="archive" value="archive" label={'Archived'} icon={<Archive />} />
                                     <Tab key="trash" value="trash" label={'Trash'} icon={<Delete />} />
                                     <Tab key="all" value="all" label={'All Dmail'} icon={<AllInbox />} />
-                                    {Object.keys(dmailSearchResults).length > 0 && (
-                                        <Tab label="Results" value="results" icon={<Search />} />
-                                    )}
+                                    <Tab key="results" value="results" label={'Results'} icon={<Search />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
