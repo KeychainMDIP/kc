@@ -1526,7 +1526,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
-    async function searchDmail() {
+    function searchDmail() {
         const q = dmailSearchQuery.trim().toLowerCase();
         const res = {};
 
