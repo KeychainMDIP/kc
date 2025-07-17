@@ -46,9 +46,11 @@ import {
     Clear,
     Groups,
     Delete,
+    Download,
     Drafts,
     Edit,
     Email,
+    Forward,
     HowToVote,
     Image,
     Inbox,
@@ -59,13 +61,21 @@ import {
     List,
     Lock,
     Login,
+    MarkEmailRead,
+    MarkEmailUnread,
     Outbox,
     PermIdentity,
     PictureAsPdf,
     Poll,
+    Refresh,
+    Reply,
+    ReplyAll,
+    RestoreFromTrash,
     Schema,
+    Search,
     Send,
     Token,
+    Unarchive,
 } from "@mui/icons-material";
 import axios from 'axios';
 import { Buffer } from 'buffer';
@@ -160,6 +170,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailSortBy, setDmailSortBy] = useState('date');
     const [dmailSortOrder, setDmailSortOrder] = useState('desc');
     const [dmailForwarding, setDmailForwarding] = useState('');
+    const [dmailSearchQuery, setDmailSearchQuery] = useState('');
+    const [dmailSearchResults, setDmailSearchResults] = useState({});
     const [assetsTab, setAssetsTab] = useState('');
     const [imageList, setImageList] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
@@ -1514,6 +1526,33 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         }
     }
 
+    function searchDmail() {
+        const q = dmailSearchQuery.trim().toLowerCase();
+        const res = {};
+
+        if (q) {
+            Object.entries(dmailList).forEach(([did, item]) => {
+                const body = item.message.body.toLowerCase();
+                const subj = item.message.subject.toLowerCase();
+                const from = item.sender.toLowerCase();
+                const tocc = [...item.to, ...(item.cc ?? [])].join(", ").toLowerCase();
+
+                if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
+                    res[did] = item;
+                }
+            });
+        }
+
+        setDmailSearchResults(res);
+        setSelectedDmailDID('');
+        setDmailTab('results');
+    }
+
+    async function clearDmailSearch() {
+        setDmailSearchQuery('');
+        setDmailSearchResults({});
+    }
+
     async function showMnemonic() {
         try {
             const response = await keymaster.decryptMnemonic();
@@ -2735,35 +2774,31 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             return dmailList;
         }
 
+        if (dmailTab === "results") {
+            return dmailSearchResults;
+        }
+
         let filtered = {};
 
         for (const [did, item] of Object.entries(dmailList)) {
-            if (dmailTab === 'inbox' &&
-                item.tags.includes(DmailTags.INBOX) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            const has = (tag) => item.tags.includes(tag);
+            const not = (tag) => !has(tag);
+
+            if (dmailTab === 'inbox' && has(DmailTags.INBOX) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'outbox' &&
-                item.tags.includes(DmailTags.SENT) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            } else if (dmailTab === 'outbox' && has(DmailTags.SENT) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'drafts' &&
-                item.tags.includes(DmailTags.DRAFT) &&
-                !item.tags.includes(DmailTags.DELETED) &&
-                !item.tags.includes(DmailTags.ARCHIVED)) {
+            } else if (dmailTab === 'drafts' && has(DmailTags.DRAFT) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'archive' &&
-                item.tags.includes(DmailTags.ARCHIVED) &&
-                !item.tags.includes(DmailTags.DELETED)) {
+            } else if (dmailTab === 'archive' && has(DmailTags.ARCHIVED) && not(DmailTags.DELETED)) {
                 filtered[did] = item;
-            } else if (dmailTab === 'trash' && item.tags.includes(DmailTags.DELETED)) {
+            } else if (dmailTab === 'trash' && has(DmailTags.DELETED)) {
                 filtered[did] = item;
             }
         }
 
         return filtered;
-    }, [dmailList, dmailTab]);
+    }, [dmailList, dmailSearchResults, dmailTab]);
 
     const sortedDmailEntries = useMemo(() => {
         const entries = Object.entries(filteredDmailList);
@@ -2791,6 +2826,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
         return entries.sort(compare);
     }, [filteredDmailList, dmailSortBy, dmailSortOrder]);
+
+    const boxRow = { mt: 1, mb: 1, display: "flex", alignItems: "center", gap: 1 };
 
     return (
         <div className="App">
@@ -4283,18 +4320,44 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     }
                     {tab === 'dmail' &&
                         <Box>
-                            <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={refreshDmail}>
-                                        Refresh
-                                    </Button>
-                                </Grid>
-                                <Grid item>
-                                    <Button variant="contained" color="primary" onClick={importDmail}>
-                                        Import...
-                                    </Button>
-                                </Grid>
-                            </Grid>
+                            <Box sx={boxRow}>
+                                <Tooltip title="Refresh DMail">
+                                    <IconButton onClick={refreshDmail}>
+                                        <Refresh />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <Tooltip title="Import DMail">
+                                    <IconButton onClick={importDmail}>
+                                        <Download />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <TextField
+                                    variant="outlined"
+                                    size="small"
+                                    placeholder="Search…"
+                                    value={dmailSearchQuery}
+                                    onChange={(e) => setDmailSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            searchDmail();
+                                        }
+                                    }}
+                                />
+
+                                <Tooltip title="Search DMail">
+                                    <IconButton onClick={searchDmail}>
+                                        <Search />
+                                    </IconButton>
+                                </Tooltip>
+
+                                <Tooltip title="Clear Search">
+                                    <IconButton onClick={clearDmailSearch}>
+                                        <Clear />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
                             <Box>
                                 <Tabs
                                     value={dmailTab}
@@ -4313,6 +4376,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="archive" value="archive" label={'Archived'} icon={<Archive />} />
                                     <Tab key="trash" value="trash" label={'Trash'} icon={<Delete />} />
                                     <Tab key="all" value="all" label={'All Dmail'} icon={<AllInbox />} />
+                                    <Tab key="results" value="results" label={'Results'} icon={<Search />} />
                                     <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
@@ -4403,114 +4467,106 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             </Grid>
                                         </Grid>
                                         {selectedDmail && dmailTab === 'inbox' &&
-                                            <Box style={{ padding: 16 }}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        {isDmailUnread(selectedDmail) ? (
-                                                            <Button variant="contained" color="primary" onClick={markDmailRead}>
-                                                                Mark as Read
-                                                            </Button>
-                                                        ) : (
-                                                            <Button variant="contained" color="primary" onClick={markDmailUnread}>
-                                                                Mark as Unread
-                                                            </Button>
-                                                        )}
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
-                                                            Archive
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
-                                                            Delete
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={forwardDmail}>
-                                                            Forward
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={replyDmail}>
-                                                            Reply
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={replyAllDmail}>
-                                                            Reply-all
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                            <Box sx={boxRow}>
+                                                {isDmailUnread(selectedDmail) ? (
+                                                    <Tooltip title="Mark as Read">
+                                                        <IconButton onClick={markDmailRead}>
+                                                            <MarkEmailRead />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                ) : (
+                                                    <Tooltip title="Mark as Unread">
+                                                        <IconButton onClick={markDmailUnread}>
+                                                            <MarkEmailUnread />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                                <Tooltip title="Archive">
+                                                    <IconButton onClick={archiveDmail}>
+                                                        <Archive />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Move to Trash">
+                                                    <IconButton onClick={deleteDmail}>
+                                                        <Delete />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Forward">
+                                                    <IconButton onClick={forwardDmail}>
+                                                        <Forward />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Reply">
+                                                    <IconButton onClick={replyDmail}>
+                                                        <Reply />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Reply All">
+                                                    <IconButton onClick={replyAllDmail}>
+                                                        <ReplyAll />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         }
                                         {selectedDmail && dmailTab === 'outbox' &&
-                                            <Box style={{ padding: 16 }}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
-                                                            Archive
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
-                                                            Delete
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={editDmail}>
-                                                            Edit
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                            <Box sx={boxRow}>
+                                                <Tooltip title="Archive">
+                                                    <IconButton onClick={archiveDmail}>
+                                                        <Archive />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Move to Trash">
+                                                    <IconButton onClick={deleteDmail}>
+                                                        <Delete />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Edit">
+                                                    <IconButton onClick={editDmail}>
+                                                        <Edit />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         }
                                         {selectedDmail && dmailTab === 'drafts' &&
-                                            <Box style={{ padding: 16 }}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={archiveDmail}>
-                                                            Archive
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
-                                                            Delete
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={editDmail}>
-                                                            Edit
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                            <Box sx={boxRow}>
+                                                <Tooltip title="Archive">
+                                                    <IconButton onClick={archiveDmail}>
+                                                        <Archive />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Move to Trash">
+                                                    <IconButton onClick={deleteDmail}>
+                                                        <Delete />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Edit">
+                                                    <IconButton onClick={editDmail}>
+                                                        <Edit />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         }
                                         {selectedDmail && dmailTab === 'archive' &&
-                                            <Box style={{ padding: 16 }}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={unarchiveDmail}>
-                                                            Unarchive
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={deleteDmail}>
-                                                            Delete
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                            <Box sx={boxRow}>
+                                                <Tooltip title="Unarchive">
+                                                    <IconButton onClick={unarchiveDmail}>
+                                                        <Unarchive />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Move to Trash">
+                                                    <IconButton onClick={deleteDmail}>
+                                                        <Delete />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         }
                                         {selectedDmail && dmailTab === 'trash' &&
-                                            <Box style={{ padding: 16 }}>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={undeleteDmail}>
-                                                            Undelete
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                            <Box sx={boxRow}>
+                                                <Tooltip title="Restore from Trash">
+                                                    <IconButton onClick={undeleteDmail}>
+                                                        <RestoreFromTrash />
+                                                    </IconButton>
+                                                </Tooltip>
                                             </Box>
                                         }
                                         {selectedDmail &&
@@ -4565,26 +4621,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                     <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                                                                         Size (bytes)
                                                                     </TableCell>
-                                                                    <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                                                                    </TableCell>
                                                                 </TableRow>
                                                                 {Object.entries(selectedDmail.attachments).map(([name, item], index) => (
                                                                     <TableRow key={index}>
                                                                         <TableCell>
+                                                                            <Tooltip title="Download">
+                                                                                <IconButton onClick={() => downloadDmailAttachment(name)}>
+                                                                                    <Download />
+                                                                                </IconButton>
+                                                                            </Tooltip>
                                                                             {getVaultItemIcon(name, item)}
                                                                             {name}
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             {item.bytes}
-                                                                        </TableCell>
-                                                                        <TableCell>
-                                                                            <Button
-                                                                                variant="contained"
-                                                                                color="primary"
-                                                                                onClick={() => downloadDmailAttachment(name)}
-                                                                            >
-                                                                                Download
-                                                                            </Button>
                                                                         </TableCell>
                                                                     </TableRow>
                                                                 ))}
@@ -4702,23 +4752,17 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                             />
                                         </Grid>
                                         {!dmailDID &&
-                                            <Grid item>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
-                                                            Create Dmail
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <RegistrySelect />
-                                                    </Grid>
-                                                </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={clearSendDmail}>
-                                                        Clear Dmail
+                                            <Box>
+                                                <Box sx={boxRow}>
+                                                    <Button variant="contained" color="primary" onClick={createDmail} disabled={!registry}>
+                                                        Create Dmail
                                                     </Button>
-                                                </Grid>
-                                            </Grid>
+                                                    <RegistrySelect />
+                                                </Box>
+                                                <Button variant="contained" color="primary" onClick={clearSendDmail}>
+                                                    Clear Dmail
+                                                </Button>
+                                            </Box>
                                         }
                                         {dmailDID &&
                                             <Box>
@@ -4753,23 +4797,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     ))}
                                                 </Grid>
                                                 <p></p>
-                                                <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={updateDmail} disabled={!dmailDID}>
-                                                            Update Dmail
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={sendDmail} disabled={!dmailDID}>
-                                                            Send Dmail
-                                                        </Button>
-                                                    </Grid>
-                                                    <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={revokeDmail} disabled={!dmailDID}>
-                                                            Revoke Dmail...
-                                                        </Button>
-                                                    </Grid>
-                                                </Grid>
+                                                <Box sx={boxRow}>
+                                                    <Button variant="contained" color="primary" onClick={updateDmail}>
+                                                        Update Dmail
+                                                    </Button>
+                                                    <Button variant="contained" color="primary" onClick={sendDmail}>
+                                                        Send Dmail
+                                                    </Button>
+                                                    <Button variant="contained" color="primary" onClick={revokeDmail}>
+                                                        Revoke Dmail...
+                                                    </Button>
+                                                </Box>
+                                                <Button variant="contained" color="primary" onClick={clearSendDmail}>
+                                                    Clear Dmail
+                                                </Button>
                                             </Box>
                                         }
                                     </Grid>
