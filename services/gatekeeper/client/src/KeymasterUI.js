@@ -1237,8 +1237,33 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         const dmail = getDmailInputOrError();
         if (!dmail) return;
 
+        let validUntil;
+
+        if (registry === 'hyperswarm' && dmailEphemeral) {
+            if (!dmailValidUntil) {
+                showError("Please set a valid until date for ephemeral Dmail.");
+                return;
+            }
+
+            const validUntilDate = new Date(dmailValidUntil);
+            if (isNaN(validUntilDate.getTime())) {
+                showError("Invalid date format for valid until.");
+                return;
+            }
+
+            if (validUntilDate <= new Date()) {
+                showError("Valid until date must be in the future.");
+                return;
+            }
+
+            // Set validUntil to start of day of the next day
+            validUntilDate.setDate(validUntilDate.getDate() + 1);
+            //validUntilDate.setHours(0, 0, 0, 0);
+            validUntil = validUntilDate.toISOString();
+        }
+
         try {
-            const did = await keymaster.createDmail(dmail, { registry });
+            const did = await keymaster.createDmail(dmail, { registry, validUntil });
             setDmailDID(did);
 
             if (dmailForwarding) {
