@@ -1245,7 +1245,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 return;
             }
 
-            const validUntilDate = new Date(dmailValidUntil);
+            const validUntilDate = new Date(dmailValidUntil + "T00:00:00Z");
             if (isNaN(validUntilDate.getTime())) {
                 showError("Invalid date format for valid until.");
                 return;
@@ -1255,9 +1255,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 showError("Valid until date must be in the future.");
                 return;
             }
-
-            // Set validUntil to start of day of the next day
-            validUntilDate.setDate(validUntilDate.getDate() + 1);
+            // Set validUntil to start of day of the next day (UTC-safe)
+            validUntilDate.setUTCDate(validUntilDate.getUTCDate() + 1);
+            validUntilDate.setUTCHours(0, 0, 0, 0);
             validUntil = validUntilDate.toISOString();
         }
 
