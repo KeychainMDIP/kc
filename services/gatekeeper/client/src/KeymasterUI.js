@@ -1258,7 +1258,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             // Set validUntil to start of day of the next day
             validUntilDate.setDate(validUntilDate.getDate() + 1);
-            //validUntilDate.setHours(0, 0, 0, 0);
             validUntil = validUntilDate.toISOString();
         }
 
