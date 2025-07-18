@@ -165,6 +165,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailCc, setDmailCc] = useState('');
     const [dmailToList, setDmailToList] = useState([]);
     const [dmailCcList, setDmailCcList] = useState([]);
+    const [dmailEphemeral, setDmailEphemeral] = useState(false);
+    const [dmailValidUntil, setDmailValidUntil] = useState('');
     const [dmailDID, setDmailDID] = useState('');
     const [dmailAttachments, setDmailAttachments] = useState({});
     const [dmailSortBy, setDmailSortBy] = useState('date');
@@ -1430,6 +1432,8 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailBody('');
         setDmailAttachments({});
         setDmailForwarding('');
+        setDmailEphemeral(false);
+        setDmailValidUntil('');
     }
 
     async function forwardDmail() {
@@ -4758,6 +4762,27 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         Create Dmail
                                                     </Button>
                                                     <RegistrySelect />
+                                                    <FormControlLabel
+                                                        control={
+                                                            <Checkbox
+                                                                checked={dmailEphemeral}
+                                                                onChange={e => setDmailEphemeral(e.target.checked)}
+                                                                color="primary"
+                                                            />
+                                                        }
+                                                        label="ephemeral"
+                                                        sx={{ ml: 2 }}
+                                                        disabled={registry !== 'hyperswarm'}
+                                                    />
+                                                    <TextField
+                                                        label="Valid Until"
+                                                        type="date"
+                                                        value={dmailValidUntil}
+                                                        onChange={e => setDmailValidUntil(e.target.value)}
+                                                        InputLabelProps={{ shrink: true }}
+                                                        sx={{ ml: 2, minWidth: 180 }}
+                                                        disabled={!dmailEphemeral || registry !== 'hyperswarm'}
+                                                    />
                                                 </Box>
                                                 <Button variant="contained" color="primary" onClick={clearSendDmail}>
                                                     Clear Dmail
