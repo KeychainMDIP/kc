@@ -76,6 +76,7 @@ services:
       - gatekeeper
       - redis
       - mongodb
+      - search-server
 
   hypr-mediator:
     build:

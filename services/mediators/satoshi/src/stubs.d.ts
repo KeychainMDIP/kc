@@ -8,12 +8,64 @@ declare module 'bitcoin-core' {
         wallet?: string;
     }
 
+    export interface ScriptSig {
+        asm: string;
+        hex: string;
+    }
+
+    export interface Vin {
+        txid: string;
+        vout: number;
+        scriptSig: ScriptSig;
+        sequence: number;
+        txinwitness?: string[];
+    }
+
+    export interface ScriptPubKey {
+        asm: string;
+        hex: string;
+        reqSigs?: number;
+        type: string;
+        addresses?: string[];
+    }
+
+    export interface Vout {
+        value: number;
+        n: number;
+        scriptPubKey: ScriptPubKey;
+    }
+
     interface TransactionByHash {
-        vout: Array<{
-            scriptPubKey: {
-                asm: string;
-            };
-        }>;
+        txid: string;
+        hash: string;
+        size: number;
+        vsize: number;
+        weight: number;
+        version: number;
+        locktime: number;
+        hex: string;
+        in_active_chain?: boolean;
+        blockhash?: string;
+        confirmations?: number;
+        time?: number;
+        blocktime?: number;
+        vin: Vin[];
+        vout: Vout[];
+    }
+
+    export interface BumpFeeOptions {
+        confTarget?: number;
+        feeRate?: number | string;
+        replaceable?: boolean;
+        estimateMode?: 'unset' | 'economical' | 'conservative';
+    }
+
+    export interface BumpFeeResult {
+        txid?: string;
+        psbt?: string;
+        origfee: number;
+        fee: number;
+        errors?: string[];
     }
 
     interface Block {
@@ -24,6 +76,102 @@ declare module 'bitcoin-core' {
 
     interface WalletInfo {
         balance: number;
+    }
+
+    interface EstimateSmartFeeResult {
+        feerate?: number;
+        blocks: number;
+        errors?: string[];
+    }
+
+    interface AddressInfo {
+        address: string;
+        scriptPubKey: string;
+        ismine: boolean;
+        iswatchonly: boolean;
+        solvable: boolean;
+        ischange: boolean;
+        labels: string[];
+        desc?: string;
+        isscript?: boolean;
+        iswitness?: boolean;
+        witness_version?: number;
+        witness_program?: string;
+        script?: 'nonstandard' | 'pubkey' | 'pubkeyhash' | 'scripthash' | 'multisig' | 'nulldata' | 'witness_v0_keyhash' | 'witness_v0_scripthash' | 'witness_unknown';
+        hex?: string;
+        pubkeys?: string[];
+        sigsrequired?: number;
+        pubkey?: string;
+        iscompressed?: boolean;
+        embedded?: Partial<AddressInfo>;
+        timestamp?: number;
+        hdkeypath?: string;
+        hdseedid?: string;
+        hdmasterfingerprint?: string;
+    }
+
+    export interface MempoolEntryFees {
+        base: number;
+        modified: number;
+        ancestor: number;
+        descendant: number;
+    }
+
+    export interface MempoolEntry {
+        vsize: number;
+        weight: number;
+        time: number;
+        height: number;
+        descendantcount: number;
+        descendantsize: number;
+        ancestorcount: number;
+        ancestorsize: number;
+        wtxid: string;
+        "bip125-replaceable": boolean;
+        unbroadcast: boolean;
+        fees: MempoolEntryFees;
+        depends: string[];
+        spentby: string[];
+    }
+
+    export interface RawTransactionVerbose extends TransactionByHash {
+        hex: string;
+        in_active_chain?: boolean;
+    }
+
+    export type RawTransactionResult = string | RawTransactionVerbose;
+
+    export interface NetworkInfoNetwork {
+        name: string;
+        limited: boolean;
+        reachable: boolean;
+        proxy: string;
+        proxy_randomize_credentials: boolean;
+    }
+
+    export interface NetworkInfoLocalAddress {
+        address: string;
+        port: number;
+        score: number;
+    }
+
+    export interface NetworkInfo {
+        version: number;
+        subversion: string;
+        protocolversion: number;
+        localservices: string;
+        localservicesnames: string[];
+        localrelay: boolean;
+        timeoffset: number;
+        connections: number;
+        connections_in: number;
+        connections_out: number;
+        networkactive: boolean;
+        networks: NetworkInfoNetwork[];
+        relayfee: number;
+        incrementalfee: number;
+        localaddresses: NetworkInfoLocalAddress[];
+        warnings: string[] | string;
     }
 
     export default class BtcClient {
@@ -37,11 +185,35 @@ declare module 'bitcoin-core' {
         getNewAddress(label?: string, addressType?: string): Promise<string>;
         listUnspent(): Promise<any[]>;
         createRawTransaction(inputs: any[], outputs: Record<string, unknown>): Promise<string>;
-        signRawTransactionWithWallet(rawtx: string): Promise<{ hex: string }>;
+        signRawTransactionWithWallet(rawtx: string): Promise<{
+            hex: string;
+            complete: boolean;
+        }>;
         signRawTransaction(rawtx: string): Promise<{ hex: string }>;
         sendRawTransaction(rawtx: string): Promise<string>;
-        getRawTransaction(txid: string, verbose?: number): Promise<any>;
-        getMempoolEntry(txid: string): Promise<any>;
+        getRawTransaction(txid: string, verbose?: number): Promise<RawTransactionResult>;
+        getMempoolEntry(txid: string): Promise<MempoolEntry>;
         getBlockchainInfo(): Promise<unknown>;
+        getAddressInfo(address: string): Promise<AddressInfo>;
+        estimateSmartFee(
+            confTarget: number,
+            estimateMode?: 'UNSET' | 'ECONOMICAL' | 'CONSERVATIVE'
+        ): Promise<EstimateSmartFeeResult>;
+        dumpPrivKey(address: string): Promise<string>;
+        bumpFee(
+            txid: string,
+            options?: BumpFeeOptions
+        ): Promise<BumpFeeResult>;
+        walletProcessPsbt(
+            psbt: string,
+            sign?: boolean,
+            sighashtype?: string,
+            bip32derivs?: boolean
+        ): Promise<{
+            psbt: string,
+            complete: boolean,
+        }>;
+        finalizePsbt(psbt: string): Promise<{ psbt: string, hex: string, complete: boolean }>;
+        getNetworkInfo(): Promise<NetworkInfo>;
     }
 }
