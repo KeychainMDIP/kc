@@ -1,4 +1,4 @@
-import { ImportBatchResult, ProcessEventsResult } from '@mdip/gatekeeper/types';
+import { ImportBatchResult, ProcessEventsResult, GatekeeperEvent } from '@mdip/gatekeeper/types';
 
 export interface DiscoveredItem {
     height: number;
@@ -16,6 +16,13 @@ export interface RegisteredItem {
     txid: string;
 }
 
+export interface DiscoveredInscribedItem {
+    events: GatekeeperEvent[];
+    imported?: ImportBatchResult;
+    processed?: ProcessEventsResult;
+    error?: string;
+}
+
 export interface MediatorDb {
     height: number;
     time: string;
@@ -25,8 +32,14 @@ export interface MediatorDb {
     txnsScanned: number;
     registered: RegisteredItem[];
     discovered: DiscoveredItem[];
+    discoveredInscribed?: DiscoveredInscribedItem[];
     lastExport?: string;
     pendingTxid?: string;
+    pendingTaproot?: {
+        commitTxid?: string;
+        revealTxid?: string;
+        walletAddr?: string;
+    }
 }
 
 export interface MediatorDbInterface {
