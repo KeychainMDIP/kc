@@ -65,6 +65,7 @@ import {
     MarkEmailUnread,
     Outbox,
     PermIdentity,
+    PersonAdd,
     PictureAsPdf,
     Poll,
     Refresh,
@@ -1579,6 +1580,12 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     async function clearDmailSearch() {
         setDmailSearchQuery('');
         setDmailSearchResults({});
+    }
+
+    async function addDmailContact(senderDID) {
+        setAliasDID(senderDID);
+        resolveName(senderDID);
+        setTab('names');
     }
 
     async function showMnemonic() {
@@ -4612,7 +4619,16 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             </TableRow>
                                                             <TableRow>
                                                                 <TableCell><b>From</b></TableCell>
-                                                                <TableCell>{selectedDmail.sender}</TableCell>
+                                                                <TableCell>
+                                                                    {selectedDmail.sender}
+                                                                    {selectedDmail.sender.startsWith('did:') && (
+                                                                        <Tooltip title="Add Contact">
+                                                                            <IconButton onClick={() => addDmailContact(selectedDmail.sender)}>
+                                                                                <PersonAdd />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                </TableCell>
                                                             </TableRow>
                                                             <TableRow>
                                                                 <TableCell><b>Date</b></TableCell>
