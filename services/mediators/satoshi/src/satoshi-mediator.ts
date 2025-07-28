@@ -1043,7 +1043,7 @@ async function syncBlocks(): Promise<void> {
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
             const block = await btcClient.getBlock(blockHash);
-            // console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+            console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }
     } catch (error) {
@@ -1121,7 +1121,7 @@ async function main() {
 
     await syncBlocks();
 
-    if (config.importInterval > 1) {
+    if (config.importInterval > 0) {
         console.log(`Importing operations every ${config.importInterval} minute(s)`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
@@ -1129,8 +1129,7 @@ async function main() {
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
         console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
-        //setTimeout(exportLoop, config.exportInterval * 60 * 1000);
-        setTimeout(exportLoop, 30 * 1000);
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
 
