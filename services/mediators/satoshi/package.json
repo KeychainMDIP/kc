@@ -12,7 +12,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@noble/hashes": "^1.8.0",
+    "bip32": "^5.0.0-rc.0",
     "bitcoin-core": "^4.2.0",
     "bitcoinjs-lib": "^6.1.7",
     "dotenv": "^16.4.5",

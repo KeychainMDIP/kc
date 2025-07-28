@@ -174,6 +174,47 @@ declare module 'bitcoin-core' {
         warnings: string[] | string;
     }
 
+    export interface ImportDescriptorRequest {
+        desc: string;
+        timestamp: number | 'now';
+        active?: boolean;
+        range?: number | [number, number];
+        next_index?: number;
+        internal?: boolean;
+        label?: string;
+    }
+
+    export interface ImportDescriptorResult {
+        success: boolean;
+        warnings?: string[];
+        error?: {
+            code: number;
+            message: string;
+        };
+    }
+
+    export interface DescriptorInfoResult {
+        descriptor: string;
+        checksum: string;
+        isrange: boolean;
+        issolvable: boolean;
+        hasprivatekeys: boolean;
+    }
+
+    export interface Descriptor {
+        desc: string;
+        timestamp: number;
+        active: boolean;
+        internal?: boolean;
+        range?: [number, number];
+        next?: number;
+    }
+
+    export interface ListDescriptorsResult {
+        wallet_name: string;
+        descriptors: Descriptor[];
+    }
+
     export default class BtcClient {
         constructor(options: BtcClientOptions);
         getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -215,5 +256,9 @@ declare module 'bitcoin-core' {
         }>;
         finalizePsbt(psbt: string): Promise<{ psbt: string, hex: string, complete: boolean }>;
         getNetworkInfo(): Promise<NetworkInfo>;
+        getDescriptorInfo(descriptor: string): Promise<DescriptorInfoResult>;
+        importDescriptors(requests: ImportDescriptorRequest[]): Promise<ImportDescriptorResult[]>;
+        deriveAddresses(descriptor: string, range?: number | [number, number]): Promise<string[]>;
+        listDescriptors(private: boolean): Promise<ListDescriptorsResult>;
     }
 }

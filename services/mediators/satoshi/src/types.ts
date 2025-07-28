@@ -23,6 +23,11 @@ export interface DiscoveredInscribedItem {
     error?: string;
 }
 
+export interface HDInfo {
+    hdkeypath: string,
+    hdmasterfingerprint: string
+}
+
 export interface MediatorDb {
     height: number;
     time: string;
@@ -38,7 +43,7 @@ export interface MediatorDb {
     pendingTaproot?: {
         commitTxid?: string;
         revealTxid?: string;
-        walletAddr?: string;
+        hdInfo: HDInfo;
     }
 }
 
