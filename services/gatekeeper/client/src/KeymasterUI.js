@@ -168,6 +168,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [dmailCcList, setDmailCcList] = useState([]);
     const [dmailEphemeral, setDmailEphemeral] = useState(false);
     const [dmailValidUntil, setDmailValidUntil] = useState('');
+    const [dmailReference, setDmailReference] = useState('');
     const [dmailDID, setDmailDID] = useState('');
     const [dmailAttachments, setDmailAttachments] = useState({});
     const [dmailSortBy, setDmailSortBy] = useState('date');
@@ -1231,6 +1232,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             cc: ccList,
             subject: dmailSubject,
             body: dmailBody,
+            reference: dmailReference,
         };
     }
 
@@ -1459,6 +1461,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailForwarding('');
         setDmailEphemeral(false);
         setDmailValidUntil('');
+        setDmailReference('');
     }
 
     async function forwardDmail() {
@@ -1480,6 +1483,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailSubject(`Re: ${selectedDmail.message.subject}`);
         setDmailBody(`On ${selectedDmail.date} ${selectedDmail.sender} wrote:\n\n${selectedDmail.message.body}`);
         setDmailTo(selectedDmail.sender);
+        setDmailReference(selectedDmailDID);
         setDmailTab('send');
     }
 
@@ -1493,6 +1497,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         setDmailTo(selectedDmail.sender);
         setDmailToList(selectedDmail.to);
         setDmailCcList(selectedDmail.cc);
+        setDmailReference(selectedDmailDID);
         setDmailTab('send');
     }
 
@@ -4637,6 +4642,38 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             <TableRow>
                                                                 <TableCell><b>Subject</b></TableCell>
                                                                 <TableCell>{selectedDmail.message?.subject}</TableCell>
+                                                            </TableRow>
+                                                            <TableRow>
+                                                                <TableCell><b>Reference</b></TableCell>
+                                                                {selectedDmail.message?.reference ? (
+                                                                    <TableCell>
+                                                                        <button
+                                                                            type="button"
+                                                                            style={{
+                                                                                background: "none",
+                                                                                border: "none",
+                                                                                padding: 0,
+                                                                                margin: 0,
+                                                                                color: "#1976d2",
+                                                                                textDecoration: "underline",
+                                                                                cursor: "pointer",
+                                                                                font: "inherit"
+                                                                            }}
+                                                                            onClick={e => {
+                                                                                e.preventDefault();
+                                                                                if (dmailList[selectedDmail.message.reference]) {
+                                                                                    setSelectedDmailDID(selectedDmail.message.reference);
+                                                                                } else {
+                                                                                    showAlert('Original dmail not found');
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {selectedDmail.message.reference}
+                                                                        </button>
+                                                                    </TableCell>
+                                                                ) : (
+                                                                    <TableCell></TableCell>
+                                                                )}
                                                             </TableRow>
                                                             <TableRow>
                                                                 <TableCell><b>Tags</b></TableCell>

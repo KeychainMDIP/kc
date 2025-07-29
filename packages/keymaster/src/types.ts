@@ -268,7 +268,7 @@ export interface DmailMessage {
     cc: string[];
     subject: string;
     body: string;
-    inReplyTo?: string;
+    reference?: string;
 }
 
 export interface DmailItem {
