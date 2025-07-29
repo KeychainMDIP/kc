@@ -832,7 +832,7 @@ async function syncBlocks(): Promise<void> {
 
 async function main() {
     if (!config.nodeID) {
-        console.log('satoshi-inscribed-mediator must have a KC_NODE_ID configured');
+        console.log('inscription-mediator must have a KC_NODE_ID configured');
         return;
     }
 

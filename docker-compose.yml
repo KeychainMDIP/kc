@@ -216,11 +216,11 @@ services:
       - gatekeeper
       - keymaster
 
-  signet-inscribed-mediator:
+  signet-inscription-mediator:
     build:
       context: .
-      dockerfile: Dockerfile.satoshi-inscribed
-    image: keychainmdip/satoshi-inscribed-mediator
+      dockerfile: Dockerfile.satoshi-inscription
+    image: keychainmdip/inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
