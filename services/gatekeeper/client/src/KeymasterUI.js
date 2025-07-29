@@ -4646,12 +4646,20 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                             <TableRow>
                                                                 <TableCell><b>Reference</b></TableCell>
                                                                 {selectedDmail.message?.reference ? (
-                                                                    <a
-                                                                        href="#"
-                                                                        style={{ textDecoration: 'underline', color: '#1976d2' }}
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{
+                                                                            background: "none",
+                                                                            border: "none",
+                                                                            padding: 0,
+                                                                            margin: 0,
+                                                                            color: "#1976d2",
+                                                                            textDecoration: "underline",
+                                                                            cursor: "pointer",
+                                                                            font: "inherit"
+                                                                        }}
                                                                         onClick={e => {
                                                                             e.preventDefault();
-
                                                                             if (dmailList[selectedDmail.message.reference]) {
                                                                                 setSelectedDmailDID(selectedDmail.message.reference);
                                                                             } else {
@@ -4660,7 +4668,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                         }}
                                                                     >
                                                                         {selectedDmail.message.reference}
-                                                                    </a>
+                                                                    </button>
                                                                 ) : (
                                                                     ''
                                                                 )}
