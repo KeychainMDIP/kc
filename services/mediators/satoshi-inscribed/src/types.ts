@@ -1,11 +1,10 @@
-import { ImportBatchResult, ProcessEventsResult } from '@mdip/gatekeeper/types';
+import { ImportBatchResult, ProcessEventsResult, GatekeeperEvent } from '@mdip/gatekeeper/types';
 
 export interface DiscoveredItem {
     height: number;
     index: number;
     time: string;
     txid: string;
-    did: string;
     imported?: ImportBatchResult;
     processed?: ProcessEventsResult;
     error?: string;
@@ -16,6 +15,18 @@ export interface RegisteredItem {
     txid: string;
 }
 
+export interface DiscoveredInscribedItem {
+    events: GatekeeperEvent[];
+    imported?: ImportBatchResult;
+    processed?: ProcessEventsResult;
+    error?: string;
+}
+
+export interface HDInfo {
+    hdkeypath: string,
+    hdmasterfingerprint: string
+}
+
 export interface MediatorDb {
     height: number;
     time: string;
@@ -23,10 +34,14 @@ export interface MediatorDb {
     blocksScanned: number;
     blocksPending: number;
     txnsScanned: number;
-    registered: RegisteredItem[];
-    discovered: DiscoveredItem[];
+    discovered: DiscoveredInscribedItem[];
     lastExport?: string;
     pendingTxid?: string;
+    pendingTaproot?: {
+        commitTxid?: string;
+        revealTxid?: string;
+        hdInfo: HDInfo;
+    }
 }
 
 export interface MediatorDbInterface {

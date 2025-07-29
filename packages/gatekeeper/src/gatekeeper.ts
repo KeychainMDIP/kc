@@ -30,7 +30,7 @@ import {
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
 // Registries that are considered valid when importing DIDs from the network
-export const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscribed'];
+const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscribed'];
 
 enum ImportStatus {
     ADDED = 'added',

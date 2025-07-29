@@ -216,6 +216,40 @@ services:
       - gatekeeper
       - keymaster
 
+  signet-inscribed-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.satoshi-inscribed
+    image: keychainmdip/satoshi-inscribed-mediator
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=Signet
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_HOST=signet-node
+      - KC_SAT_PORT=38332
+      - KC_SAT_START_BLOCK=${KC_SIGNET_INSCRIBED_START_BLOCK}
+      - KC_SAT_USER=${KC_SIGNET_INSCRIBED_USER}
+      - KC_SAT_PASS=${KC_SIGNET_INSCRIBED_PASS}
+      - KC_SAT_WALLET=${KC_SIGNET_INSCRIBED_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_SIGNET_INSCRIBED_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_SIGNET_INSCRIBED_EXPORT_INTERVAL}
+      - KC_SAT_FEE_MIN=${KC_SIGNET_INSCRIBED_FEE_MIN}
+      - KC_SAT_FEE_MAX=${KC_SIGNET_INSCRIBED_FEE_MAX}
+      - KC_SAT_FEE_INC=${KC_SIGNET_INSCRIBED_FEE_INC}
+      - KC_SAT_REIMPORT=${KC_SIGNET_INSCRIBED_REIMPORT}
+      - KC_SAT_DB=${KC_SIGNET_INSCRIBED_DB}
+    volumes:
+      - ./data:/app/satoshi/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - signet-node
+      - gatekeeper
+      - keymaster
+
   cli:
     build:
       context: .

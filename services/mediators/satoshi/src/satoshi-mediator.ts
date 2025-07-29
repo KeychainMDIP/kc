@@ -1,9 +1,4 @@
-import BtcClient, {AddressInfo, MempoolEntry, RawTransactionVerbose} from 'bitcoin-core';
-import * as bitcoin from 'bitcoinjs-lib';
-import * as ecc from 'tiny-secp256k1';
-import { encode as varuintEncode } from 'varuint-bitcoin';
-import { gzipSync, gunzipSync } from 'zlib';
-import { BIP32Factory } from 'bip32';
+import BtcClient, {RawTransactionVerbose} from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -12,15 +7,10 @@ import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
-import {MediatorDb, MediatorDbInterface, DiscoveredItem, DiscoveredInscribedItem, HDInfo} from './types.js';
+import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
-import { ValidRegistries } from '@mdip/gatekeeper';
-import {witnessStackToScriptWitness} from "bitcoinjs-lib/src/psbt/psbtutils.js";
 
 const REGISTRY = config.chain;
-const INSCRIBED_REG = `${REGISTRY}-Inscribed`;
-const INSCRIBED = ValidRegistries.includes(INSCRIBED_REG);
-const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -33,17 +23,7 @@ const btcClient = new BtcClient({
     wallet: config.wallet,
 });
 
-bitcoin.initEccLib(ecc);
-const bip32 = BIP32Factory(ecc);
-
-interface RpcError extends Error {
-    code: number;
-    error: { code: number; message: string };
-}
-
 let jsonPersister: MediatorDbInterface;
-let exportRunning = false;
-let walletXprv: string | null = null;
 
 async function loadDb(): Promise<MediatorDb> {
     const newDb: MediatorDb = {
@@ -86,92 +66,6 @@ async function fetchTransaction(height: number, index: number, timestamp: string
                 });
                 await saveDb(db);
             }
-        }
-
-        const hasMdipMarker =
-            txn.vout[0].scriptPubKey.asm?.startsWith('OP_RETURN 4d44495001'); // MDIP 0x01
-
-        const vinIdx = 0;
-        const vin = txn.vin[vinIdx];
-
-        if (
-            hasMdipMarker &&
-            vin &&
-            vin.txinwitness &&
-            vin.txinwitness.length >= 3
-        ) {
-
-            const tapScriptHex = vin.txinwitness[vin.txinwitness.length - 2];
-            const buf = Buffer.from(tapScriptHex, 'hex');
-            if (!buf.includes(PROTOCOL_TAG)) {
-                return;
-            }
-
-            const chunks = (() => {
-                const decomp = bitcoin.script.decompile(buf) || [];
-                const tagIdx = decomp.findIndex(
-                    (el) => Buffer.isBuffer(el) && (el as Buffer).equals(PROTOCOL_TAG)
-                );
-                if (tagIdx === -1) {
-                    return null;
-                }
-
-                console.log("inscription found");
-
-                const result: Buffer[] = [];
-                for (let j = tagIdx + 1; j < decomp.length; j++) {
-                    const el = decomp[j];
-                    if (typeof el === 'number') {
-                        break;
-                    }
-                    result.push(el as Buffer);
-                }
-                return result;
-            })();
-
-            if (!chunks || chunks.length === 0) {
-                return;
-            }
-
-            const payload = Buffer.concat(chunks);
-
-            let ops: unknown;
-            try {
-                if (payload[0] !== 0x01) {
-                    return;
-                }
-                const raw = gunzipSync(payload.subarray(1));
-                ops = JSON.parse(raw.toString('utf8'));
-            } catch (e) {
-                console.warn(`bad payload at ${txid}:${vinIdx} – ${e}`);
-                return;
-            }
-
-            const isOp = (o: any): o is Operation =>
-                o && typeof o === 'object' &&
-                ['create', 'update', 'delete'].includes(o.type);
-
-            if (!Array.isArray(ops) || ops.some(o => !isOp(o))) {
-                console.warn(`invalid Operation array at ${txid}:${vinIdx}`);
-                return;
-            }
-
-            console.log(ops);
-
-            const events: GatekeeperEvent[] = ops.map((op, i) => ({
-                registry : INSCRIBED_REG,
-                time : timestamp,
-                ordinal : [height, vinIdx, i],
-                operation : op,
-                blockchain : { height, index: vinIdx, txid, batch: '(witness)', opidx: i }
-            }));
-
-            const db = await loadDb();
-            if (!db.discoveredInscribed) {
-                db.discoveredInscribed = [];
-            }
-            db.discoveredInscribed.push({events});
-            await saveDb(db);
         }
     }
     catch (error) {
@@ -265,40 +159,10 @@ async function importBatch(item: DiscoveredItem): Promise<void> {
         item.processed = await gatekeeper.processEvents();
     }
     catch (error) {
-        item.error = JSON.stringify(`Error importing OP_RETURN batch: ${error}`);
+        item.error = JSON.stringify(error);
     }
 
     console.log(JSON.stringify(item, null, 4));
-}
-
-async function importBatchInscribed(item: DiscoveredInscribedItem) {
-    if (item.imported && item.processed) {
-        return;
-    }
-
-    const events = item.events;
-    if (events.length === 0) {
-        return;
-    }
-
-    // Recreate the same logging as importBatch
-    let logObj: DiscoveredItem = {
-        height: events[0].ordinal![0],
-        index: events[0].blockchain!.index!,
-        time: events[0].time,
-        txid: events[0].blockchain!.txid!,
-        did: events[0].blockchain!.batch!,
-    };
-
-    try {
-        item.imported  = await gatekeeper.importBatch(events);
-        item.processed = await gatekeeper.processEvents();
-        logObj = { ...logObj, imported: item.imported, processed: item.processed, error: item.error };
-    } catch (error) {
-        item.error = JSON.stringify(`Error importing inscribed batch: ${error}`);
-    }
-
-    console.log(JSON.stringify(logObj, null, 4));
 }
 
 async function importBatches(): Promise<boolean> {
@@ -314,10 +178,6 @@ async function importBatches(): Promise<boolean> {
                 console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
             }
         }
-    }
-
-    for (const item of db.discoveredInscribed ?? []) {
-        await importBatchInscribed(item);
     }
 
     return await saveDb(db);
@@ -370,295 +230,6 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
     return txid;
 }
 
-async function extractRevealContext(revealTxid: string) {
-    const rawReveal = await btcClient.getRawTransaction(revealTxid, 0) as string;
-    const revealTx = bitcoin.Transaction.fromHex(rawReveal);
-
-    const commitTxid = revealTx.ins[0].hash.reverse().toString('hex');
-    const rawCommit = await btcClient.getRawTransaction(commitTxid, 0) as string;
-    const commitTx = bitcoin.Transaction.fromHex(rawCommit);
-
-    const commitValueSat = commitTx.outs[0].value;
-
-    const wstack = revealTx.ins[0].witness;
-    const tScript = Buffer.from(wstack[wstack.length - 2]);
-    const xonly = tScript.subarray(0, 32);
-
-    const db = await loadDb();
-
-    return { commitTx, commitValueSat, xonly, tScript, hdInfo: db.pendingTaproot!.hdInfo };
-}
-
-function tapLeafHash(script: Buffer, leafVer = 0xc0): Buffer {
-    const verBuf = Buffer.from([leafVer]);
-    const enc = varuintEncode(script.length);
-    const lenBuf = Buffer.from(enc.buffer).subarray(0, enc.bytes);
-    return bitcoin.crypto.taggedHash('TapLeaf', Buffer.concat([verBuf, lenBuf, script]));
-}
-
-function encodePayload(batch: Operation[]): Buffer {
-    const raw = Buffer.from(JSON.stringify(batch), 'utf8');
-    const gz = gzipSync(raw);
-    return Buffer.concat([Buffer.from([0x01]), gz]);
-}
-
-function buildInscriptionScript(xonly: Buffer, payload: Buffer): Buffer {
-    const { script, opcodes } = bitcoin;
-
-    const chunks: Buffer[] = [];
-    for (let i = 0; i < payload.length; i += 520) {
-        chunks.push(payload.subarray(i, i + 520));
-    }
-
-    return script.compile([
-        xonly,
-        opcodes.OP_CHECKSIG,
-        opcodes.OP_FALSE,
-        opcodes.OP_IF,
-        PROTOCOL_TAG,
-        ...chunks,
-        opcodes.OP_ENDIF,
-    ]);
-}
-
-function virtualSizeFromWitness(bytes: number): number {
-    return Math.ceil((16 + bytes) / 4);
-}
-
-async function buildRevealHex(
-    commitTx: bitcoin.Transaction,
-    commitValueSat: number,
-    commitScript: Buffer,
-    xonly: Buffer,
-    tScript: Buffer,
-    hdInfo: HDInfo,
-    extraInputs: {
-        txid: string;
-        vout: number;
-        value: number;
-        scriptPubKey: string
-    }[] = []
-) {
-    const network = bitcoin.networks[config.network];
-    const psbt = new bitcoin.Psbt({ network });
-
-    const leafHash = tapLeafHash(tScript, 0xc0);
-    const { parity } = tweakPubkey(xonly, leafHash);
-
-    const controlByte = 0xc0 | parity;
-    const controlBlock = Buffer.concat([Buffer.from([controlByte]), xonly]);
-
-    psbt.addInput({
-        hash: commitTx.getId(),
-        index: 0,
-        witnessUtxo: {
-            script: commitScript,
-            value: commitValueSat,
-        },
-        tapLeafScript: [{
-            controlBlock,
-            script: tScript,
-            leafVersion: 0xc0,
-        }],
-    });
-
-    for (const inp of extraInputs) {
-        psbt.addInput({
-            hash: inp.txid,
-            index: inp.vout,
-            witnessUtxo: {
-                script: Buffer.from(inp.scriptPubKey, 'hex'),
-                value : Math.round(inp.value * 1e8),
-            },
-        });
-    }
-
-    const marker = Buffer.concat([PROTOCOL_TAG, Buffer.from([0x01])]);
-    psbt.addOutput({
-        script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, marker]),
-        value: 0,
-    });
-
-    const processed = await btcClient.walletProcessPsbt(psbt.toBase64(), true);
-    const psbt2 = bitcoin.Psbt.fromBase64(processed.psbt, { network });
-    const privKey = await derivePrivKey(hdInfo);
-
-    const signer = {
-        publicKey: Buffer.concat([Buffer.from([0x02]), xonly]),
-        signSchnorr: (hash: Buffer) => ecc.signSchnorr(hash, privKey),
-    } as bitcoin.Signer;
-
-    psbt2.signInput(0, signer, [bitcoin.Transaction.SIGHASH_DEFAULT]);
-    const sigWithHashType = psbt2.data.inputs[0].tapScriptSig![0].signature;
-    const finalScriptWitness = witnessStackToScriptWitness([
-        sigWithHashType,
-        tScript,
-        controlBlock
-    ]);
-
-    psbt2.finalizeInput(0, () => ({
-        finalScriptWitness,
-    }));
-
-    if (extraInputs.length === 0) {
-        return psbt2.extractTransaction().toHex();
-    } else {
-        const { psbt: ready } = await btcClient.walletProcessPsbt(psbt2.toBase64(), false);
-        const { hex } = await btcClient.finalizePsbt(ready);
-        return hex;
-    }
-}
-
-function getXOnly(addr: AddressInfo): Buffer {
-    if (addr.desc) {
-        const match = addr.desc.match(/tr\((?:\[.+?])?([0-9a-fA-F]{64})/);
-
-        if (match && match[1]) {
-            return Buffer.from(match[1], 'hex');
-        }
-    }
-
-    throw new Error('Could not extract taproot internal key from getAddressInfo');
-}
-
-function tweakPubkey(xonly: Buffer, leafHash: Buffer): {
-    tweakedX: Buffer;
-    parity: number;
-} {
-    const tweak = bitcoin.crypto.taggedHash('TapTweak', Buffer.concat([xonly, leafHash]));
-    const P = Buffer.concat([Buffer.from([0x02]), xonly]);
-    const tweaked = ecc.pointAddScalar(P, tweak, true);
-    if (!tweaked) {
-        throw new Error('tap tweak failed');
-    }
-    return { tweakedX: Buffer.from(tweaked.subarray(1)), parity: tweaked[0] & 1 };
-}
-
-async function getWalletXprv() {
-    if (walletXprv) {
-        return walletXprv;
-    }
-
-    const { descriptors } = await btcClient.listDescriptors(true);
-
-    for (const d of descriptors) {
-        const match = d.desc.match(/([xt]prv[A-HJ-NP-Za-km-z1-9]+)/);
-        if (match) {
-            walletXprv = match[1];
-            return walletXprv;
-        }
-    }
-
-    throw new Error('Could not locate wallet xprv in exportdescriptors');
-}
-
-function normalisePath(path: string): string {
-    const withM = path.startsWith('m/') ? path : `m/${path}`;
-    return withM.replace(/(\d+)h/g, "$1'");
-}
-
-async function derivePrivKey(hdInfo: HDInfo) {
-    const xprv = await getWalletXprv();
-    const node = bip32.fromBase58(xprv, bitcoin.networks[config.network]);
-    const bip32Path = normalisePath(hdInfo.hdkeypath);
-    const child = node.derivePath(bip32Path);
-    if (!child.privateKey) {
-        throw new Error('derived node has no private key');
-    }
-    return child.privateKey;
-}
-
-async function createTaprootPair(batch: Operation[]) {
-    const payload = encodePayload(batch);
-    const walletAddr = await btcClient.getNewAddress('', 'bech32m');
-    const addrInfo = await btcClient.getAddressInfo(walletAddr);
-    const xonly = getXOnly(addrInfo);
-
-    const tScript = buildInscriptionScript(xonly, payload);
-    const leafHash = tapLeafHash(tScript, 0xc0);
-    const { tweakedX } = tweakPubkey(xonly, leafHash);
-
-    const tapAddr = bitcoin.payments.p2tr({
-        pubkey: tweakedX,
-        network: bitcoin.networks[config.network]
-    }).address!;
-
-    const feeResp = await btcClient.estimateSmartFee(1);
-    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
-    const revealVSize = virtualSizeFromWitness(tScript.length + payload.length + 128);
-    const commitValueSat = feeSatPerVbyte * revealVSize + 1000;
-    const commitValueBTC = commitValueSat / 1e8;
-
-    const utxos = await btcClient.listUnspent();
-    const spend = utxos.find(u => u.amount > commitValueBTC);
-    if (!spend) {
-        return;
-    }
-
-    const changeAddr = await btcClient.getNewAddress();
-    const commitRaw = await btcClient.createRawTransaction(
-        [{ txid: spend.txid, vout: spend.vout, sequence: 0xfffffffd }],
-        {
-            [tapAddr]:  (commitValueSat / 1e8).toFixed(8),
-            [changeAddr]: (spend.amount - commitValueBTC).toFixed(8)
-        });
-
-    const commitSigned = await btcClient.signRawTransactionWithWallet(commitRaw);
-    const commitHex = commitSigned.hex;
-    const commitTx = bitcoin.Transaction.fromHex(commitHex);
-
-    const hdInfo: HDInfo = { hdkeypath: addrInfo.hdkeypath!, hdmasterfingerprint: addrInfo.hdmasterfingerprint! };
-
-    const revealHex = await buildRevealHex(
-        commitTx,
-        commitValueSat,
-        commitTx.outs[0].script,
-        xonly,
-        tScript,
-        hdInfo,
-    );
-
-    return {
-        commitHex,
-        revealHex,
-        hdInfo,
-    };
-}
-
-async function bumpFee(entry: MempoolEntry | undefined, txid: string) {
-    // If we're already at the maximum fee, wait it out
-    if (!entry || entry.fees.modified >= config.feeMax) {
-        return true;
-    }
-
-    const targetFeeBtc = Math.min(entry.fees.modified + config.feeInc, config.feeMax);
-    const currFeeSat = Math.floor(entry.fees.modified  * 1e8);
-    const targetFeeSat = Math.floor(targetFeeBtc * 1e8);
-    const currSatPerVb = Math.ceil(currFeeSat / entry.vsize);
-    let targetSatPerVb = Math.floor(targetFeeSat / entry.vsize);
-    targetSatPerVb = Math.max(targetSatPerVb, currSatPerVb + 1);
-
-    if (targetSatPerVb * entry.vsize > config.feeMax * 1e8) {
-        return true;
-    }
-
-    // Before version 0.21, fee_rate was in BTC/kvB. As of 0.21, fee_rate is in sat/vB
-    const { version } = await btcClient.getNetworkInfo();
-    const legacyRate = version < 210000;
-    const feeRateParam = legacyRate
-        ? (targetSatPerVb / 1e5).toFixed(8)
-        : targetSatPerVb;
-
-    return await btcClient.bumpFee(txid, {
-        feeRate: feeRateParam,
-        replaceable: true
-    }).catch(
-        (err: RpcError) => {
-            console.error(`bumpFee failed (${err.code}): ${err.message}`);
-            return true;
-        });
-}
-
 async function replaceByFee(): Promise<boolean> {
     const db = await loadDb();
 
@@ -683,133 +254,48 @@ async function replaceByFee(): Promise<boolean> {
 
     console.log(JSON.stringify(tx, null, 4));
 
-    const mempoolEntry = await btcClient.getMempoolEntry(db.pendingTxid).catch(() => undefined);
+    const mempoolEntry = await btcClient.getMempoolEntry(db.pendingTxid);
 
-    const bump = await bumpFee(mempoolEntry, db.pendingTxid);
-    if (bump === true) {
+    // If we're already at the maximum fee, wait it out
+    if (mempoolEntry && mempoolEntry.fees.modified >= config.feeMax) {
         return true;
     }
 
-    if (bump && bump.txid) {
-        console.log(`Transaction broadcasted with txid: ${bump.txid}`);
+    const inputs = tx.vin.map((vin: any) => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
+    const opReturnHex = tx.vout[0].scriptPubKey.hex;
+    const address = tx.vout[1].scriptPubKey.addresses![0];
+    const amountBack = tx.vout[1].value - config.feeInc;
 
-        db.pendingTxid = bump.txid;
-        await saveDb(db);
+    if (amountBack < 0) {
+        // TBD add additional inputs and continue if possible
+        return true;
     }
 
-    return true;
-}
+    const rawTxn = await btcClient.createRawTransaction(inputs, {
+        data: opReturnHex.substring(4),
+        [address]: amountBack.toFixed(8)
+    });
 
-async function replaceByFeeInscribed(): Promise<boolean> {
-    const db = await loadDb();
-
-    if (!db.pendingTaproot) {
-        return false;
+    let signedTxn;
+    try {
+        signedTxn = await btcClient.signRawTransactionWithWallet(rawTxn);
+    }
+    catch {
+        // fall back to older version of the method
+        signedTxn = await btcClient.signRawTransaction(rawTxn);
     }
 
-    if (db.pendingTaproot.commitTxid) {
-        console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
+    console.log(JSON.stringify(signedTxn, null, 4));
+    console.log(amountBack);
 
-        const tx = await btcClient.getRawTransaction(db.pendingTaproot.commitTxid, 1) as RawTransactionVerbose;
-        if (!tx.blockhash) {
-            if (config.feeInc === 0) {
-                return true;
-            }
+    const txid = await btcClient.sendRawTransaction(signedTxn.hex);
 
-            const commitEntry = await btcClient.getMempoolEntry(db.pendingTaproot.commitTxid).catch(() => undefined);
+    console.log(`Transaction broadcasted with txid: ${txid}`);
 
-            const bump = await bumpFee(commitEntry, db.pendingTaproot.commitTxid);
-            if (bump === true) {
-                return true;
-            }
-
-            if (bump && bump.txid) {
-                console.log(`Transaction broadcasted with txid: ${bump.txid}`);
-
-                const rawCommitHex = await btcClient.getRawTransaction(bump.txid, 0) as string;
-                const newCommitTx = bitcoin.Transaction.fromHex(rawCommitHex);
-
-                const ctx = await extractRevealContext(db.pendingTaproot.revealTxid!);
-
-                const revealHex = await buildRevealHex(
-                    newCommitTx,
-                    newCommitTx.outs[0].value,
-                    newCommitTx.outs[0].script,
-                    ctx.xonly,
-                    ctx.tScript,
-                    ctx.hdInfo,
-                );
-
-                const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
-                db.pendingTaproot.commitTxid = bump.txid;
-                db.pendingTaproot.revealTxid = newRevealTxid;
-                await saveDb(db);
-                return true;
-            }
-        } else {
-            db.pendingTaproot.commitTxid = undefined;
-        }
-    }
-
-    if (!db.pendingTaproot.commitTxid && db.pendingTaproot.revealTxid) {
-        console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
-
-        const tx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
-
-        if (!tx.blockhash) {
-            if (config.feeInc === 0) {
-                return true;
-            }
-
-            const revealEntry = await btcClient.getMempoolEntry(db.pendingTaproot.revealTxid).catch(() => undefined);
-            if (!revealEntry || revealEntry.fees.modified >= config.feeMax) {
-                return true;
-            }
-
-            const extraUtxo = (await btcClient.listUnspent()).find(u => u.amount > config.feeInc);
-            if (extraUtxo) {
-                const ctx = await extractRevealContext(db.pendingTaproot.revealTxid);
-
-                const revealHex = await buildRevealHex(
-                    ctx.commitTx,
-                    ctx.commitValueSat,
-                    ctx.commitTx.outs[0].script,
-                    ctx.xonly,
-                    ctx.tScript,
-                    ctx.hdInfo,
-                    [{
-                        txid: extraUtxo.txid,
-                        vout: extraUtxo.vout,
-                        value: extraUtxo.amount,
-                        scriptPubKey: extraUtxo.scriptPubKey
-                    }],
-                );
-
-                const txid = await btcClient.sendRawTransaction(revealHex).catch(
-                    (err: RpcError) => {
-                        console.error(`sendRawTransaction failed (${err.code}): ${err.message}`);
-                        return null;
-                    });
-                if (txid) {
-                    console.log(`Transaction broadcasted with txid: ${txid}`);
-
-                    db.pendingTaproot.revealTxid = txid;
-                    await saveDb(db);
-                }
-
-                return true;
-            }
-        } else {
-            db.pendingTaproot.revealTxid = undefined;
-        }
-    }
-
-    if (db.pendingTaproot && !db.pendingTaproot.commitTxid && !db.pendingTaproot.revealTxid) {
-        db.pendingTaproot = undefined;
-    }
+    db.pendingTxid = txid;
     await saveDb(db);
 
-    return false;
+    return true;
 }
 
 async function checkExportInterval(): Promise<boolean> {
@@ -830,13 +316,24 @@ async function checkExportInterval(): Promise<boolean> {
 
 async function anchorBatch(): Promise<void> {
 
+    if (await checkExportInterval()) {
+        return;
+    }
+
     if (await replaceByFee()) {
         return;
     }
 
     try {
-        await fundWalletMessage();
-    } catch {
+        const walletInfo = await btcClient.getWalletInfo();
+
+        if (walletInfo.balance < config.feeMax) {
+            const address = await btcClient.getNewAddress('funds', 'bech32');
+            console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
+            return;
+        }
+    }
+    catch {
         console.log(`${config.chain} node not accessible`);
         return;
     }
@@ -844,7 +341,7 @@ async function anchorBatch(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length > 0) {
-        console.log("Anchor OP_RETURN batch\n", JSON.stringify(batch, null, 4));
+        console.log(JSON.stringify(batch, null, 4));
 
         const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
@@ -876,72 +373,6 @@ async function anchorBatch(): Promise<void> {
     }
 }
 
-async function fundWalletMessage() {
-    const walletInfo = await btcClient.getWalletInfo();
-
-    if (walletInfo.balance < config.feeMax) {
-        const address = await btcClient.getNewAddress('funds', 'bech32');
-        console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
-    }
-}
-
-async function anchorBatchInscribed(): Promise<void> {
-
-    if (!INSCRIBED) {
-        return;
-    }
-
-    if (await replaceByFeeInscribed()) {
-        return;
-    }
-
-    try {
-        await fundWalletMessage();
-    } catch {
-        console.log(`${config.chain} node not accessible`);
-        return;
-    }
-
-    const batch = await gatekeeper.getQueue(INSCRIBED_REG);
-
-    if (batch.length === 0) {
-        console.log(`empty ${INSCRIBED_REG} queue`);
-        return;
-    }
-
-    console.log("Anchor inscription batch", JSON.stringify(batch, null, 4));
-
-    try {
-        const taprootPair = await createTaprootPair(batch);
-        if (!taprootPair) {
-            return;
-        }
-        const { commitHex, revealHex, hdInfo } = taprootPair;
-
-        const commitTxid = await btcClient.sendRawTransaction(commitHex);
-        const revealTxid = await btcClient.sendRawTransaction(revealHex);
-
-        console.log("Commit TX", JSON.stringify(commitTxid, null, 4));
-        console.log("Reveal TX", JSON.stringify(revealTxid, null, 4));
-
-        const ok = await gatekeeper.clearQueue(INSCRIBED_REG, batch);
-
-        if (ok) {
-            const db = await loadDb();
-            db.pendingTaproot = {
-                commitTxid,
-                revealTxid,
-                hdInfo,
-            };
-            db.lastExport = new Date().toISOString();
-            await saveDb(db);
-        }
-
-    } catch (err) {
-        console.error(`Taproot anchor error: ${err}`);
-    }
-}
-
 async function importLoop(): Promise<void> {
     try {
         await scanBlocks();
@@ -954,27 +385,13 @@ async function importLoop(): Promise<void> {
 }
 
 async function exportLoop(): Promise<void> {
-    if (exportRunning) {
-        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
-        return;
-    }
-
-    exportRunning = true;
-
     try {
-        if (await checkExportInterval()) {
-            return;
-        }
-
         await anchorBatch();
-        await anchorBatchInscribed();
         console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
-    } finally {
-        exportRunning = false;
-        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
+    setTimeout(exportLoop, config.exportInterval * 60 * 1000);
 }
 
 async function waitForChain() {
@@ -1093,8 +510,6 @@ async function main() {
             delete item.processed;
             delete item.error;
         }
-
-        db.discoveredInscribed = [];
 
         await saveDb(db);
     }
