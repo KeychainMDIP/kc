@@ -30,7 +30,7 @@ import {
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
 // Registries that are considered valid when importing DIDs from the network
-const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscribed'];
+const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscription'];
 
 enum ImportStatus {
     ADDED = 'added',
@@ -466,7 +466,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             // Don't distribute local DIDs
             if (registry !== 'local') {
                 // Allow create events on inscribed networks
-                if (registry.endsWith('-Inscribed')) {
+                if (registry.endsWith('-Inscription')) {
                     const queueSize = await this.db.queueOperation(registry, operation);
 
                     if (queueSize >= this.maxQueueSize) {

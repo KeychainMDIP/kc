@@ -15,8 +15,8 @@ import {MediatorDb, MediatorDbInterface, DiscoveredItem, DiscoveredInscribedItem
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import {witnessStackToScriptWitness} from "bitcoinjs-lib/src/psbt/psbtutils.js";
 
-const REGISTRY = config.chain;
-const INSCRIBED = REGISTRY + "-Inscribed";
+const CHAIN = config.chain;
+const REGISTRY = CHAIN + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 
 const gatekeeper = new GatekeeperClient();
@@ -136,7 +136,7 @@ async function fetchTransaction(height: number, index: number, timestamp: string
             console.log(ops);
 
             const events: GatekeeperEvent[] = ops.map((op, i) => ({
-                registry : INSCRIBED,
+                registry : REGISTRY,
                 time : timestamp,
                 ordinal : [height, index, i],
                 operation : op,
@@ -280,6 +280,8 @@ function buildInscriptionScript(xonly: Buffer, payload: Buffer): Buffer {
     for (let i = 0; i < payload.length; i += 520) {
         chunks.push(payload.subarray(i, i + 520));
     }
+
+    console.log("chunks:", chunks.length);
 
     return script.compile([
         xonly,
@@ -680,10 +682,10 @@ async function anchorBatch(): Promise<void> {
         return;
     }
 
-    const batch = await gatekeeper.getQueue(INSCRIBED);
+    const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length === 0) {
-        console.log(`empty ${INSCRIBED} queue`);
+        console.log(`empty ${REGISTRY} queue`);
         return;
     }
 
@@ -705,7 +707,7 @@ async function anchorBatch(): Promise<void> {
         const commitTxid = await btcClient.sendRawTransaction(commitHex);
         const revealTxid = await btcClient.sendRawTransaction(revealHex);
 
-        const ok = await gatekeeper.clearQueue(INSCRIBED, batch);
+        const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
         if (ok) {
             const db = await loadDb();
@@ -808,12 +810,12 @@ async function waitForChain() {
 }
 
 async function addBlock(height: number, hash: string, time: number): Promise<void> {
-    await gatekeeper.addBlock(REGISTRY, { hash, height, time });
+    await gatekeeper.addBlock(CHAIN, { hash, height, time });
 }
 
 async function syncBlocks(): Promise<void> {
     try {
-        const latest = await gatekeeper.getBlock(REGISTRY);
+        const latest = await gatekeeper.getBlock(CHAIN);
         const currentMax = latest ? latest.height : config.startBlock;
         const blockCount = await btcClient.getBlockCount();
 
@@ -836,16 +838,16 @@ async function main() {
         return;
     }
 
-    const jsonFile = new JsonFile(INSCRIBED);
+    const jsonFile = new JsonFile(REGISTRY);
 
     if (config.db === 'redis') {
-        jsonPersister = await JsonRedis.create(INSCRIBED);
+        jsonPersister = await JsonRedis.create(REGISTRY);
     }
     else if (config.db === 'mongodb') {
-        jsonPersister = await JsonMongo.create(INSCRIBED);
+        jsonPersister = await JsonMongo.create(REGISTRY);
     }
     else if (config.db === 'sqlite') {
-        jsonPersister = await JsonSQLite.create(INSCRIBED);
+        jsonPersister = await JsonSQLite.create(REGISTRY);
     }
     else {
         jsonPersister = jsonFile;
