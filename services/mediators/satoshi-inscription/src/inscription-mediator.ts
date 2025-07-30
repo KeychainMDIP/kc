@@ -18,6 +18,7 @@ import {witnessStackToScriptWitness} from "bitcoinjs-lib/src/psbt/psbtutils.js";
 const CHAIN = config.chain;
 const REGISTRY = CHAIN + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
+const DUST = 546;
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -324,6 +325,7 @@ async function buildRevealHex(
     psbt.addInput({
         hash: commitTx.getId(),
         index: 0,
+        sequence: 0xfffffffd,
         witnessUtxo: {
             script: commitScript,
             value: commitValueSat,
@@ -339,6 +341,7 @@ async function buildRevealHex(
         psbt.addInput({
             hash: inp.txid,
             index: inp.vout,
+            sequence: 0xfffffffd,
             witnessUtxo: {
                 script: Buffer.from(inp.scriptPubKey, 'hex'),
                 value : Math.round(inp.value * 1e8),
@@ -441,6 +444,49 @@ async function derivePrivKey(hdInfo: HDInfo) {
     return child.privateKey;
 }
 
+async function createTransactionPair(tScript: Buffer, payload: Buffer, tapAddr: string) {
+
+    const feeResp = await btcClient.estimateSmartFee(1);
+    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
+    const revealVSize = virtualSizeFromWitness(tScript.length + payload.length + 128);
+    const revealFeeSat = feeSatPerVbyte * revealVSize;
+
+    const commitVSize = 200; // Actual size will be less, 153 in one commit transaction
+    const commitFeeSat= feeSatPerVbyte * commitVSize;
+
+    const utxos = await btcClient.listUnspent();
+    const spend = utxos.find(u => u.amount * 1e8 > revealFeeSat + commitFeeSat);
+    if (!spend) {
+        throw new Error(`Could not find sufficient UTXOs to cover fee: ${revealFeeSat + commitFeeSat}`);
+    }
+
+    const inputSat = Math.round(spend.amount * 1e8);
+    const changeSat = inputSat - revealFeeSat - commitFeeSat;
+
+    const outputs: Record<string, string> = {};
+    outputs[tapAddr] = (revealFeeSat / 1e8).toFixed(8);
+
+    if (changeSat >= DUST) {
+        const changeAddr = await btcClient.getNewAddress();
+        outputs[changeAddr] = (changeSat / 1e8).toFixed(8);
+    }
+
+    const commitRaw = await btcClient.createRawTransaction(
+        [{ txid: spend.txid, vout: spend.vout, sequence: 0xfffffffd }],
+        outputs
+    );
+
+    const commitSigned = await btcClient.signRawTransactionWithWallet(commitRaw);
+    const commitHex = commitSigned.hex;
+    const commitTx = bitcoin.Transaction.fromHex(commitHex);
+
+    return {
+        commitTx,
+        revealFeeSat,
+        commitHex,
+    };
+}
+
 async function createTaprootPair(batch: Operation[]) {
     const payload = encodePayload(batch);
     const walletAddr = await btcClient.getNewAddress('', 'bech32m');
@@ -456,35 +502,13 @@ async function createTaprootPair(batch: Operation[]) {
         network: bitcoin.networks[config.network]
     }).address!;
 
-    const feeResp = await btcClient.estimateSmartFee(1);
-    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
-    const revealVSize = virtualSizeFromWitness(tScript.length + payload.length + 128);
-    const commitValueSat = feeSatPerVbyte * revealVSize + 1000;
-    const commitValueBTC = commitValueSat / 1e8;
-
-    const utxos = await btcClient.listUnspent();
-    const spend = utxos.find(u => u.amount > commitValueBTC);
-    if (!spend) {
-        return;
-    }
-
-    const changeAddr = await btcClient.getNewAddress();
-    const commitRaw = await btcClient.createRawTransaction(
-        [{ txid: spend.txid, vout: spend.vout, sequence: 0xfffffffd }],
-        {
-            [tapAddr]:  (commitValueSat / 1e8).toFixed(8),
-            [changeAddr]: (spend.amount - commitValueBTC).toFixed(8)
-        });
-
-    const commitSigned = await btcClient.signRawTransactionWithWallet(commitRaw);
-    const commitHex = commitSigned.hex;
-    const commitTx = bitcoin.Transaction.fromHex(commitHex);
+    const { commitTx, revealFeeSat, commitHex } = await createTransactionPair(tScript, payload, tapAddr);
 
     const hdInfo: HDInfo = { hdkeypath: addrInfo.hdkeypath!, hdmasterfingerprint: addrInfo.hdmasterfingerprint! };
 
     const revealHex = await buildRevealHex(
         commitTx,
-        commitValueSat,
+        revealFeeSat,
         commitTx.outs[0].script,
         xonly,
         tScript,
