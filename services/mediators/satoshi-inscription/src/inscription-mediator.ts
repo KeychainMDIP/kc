@@ -19,6 +19,8 @@ const CHAIN = config.chain;
 const REGISTRY = CHAIN + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 const DUST = 546;
+const MAX_LEAF_BYTES = 10 * 1024;
+const MAX_LEAVES = 39;
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -68,16 +70,16 @@ async function fetchTransaction(height: number, index: number, timestamp: string
         const txn = await btcClient.getTransactionByHash(txid);
         const asm = txn.vout[0].scriptPubKey.asm;
 
-        const hasMdipMarker = asm.startsWith('OP_RETURN 4d44495001'); // MDIP 0x01
+        if (!asm.startsWith('OP_RETURN 4d44495001')) { // MDIP 0x01
+            return;
+        }
 
-        const vin = txn.vin[0];
+        const slices: Buffer[] = [];
 
-        if (
-            hasMdipMarker &&
-            vin &&
-            vin.txinwitness &&
-            vin.txinwitness.length >= 3
-        ) {
+        txn.vin.forEach((vin, vinIdx) => {
+            if (!vin.txinwitness || vin.txinwitness.length < 3) {
+                return;
+            }
 
             const tapScriptHex = vin.txinwitness[vin.txinwitness.length - 2];
             const buf = Buffer.from(tapScriptHex, 'hex');
@@ -85,72 +87,74 @@ async function fetchTransaction(height: number, index: number, timestamp: string
                 return;
             }
 
-            const chunks = (() => {
-                const decomp = bitcoin.script.decompile(buf) || [];
-                const tagIdx = decomp.findIndex(
-                    (el) => Buffer.isBuffer(el) && (el as Buffer).equals(PROTOCOL_TAG)
-                );
-                if (tagIdx === -1) {
-                    return null;
-                }
-
-                console.log("inscription found");
-
-                const result: Buffer[] = [];
-                for (let j = tagIdx + 1; j < decomp.length; j++) {
-                    const el = decomp[j];
-                    if (typeof el === 'number') {
-                        break;
-                    }
-                    result.push(el as Buffer);
-                }
-                return result;
-            })();
-
-            if (!chunks || chunks.length === 0) {
+            const decomp = bitcoin.script.decompile(buf) || [];
+            const tagIdx = decomp.findIndex(
+                el => Buffer.isBuffer(el) && (el as Buffer).equals(PROTOCOL_TAG)
+            );
+            if (tagIdx === -1) {
                 return;
             }
 
-            const payload = Buffer.concat(chunks);
-
-            let ops: unknown;
-            try {
-                if (payload[0] !== 0x01) {
-                    return;
+            const chunkBufs: Buffer[] = [];
+            for (let j = tagIdx + 1; j < decomp.length; j++) {
+                const el = decomp[j];
+                if (typeof el === 'number') {
+                    break;
                 }
-                const raw = gunzipSync(payload.subarray(1));
-                ops = JSON.parse(raw.toString('utf8'));
-            } catch (e) {
-                console.warn(`bad payload at ${txid}:${index} – ${e}`);
-                return;
+                chunkBufs.push(el as Buffer);
             }
 
-            const isOp = (o: any): o is Operation =>
-                o && typeof o === 'object' &&
-                ['create', 'update', 'delete'].includes(o.type);
-
-            if (!Array.isArray(ops) || ops.some(o => !isOp(o))) {
-                console.warn(`invalid Operation array at ${txid}:${index}`);
-                return;
+            if (chunkBufs.length) {
+                slices[vinIdx] = Buffer.concat(chunkBufs);
             }
+        });
 
-            console.log(ops);
-
-            const events: GatekeeperEvent[] = ops.map((op, i) => ({
-                registry : REGISTRY,
-                time : timestamp,
-                ordinal : [height, index, i],
-                operation : op,
-                blockchain : { height, index: index, txid, batch: '(witness)', opidx: i }
-            }));
-
-            const db = await loadDb();
-            if (!db.discovered) {
-                db.discovered = [];
-            }
-            db.discovered.push({events});
-            await saveDb(db);
+        const orderedSlices = slices.filter(Boolean);
+        if (orderedSlices.length === 0) {
+            return;
         }
+
+        const payload = Buffer.concat(orderedSlices);
+        if (payload[0] !== 0x01) {
+            return;
+        }
+
+        let ops: unknown;
+        try {
+            const raw = gunzipSync(payload.subarray(1));
+            ops = JSON.parse(raw.toString('utf8'));
+        } catch (e) {
+            console.warn(`bad payload at ${txid}:${index} – ${e}`);
+            return;
+        }
+
+        const isOp = (o: any): o is Operation =>
+            o && typeof o === 'object' &&
+            ['create', 'update', 'delete'].includes(o.type);
+
+        if (!Array.isArray(ops) || ops.some(o => !isOp(o))) {
+            console.warn(`invalid Operation array at ${txid}:${index}`);
+            return;
+        }
+
+        const events: GatekeeperEvent[] = ops.map((op, i) => ({
+            registry : REGISTRY,
+            time : timestamp,
+            ordinal : [height, index, i],
+            operation : op,
+            blockchain : {
+                height,
+                index: index,
+                txid,
+                batch: '(witness)',
+                opidx: i
+            }
+        }));
+
+        const db = await loadDb();
+        db.discovered ??= [];
+        db.discovered.push({events});
+        await saveDb(db);
     }
     catch (error) {
         console.error(`Error fetching txn: ${error}`);
@@ -250,15 +254,21 @@ async function extractRevealContext(revealTxid: string) {
     const rawCommit = await btcClient.getRawTransaction(commitTxid, 0) as string;
     const commitTx = bitcoin.Transaction.fromHex(rawCommit);
 
-    const commitValueSat = commitTx.outs[0].value;
+    const tapScripts: Buffer[] = revealTx.ins.map(inp => {
+        const w  = inp.witness;
+        return Buffer.from(w[w.length - 2]);
+    });
 
-    const wstack = revealTx.ins[0].witness;
-    const tScript = Buffer.from(wstack[wstack.length - 2]);
-    const xonly = tScript.subarray(0, 32);
+    const xonly = tapScripts[0].subarray(0, 32);
 
     const db = await loadDb();
 
-    return { commitTx, commitValueSat, xonly, tScript, hdInfo: db.pendingTaproot!.hdInfo };
+    return {
+        commitTx,
+        tapScripts,
+        xonly,
+        hdInfo: db.pendingTaproot!.hdInfo
+    };
 }
 
 function tapLeafHash(script: Buffer, leafVer = 0xc0): Buffer {
@@ -274,6 +284,18 @@ function encodePayload(batch: Operation[]): Buffer {
     return Buffer.concat([Buffer.from([0x01]), gz]);
 }
 
+function splitPayload(payload: Buffer): Buffer[] {
+    const out: Buffer[] = [];
+    for (let i = 0; i < payload.length; i += MAX_LEAF_BYTES) {
+        out.push(payload.subarray(i, i + MAX_LEAF_BYTES));
+    }
+    // TODO better solution when there are too many operations
+    if (out.length > MAX_LEAVES) {
+        throw new Error(`payload too large – max ${MAX_LEAF_BYTES * MAX_LEAVES} bytes`);
+    }
+    return out;
+}
+
 function buildInscriptionScript(xonly: Buffer, payload: Buffer): Buffer {
     const { script, opcodes } = bitcoin;
 
@@ -281,8 +303,6 @@ function buildInscriptionScript(xonly: Buffer, payload: Buffer): Buffer {
     for (let i = 0; i < payload.length; i += 520) {
         chunks.push(payload.subarray(i, i + 520));
     }
-
-    console.log("chunks:", chunks.length);
 
     return script.compile([
         xonly,
@@ -301,10 +321,8 @@ function virtualSizeFromWitness(bytes: number): number {
 
 async function buildRevealHex(
     commitTx: bitcoin.Transaction,
-    commitValueSat: number,
-    commitScript: Buffer,
     xonly: Buffer,
-    tScript: Buffer,
+    tapScripts: Buffer[],
     hdInfo: HDInfo,
     extraInputs: {
         txid: string;
@@ -316,25 +334,28 @@ async function buildRevealHex(
     const network = bitcoin.networks[config.network];
     const psbt = new bitcoin.Psbt({ network });
 
-    const leafHash = tapLeafHash(tScript, 0xc0);
-    const { parity } = tweakPubkey(xonly, leafHash);
+    tapScripts.forEach((tScript, idx) => {
+        const commitOut = commitTx.outs[idx];
+        const leafHash = tapLeafHash(tScript, 0xc0);
+        const { parity } = tweakPubkey(xonly, leafHash);
 
-    const controlByte = 0xc0 | parity;
-    const controlBlock = Buffer.concat([Buffer.from([controlByte]), xonly]);
+        const controlByte = 0xc0 | parity;
+        const controlBlock = Buffer.concat([Buffer.from([controlByte]), xonly]);
 
-    psbt.addInput({
-        hash: commitTx.getId(),
-        index: 0,
-        sequence: 0xfffffffd,
-        witnessUtxo: {
-            script: commitScript,
-            value: commitValueSat,
-        },
-        tapLeafScript: [{
-            controlBlock,
-            script: tScript,
-            leafVersion: 0xc0,
-        }],
+        psbt.addInput({
+            hash: commitTx.getId(),
+            index: idx,
+            sequence: 0xfffffffd,
+            witnessUtxo: {
+                script: commitOut.script,
+                value: commitOut.value
+            },
+            tapLeafScript: [{
+                controlBlock,
+                script: tScript,
+                leafVersion: 0xc0,
+            }],
+        });
     });
 
     for (const inp of extraInputs) {
@@ -357,24 +378,31 @@ async function buildRevealHex(
 
     const processed = await btcClient.walletProcessPsbt(psbt.toBase64(), true);
     const psbt2 = bitcoin.Psbt.fromBase64(processed.psbt, { network });
-    const privKey = await derivePrivKey(hdInfo);
 
+    const privKey = await derivePrivKey(hdInfo);
     const signer = {
         publicKey: Buffer.concat([Buffer.from([0x02]), xonly]),
         signSchnorr: (hash: Buffer) => ecc.signSchnorr(hash, privKey),
     } as bitcoin.Signer;
 
-    psbt2.signInput(0, signer, [bitcoin.Transaction.SIGHASH_DEFAULT]);
-    const sigWithHashType = psbt2.data.inputs[0].tapScriptSig![0].signature;
-    const finalScriptWitness = witnessStackToScriptWitness([
-        sigWithHashType,
-        tScript,
-        controlBlock
-    ]);
+    tapScripts.forEach((tScript, idx) => {
+        const leafHash = tapLeafHash(tScript, 0xc0);
+        const { parity } = tweakPubkey(xonly, leafHash);
+        const controlBlock = Buffer.concat([Buffer.from([0xc0 | parity]), xonly]);
 
-    psbt2.finalizeInput(0, () => ({
-        finalScriptWitness,
-    }));
+        psbt2.signInput(idx, signer, [bitcoin.Transaction.SIGHASH_DEFAULT]);
+        const sigWithHashType = psbt2.data.inputs[idx].tapScriptSig![0].signature;
+
+        const finalScriptWitness = witnessStackToScriptWitness([
+            sigWithHashType,
+            tScript,
+            controlBlock,
+        ]);
+
+        psbt2.finalizeInput(idx, () => ({
+            finalScriptWitness
+        }));
+    });
 
     if (extraInputs.length === 0) {
         return psbt2.extractTransaction().toHex();
@@ -444,31 +472,34 @@ async function derivePrivKey(hdInfo: HDInfo) {
     return child.privateKey;
 }
 
-async function createTransactionPair(tScript: Buffer, payload: Buffer, tapAddr: string) {
+async function createTransactionPair(outputMap: Record<string, number>) {
 
     const feeResp = await btcClient.estimateSmartFee(1);
     const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
-    const revealVSize = virtualSizeFromWitness(tScript.length + payload.length + 128);
-    const revealFeeSat = feeSatPerVbyte * revealVSize;
 
-    const commitVSize = 200; // Actual size will be less, 153 in one commit transaction
-    const commitFeeSat= feeSatPerVbyte * commitVSize;
+    const nTapOuts = Object.keys(outputMap).length;
+    const commitVSize = 200 + 43 * (nTapOuts - 1);
+    const commitFeeSat = feeSatPerVbyte * commitVSize;
 
-    const utxos = await btcClient.listUnspent();
-    const spend = utxos.find(u => u.amount * 1e8 > revealFeeSat + commitFeeSat);
+    const totalOutputsSat = Object.values(outputMap).reduce((a, b) => a + b, 0);
+
+    const utxos  = await btcClient.listUnspent();
+    const spend  = utxos.find(u => u.amount * 1e8 > totalOutputsSat + commitFeeSat);
     if (!spend) {
-        throw new Error(`Could not find sufficient UTXOs to cover fee: ${revealFeeSat + commitFeeSat}`);
+        throw new Error('insufficient UTXOs for commit+reveal fees');
     }
 
     const inputSat = Math.round(spend.amount * 1e8);
-    const changeSat = inputSat - revealFeeSat - commitFeeSat;
-
-    const outputs: Record<string, string> = {};
-    outputs[tapAddr] = (revealFeeSat / 1e8).toFixed(8);
+    const changeSat = inputSat - totalOutputsSat - commitFeeSat;
 
     if (changeSat >= DUST) {
         const changeAddr = await btcClient.getNewAddress();
-        outputs[changeAddr] = (changeSat / 1e8).toFixed(8);
+        outputMap[changeAddr] = changeSat;
+    }
+
+    const outputs: Record<string, string> = {};
+    for (const [address, sat] of Object.entries(outputMap)) {
+        outputs[address] = (sat / 1e8).toFixed(8);
     }
 
     const commitRaw = await btcClient.createRawTransaction(
@@ -477,46 +508,55 @@ async function createTransactionPair(tScript: Buffer, payload: Buffer, tapAddr: 
     );
 
     const commitSigned = await btcClient.signRawTransactionWithWallet(commitRaw);
-    const commitHex = commitSigned.hex;
-    const commitTx = bitcoin.Transaction.fromHex(commitHex);
 
-    return {
-        commitTx,
-        revealFeeSat,
-        commitHex,
-    };
+    return bitcoin.Transaction.fromHex(commitSigned.hex);
 }
 
 async function createTaprootPair(batch: Operation[]) {
-    const payload = encodePayload(batch);
+    const slices = splitPayload(encodePayload(batch));
+
     const walletAddr = await btcClient.getNewAddress('', 'bech32m');
     const addrInfo = await btcClient.getAddressInfo(walletAddr);
     const xonly = getXOnly(addrInfo);
 
-    const tScript = buildInscriptionScript(xonly, payload);
-    const leafHash = tapLeafHash(tScript, 0xc0);
-    const { tweakedX } = tweakPubkey(xonly, leafHash);
+    const feeResp = await btcClient.estimateSmartFee(1);
+    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
 
-    const tapAddr = bitcoin.payments.p2tr({
-        pubkey: tweakedX,
-        network: bitcoin.networks[config.network]
-    }).address!;
+    const outputMap: Record<string, number> = {};
+    const tapScripts: Buffer[] = [];
 
-    const { commitTx, revealFeeSat, commitHex } = await createTransactionPair(tScript, payload, tapAddr);
+    for (const slice of slices) {
+        const tScript = buildInscriptionScript(xonly, slice);
+        tapScripts.push(tScript);
 
-    const hdInfo: HDInfo = { hdkeypath: addrInfo.hdkeypath!, hdmasterfingerprint: addrInfo.hdmasterfingerprint! };
+        const leafHash = tapLeafHash(tScript, 0xc0);
+        const { tweakedX } = tweakPubkey(xonly, leafHash);
+
+        const tapAddr = bitcoin.payments.p2tr({
+            pubkey: tweakedX,
+            network: bitcoin.networks[config.network]
+        }).address!;
+
+        const revealVSize = virtualSizeFromWitness(tScript.length + slice.length + 128);
+        outputMap[tapAddr] = feeSatPerVbyte * revealVSize;
+    }
+
+    const commitTx = await createTransactionPair(outputMap);
+
+    const hdInfo: HDInfo = {
+        hdkeypath: addrInfo.hdkeypath!,
+        hdmasterfingerprint: addrInfo.hdmasterfingerprint!
+    };
 
     const revealHex = await buildRevealHex(
         commitTx,
-        revealFeeSat,
-        commitTx.outs[0].script,
         xonly,
-        tScript,
+        tapScripts,
         hdInfo,
     );
 
     return {
-        commitHex,
+        commitHex: commitTx.toHex(),
         revealHex,
         hdInfo,
     };
@@ -589,10 +629,8 @@ async function replaceByFee(): Promise<boolean> {
 
                 const revealHex = await buildRevealHex(
                     newCommitTx,
-                    newCommitTx.outs[0].value,
-                    newCommitTx.outs[0].script,
                     ctx.xonly,
-                    ctx.tScript,
+                    ctx.tapScripts,
                     ctx.hdInfo,
                 );
 
@@ -628,10 +666,8 @@ async function replaceByFee(): Promise<boolean> {
 
                 const revealHex = await buildRevealHex(
                     ctx.commitTx,
-                    ctx.commitValueSat,
-                    ctx.commitTx.outs[0].script,
                     ctx.xonly,
-                    ctx.tScript,
+                    ctx.tapScripts,
                     ctx.hdInfo,
                     [{
                         txid: extraUtxo.txid,
