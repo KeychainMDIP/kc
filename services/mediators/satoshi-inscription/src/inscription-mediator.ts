@@ -20,7 +20,8 @@ const REGISTRY = CHAIN + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 const DUST = 546;
 const MAX_LEAF_BYTES = 10 * 1024;
-const MAX_LEAVES = 39;
+const MAX_LEAVES = 38;
+const HARD_LIMIT = MAX_LEAF_BYTES * MAX_LEAVES;
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -289,10 +290,6 @@ function splitPayload(payload: Buffer): Buffer[] {
     for (let i = 0; i < payload.length; i += MAX_LEAF_BYTES) {
         out.push(payload.subarray(i, i + MAX_LEAF_BYTES));
     }
-    // TODO better solution when there are too many operations
-    if (out.length > MAX_LEAVES) {
-        throw new Error(`payload too large – max ${MAX_LEAF_BYTES * MAX_LEAVES} bytes`);
-    }
     return out;
 }
 
@@ -324,12 +321,14 @@ async function buildRevealHex(
     xonly: Buffer,
     tapScripts: Buffer[],
     hdInfo: HDInfo,
-    extraInputs: {
+    extraInput?: {
         txid: string;
         vout: number;
-        value: number;
-        scriptPubKey: string
-    }[] = []
+        valueSat: number;
+        scriptPubKey: string;
+        feeDeltaSat: number;
+        changeAddr: string;
+    }
 ) {
     const network = bitcoin.networks[config.network];
     const psbt = new bitcoin.Psbt({ network });
@@ -358,14 +357,14 @@ async function buildRevealHex(
         });
     });
 
-    for (const inp of extraInputs) {
+    if (extraInput) {
         psbt.addInput({
-            hash: inp.txid,
-            index: inp.vout,
+            hash: extraInput.txid,
+            index: extraInput.vout,
             sequence: 0xfffffffd,
             witnessUtxo: {
-                script: Buffer.from(inp.scriptPubKey, 'hex'),
-                value : Math.round(inp.value * 1e8),
+                script: Buffer.from(extraInput.scriptPubKey, 'hex'),
+                value : extraInput.valueSat,
             },
         });
     }
@@ -375,6 +374,16 @@ async function buildRevealHex(
         script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, marker]),
         value: 0,
     });
+
+    if (extraInput) {
+        const changeSat = extraInput.valueSat - extraInput.feeDeltaSat;
+        if (changeSat >= DUST) {
+            psbt.addOutput({
+                address: extraInput.changeAddr,
+                value  : changeSat,
+            });
+        }
+    }
 
     const processed = await btcClient.walletProcessPsbt(psbt.toBase64(), true);
     const psbt2 = bitcoin.Psbt.fromBase64(processed.psbt, { network });
@@ -404,7 +413,7 @@ async function buildRevealHex(
         }));
     });
 
-    if (extraInputs.length === 0) {
+    if (!extraInput) {
         return psbt2.extractTransaction().toHex();
     } else {
         const { psbt: ready } = await btcClient.walletProcessPsbt(psbt2.toBase64(), false);
@@ -472,9 +481,9 @@ async function derivePrivKey(hdInfo: HDInfo) {
     return child.privateKey;
 }
 
-async function createTransactionPair(outputMap: Record<string, number>) {
+async function createCommitTransaction(outputMap: Record<string, number>) {
 
-    const feeResp = await btcClient.estimateSmartFee(1);
+    const feeResp = await btcClient.estimateSmartFee(config.feeConf);
     const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
 
     const nTapOuts = Object.keys(outputMap).length;
@@ -482,11 +491,16 @@ async function createTransactionPair(outputMap: Record<string, number>) {
     const commitFeeSat = feeSatPerVbyte * commitVSize;
 
     const totalOutputsSat = Object.values(outputMap).reduce((a, b) => a + b, 0);
+    const totalFeeBTC = (totalOutputsSat + commitFeeSat) / 1e8;
+
+    if (totalFeeBTC > config.feeMax) {
+        throw new Error(`Fee above maximum allowed. Required: ${totalFeeBTC} feeMax: ${config.feeMax}`);
+    }
 
     const utxos  = await btcClient.listUnspent();
-    const spend  = utxos.find(u => u.amount * 1e8 > totalOutputsSat + commitFeeSat);
+    const spend  = utxos.find(u => u.amount > totalFeeBTC);
     if (!spend) {
-        throw new Error('insufficient UTXOs for commit+reveal fees');
+        throw new Error(`insufficient UTXOs for commit + reveal fees: ${totalFeeBTC}`);
     }
 
     const inputSat = Math.round(spend.amount * 1e8);
@@ -519,7 +533,7 @@ async function createTaprootPair(batch: Operation[]) {
     const addrInfo = await btcClient.getAddressInfo(walletAddr);
     const xonly = getXOnly(addrInfo);
 
-    const feeResp = await btcClient.estimateSmartFee(1);
+    const feeResp = await btcClient.estimateSmartFee(config.feeConf);
     const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
 
     const outputMap: Record<string, number> = {};
@@ -541,7 +555,7 @@ async function createTaprootPair(batch: Operation[]) {
         outputMap[tapAddr] = feeSatPerVbyte * revealVSize;
     }
 
-    const commitTx = await createTransactionPair(outputMap);
+    const commitTx = await createCommitTransaction(outputMap);
 
     const hdInfo: HDInfo = {
         hdkeypath: addrInfo.hdkeypath!,
@@ -565,23 +579,27 @@ async function createTaprootPair(batch: Operation[]) {
 async function bumpFee(entry: MempoolEntry | undefined, txid: string) {
     // If we're already at the maximum fee, wait it out
     if (!entry || entry.fees.modified >= config.feeMax) {
-        return true;
+        throw new Error('RBF: Pending transaction already at max fee');
     }
 
-    const targetFeeBtc = Math.min(entry.fees.modified + config.feeInc, config.feeMax);
-    const currFeeSat = Math.floor(entry.fees.modified  * 1e8);
-    const targetFeeSat = Math.floor(targetFeeBtc * 1e8);
-    const currSatPerVb = Math.ceil(currFeeSat / entry.vsize);
-    let targetSatPerVb = Math.floor(targetFeeSat / entry.vsize);
-    targetSatPerVb = Math.max(targetSatPerVb, currSatPerVb + 1);
+    const currSatPerVb = Math.ceil(
+        Math.floor(entry.fees.modified * 1e8) / entry.vsize
+    );
 
-    if (targetSatPerVb * entry.vsize > config.feeMax * 1e8) {
-        return true;
+    const est = await btcClient.estimateSmartFee(config.feeConf);
+    let estSatPerVb = est.feerate ? Math.ceil(est.feerate * 1e5) : 0;
+
+    const targetSatPerVb = Math.max(estSatPerVb, currSatPerVb + 1);
+    const targetFeeSat = targetSatPerVb * entry.vsize;
+
+    if (targetFeeSat > config.feeMax * 1e8) {
+        throw new Error(`RBF: New fee exceeds max fee. Required: ${(targetSatPerVb * entry.vsize) / 1e8} feeMax: ${config.feeMax}`);
     }
 
     // Before version 0.21, fee_rate was in BTC/kvB. As of 0.21, fee_rate is in sat/vB
     const { version } = await btcClient.getNetworkInfo();
     const legacyRate = version < 210000;
+
     const feeRateParam = legacyRate
         ? (targetSatPerVb / 1e5).toFixed(8)
         : targetSatPerVb;
@@ -591,8 +609,7 @@ async function bumpFee(entry: MempoolEntry | undefined, txid: string) {
         replaceable: true
     }).catch(
         (err: RpcError) => {
-            console.error(`bumpFee failed (${err.code}): ${err.message}`);
-            return true;
+            throw new Error(`bumpFee failed (${err.code}): ${err.message}`);
         });
 }
 
@@ -603,23 +620,25 @@ async function replaceByFee(): Promise<boolean> {
         return false;
     }
 
+    const blockCount = await btcClient.getBlockCount();
+    if (db.pendingTaproot.blockCount + config.feeConf <= blockCount) {
+        return true;
+    }
+
     if (db.pendingTaproot.commitTxid) {
         console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
 
         const tx = await btcClient.getRawTransaction(db.pendingTaproot.commitTxid, 1) as RawTransactionVerbose;
         if (!tx.blockhash) {
-            if (config.feeInc === 0) {
+            if (!config.rbfEnabled) {
                 return true;
             }
 
             const commitEntry = await btcClient.getMempoolEntry(db.pendingTaproot.commitTxid).catch(() => undefined);
 
             const bump = await bumpFee(commitEntry, db.pendingTaproot.commitTxid);
-            if (bump === true) {
-                return true;
-            }
 
-            if (bump && bump.txid) {
+            if (bump.txid) {
                 console.log(`Transaction broadcasted with txid: ${bump.txid}`);
 
                 const rawCommitHex = await btcClient.getRawTransaction(bump.txid, 0) as string;
@@ -651,46 +670,75 @@ async function replaceByFee(): Promise<boolean> {
         const tx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
 
         if (!tx.blockhash) {
-            if (config.feeInc === 0) {
+            if (!config.rbfEnabled) {
                 return true;
             }
 
             const revealEntry = await btcClient.getMempoolEntry(db.pendingTaproot.revealTxid).catch(() => undefined);
-            if (!revealEntry || revealEntry.fees.modified >= config.feeMax) {
+            if (!revealEntry) {
                 return true;
             }
 
-            const extraUtxo = (await btcClient.listUnspent()).find(u => u.amount > config.feeInc);
-            if (extraUtxo) {
-                const ctx = await extractRevealContext(db.pendingTaproot.revealTxid);
+            if (revealEntry.fees.modified >= config.feeMax) {
+                throw new Error('RBF: Pending transaction already at max fee');
+            }
 
-                const revealHex = await buildRevealHex(
-                    ctx.commitTx,
-                    ctx.xonly,
-                    ctx.tapScripts,
-                    ctx.hdInfo,
-                    [{
-                        txid: extraUtxo.txid,
-                        vout: extraUtxo.vout,
-                        value: extraUtxo.amount,
-                        scriptPubKey: extraUtxo.scriptPubKey
-                    }],
-                );
+            const est = await btcClient.estimateSmartFee(config.feeConf);
+            const estSatPerVb = est.feerate ? Math.ceil(est.feerate * 1e5) : 0;
+            const currSatPerVb = Math.ceil(
+                (revealEntry.fees.modified * 1e8) / revealEntry.vsize,
+            );
 
-                const txid = await btcClient.sendRawTransaction(revealHex).catch(
-                    (err: RpcError) => {
-                        console.error(`sendRawTransaction failed (${err.code}): ${err.message}`);
-                        return null;
-                    });
-                if (txid) {
-                    console.log(`Transaction broadcasted with txid: ${txid}`);
+            let targetSatPerVb = Math.max(estSatPerVb, currSatPerVb + 1);
+            const targetFeeSat = targetSatPerVb * revealEntry.vsize;
 
-                    db.pendingTaproot.revealTxid = txid;
-                    await saveDb(db);
-                }
+            if (targetFeeSat > config.feeMax * 1e8) {
+                throw new Error(`RBF: New fee exceeds max fee. Required: ${targetFeeSat / 1e8} feeMax: ${config.feeMax}`);
+            }
 
+            const feeDeltaSat = targetFeeSat - Math.floor(revealEntry.fees.modified * 1e8);
+            if (feeDeltaSat <= 0) {
                 return true;
             }
+
+            const utxos  = await btcClient.listUnspent();
+            const extraUtxo  = utxos.find(u => u.amount * 1e8 >= feeDeltaSat);
+            if (!extraUtxo) {
+                throw new Error(`insufficient UTXOs for commit + reveal fees: ${targetFeeSat / 1e8}`);
+            }
+
+            const ctx = await extractRevealContext(db.pendingTaproot.revealTxid);
+            const changeAddr = await btcClient.getNewAddress('funds', 'bech32');
+
+            const revealHex = await buildRevealHex(
+                ctx.commitTx,
+                ctx.xonly,
+                ctx.tapScripts,
+                ctx.hdInfo,
+                {
+                    txid: extraUtxo.txid,
+                    vout: extraUtxo.vout,
+                    valueSat: extraUtxo.amount * 1e8,
+                    scriptPubKey: extraUtxo.scriptPubKey,
+                    feeDeltaSat,
+                    changeAddr,
+                },
+            );
+
+            const txid = await btcClient.sendRawTransaction(revealHex).catch(
+                (err: RpcError) => {
+                    console.error(`sendRawTransaction failed (${err.code}): ${err.message}`);
+                    return null;
+                });
+
+            if (txid) {
+                console.log(`Transaction broadcasted with txid: ${txid}`);
+
+                db.pendingTaproot.revealTxid = txid;
+                await saveDb(db);
+            }
+
+            return true;
         } else {
             db.pendingTaproot.revealTxid = undefined;
         }
@@ -742,14 +790,23 @@ async function anchorBatch(): Promise<void> {
         return;
     }
 
-    const batch = await gatekeeper.getQueue(REGISTRY);
+    const queue = await gatekeeper.getQueue(REGISTRY);
 
-    if (batch.length === 0) {
+    if (queue.length === 0) {
         console.log(`empty ${REGISTRY} queue`);
         return;
     }
 
-    console.log(JSON.stringify(batch, null, 4));
+    const batch: Operation[] = [];
+    for (const op of queue) {
+        const candidate = encodePayload([...batch, op]);
+        if (candidate.length > HARD_LIMIT) {
+            break;
+        }
+        batch.push(op);
+    }
+
+    // console.log(JSON.stringify(batch, null, 4));
 
     try {
         const taprootPair = await createTaprootPair(batch);
@@ -761,8 +818,12 @@ async function anchorBatch(): Promise<void> {
         const decodedCommitTx = await btcClient.decodeRawTransaction(commitHex);
         const decodedRevealTx = await btcClient.decodeRawTransaction(revealHex);
 
-        console.log("Commit TX\n", JSON.stringify(decodedCommitTx, null, 2));
-        console.log("Reveal TX\n", JSON.stringify(decodedRevealTx, null, 2));
+        // console.log("Commit TX\n", JSON.stringify(decodedCommitTx, null, 2));
+        // console.log("Reveal TX\n", JSON.stringify(decodedRevealTx, null, 2));
+        console.log("decodedCommitTx: ", decodedCommitTx.txid);
+        console.log("decodedCommitTx vsize: ", decodedCommitTx.vsize);
+        console.log("decodedRevealTx: ", decodedRevealTx.txid);
+        console.log("decodedRevealTx vsize: ", decodedRevealTx.vsize);
 
         const commitTxid = await btcClient.sendRawTransaction(commitHex);
         const revealTxid = await btcClient.sendRawTransaction(revealHex);
@@ -770,11 +831,13 @@ async function anchorBatch(): Promise<void> {
         const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
         if (ok) {
+            const blockCount = await btcClient.getBlockCount();
             const db = await loadDb();
             db.pendingTaproot = {
                 commitTxid,
                 revealTxid,
                 hdInfo,
+                blockCount,
             };
             db.lastExport = new Date().toISOString();
             await saveDb(db);
@@ -961,7 +1024,7 @@ async function main() {
 
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
+        console.log(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }

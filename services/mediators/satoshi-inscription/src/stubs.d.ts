@@ -256,6 +256,31 @@ declare module 'bitcoin-core' {
         desc?: string;
     }
 
+    export interface ListUnspentQueryOptions {
+        minimumAmount?: number | string;
+        maximumAmount?: number | string;
+        maximumCount?: number;
+        minimumSumAmount?: number | string;
+        minDepth?: number;
+        maxDepth?: number;
+    }
+
+    export interface UnspentOutput {
+        txid: string;
+        vout: number;
+        address?: string;
+        label?: string;
+        scriptPubKey: string;
+        amount: number;
+        confirmations: number;
+        redeemScript?: string;
+        witnessScript?: string;
+        spendable: boolean;
+        solvable: boolean;
+        desc?: string;
+        safe: boolean;
+    }
+
     export default class BtcClient {
         constructor(options: BtcClientOptions);
         getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -265,7 +290,13 @@ declare module 'bitcoin-core' {
         createWallet(walletName: string): Promise<any>;
         getWalletInfo(): Promise<WalletInfo>;
         getNewAddress(label?: string, addressType?: string): Promise<string>;
-        listUnspent(): Promise<any[]>;
+        listUnspent(
+            minconf?: number,
+            maxconf?: number,
+            addresses?: string[],
+            include_unsafe?: boolean,
+            query_options?: ListUnspentQueryOptions
+        ): Promise<UnspentOutput[]>;
         createRawTransaction(inputs: any[], outputs: Record<string, unknown>): Promise<string>;
         signRawTransactionWithWallet(rawtx: string): Promise<{
             hex: string;

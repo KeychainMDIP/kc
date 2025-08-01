@@ -215,6 +215,72 @@ declare module 'bitcoin-core' {
         descriptors: Descriptor[];
     }
 
+    export interface DecodedRawTransaction {
+        txid: string;
+        hash: string;
+        size: number;
+        vsize: number;
+        weight: number;
+        version: number;
+        locktime: number;
+        vin: Vin[];
+        vout: Vout[];
+    }
+
+    export interface Vin {
+        txid?: string;
+        vout?: number;
+        scriptSig?: ScriptSig;
+        sequence: number;
+        coinbase?: string;
+        txinwitness?: string[];
+    }
+
+    export interface ScriptSig {
+        asm: string;
+        hex: string;
+    }
+
+    export interface Vout {
+        value: number;
+        n: number;
+        scriptPubKey: ScriptPubKey;
+    }
+
+    export interface ScriptPubKey {
+        asm: string;
+        hex: string;
+        reqSigs?: number;
+        type: string;
+        addresses?: string[];
+        desc?: string;
+    }
+
+    export interface ListUnspentQueryOptions {
+        minimumAmount?: number | string;
+        maximumAmount?: number | string;
+        maximumCount?: number;
+        minimumSumAmount?: number | string;
+        minDepth?: number;
+        maxDepth?: number;
+    }
+
+    export interface UnspentOutput {
+        txid: string;
+        vout: number;
+        address?: string;
+        label?: string;
+        scriptPubKey: string;
+        amount: number;
+        confirmations: number;
+        redeemScript?: string;
+        witnessScript?: string;
+        spendable: boolean;
+        solvable: boolean;
+        desc?: string;
+        safe: boolean;
+    }
+
     export default class BtcClient {
         constructor(options: BtcClientOptions);
         getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -224,7 +290,13 @@ declare module 'bitcoin-core' {
         createWallet(walletName: string): Promise<any>;
         getWalletInfo(): Promise<WalletInfo>;
         getNewAddress(label?: string, addressType?: string): Promise<string>;
-        listUnspent(): Promise<any[]>;
+        listUnspent(
+            minconf?: number,
+            maxconf?: number,
+            addresses?: string[],
+            include_unsafe?: boolean,
+            query_options?: ListUnspentQueryOptions
+        ): Promise<UnspentOutput[]>;
         createRawTransaction(inputs: any[], outputs: Record<string, unknown>): Promise<string>;
         signRawTransactionWithWallet(rawtx: string): Promise<{
             hex: string;
@@ -260,5 +332,6 @@ declare module 'bitcoin-core' {
         importDescriptors(requests: ImportDescriptorRequest[]): Promise<ImportDescriptorResult[]>;
         deriveAddresses(descriptor: string, range?: number | [number, number]): Promise<string[]>;
         listDescriptors(private: boolean): Promise<ListDescriptorsResult>;
+        decodeRawTransaction(hexstring: string, iswitness?: boolean): Promise<DecodedRawTransaction>;
     }
 }
