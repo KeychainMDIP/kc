@@ -1,4 +1,4 @@
-import BtcClient, {RawTransactionVerbose} from 'bitcoin-core';
+import BtcClient from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -239,7 +239,7 @@ async function replaceByFee(): Promise<boolean> {
 
     console.log('pendingTxid', db.pendingTxid);
 
-    const tx = await btcClient.getRawTransaction(db.pendingTxid, 1) as RawTransactionVerbose;
+    const tx = await btcClient.getRawTransaction(db.pendingTxid, 1);
 
     if (tx.blockhash) {
         db.pendingTxid = undefined;
@@ -257,13 +257,13 @@ async function replaceByFee(): Promise<boolean> {
     const mempoolEntry = await btcClient.getMempoolEntry(db.pendingTxid);
 
     // If we're already at the maximum fee, wait it out
-    if (mempoolEntry && mempoolEntry.fees.modified >= config.feeMax) {
+    if (mempoolEntry && mempoolEntry.fee >= config.feeMax) {
         return true;
     }
 
     const inputs = tx.vin.map((vin: any) => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
     const opReturnHex = tx.vout[0].scriptPubKey.hex;
-    const address = tx.vout[1].scriptPubKey.addresses![0];
+    const address = tx.vout[1].scriptPubKey.address;
     const amountBack = tx.vout[1].value - config.feeInc;
 
     if (amountBack < 0) {
