@@ -24,6 +24,7 @@ The mediator has two responsibilities:
 | `KC_SAT_IMPORT_INTERVAL`  | 0                     | Minutes between import cycles (0 to disable)                      |
 | `KC_SAT_EXPORT_INTERVAL`  | 0                     | Mintues between export cycles (0 to disable)                      |
 | `KC_SAT_FEE_BLOCK_TARGET` | 1                     | Confirmation target for the fee                                   |
+| `KC_SAT_FEE_FALLBACK_SAT_BYTE` | 10               | Fallback Sat/Byte if estimatesmartfee does not have enough data   |
 | `KC_SAT_FEE_MAX`          | 0.00002               | Maximum transaction fee                                           |
 | `KC_SAT_RBF_ENABLED`      | false                 | Whether Replace-By-Fee is enabled                                 |
 | `KC_SAT_START_BLOCK`      | 0                     | Blockchain scan starting block index                              |

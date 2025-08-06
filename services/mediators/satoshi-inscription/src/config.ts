@@ -21,6 +21,7 @@ export interface AppConfig {
     exportInterval: number;
     feeConf: number;
     feeMax: number;
+    feeFallback: number;
     rbfEnabled: boolean;
     startBlock: number;
     reimport: boolean;
@@ -88,6 +89,7 @@ const config: AppConfig = {
     importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
     exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
     feeConf: process.env.KC_SAT_FEE_BLOCK_TARGET ? parseInt(process.env.KC_SAT_FEE_BLOCK_TARGET) : 1,
+    feeFallback: process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE ? parseInt(process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE) : 10,
     feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
     rbfEnabled: process.env.KC_SAT_RBF_ENABLED === 'true',
     startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,

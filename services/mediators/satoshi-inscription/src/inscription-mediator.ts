@@ -491,7 +491,7 @@ async function createCommitTransaction(outputMap: Record<string, number>) {
 
     const feeResp = await btcClient.estimateSmartFee(config.feeConf);
     console.log("Fee rate:", JSON.stringify(feeResp, null, 4));
-    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
+    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
 
     const nTapOuts = Object.keys(outputMap).length;
     const totalOutputsSat = Object.values(outputMap).reduce((a, b) => a + b, 0);
