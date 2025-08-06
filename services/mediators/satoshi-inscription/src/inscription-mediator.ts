@@ -523,14 +523,13 @@ async function createCommitTransaction(outputMap: Record<string, number>) {
         }
     }
 
+    const requiredBtc = requiredSat / 1e8;
     if (selectedSat < requiredSat) {
-        const requiredBtc = requiredSat / 1e8;
         throw new Error(`insufficient UTXOs for commit + reveal fees: ${requiredBtc.toFixed(8)}`);
     }
 
-    const totalFeeBTC = (totalOutputsSat + requiredSat) / 1e8;
-    if (totalFeeBTC > config.feeMax) {
-        throw new Error(`Fee above maximum allowed. Required: ${totalFeeBTC} feeMax: ${config.feeMax}`);
+    if (requiredBtc > config.feeMax) {
+        throw new Error(`Fee above maximum allowed. Required: ${requiredBtc} feeMax: ${config.feeMax}`);
     }
 
     const changeSat = selectedSat - requiredSat;
@@ -655,6 +654,8 @@ async function replaceByFee(): Promise<boolean> {
         const commitTx = await btcClient.getRawTransaction(db.pendingTaproot.commitTxid, 1) as RawTransactionVerbose;
         if (commitTx.blockhash) {
             db.pendingTaproot.commitTxid = undefined;
+        } else {
+            console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
         }
     }
 
@@ -662,6 +663,8 @@ async function replaceByFee(): Promise<boolean> {
         const revealTx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
         if (revealTx.blockhash) {
             db.pendingTaproot.revealTxid = undefined;
+        } else {
+            console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
         }
     }
 
@@ -677,9 +680,6 @@ async function replaceByFee(): Promise<boolean> {
     }
 
     if (db.pendingTaproot.commitTxid) {
-        console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
-        console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
-
         if (!config.rbfEnabled) {
             return true;
         }
@@ -709,8 +709,6 @@ async function replaceByFee(): Promise<boolean> {
             await saveDb(db);
         }
     } else if (db.pendingTaproot.revealTxid) {
-        console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
-
         if (!config.rbfEnabled) {
             return true;
         }
@@ -1075,7 +1073,7 @@ async function main() {
 
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${config.chain}-Inscription): conf target: ${config.feeConf}, maximum: ${config.feeMax}`);
+        console.log(`Txn fees (${config.chain}-Inscription): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
