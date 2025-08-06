@@ -654,6 +654,7 @@ async function replaceByFee(): Promise<boolean> {
         const commitTx = await btcClient.getRawTransaction(db.pendingTaproot.commitTxid, 1) as RawTransactionVerbose;
         if (commitTx.blockhash) {
             db.pendingTaproot.commitTxid = undefined;
+            await saveDb(db);
         } else {
             console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
         }
@@ -662,16 +663,12 @@ async function replaceByFee(): Promise<boolean> {
     if (db.pendingTaproot.revealTxid) {
         const revealTx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
         if (revealTx.blockhash) {
-            db.pendingTaproot.revealTxid = undefined;
+            db.pendingTaproot = undefined;
+            await saveDb(db);
+            return false;
         } else {
             console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
         }
-    }
-
-    if (!db.pendingTaproot.commitTxid && !db.pendingTaproot.revealTxid) {
-        db.pendingTaproot = undefined;
-        await saveDb(db);
-        return false;
     }
 
     const blockCount = await btcClient.getBlockCount();
