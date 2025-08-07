@@ -565,6 +565,10 @@ export default class Gatekeeper implements GatekeeperInterface {
         return doc;
     }
 
+    extractChainName(registry: string): string {
+        return registry.replace(/-Inscription$/, '');
+    }
+
     async resolveDID(
         did?: string,
         options?: ResolveDIDOptions
@@ -601,9 +605,10 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (doc.mdip?.registry) {
                 let lowerBound;
                 let upperBound;
+                const chain = this.extractChainName(doc.mdip.registry);
 
                 if (operation.blockid) {
-                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
+                    const lowerBlock = await this.db.getBlock(chain, operation.blockid);
 
                     if (lowerBlock) {
                         lowerBound = {
@@ -616,7 +621,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
 
                 if (blockchain) {
-                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+                    const upperBlock = await this.db.getBlock(chain, blockchain.height);
 
                     if (upperBlock) {
                         upperBound = {
