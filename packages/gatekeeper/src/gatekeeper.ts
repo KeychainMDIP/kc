@@ -30,7 +30,7 @@ import {
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
 // Registries that are considered valid when importing DIDs from the network
-const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet'];
+const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscription'];
 
 enum ImportStatus {
     ADDED = 'added',
@@ -441,9 +441,11 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError('signature')
         }
 
+        const registry = operation.mdip?.registry || 'missing registry';
+
         // Reject operations with unsupported registries
-        if (!this.supportedRegistries.includes(operation.mdip!.registry)) {
-            throw new InvalidOperationError(`mdip.registry=${operation.mdip!.registry}`);
+        if (!this.supportedRegistries.includes(registry)) {
+            throw new InvalidOperationError(`mdip.registry=${registry}`);
         }
 
         const did = await this.generateDID(operation);
@@ -462,7 +464,16 @@ export default class Gatekeeper implements GatekeeperInterface {
             // Create events are distributed only by hyperswarm
             // (because the DID's registry specifies where to look for *update* events)
             // Don't distribute local DIDs
-            if (operation.mdip!.registry !== 'local') {
+            if (registry !== 'local') {
+                // Allow create events on inscribed networks
+                if (registry.endsWith('-Inscription')) {
+                    const queueSize = await this.db.queueOperation(registry, operation);
+
+                    if (queueSize >= this.maxQueueSize) {
+                        this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
+                    }
+                }
+
                 if (this.supportedRegistries.includes('hyperswarm')) {
                     const queueSize = await this.db.queueOperation('hyperswarm', operation);
 
@@ -554,6 +565,10 @@ export default class Gatekeeper implements GatekeeperInterface {
         return doc;
     }
 
+    extractChainName(registry: string): string {
+        return registry.replace(/-Inscription$/, '');
+    }
+
     async resolveDID(
         did?: string,
         options?: ResolveDIDOptions
@@ -590,9 +605,10 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (doc.mdip?.registry) {
                 let lowerBound;
                 let upperBound;
+                const chain = this.extractChainName(doc.mdip.registry);
 
                 if (operation.blockid) {
-                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
+                    const lowerBlock = await this.db.getBlock(chain, operation.blockid);
 
                     if (lowerBlock) {
                         lowerBound = {
@@ -605,7 +621,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
 
                 if (blockchain) {
-                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
+                    const upperBlock = await this.db.getBlock(chain, blockchain.height);
 
                     if (upperBlock) {
                         upperBound = {

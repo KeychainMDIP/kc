@@ -76,6 +76,7 @@ services:
       - gatekeeper
       - redis
       - mongodb
+      - search-server
 
   hypr-mediator:
     build:
@@ -207,6 +208,41 @@ services:
       - KC_SAT_FEE_INC=${KC_SIGNET_FEE_INC}
       - KC_SAT_REIMPORT=${KC_SIGNET_REIMPORT}
       - KC_SAT_DB=${KC_SIGNET_DB}
+    volumes:
+      - ./data:/app/satoshi/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - signet-node
+      - gatekeeper
+      - keymaster
+
+  signet-inscription-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.satoshi-inscription
+    image: keychainmdip/inscription-mediator
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=Signet
+      - KC_SAT_NETWORK=testnet
+      - KC_SAT_HOST=signet-node
+      - KC_SAT_PORT=38332
+      - KC_SAT_START_BLOCK=${KC_SIGNET_INS_START_BLOCK}
+      - KC_SAT_USER=${KC_SIGNET_INS_USER}
+      - KC_SAT_PASS=${KC_SIGNET_INS_PASS}
+      - KC_SAT_WALLET=${KC_SIGNET_INS_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_SIGNET_INS_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_SIGNET_INS_EXPORT_INTERVAL}
+      - KC_SAT_FEE_BLOCK_TARGET=${KC_SIGNET_INS_FEE_BLOCK_TARGET}
+      - KC_SAT_FEE_FALLBACK_SAT_BYTE=${KC_SIGNET_INS_FEE_FALLBACK_SAT_BYTE}
+      - KC_SAT_FEE_MAX=${KC_SIGNET_INS_FEE_MAX}
+      - KC_SAT_REIMPORT=${KC_SIGNET_INS_REIMPORT}
+      - KC_SAT_RBF_ENABLED=${KC_SIGNET_INS_RBF_ENABLED}
+      - KC_SAT_DB=${KC_SIGNET_INS_DB}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
