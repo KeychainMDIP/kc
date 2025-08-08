@@ -57,7 +57,7 @@ declare module 'bitcoin-core' {
         confTarget?: number;
         feeRate?: number | string;
         replaceable?: boolean;
-        estimateMode?: 'unset' | 'economical' | 'conservative';
+        estimateMode?: EconomyModes;
     }
 
     export interface BumpFeeResult {
@@ -265,6 +265,8 @@ declare module 'bitcoin-core' {
         maxDepth?: number;
     }
 
+    export type EconomyModes = 'unset' | 'economical' | 'conservative';
+
     export interface UnspentOutput {
         txid: string;
         vout: number;
@@ -310,7 +312,7 @@ declare module 'bitcoin-core' {
         getAddressInfo(address: string): Promise<AddressInfo>;
         estimateSmartFee(
             confTarget: number,
-            estimateMode?: 'UNSET' | 'ECONOMICAL' | 'CONSERVATIVE'
+            estimateMode?: EconomyModes
         ): Promise<EstimateSmartFeeResult>;
         dumpPrivKey(address: string): Promise<string>;
         bumpFee(
