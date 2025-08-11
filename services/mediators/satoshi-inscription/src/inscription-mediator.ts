@@ -811,7 +811,7 @@ async function checkPendingTransactions(db: MediatorDb) {
     if (db.pendingTaproot.revealTxids?.length) {
         const mined = await checkPendingTxs(db.pendingTaproot.revealTxids);
         if (mined >= 0) {
-            db.pendingTaproot.revealTxids = undefined;
+            db.pendingTaproot = undefined;
             await saveDb(db);
             return false;
         } else {
