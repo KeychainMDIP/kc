@@ -38,9 +38,11 @@ const btcClient = new BtcClient({
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
 
-interface RpcError extends Error {
-    code: number;
-    error: { code: number; message: string };
+interface RevealContext {
+    commitTx: bitcoin.Transaction;
+    tapScripts: Buffer[];
+    xonly: Buffer;
+    hdInfo: HDInfo;
 }
 
 let jsonPersister: MediatorDbInterface;
@@ -249,7 +251,7 @@ async function importBatches(): Promise<boolean> {
     return await saveDb(db);
 }
 
-async function extractRevealContext(revealTxid: string) {
+async function extractRevealContext(revealTxid: string): Promise<RevealContext> {
 
     const rawReveal = await btcClient.getRawTransaction(revealTxid, 0) as string;
     const revealTx = bitcoin.Transaction.fromHex(rawReveal);
@@ -510,7 +512,7 @@ async function derivePrivKey(hdInfo: HDInfo) {
 async function createCommitTransaction(outputMap: Record<string, number>) {
 
     const feeResp = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
-    console.log("Fee rate:", JSON.stringify(feeResp, null, 4));
+    console.log("Estimated Smart Fee Rate:", JSON.stringify(feeResp, null, 4));
     const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
 
     const nTapOuts = Object.keys(outputMap).length;
@@ -626,19 +628,13 @@ async function createTaprootPair(batch: Operation[]) {
     };
 }
 
-async function bumpFee(entry: MempoolEntry | undefined, txid: string) {
-    // If we're already at the maximum fee, wait it out
-    if (!entry || entry.fees.modified >= config.feeMax) {
-        throw new Error('RBF: Pending transaction already at max fee');
-    }
+async function bumpCommitFee(entry: MempoolEntry, txid: string) {
 
-    const currSatPerVb = Math.ceil(
-        Math.floor(entry.fees.modified * 1e8) / entry.vsize
-    );
+    const currFeeSat = Math.floor(entry.fees.modified * 1e8);
+    const currSatPerVb = Math.ceil(currFeeSat / entry.vsize);
 
     const est = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
     let estSatPerVb = est.feerate ? Math.ceil(est.feerate * 1e5) : 0;
-
     const targetSatPerVb = Math.max(estSatPerVb, currSatPerVb + 1);
     const targetFeeSat = targetSatPerVb * entry.vsize;
 
@@ -654,42 +650,185 @@ async function bumpFee(entry: MempoolEntry | undefined, txid: string) {
         ? (targetSatPerVb / 1e5).toFixed(8)
         : targetSatPerVb;
 
-    return await btcClient.bumpFee(txid, {
+    console.log("Bump Commit Fee");
+    console.log("Current Fee Sat/vB:", currSatPerVb);
+    console.log("New Fee Sat/vB: ", targetSatPerVb);
+
+    // We use psbtBumpFee instead of bumpFee to not immediately send
+    // the transaction until we are sure we can also create the
+    // reveal transaction.
+    const { psbt } = await btcClient.psbtBumpFee(txid, {
         feeRate: feeRateParam,
         replaceable: true,
         estimateMode: SMART_FEE_MODE,
-    }).catch(
-        (err: RpcError) => {
-            throw new Error(`bumpFee failed (${err.code}): ${err.message}`);
-        });
+    });
+
+    const { psbt: signedPsbt } = await btcClient.walletProcessPsbt(psbt, true);
+    const { hex, complete } = await btcClient.finalizePsbt(signedPsbt);
+
+    if (!complete || !hex) {
+        throw new Error('Commit PSBT not fully signed—cannot produce final hex.');
+    }
+
+    return hex;
+}
+
+async function bumpRevealFee(entry: MempoolEntry, txid: string, ctx: RevealContext) {
+
+    const EXTRA_INPUT_VBYTES = 69;
+    const CHANGE_VBYTES = 31;
+
+    const revealTx = await btcClient.getRawTransaction(txid, 1) as RawTransactionVerbose;
+    let hasChange = revealTx.vout.length > 1;
+
+    const baseFeeSat = ctx.tapScripts.reduce((sum, _t, idx) => {
+        return sum + ctx.commitTx.outs[idx].value;
+    }, 0);
+    const baseSize = hasChange ? entry.vsize - CHANGE_VBYTES : entry.vsize;
+    const currFeeSat = Math.floor(entry.fees.modified * 1e8);
+    const currSatPerVb = Math.ceil(currFeeSat / entry.vsize);
+
+    const est = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
+    const estSatPerVb = est.feerate ? Math.ceil(est.feerate * 1e5) : 0;
+    const targetSatPerVb = Math.max(estSatPerVb, currSatPerVb + 1);
+
+    console.log("Bump Reveal Fee");
+    console.log("Current Fee Sat/vB:", currSatPerVb);
+    console.log("New Fee Sat/vB: ", targetSatPerVb);
+
+    const spendables = (await btcClient.listUnspent())
+        .sort((a, b) => a.amount - b.amount);
+
+    const chosen: UnspentOutput[] = [];
+    let chosenSat = 0;
+    let requiredExtraSat = 0;
+    let newVsize = baseSize;
+    const changeOutputSat = CHANGE_VBYTES * targetSatPerVb;
+
+    for (const utxo of spendables) {
+        chosen.push(utxo);
+        chosenSat += utxo.amount * 1e8;
+        newVsize += EXTRA_INPUT_VBYTES;
+
+        const newFeeSat = newVsize * targetSatPerVb;
+        requiredExtraSat = newFeeSat - baseFeeSat;
+        const changeSat = chosenSat - requiredExtraSat;
+
+        if (!hasChange && changeSat - changeOutputSat >= DUST) {
+            hasChange = true;
+            newVsize += CHANGE_VBYTES;
+            requiredExtraSat += changeOutputSat;
+        }
+
+        if (hasChange && changeSat + changeOutputSat < DUST) {
+            hasChange = false;
+            newVsize -= CHANGE_VBYTES;
+            requiredExtraSat -= changeOutputSat;
+        }
+
+        if (chosenSat >= requiredExtraSat) {
+            break;
+        }
+    }
+
+    const newTotalFeeSat = currFeeSat + requiredExtraSat;
+
+    if (chosenSat < requiredExtraSat) {
+        throw new Error(`RBF: insufficient UTXOs to bump fee to ~${(newTotalFeeSat / 1e8).toFixed(8)} BTC`);
+    }
+
+    if (newTotalFeeSat > config.feeMax * 1e8) {
+        throw new Error(`RBF: New fee exceeds max fee. Required: ${(newTotalFeeSat / 1e8).toFixed(8)} feeMax: ${config.feeMax}`);
+    }
+
+    const changeSat = chosenSat - requiredExtraSat;
+    const changeAddr = hasChange && changeSat >= DUST ? await btcClient.getNewAddress('funds', 'bech32') : undefined;
+
+    return await buildRevealHex(
+        ctx.commitTx,
+        ctx.xonly,
+        ctx.tapScripts,
+        ctx.hdInfo,
+        {
+            inputs: chosen.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                valueSat: Math.round(u.amount * 1e8),
+                scriptPubKey: u.scriptPubKey,
+            })),
+            extraFeeSat: requiredExtraSat,
+            changeAddr,
+        },
+    );
+}
+
+async function getEntryFromMempool(txids: string[]) {
+    if (!txids.length) {
+        throw new Error('RBF: empty array');
+    }
+
+    for (let i = txids.length - 1; i >= 0; i--) {
+        const txid = txids[i];
+        const entry = await btcClient.getMempoolEntry(txid).catch(() => undefined);
+        if (entry) {
+            if (entry.fees.modified >= config.feeMax) {
+                throw new Error('RBF: Pending reveal transaction already at max fee');
+            }
+            return { entry, txid };
+        }
+    }
+
+    throw new Error('RBF: Cannot find pending reveal transaction in mempool');
+}
+
+async function checkPendingTransactions(db: MediatorDb) {
+    if (!db.pendingTaproot) {
+        return false;
+    }
+
+    const isMined = async (txid: string) => {
+        const tx = await btcClient.getRawTransaction(txid, 1).catch(() => undefined) as RawTransactionVerbose | undefined;
+        return !!(tx && tx.blockhash);
+    };
+
+    const checkPendingTxs = async (txids: string[]) => {
+        for (let i = 0; i < txids.length; i++) {
+            if (await isMined(txids[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    if (db.pendingTaproot.commitTxids?.length) {
+        const mined = await checkPendingTxs(db.pendingTaproot.commitTxids);
+        if (mined >= 0) {
+            db.pendingTaproot.commitTxids = undefined;
+            await saveDb(db);
+        } else {
+            console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxids.at(-1));
+        }
+    }
+
+    if (db.pendingTaproot.revealTxids?.length) {
+        const mined = await checkPendingTxs(db.pendingTaproot.revealTxids);
+        if (mined >= 0) {
+            db.pendingTaproot.revealTxids = undefined;
+            await saveDb(db);
+            return false;
+        } else {
+            console.log('pendingTaproot commitTxid', db.pendingTaproot.revealTxids.at(-1));
+        }
+    }
+
+    return true;
 }
 
 async function replaceByFee(): Promise<boolean> {
     const db = await loadDb();
 
-    if (!db.pendingTaproot) {
+    if (!db.pendingTaproot || !(await checkPendingTransactions(db))) {
         return false;
-    }
-
-    if (db.pendingTaproot.commitTxid) {
-        const commitTx = await btcClient.getRawTransaction(db.pendingTaproot.commitTxid, 1) as RawTransactionVerbose;
-        if (commitTx.blockhash) {
-            db.pendingTaproot.commitTxid = undefined;
-            await saveDb(db);
-        } else {
-            console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
-        }
-    }
-
-    if (db.pendingTaproot.revealTxid) {
-        const revealTx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
-        if (revealTx.blockhash) {
-            db.pendingTaproot = undefined;
-            await saveDb(db);
-            return false;
-        } else {
-            console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxid);
-        }
     }
 
     const blockCount = await btcClient.getBlockCount();
@@ -697,162 +836,48 @@ async function replaceByFee(): Promise<boolean> {
         return true;
     }
 
-    if (db.pendingTaproot.commitTxid) {
+    if (db.pendingTaproot.commitTxids?.length && db.pendingTaproot.revealTxids?.length) {
         if (!config.rbfEnabled) {
             return true;
         }
 
-        const commitEntry = await btcClient.getMempoolEntry(db.pendingTaproot.commitTxid).catch(() => undefined);
+        const { entry: commitEntry, txid: commitTxid } = await getEntryFromMempool(db.pendingTaproot.commitTxids);
+        const { entry: revealEntry, txid: revealTxid } = await getEntryFromMempool(db.pendingTaproot.revealTxids);
 
-        const bump = await bumpFee(commitEntry, db.pendingTaproot.commitTxid);
+        const commitHex = await bumpCommitFee(commitEntry, commitTxid);
+        const newCommitTx = bitcoin.Transaction.fromHex(commitHex);
 
-        if (bump.txid) {
-            console.log(`Commit TXID: ${bump.txid}`);
+        let ctx = await extractRevealContext(revealTxid);
+        ctx.commitTx = newCommitTx;
+        const revealHex = await bumpRevealFee(revealEntry, revealTxid, ctx);
 
-            const rawCommitHex = await btcClient.getRawTransaction(bump.txid, 0) as string;
-            const newCommitTx = bitcoin.Transaction.fromHex(rawCommitHex);
+        const newCommitTxid = await btcClient.sendRawTransaction(commitHex);
+        const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
 
-            const ctx = await extractRevealContext(db.pendingTaproot.revealTxid!);
+        db.pendingTaproot.commitTxids.push(newCommitTxid);
+        db.pendingTaproot.revealTxids.push(newRevealTxid);
+        db.blockCount = blockCount;
+        await saveDb(db);
 
-            const revealHex = await buildRevealHex(
-                newCommitTx,
-                ctx.xonly,
-                ctx.tapScripts,
-                ctx.hdInfo,
-            );
-
-            const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
-            console.log(`Reveal TXID: ${newRevealTxid}`);
-
-            db.pendingTaproot.commitTxid = bump.txid;
-            db.pendingTaproot.revealTxid = newRevealTxid;
-            db.blockCount = blockCount;
-            await saveDb(db);
-        }
-    } else if (db.pendingTaproot.revealTxid) {
+        console.log(`Commit TXID: ${newCommitTxid}`);
+        console.log(`Reveal TXID: ${newRevealTxid}`);
+    } else if (db.pendingTaproot.revealTxids?.length) {
         if (!config.rbfEnabled) {
             return true;
         }
 
-        const revealEntry = await btcClient.getMempoolEntry(db.pendingTaproot.revealTxid).catch(() => undefined);
-        if (!revealEntry) {
-            throw new Error('RBF: Cannot find pending reveal transaction in mempool');
-        }
+        const { entry: revealEntry, txid: revealTxid } = await getEntryFromMempool(db.pendingTaproot.revealTxids);
 
-        if (revealEntry.fees.modified >= config.feeMax) {
-            throw new Error('RBF: Pending transaction already at max fee');
-        }
+        const ctx = await extractRevealContext(revealTxid);
+        const revealHex = await bumpRevealFee(revealEntry, revealTxid, ctx);
 
-        const EXTRA_INPUT_VBYTES = 69;
-        const CHANGE_VBYTES = 31;
+        const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
 
-        const revealTx = await btcClient.getRawTransaction(db.pendingTaproot.revealTxid, 1) as RawTransactionVerbose;
-        let hasChange = revealTx.vout.length > 1;
+        db.pendingTaproot.revealTxids.push(newRevealTxid);
+        db.blockCount = blockCount;
+        await saveDb(db);
 
-        const ctx = await extractRevealContext(db.pendingTaproot.revealTxid);
-
-        const baseFeeSat = ctx.tapScripts.reduce((sum, _t, idx) => {
-            return sum + ctx.commitTx.outs[idx].value;
-        }, 0);
-        const baseSize = hasChange ? revealEntry.vsize - CHANGE_VBYTES : revealEntry.vsize;
-        const currFeeSat = Math.floor(revealEntry.fees.modified * 1e8);
-        const currSatPerVb = Math.ceil(currFeeSat / revealEntry.vsize);
-
-        const est = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
-        const estSatPerVb = est.feerate ? Math.ceil(est.feerate * 1e5) : 0;
-        const targetSatPerVb = Math.max(estSatPerVb, currSatPerVb + 1);
-
-        console.log("Base TX Fee:", baseFeeSat);
-        console.log("Current TX Fee:", currFeeSat);
-        console.log("Current TX vsize: ", revealEntry.vsize);
-        console.log("Current Fee Sat/vB:", currSatPerVb);
-        console.log("Estimated Sat/vB: ", estSatPerVb);
-        console.log("New Target Sat/vB: ", targetSatPerVb);
-
-        const spendables = (await btcClient.listUnspent())
-            .sort((a, b) => a.amount - b.amount);
-
-        const chosen: UnspentOutput[] = [];
-        let chosenSat = 0;
-        let requiredExtraSat = 0;
-        let newVsize = baseSize;
-        const changeOutputSat = CHANGE_VBYTES * targetSatPerVb;
-
-        for (const utxo of spendables) {
-            chosen.push(utxo);
-            chosenSat += utxo.amount * 1e8;
-            newVsize += EXTRA_INPUT_VBYTES;
-
-            const newFeeSat = newVsize * targetSatPerVb;
-            requiredExtraSat = newFeeSat - baseFeeSat;
-            const changeSat = chosenSat - requiredExtraSat;
-
-            if (!hasChange && changeSat - changeOutputSat >= DUST) {
-                hasChange = true;
-                newVsize += CHANGE_VBYTES;
-                requiredExtraSat += changeOutputSat;
-            }
-
-            if (hasChange && changeSat + changeOutputSat < DUST) {
-                hasChange = false;
-                newVsize -= CHANGE_VBYTES;
-                requiredExtraSat -= changeOutputSat;
-            }
-
-            if (chosenSat >= requiredExtraSat) {
-                console.log("Estimated New Size:", newVsize);
-                console.log("New Fee:", newFeeSat);
-                console.log("Required Extra Sats:", requiredExtraSat);
-                break;
-            }
-        }
-
-        const newTotalFeeSat = currFeeSat + requiredExtraSat;
-
-        if (chosenSat < requiredExtraSat) {
-            throw new Error(`RBF: insufficient UTXOs to bump fee to ~${(newTotalFeeSat / 1e8).toFixed(8)} BTC`);
-        }
-
-        if (newTotalFeeSat > config.feeMax * 1e8) {
-            throw new Error(`RBF: New fee exceeds max fee. Required: ${(newTotalFeeSat / 1e8).toFixed(8)} feeMax: ${config.feeMax}`);
-        }
-
-        const changeSat = chosenSat - requiredExtraSat;
-        const changeAddr = hasChange && changeSat >= DUST ? await btcClient.getNewAddress('funds', 'bech32') : undefined;
-
-        const revealHex = await buildRevealHex(
-            ctx.commitTx,
-            ctx.xonly,
-            ctx.tapScripts,
-            ctx.hdInfo,
-            {
-                inputs: chosen.map(u => ({
-                    txid: u.txid,
-                    vout: u.vout,
-                    valueSat: Math.round(u.amount * 1e8),
-                    scriptPubKey: u.scriptPubKey,
-                })),
-                extraFeeSat: requiredExtraSat,
-                changeAddr,
-            },
-        );
-
-        const decoded = bitcoin.Transaction.fromHex(revealHex);
-        console.log("Reveal TXID Actual Size: ", decoded.virtualSize());
-
-        const txid = await btcClient.sendRawTransaction(revealHex).catch(
-            (err: RpcError) => {
-                console.error(`sendRawTransaction failed (${err.code}): ${err.message}`);
-                return null;
-            });
-
-        if (txid) {
-            console.log(`Reveal TXID: ${txid}`);
-
-            db.pendingTaproot.revealTxid = txid;
-            db.blockCount = blockCount;
-            await saveDb(db);
-        }
+        console.log(`Reveal TXID: ${newRevealTxid}`);
     }
 
     return true;
@@ -933,8 +958,8 @@ async function anchorBatch(): Promise<void> {
             const blockCount = await btcClient.getBlockCount();
             const db = await loadDb();
             db.pendingTaproot = {
-                commitTxid,
-                revealTxid,
+                commitTxids: [commitTxid],
+                revealTxids: [revealTxid],
                 hdInfo,
                 blockCount,
             };

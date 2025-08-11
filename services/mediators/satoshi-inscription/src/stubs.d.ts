@@ -283,6 +283,13 @@ declare module 'bitcoin-core' {
         safe: boolean;
     }
 
+    export interface PsbtBumpFeeResult {
+        psbt: string;
+        origfee: number;
+        fee: number;
+        errors?: string[];
+    }
+
     export default class BtcClient {
         constructor(options: BtcClientOptions);
         getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -319,6 +326,7 @@ declare module 'bitcoin-core' {
             txid: string,
             options?: BumpFeeOptions
         ): Promise<BumpFeeResult>;
+        psbtBumpFee(txid: string, options?: BumpFeeOptions): Promise<PsbtBumpFeeResult>;
         walletProcessPsbt(
             psbt: string,
             sign?: boolean,
