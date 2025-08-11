@@ -450,29 +450,35 @@ export default class Gatekeeper implements GatekeeperInterface {
         const ops = await this.exportDID(did);
 
         // Check to see if we already have this DID in the db
-        if (ops.length === 0) {
-            await this.db.addEvent(did, {
-                registry: 'local',
-                time: operation.created!,
-                ordinal: [0],
-                operation,
-                did
-            });
+        if (ops.length > 0) {
+            return did;
+        }
 
-            // Create events are distributed only by hyperswarm
-            // (because the DID's registry specifies where to look for *update* events)
-            // Don't distribute local DIDs
-            if (operation.mdip!.registry !== 'local') {
-                if (this.supportedRegistries.includes('hyperswarm')) {
-                    const queueSize = await this.db.queueOperation('hyperswarm', operation);
+        await this.db.addEvent(did, {
+            registry: 'local',
+            time: operation.created!,
+            ordinal: [0],
+            operation,
+            did
+        });
 
-                    if (queueSize >= this.maxQueueSize) {
-                        this.supportedRegistries = this.supportedRegistries.filter(registry => registry !== 'hyperswarm');
-                    }
-                }
-                else {
-                    throw new InvalidOperationError('hyperswarm not supported');
-                }
+        const registry = operation.mdip!.registry || 'missing registry';
+
+        // Don't distribute local DIDs
+        if (registry === 'local') {
+            return did;
+        }
+
+        // Always distribute on hyperswarm
+        await this.db.queueOperation('hyperswarm', operation);
+
+        // Distribute on specified registry if supported
+        if (registry !== 'hyperswarm' && this.supportedRegistries.includes(registry)) {
+
+            const queueSize = await this.db.queueOperation(registry, operation);
+
+            if (queueSize >= this.maxQueueSize) {
+                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
             }
         }
 
@@ -748,21 +754,21 @@ export default class Gatekeeper implements GatekeeperInterface {
             did: operation.did
         });
 
+        // Don't distribute local DIDs
         if (registry === 'local') {
             return true;
         }
 
-        const queueSize = await this.db.queueOperation(registry, operation);
+        // Always distribute on hyperswarm
+        await this.db.queueOperation('hyperswarm', operation);
 
-        if (queueSize >= this.maxQueueSize) {
-            this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
-        }
+        // Distribute on specified registry if supported
+        if (registry !== 'hyperswarm' && this.supportedRegistries.includes(registry)) {
 
-        if (registry !== 'hyperswarm' && this.supportedRegistries.includes('hyperswarm')) {
-            const queueSize = await this.db.queueOperation('hyperswarm', operation);
+            const queueSize = await this.db.queueOperation(registry, operation);
 
             if (queueSize >= this.maxQueueSize) {
-                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== 'hyperswarm');
+                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
             }
         }
 

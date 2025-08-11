@@ -250,7 +250,7 @@ describe('createDID', () => {
             }
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid operation: hyperswarm not supported');
+            expect(error.message).toBe('Invalid operation: mdip.registry=TFTC');
         }
     });
 });

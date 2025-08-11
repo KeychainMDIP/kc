@@ -40,7 +40,7 @@ describe('getQueue', () => {
         expect(queue).toStrictEqual([]);
     });
 
-    it('should return single event in queue', async () => {
+    it('should return events in queue', async () => {
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
@@ -52,7 +52,7 @@ describe('getQueue', () => {
 
         const queue = await gatekeeper.getQueue(registry);
 
-        expect(queue).toStrictEqual([updateOp]);
+        expect(queue).toStrictEqual([agentOp, updateOp]);
     });
 
     it('should throw an exception if invalid registry', async () => {
@@ -92,6 +92,8 @@ describe('clearQueue', () => {
         const did = await gatekeeper.createDID(agentOp);
         const queue1 = [];
         const queue2 = [];
+
+        queue1.push(agentOp)
 
         for (let i = 0; i < 5; i++) {
             const doc = await gatekeeper.resolveDID(did);
