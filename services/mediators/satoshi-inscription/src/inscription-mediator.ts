@@ -27,11 +27,9 @@ const SMART_FEE_MODE = "conservative";
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const btcClient = new BtcClient({
-    network: config.network,
     username: config.user,
     password: config.pass,
-    host: config.host,
-    port: config.port,
+    host: 'http://' + config.host + ':' + config.port,
     wallet: config.wallet,
 });
 
@@ -974,6 +972,7 @@ async function anchorBatch(): Promise<void> {
 async function importLoop(): Promise<void> {
     if (importRunning) {
         setTimeout(importLoop, config.importInterval * 60 * 1000);
+        console.log(`import loop busy, waiting ${config.importInterval} minute(s)...`);
         return;
     }
 
@@ -982,11 +981,11 @@ async function importLoop(): Promise<void> {
     try {
         await scanBlocks();
         await importBatches();
-        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
     } catch (error: any) {
         console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
     } finally {
         importRunning = false;
+        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 }
@@ -994,6 +993,7 @@ async function importLoop(): Promise<void> {
 async function exportLoop(): Promise<void> {
     if (exportRunning) {
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        console.log(`Export loop busy, waiting ${config.importInterval} minute(s)...`);
         return;
     }
 
@@ -1005,11 +1005,11 @@ async function exportLoop(): Promise<void> {
         }
 
         await anchorBatch();
-        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
     } finally {
         exportRunning = false;
+        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
