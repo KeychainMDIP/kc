@@ -253,21 +253,6 @@ describe('createDID', () => {
             expect(error.message).toBe('Invalid operation: hyperswarm not supported');
         }
     });
-
-    it('should remove inscription registry queue limit and throw error on next create op', async () => {
-        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxQueueSize: 5, registries: ['hyperswarm', 'Signet-Inscription'] });
-
-        try {
-            for (let i = 0; i < 10; i++) {
-                const keypair = cipher.generateRandomJwk();
-                const agentOp = await helper.createAgentOp(keypair, { registry: 'Signet-Inscription' });
-                await gk.createDID(agentOp);
-            }
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('Invalid operation: mdip.registry=Signet-Inscription');
-        }
-    });
 });
 
 describe('resolveDID', () => {

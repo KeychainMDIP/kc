@@ -18,7 +18,7 @@ const mockConsole = {
 const cipher = new CipherNode();
 const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
-const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC', 'Signet-Inscription'] });
+const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 const helper = new TestHelper(gatekeeper, cipher);
 
 beforeAll(async () => {
@@ -198,7 +198,7 @@ describe('generateDoc', () => {
 
     it('should generate an asset doc from a valid anchor', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair, {registry: 'Signet-Inscription'});
+        const agentOp = await helper.createAgentOp(keypair);
         const agent = await gatekeeper.createDID(agentOp);
         const assetOp = await helper.createAssetOp(agent, keypair);
         const did = await gatekeeper.generateDID(assetOp);
