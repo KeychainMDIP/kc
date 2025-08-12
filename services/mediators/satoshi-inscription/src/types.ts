@@ -38,7 +38,7 @@ export interface MediatorDb {
     lastExport?: string;
     pendingTxid?: string;
     pendingTaproot?: {
-        commitTxids?: string[];
+        commitTxid?: string;
         revealTxids?: string[];
         hdInfo: HDInfo;
         blockCount: number,

@@ -53,10 +53,10 @@ export interface TransactionByHash {
 }
 
 export interface BumpFeeOptions {
-    confTarget?: number;
-    feeRate?: number | string;
+    conf_target?: number;
+    fee_rate?: number | string;
     replaceable?: boolean;
-    estimateMode?: EconomyModes;
+    estimate_mode?: EconomyModes;
 }
 
 export interface BumpFeeResult {
@@ -132,6 +132,8 @@ export interface MempoolEntry {
     depends: string[];
     spentby: string[];
 }
+
+export type MempoolDescendantsResult = string[] | Record<string, MempoolEntry>;
 
 export interface RawTransactionVerbose extends TransactionByHash {
     hex: string;
@@ -289,6 +291,37 @@ export interface PsbtBumpFeeResult {
     errors?: string[];
 }
 
+export interface PsbtInput {
+    txid: string;
+    vout: number;
+    sequence?: number;
+}
+
+export type PsbtOutput = Record<string, number | string>;
+
+export interface WalletCreateFundedPsbtOptions {
+    changeAddress?: string;
+    changePosition?: number;
+    change_type?: 'legacy' | 'p2sh-segwit' | 'bech32' | 'bech32m';
+    includeWatching?: boolean;
+    lockUnspents?: boolean;
+    fee_rate?: number | string;
+    feeRate?: number | string;
+    subtractFeeFromOutputs?: number[];
+    replaceable?: boolean;
+    conf_target?: number;
+    estimate_mode?: EconomyModes;
+    add_inputs?: boolean;
+    include_unsafe?: boolean;
+    max_fee_rate?: number | string;
+}
+
+export interface WalletCreateFundedPsbtResult {
+    psbt: string;
+    fee: number;
+    changepos: number;
+}
+
 export default class BtcClient {
     constructor(options: BtcClientOptions);
     getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -335,6 +368,13 @@ export default class BtcClient {
         psbt: string,
         complete: boolean,
     }>;
+    walletCreateFundedPsbt(
+        inputs: PsbtInput[],
+        outputs: PsbtOutput[],
+        locktime?: number,
+        options?: WalletCreateFundedPsbtOptions,
+        bip32derivs?: boolean
+    ): Promise<WalletCreateFundedPsbtResult>;
     finalizePsbt(psbt: string): Promise<{ psbt: string, hex: string, complete: boolean }>;
     getNetworkInfo(): Promise<NetworkInfo>;
     getDescriptorInfo(descriptor: string): Promise<DescriptorInfoResult>;
@@ -342,4 +382,5 @@ export default class BtcClient {
     deriveAddresses(descriptor: string, range?: number | [number, number]): Promise<string[]>;
     listDescriptors(private: boolean): Promise<ListDescriptorsResult>;
     decodeRawTransaction(hexstring: string, iswitness?: boolean): Promise<DecodedRawTransaction>;
+    getMempoolDescendants(txid: string, verbose?: boolean): Promise<MempoolDescendantsResult>;
 }
