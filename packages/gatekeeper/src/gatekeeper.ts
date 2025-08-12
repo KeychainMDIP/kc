@@ -435,48 +435,55 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.cipher.verifySig(msgHash, signature.value, publicJwk);
     }
 
+    async queueOperation(registry: string, operation: Operation) {
+        // Don't distribute local DIDs
+        if (registry === 'local') {
+            return;
+        }
+
+        // Always distribute on hyperswarm
+        await this.db.queueOperation('hyperswarm', operation);
+
+        // Distribute on specified registry
+        if (registry !== 'hyperswarm') {
+            const queueSize = await this.db.queueOperation(registry, operation);
+
+            if (queueSize >= this.maxQueueSize) {
+                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
+            }
+        }
+    }
+
     async createDID(operation: Operation): Promise<string> {
         const valid = await this.verifyCreateOperation(operation);
         if (!valid) {
             throw new InvalidOperationError('signature')
         }
 
-        const registry = operation.mdip?.registry || 'missing registry';
+        const registry = operation.mdip!.registry;
 
         // Reject operations with unsupported registries
-        if (!this.supportedRegistries.includes(registry)) {
-            throw new InvalidOperationError(`mdip.registry=${registry}`);
+        if (!registry || !this.supportedRegistries.includes(registry)) {
+            throw new InvalidOperationError(`registry ${registry} not supported`);
         }
 
         const did = await this.generateDID(operation);
         const ops = await this.exportDID(did);
 
         // Check to see if we already have this DID in the db
-        if (ops.length === 0) {
-            await this.db.addEvent(did, {
-                registry: 'local',
-                time: operation.created!,
-                ordinal: [0],
-                operation,
-                did
-            });
-
-            // Create events are distributed only by hyperswarm
-            // (because the DID's registry specifies where to look for *update* events)
-            // Don't distribute local DIDs
-            if (operation.mdip!.registry !== 'local') {
-                if (this.supportedRegistries.includes('hyperswarm')) {
-                    const queueSize = await this.db.queueOperation('hyperswarm', operation);
-
-                    if (queueSize >= this.maxQueueSize) {
-                        this.supportedRegistries = this.supportedRegistries.filter(registry => registry !== 'hyperswarm');
-                    }
-                }
-                else {
-                    throw new InvalidOperationError('hyperswarm not supported');
-                }
-            }
+        if (ops.length > 0) {
+            return did;
         }
+
+        await this.db.addEvent(did, {
+            registry: 'local',
+            time: operation.created!,
+            ordinal: [0],
+            operation,
+            did
+        });
+
+        await this.queueOperation(registry, operation);
 
         return did;
     }
@@ -735,11 +742,11 @@ export default class Gatekeeper implements GatekeeperInterface {
             return false;
         }
 
-        const registry = doc.mdip?.registry || 'missing registry';
+        const registry = doc.mdip?.registry;
 
         // Reject operations with unsupported registries
-        if (!this.supportedRegistries.includes(registry)) {
-            throw new InvalidOperationError(`${registry} not supported`);
+        if (!registry || !this.supportedRegistries.includes(registry)) {
+            throw new InvalidOperationError(`registry ${registry} not supported`);
         }
 
         await this.db.addEvent(operation.did, {
@@ -750,23 +757,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             did: operation.did
         });
 
-        if (registry === 'local') {
-            return true;
-        }
-
-        const queueSize = await this.db.queueOperation(registry, operation);
-
-        if (queueSize >= this.maxQueueSize) {
-            this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
-        }
-
-        if (registry !== 'hyperswarm' && this.supportedRegistries.includes('hyperswarm')) {
-            const queueSize = await this.db.queueOperation('hyperswarm', operation);
-
-            if (queueSize >= this.maxQueueSize) {
-                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== 'hyperswarm');
-            }
-        }
+        await this.queueOperation(registry, operation);
 
         return true;
     }

@@ -84,7 +84,8 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid operation: mdip.registry=TFTC');
+            // eslint-disable-next-line
+            expect(error.message).toBe('Invalid operation: registry TFTC not supported');
         }
     });
 
@@ -250,7 +251,7 @@ describe('createDID', () => {
             }
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid operation: hyperswarm not supported');
+            expect(error.message).toBe('Invalid operation: registry TFTC not supported');
         }
     });
 });
@@ -820,7 +821,7 @@ describe('updateDID', () => {
             }
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Invalid operation: TFTC not supported');
+            expect(error.message).toBe('Invalid operation: registry TFTC not supported');
         }
     });
 });
