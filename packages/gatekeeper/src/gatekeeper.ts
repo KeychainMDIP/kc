@@ -464,16 +464,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             // Create events are distributed only by hyperswarm
             // (because the DID's registry specifies where to look for *update* events)
             // Don't distribute local DIDs
-            if (registry !== 'local') {
-                // Allow create events on inscribed networks
-                if (registry.endsWith('-Inscription')) {
-                    const queueSize = await this.db.queueOperation(registry, operation);
-
-                    if (queueSize >= this.maxQueueSize) {
-                        this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
-                    }
-                }
-
+            if (operation.mdip!.registry !== 'local') {
                 if (this.supportedRegistries.includes('hyperswarm')) {
                     const queueSize = await this.db.queueOperation('hyperswarm', operation);
 
