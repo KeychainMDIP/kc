@@ -40,7 +40,7 @@ describe('getQueue', () => {
         expect(queue).toStrictEqual([]);
     });
 
-    it('should return single event in queue', async () => {
+    it('should return events in queue', async () => {
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
@@ -52,7 +52,7 @@ describe('getQueue', () => {
 
         const queue = await gatekeeper.getQueue(registry);
 
-        expect(queue).toStrictEqual([updateOp]);
+        expect(queue).toStrictEqual([agentOp, updateOp]);
     });
 
     it('should throw an exception if invalid registry', async () => {
@@ -90,8 +90,7 @@ describe('clearQueue', () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
         const did = await gatekeeper.createDID(agentOp);
-        const queue1 = [];
-        const queue2 = [];
+        const queue1 = [agentOp];
 
         for (let i = 0; i < 5; i++) {
             const doc = await gatekeeper.resolveDID(did);
@@ -101,20 +100,21 @@ describe('clearQueue', () => {
             queue1.push(updateOp);
         }
 
-        const queue3 = await gatekeeper.getQueue(registry);
-        expect(queue3).toStrictEqual(queue1);
+        const queue2 = await gatekeeper.getQueue(registry);
+        expect(queue2).toStrictEqual(queue1);
 
+        const queue3 = [];
         for (let i = 0; i < 5; i++) {
             const doc = await gatekeeper.resolveDID(did);
             doc.didDocumentData = { mock: i };
             const updateOp = await helper.createUpdateOp(keypair, did, doc);
             await gatekeeper.updateDID(updateOp);
-            queue2.push(updateOp);
+            queue3.push(updateOp);
         }
 
-        await gatekeeper.clearQueue(registry, queue3);
+        await gatekeeper.clearQueue(registry, queue2);
         const queue4 = await gatekeeper.getQueue(registry);
-        expect(queue4).toStrictEqual(queue2);
+        expect(queue4).toStrictEqual(queue3);
     });
 
     it('should return true if queue already empty', async () => {
