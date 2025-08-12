@@ -84,6 +84,7 @@ describe('createDID', () => {
             await gatekeeper.createDID(agentOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line
             expect(error.message).toBe('Invalid operation: registry TFTC not supported');
         }
     });
