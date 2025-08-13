@@ -664,8 +664,7 @@ async function bumpRevealFee(
 
     const changeOutputSat = CHANGE_VBYTES * targetSatPerVb;
     const revealTx = await btcClient.getRawTransaction(ctx.txid, 1) as RawTransactionVerbose;
-    const baseSize = revealTx.vout.length > 1 ? revealEntry.vsize - CHANGE_VBYTES : revealEntry.vsize;
-    let newVsize = baseSize;
+    let newVsize = revealTx.vout.length > 1 ? revealEntry.vsize - CHANGE_VBYTES : revealEntry.vsize;
     let hasChange = false;
 
     let parentFeeSat = 0;
@@ -1129,7 +1128,7 @@ async function main() {
 
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${config.chain}-Inscription): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
+        console.log(`Txn fees (${REGISTRY}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
