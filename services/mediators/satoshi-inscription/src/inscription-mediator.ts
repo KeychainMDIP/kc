@@ -589,7 +589,7 @@ async function createTaprootPair(batch: Operation[]) {
     const xonly = getXOnly(addrInfo);
 
     const feeResp = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
-    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : 10;
+    const feeSatPerVbyte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
 
     const outputMap: Record<string, number> = {};
     const tapScripts: Buffer[] = [];
