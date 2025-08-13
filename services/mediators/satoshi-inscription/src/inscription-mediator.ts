@@ -45,6 +45,7 @@ interface RevealContext {
     tapScripts: Buffer[];
     xonly: Buffer;
     hdInfo: HDInfo;
+    txid: string;
 }
 
 let jsonPersister: MediatorDbInterface;
@@ -297,7 +298,8 @@ async function extractRevealContext(revealTxid: string): Promise<RevealContext> 
         commitTx,
         tapScripts,
         xonly,
-        hdInfo: db.pendingTaproot!.hdInfo
+        hdInfo: db.pendingTaproot!.hdInfo,
+        txid: revealTxid
     };
 }
 
@@ -633,7 +635,6 @@ async function createTaprootPair(batch: Operation[]) {
 async function bumpRevealFee(
     commitEntry: MempoolEntry | undefined,
     revealEntry: MempoolEntry,
-    txid: string,
     ctx: RevealContext
 ) {
 
@@ -656,83 +657,50 @@ async function bumpRevealFee(
     const chosen: UnspentOutput[] = [];
     let chosenSat = 0;
     let requiredExtraSat = 0;
-
-    const { incrementalfee, relayfee } = await btcClient.getNetworkInfo();
-    const incAbsSat = Math.ceil(incrementalfee * 1e8);
-    const minRelaySatPerVb = Math.ceil(relayfee * 1e8 / 1000);
-    targetSatPerVb = Math.max(targetSatPerVb, minRelaySatPerVb);
+    const incrementalSat = 1000; // Default min incremental fee
 
     console.log("Current Fee Sat/vB:", currSatPerVb);
     console.log("New Fee Sat/vB: ", targetSatPerVb);
 
     const changeOutputSat = CHANGE_VBYTES * targetSatPerVb;
-    const revealTx = await btcClient.getRawTransaction(txid, 1) as RawTransactionVerbose;
+    const revealTx = await btcClient.getRawTransaction(ctx.txid, 1) as RawTransactionVerbose;
     const baseSize = revealTx.vout.length > 1 ? revealEntry.vsize - CHANGE_VBYTES : revealEntry.vsize;
     let newVsize = baseSize;
     let hasChange = false;
 
+    let parentFeeSat = 0;
+    let parentVsize = 0;
+
     if (commitEntry) {
         // CPFP - Commit transaction still in mempool
-        const parentFeeSat = Math.floor(commitEntry.fees.modified * 1e8);
-        const parentVsize = commitEntry.vsize;
+        parentFeeSat = Math.floor(commitEntry.fees.modified * 1e8);
+        parentVsize = commitEntry.vsize;
+    }
 
-        for (const utxo of spendables) {
-            chosen.push(utxo);
-            chosenSat += Math.round(utxo.amount * 1e8);
-            newVsize += EXTRA_INPUT_VBYTES;
+    for (const utxo of spendables) {
+        chosen.push(utxo);
+        chosenSat += Math.round(utxo.amount * 1e8);
+        newVsize += EXTRA_INPUT_VBYTES;
 
-            const addBytes = Math.max(0, newVsize - revealEntry.vsize);
-            const needPkg = Math.max(0, targetSatPerVb * (parentVsize + newVsize) - (parentFeeSat + baseFeeSat));
-            const needRbfAbs = Math.max(0, (currFeeSat + incAbsSat) - baseFeeSat);
-            const needBytes  = Math.max(0, (currFeeSat + minRelaySatPerVb * addBytes) - baseFeeSat);
+        const calcFeeBump = Math.max(0, targetSatPerVb * (parentVsize + newVsize) - (parentFeeSat + baseFeeSat));
+        const minIncremental = Math.max(0, (currFeeSat + incrementalSat) - baseFeeSat);
 
-            requiredExtraSat = Math.max(needPkg, needRbfAbs, needBytes);
+        requiredExtraSat = Math.max(calcFeeBump, minIncremental);
 
-            const changeSat = chosenSat - requiredExtraSat;
+        const changeSat = chosenSat - requiredExtraSat;
 
-            if (!hasChange && changeSat >= DUST + changeOutputSat) {
-                hasChange = true;
-                newVsize += CHANGE_VBYTES;
-                requiredExtraSat += changeOutputSat;
-            } else if (hasChange && changeSat < DUST) {
-                hasChange = false;
-                newVsize -= CHANGE_VBYTES;
-                requiredExtraSat -= changeOutputSat;
-            }
-
-            if (chosenSat >= requiredExtraSat) {
-                break;
-            }
+        if (!hasChange && changeSat >= DUST + changeOutputSat) {
+            hasChange = true;
+            newVsize += CHANGE_VBYTES;
+            requiredExtraSat += changeOutputSat;
+        } else if (hasChange && changeSat < DUST) {
+            hasChange = false;
+            newVsize -= CHANGE_VBYTES;
+            requiredExtraSat -= changeOutputSat;
         }
-    } else {
-        // Child-only RBF logic
-        for (const utxo of spendables) {
-            chosen.push(utxo);
-            chosenSat += utxo.amount * 1e8;
-            newVsize += EXTRA_INPUT_VBYTES;
 
-            const addBytes  = Math.max(0, newVsize - revealEntry.vsize);
-            const needTarget = Math.max(0, newVsize * targetSatPerVb - baseFeeSat);
-            const needRbfAbs = Math.max(0, (currFeeSat + incAbsSat) - baseFeeSat);
-            const needBytes  = Math.max(0, (currFeeSat + minRelaySatPerVb * addBytes) - baseFeeSat);
-
-            requiredExtraSat = Math.max(needTarget, needRbfAbs, needBytes);
-
-            const changeSat = chosenSat - requiredExtraSat;
-
-            if (!hasChange && changeSat >= DUST + changeOutputSat) {
-                hasChange = true;
-                newVsize += CHANGE_VBYTES;
-                requiredExtraSat += changeOutputSat;
-            } else if (hasChange && changeSat < DUST) {
-                hasChange = false;
-                newVsize -= CHANGE_VBYTES;
-                requiredExtraSat -= changeOutputSat;
-            }
-
-            if (chosenSat >= requiredExtraSat) {
-                break;
-            }
+        if (chosenSat >= requiredExtraSat) {
+            break;
         }
     }
 
@@ -852,7 +820,7 @@ async function replaceByFee(): Promise<boolean> {
         const { entry: revealEntry, txid: revealTxid } = await getEntryFromMempool(db.pendingTaproot.revealTxids);
 
         const ctx = await extractRevealContext(revealTxid);
-        const revealHex = await bumpRevealFee(commitEntry, revealEntry, revealTxid, ctx);
+        const revealHex = await bumpRevealFee(commitEntry, revealEntry, ctx);
 
         const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
 
@@ -871,7 +839,7 @@ async function replaceByFee(): Promise<boolean> {
         const { entry: revealEntry, txid: revealTxid } = await getEntryFromMempool(db.pendingTaproot.revealTxids);
 
         const ctx = await extractRevealContext(revealTxid);
-        const revealHex = await bumpRevealFee(undefined, revealEntry, revealTxid, ctx);
+        const revealHex = await bumpRevealFee(undefined, revealEntry, ctx);
 
         const newRevealTxid = await btcClient.sendRawTransaction(revealHex);
 
