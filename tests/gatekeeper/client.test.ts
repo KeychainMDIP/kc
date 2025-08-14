@@ -5,6 +5,37 @@ import { ExpectedExceptionError } from '@mdip/common/errors';
 const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
 const MockDID = 'did:mock:1234';
+const Endpoints = {
+    ready: '/api/v1/ready',
+    version: '/api/v1/version',
+    status: '/api/v1/status',
+    did: '/api/v1/did',
+    db: {
+        reset: '/api/v1/db/reset',
+        verify: '/api/v1/db/verify',
+    },
+    dids: {
+        list: '/api/v1/dids',
+        export: '/api/v1/dids/export',
+        import: '/api/v1/dids/import',
+        remove: '/api/v1/dids/remove',
+    },
+    batch: {
+        export: '/api/v1/batch/export',
+        import: '/api/v1/batch/import',
+    },
+    registries: '/api/v1/registries',
+    queue: '/api/v1/queue',
+    events: {
+        process: '/api/v1/events/process',
+    },
+    cas: {
+        json: '/api/v1/cas/json',
+        text: '/api/v1/cas/text',
+        data: '/api/v1/cas/data',
+    },
+    block: '/api/v1/block',
+};
 
 const mockConsole = {
     log: () => { },
@@ -16,8 +47,7 @@ const mockConsole = {
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
-            // eslint-disable-next-line
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -28,7 +58,7 @@ describe('isReady', () => {
 
     it('should return false on server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -39,7 +69,7 @@ describe('isReady', () => {
 
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({
@@ -54,7 +84,7 @@ describe('isReady', () => {
 
     it('should timeout if not ready', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/ready')
+            .get(Endpoints.ready)
             .reply(200, 'false');
 
         const gatekeeper = await GatekeeperClient.create({
@@ -73,7 +103,7 @@ describe('isReady', () => {
 describe('getVersion', () => {
     it('should return version', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/version')
+            .get(Endpoints.version)
             .reply(200, '1');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -84,7 +114,7 @@ describe('getVersion', () => {
 
     it('should throw exception on getVersion server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/version')
+            .get(Endpoints.version)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -102,7 +132,7 @@ describe('getVersion', () => {
 describe('resetDb', () => {
     it('should return reset status', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/db/reset')
+            .get(Endpoints.db.reset)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -113,7 +143,7 @@ describe('resetDb', () => {
 
     it('should throw exception on resetDb server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/db/reset')
+            .get(Endpoints.db.reset)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -131,7 +161,7 @@ describe('resetDb', () => {
 describe('verifyDb', () => {
     it('should return verify status', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/db/verify')
+            .get(Endpoints.db.verify)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -142,7 +172,7 @@ describe('verifyDb', () => {
 
     it('should throw exception on verifyDb server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/db/verify')
+            .get(Endpoints.db.verify)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -160,7 +190,7 @@ describe('verifyDb', () => {
 describe('getStatus', () => {
     it('should return server status', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/status')
+            .get(Endpoints.status)
             .reply(200, { uptimeSeconds: 1234 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -171,7 +201,7 @@ describe('getStatus', () => {
 
     it('should throw exception on getStatus server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/status')
+            .get(Endpoints.status)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -200,7 +230,7 @@ describe('listRegistries', () => {
 
     it('should throw exception on listRegistries server error', async () => {
         nock(GatekeeperURL)
-            .get('/api/v1/registries')
+            .get(Endpoints.registries)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -218,7 +248,7 @@ describe('listRegistries', () => {
 describe('createDID', () => {
     it('should return a DID', async () => {
         nock(GatekeeperURL)
-            .post('/api/v1/did')
+            .post(Endpoints.did)
             .reply(200, 'did:mock:4321');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -229,7 +259,7 @@ describe('createDID', () => {
 
     it('should throw exception on createDID server error', async () => {
         nock(GatekeeperURL)
-            .post('/api/v1/did')
+            .post(Endpoints.did)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -249,7 +279,7 @@ describe('resolveDID', () => {
 
     it('should return DID documents', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/did/${MockDID}`)
+            .get(`${Endpoints.did}/${MockDID}`)
             .reply(200, mockDocs);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -260,7 +290,7 @@ describe('resolveDID', () => {
 
     it('should return specified DID documents', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/did/${MockDID}?version=1&confirm=true`)
+            .get(`${Endpoints.did}/${MockDID}?version=1&confirm=true`)
             .reply(200, mockDocs);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -271,7 +301,7 @@ describe('resolveDID', () => {
 
     it('should throw exception when DID not found', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/did/${MockDID}`)
+            .get(`${Endpoints.did}/${MockDID}`)
             .reply(404, { message: 'DID not found' });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -289,7 +319,7 @@ describe('resolveDID', () => {
 describe('updateDID', () => {
     it('should return update status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did`)
+            .post(Endpoints.did)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -300,7 +330,7 @@ describe('updateDID', () => {
 
     it('should throw exception on updateDID server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did`)
+            .post(Endpoints.did)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -318,7 +348,7 @@ describe('updateDID', () => {
 describe('deleteDID', () => {
     it('should return delete status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did`)
+            .post(Endpoints.did)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -329,7 +359,7 @@ describe('deleteDID', () => {
 
     it('should throw exception on getDIDs server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/did`)
+            .post(Endpoints.did)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -347,7 +377,7 @@ describe('deleteDID', () => {
 describe('getDIDs', () => {
     it('should return DID list', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids`)
+            .post(Endpoints.dids.list)
             .reply(200, []);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -358,7 +388,7 @@ describe('getDIDs', () => {
 
     it('should throw exception on getDIDs server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids`)
+            .post(Endpoints.dids.list)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -376,7 +406,7 @@ describe('getDIDs', () => {
 describe('removeDIDs', () => {
     it('should return remove status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/remove`)
+            .post(Endpoints.dids.remove)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -388,7 +418,7 @@ describe('removeDIDs', () => {
 
     it('should throw exception on removeDIDs server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/remove`)
+            .post(Endpoints.dids.remove)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -407,7 +437,7 @@ describe('removeDIDs', () => {
 describe('exportDIDs', () => {
     it('should return exported DID list', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/export`)
+            .post(Endpoints.dids.export)
             .reply(200, []);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -418,7 +448,7 @@ describe('exportDIDs', () => {
 
     it('should throw exception on exportDIDs server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/export`)
+            .post(Endpoints.dids.export)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -436,7 +466,7 @@ describe('exportDIDs', () => {
 describe('importDIDs', () => {
     it('should return imported DID results', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/import`)
+            .post(Endpoints.dids.import)
             .reply(200, { queued: 0, processed: 0 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -448,7 +478,7 @@ describe('importDIDs', () => {
 
     it('should throw exception on importDIDs server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/dids/import`)
+            .post(Endpoints.dids.import)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -467,7 +497,7 @@ describe('importDIDs', () => {
 describe('exportBatch', () => {
     it('should return exported batch', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/batch/export`)
+            .post(Endpoints.batch.export)
             .reply(200, []);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -478,7 +508,7 @@ describe('exportBatch', () => {
 
     it('should throw exception on exportBatch server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/batch/export`)
+            .post(Endpoints.batch.export)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -496,7 +526,7 @@ describe('exportBatch', () => {
 describe('importBatch', () => {
     it('should return imported batch results', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/batch/import`)
+            .post(Endpoints.batch.import)
             .reply(200, { queued: 0, processed: 0 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -508,7 +538,7 @@ describe('importBatch', () => {
 
     it('should throw exception on importBatch server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/batch/import`)
+            .post(Endpoints.batch.import)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -529,7 +559,7 @@ describe('getQueue', () => {
 
     it('should return queue', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/queue/${mockRegistry}`)
+            .get(`${Endpoints.queue}/${mockRegistry}`)
             .reply(200, []);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -562,7 +592,7 @@ describe('clearQueue', () => {
 
     it('should return clear status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/queue/${mockRegistry}/clear`)
+            .post(`${Endpoints.queue}/${mockRegistry}/clear`)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -576,7 +606,7 @@ describe('clearQueue', () => {
         const mockRegistry = 'local';
 
         nock(GatekeeperURL)
-            .post(`/api/v1/queue/${mockRegistry}/clear`)
+            .post(`${Endpoints.queue}/${mockRegistry}/clear`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -595,7 +625,7 @@ describe('clearQueue', () => {
 describe('processEvents', () => {
     it('should return process status', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/events/process`)
+            .post(Endpoints.events.process)
             .reply(200, { added: 0, merged: 0, pending: 0 });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -606,7 +636,7 @@ describe('processEvents', () => {
 
     it('should throw exception on processEvents server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/events/process`)
+            .post(Endpoints.events.process)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -627,7 +657,7 @@ describe('addJSON', () => {
 
     it('should return a CID for JSON', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/json`)
+            .post(Endpoints.cas.json)
             .reply(200, mockCID);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -638,7 +668,7 @@ describe('addJSON', () => {
 
     it('should throw exception on addJSON server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/json`)
+            .post(Endpoints.cas.json)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -659,7 +689,7 @@ describe('getJSON', () => {
 
     it('should return JSON', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/json/${mockCID}`)
+            .get(`${Endpoints.cas.json}/${mockCID}`)
             .reply(200, mockJSON);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -670,7 +700,7 @@ describe('getJSON', () => {
 
     it('should throw exception on getJSON server error', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/json/${mockCID}`)
+            .get(`${Endpoints.cas.json}/${mockCID}`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -691,7 +721,7 @@ describe('addText', () => {
 
     it('should return a CID for text', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/text`)
+            .post(Endpoints.cas.text)
             .reply(200, mockCID);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -702,7 +732,7 @@ describe('addText', () => {
 
     it('should throw exception on addText server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/text`)
+            .post(Endpoints.cas.text)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -723,7 +753,7 @@ describe('getText', () => {
 
     it('should return text', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/text/${mockCID}`)
+            .get(`${Endpoints.cas.text}/${mockCID}`)
             .reply(200, mockText);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -734,7 +764,7 @@ describe('getText', () => {
 
     it('should throw exception on getText server error', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/text/${mockCID}`)
+            .get(`${Endpoints.cas.text}/${mockCID}`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -755,7 +785,7 @@ describe('addData', () => {
 
     it('should return a CID for data', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/data`)
+            .post(Endpoints.cas.data)
             .reply(200, mockCID);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -766,7 +796,7 @@ describe('addData', () => {
 
     it('should throw exception on addData server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/cas/data`)
+            .post(Endpoints.cas.data)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -787,7 +817,7 @@ describe('getData', () => {
 
     it('should return text', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/data/${mockCID}`)
+            .get(`${Endpoints.cas.data}/${mockCID}`)
             .reply(200, mockData);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -798,7 +828,7 @@ describe('getData', () => {
 
     it('should throw exception on getData server error', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/cas/data/${mockCID}`)
+            .get(`${Endpoints.cas.data}/${mockCID}`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -819,7 +849,7 @@ describe('addBlock', () => {
 
     it('should add a block', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/block/${mockRegistry}`)
+            .post(`${Endpoints.block}/${mockRegistry}`)
             .reply(200, 'true');
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -830,7 +860,7 @@ describe('addBlock', () => {
 
     it('should throw exception on addBlock server error', async () => {
         nock(GatekeeperURL)
-            .post(`/api/v1/block/${mockRegistry}`)
+            .post(`${Endpoints.block}/${mockRegistry}`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -851,7 +881,7 @@ describe('getBlock', () => {
 
     it('should return the latest block', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/block/${mockRegistry}/latest`)
+            .get(`${Endpoints.block}/${mockRegistry}/latest`)
             .reply(200, mockBlock);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -862,7 +892,7 @@ describe('getBlock', () => {
 
     it('should return the block by hash', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/block/${mockRegistry}/${mockBlock.hash}`)
+            .get(`${Endpoints.block}/${mockRegistry}/${mockBlock.hash}`)
             .reply(200, mockBlock);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -873,7 +903,7 @@ describe('getBlock', () => {
 
     it('should return the block by height', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/block/${mockRegistry}/${mockBlock.height}`)
+            .get(`${Endpoints.block}/${mockRegistry}/${mockBlock.height}`)
             .reply(200, mockBlock);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -884,7 +914,7 @@ describe('getBlock', () => {
 
     it('should throw exception on getBlock server error', async () => {
         nock(GatekeeperURL)
-            .get(`/api/v1/block/${mockRegistry}/latest`)
+            .get(`${Endpoints.block}/${mockRegistry}/latest`)
             .reply(500, ServerError);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
@@ -909,7 +939,7 @@ describe('addCustomHeader', () => {
 
         // Use nock to intercept and inspect the header
         const scope = nock(GatekeeperURL)
-            .get('/api/v1/registries')
+            .get(Endpoints.registries)
             .matchHeader(CustomHeader, CustomHeaderValue)
             .reply(200, ['local', 'hyperswarm']);
 
@@ -926,7 +956,7 @@ describe('removeCustomHeader', () => {
 
         // Use nock to intercept and ensure the header is not present
         const scope = nock(GatekeeperURL)
-            .get('/api/v1/registries')
+            .get(Endpoints.registries)
             .matchHeader(CustomHeader, (val) => val === undefined)
             .reply(200, ['local', 'hyperswarm']);
 
