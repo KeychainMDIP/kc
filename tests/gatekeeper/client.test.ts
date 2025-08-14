@@ -900,23 +900,26 @@ describe('getBlock', () => {
     });
 });
 
+const CustomHeader = 'X-Custom-Header';
+const CustomHeaderValue = 'CustomHeaderValue';
+
 describe('addCustomHeader', () => {
     it('should add a custom header', async () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        gatekeeper.addCustomHeader('X-Custom-Header', 'CustomHeaderValue');
+        gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
 
         const headers = axios.defaults.headers.common;
-        expect(headers['X-Custom-Header']).toBe('CustomHeaderValue');
+        expect(headers[CustomHeader]).toBe(CustomHeaderValue);
     });
 });
 
 describe('removeCustomHeader', () => {
     it('should remove a custom header', async () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        gatekeeper.addCustomHeader('X-Custom-Header', 'CustomHeaderValue');
-        gatekeeper.removeCustomHeader('X-Custom-Header');
+        gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
+        gatekeeper.removeCustomHeader(CustomHeader);
 
         const headers = axios.defaults.headers.common;
-        expect(headers['X-Custom-Header']).toBeUndefined();
+        expect(headers[CustomHeader]).toBeUndefined();
     });
 });
