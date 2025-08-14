@@ -1,5 +1,4 @@
 import nock from 'nock';
-import axios from 'axios';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 
