@@ -964,7 +964,7 @@ async function importLoop(): Promise<void> {
 async function exportLoop(): Promise<void> {
     if (exportRunning) {
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
-        console.log(`Export loop busy, waiting ${config.importInterval} minute(s)...`);
+        console.log(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
         return;
     }
 
