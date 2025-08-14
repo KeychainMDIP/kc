@@ -908,7 +908,8 @@ describe('addCustomHeader', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
 
-        const headers = axios.defaults.headers.common;
+        // Access the private axios instance's headers
+        const headers = gatekeeper['axios'].defaults.headers.common;
         expect(headers[CustomHeader]).toBe(CustomHeaderValue);
     });
 });
@@ -919,7 +920,8 @@ describe('removeCustomHeader', () => {
         gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
         gatekeeper.removeCustomHeader(CustomHeader);
 
-        const headers = axios.defaults.headers.common;
+        // Access the private axios instance's headers
+        const headers = gatekeeper['axios'].defaults.headers.common;
         expect(headers[CustomHeader]).toBeUndefined();
     });
 });
