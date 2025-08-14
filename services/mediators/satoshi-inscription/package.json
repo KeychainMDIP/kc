@@ -1,0 +1,28 @@
+{
+  "name": "inscription-mediator",
+  "version": "1.2.0",
+  "type": "module",
+  "description": "MDIP satoshi blockchain mediator",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "David McFadzean <davidmc@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "bip32": "^5.0.0-rc.0",
+    "bitcoin-core": "^5.0.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "ioredis": "^5.5.0",
+    "mongodb": "^6.13.0",
+    "morgan": "^1.10.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "tiny-secp256k1": "^2.2.4",
+    "varuint-bitcoin": "^2.0.0"
+  }
+}
