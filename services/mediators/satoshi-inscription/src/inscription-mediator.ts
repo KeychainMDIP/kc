@@ -789,7 +789,7 @@ async function checkPendingTransactions(db: MediatorDb) {
             await saveDb(db);
             return false;
         } else {
-            console.log('pendingTaproot commitTxid', db.pendingTaproot.revealTxids.at(-1));
+            console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxids.at(-1));
         }
     }
 
