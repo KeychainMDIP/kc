@@ -1,4 +1,5 @@
 import nock from 'nock';
+import axios from 'axios';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 
@@ -896,5 +897,26 @@ describe('getBlock', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+});
+
+describe('addCustomHeader', () => {
+    it('should add a custom header', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        gatekeeper.addCustomHeader('X-Custom-Header', 'CustomHeaderValue');
+
+        const headers = axios.defaults.headers.common;
+        expect(headers['X-Custom-Header']).toBe('CustomHeaderValue');
+    });
+});
+
+describe('removeCustomHeader', () => {
+    it('should remove a custom header', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        gatekeeper.addCustomHeader('X-Custom-Header', 'CustomHeaderValue');
+        gatekeeper.removeCustomHeader('X-Custom-Header');
+
+        const headers = axios.defaults.headers.common;
+        expect(headers['X-Custom-Header']).toBeUndefined();
     });
 });

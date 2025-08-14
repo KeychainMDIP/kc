@@ -42,6 +42,14 @@ export default class GatekeeperClient implements GatekeeperInterface {
         this.API = VERSION;
     }
 
+    addCustomHeader(header: string, value: string): void {
+        axios.defaults.headers.common[header] = value;
+    }
+
+    removeCustomHeader(header: string): void {
+        delete axios.defaults.headers.common[header];
+    }
+
     async connect(options?: GatekeeperClientOptions) {
         if (options?.url) {
             this.API = `${options.url}${VERSION}`;
