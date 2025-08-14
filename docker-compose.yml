@@ -216,7 +216,7 @@ services:
       - gatekeeper
       - keymaster
 
-  signet-inscription-mediator:
+  sig-ins-mediator:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
