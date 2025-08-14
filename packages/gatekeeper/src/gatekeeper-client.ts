@@ -15,10 +15,6 @@ import {
     VerifyDbResult,
 } from './types.js';
 
-const axios =
-    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
-    (axiosModule as AxiosInstance);
-
 const VERSION = '/api/v1';
 
 function throwError(error: AxiosError | any): never {
@@ -30,6 +26,7 @@ function throwError(error: AxiosError | any): never {
 
 export default class GatekeeperClient implements GatekeeperInterface {
     private API: string;
+    private axios: AxiosInstance;
 
     // Factory method
     static async create(options: GatekeeperClientOptions): Promise<GatekeeperClient> {
@@ -39,7 +36,20 @@ export default class GatekeeperClient implements GatekeeperInterface {
     }
 
     constructor() {
+        const axios =
+            (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+            (axiosModule as AxiosInstance);
+
         this.API = VERSION;
+        this.axios = axios.create();
+    }
+
+    addCustomHeader(header: string, value: string): void {
+        this.axios.defaults.headers.common[header] = value;
+    }
+
+    removeCustomHeader(header: string): void {
+        delete this.axios.defaults.headers.common[header];
     }
 
     async connect(options?: GatekeeperClientOptions) {
@@ -98,7 +108,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async listRegistries(): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/registries`);
+            const response = await this.axios.get(`${this.API}/registries`);
             return response.data;
         }
         catch (error) {
@@ -108,7 +118,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async resetDb(): Promise<boolean> {
         try {
-            const response = await axios.get(`${this.API}/db/reset`);
+            const response = await this.axios.get(`${this.API}/db/reset`);
             return response.data;
         }
         catch (error) {
@@ -118,7 +128,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async verifyDb(): Promise<VerifyDbResult> {
         try {
-            const response = await axios.get(`${this.API}/db/verify`);
+            const response = await this.axios.get(`${this.API}/db/verify`);
             return response.data;
         }
         catch (error) {
@@ -128,7 +138,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async isReady(): Promise<boolean> {
         try {
-            const response = await axios.get(`${this.API}/ready`);
+            const response = await this.axios.get(`${this.API}/ready`);
             return response.data;
         }
         catch (error) {
@@ -138,7 +148,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getVersion(): Promise<number> {
         try {
-            const response = await axios.get(`${this.API}/version`);
+            const response = await this.axios.get(`${this.API}/version`);
             return response.data;
         }
         catch (error) {
@@ -148,7 +158,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getStatus(): Promise<GetStatusResult> {
         try {
-            const response = await axios.get(`${this.API}/status`);
+            const response = await this.axios.get(`${this.API}/status`);
             return response.data;
         }
         catch (error) {
@@ -158,7 +168,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async createDID(operation: Operation): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/did`, operation);
+            const response = await this.axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
@@ -170,11 +180,11 @@ export default class GatekeeperClient implements GatekeeperInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/did/${did}?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/did/${did}?${queryParams.toString()}`);
                 return response.data;
             }
             else {
-                const response = await axios.get(`${this.API}/did/${did}`);
+                const response = await this.axios.get(`${this.API}/did/${did}`);
                 return response.data;
             }
         }
@@ -186,7 +196,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
     // eslint-disable-next-line sonarjs/no-identical-functions
     async updateDID(operation: Operation): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/did`, operation);
+            const response = await this.axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
@@ -197,7 +207,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
     // eslint-disable-next-line sonarjs/no-identical-functions
     async deleteDID(operation: Operation): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/did`, operation);
+            const response = await this.axios.post(`${this.API}/did`, operation);
             return response.data;
         }
         catch (error) {
@@ -207,7 +217,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getDIDs(options?: GetDIDOptions): Promise<string[] | MdipDocument[]> {
         try {
-            const response = await axios.post(`${this.API}/dids`, options);
+            const response = await this.axios.post(`${this.API}/dids`, options);
             return response.data;
         }
         catch (error) {
@@ -217,7 +227,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async exportDIDs(dids?: string[]): Promise<GatekeeperEvent[][]> {
         try {
-            const response = await axios.post(`${this.API}/dids/export`, { dids });
+            const response = await this.axios.post(`${this.API}/dids/export`, { dids });
             return response.data;
         }
         catch (error) {
@@ -227,7 +237,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult> {
         try {
-            const response = await axios.post(`${this.API}/dids/import`, dids);
+            const response = await this.axios.post(`${this.API}/dids/import`, dids);
             return response.data;
         }
         catch (error) {
@@ -237,7 +247,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
         try {
-            const response = await axios.post(`${this.API}/batch/export`, { dids });
+            const response = await this.axios.post(`${this.API}/batch/export`, { dids });
             return response.data;
         }
         catch (error) {
@@ -247,7 +257,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
         try {
-            const response = await axios.post(`${this.API}/batch/import`, batch);
+            const response = await this.axios.post(`${this.API}/batch/import`, batch);
             return response.data;
         }
         catch (error) {
@@ -257,7 +267,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async removeDIDs(dids: string[]): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/dids/remove`, dids);
+            const response = await this.axios.post(`${this.API}/dids/remove`, dids);
             return response.data;
         }
         catch (error) {
@@ -267,7 +277,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getQueue(registry: string): Promise<Operation[]> {
         try {
-            const response = await axios.get(`${this.API}/queue/${registry}`);
+            const response = await this.axios.get(`${this.API}/queue/${registry}`);
             return response.data;
         }
         catch (error) {
@@ -277,7 +287,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async clearQueue(registry: string, events: Operation[]): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/queue/${registry}/clear`, events);
+            const response = await this.axios.post(`${this.API}/queue/${registry}/clear`, events);
             return response.data;
         }
         catch (error) {
@@ -287,7 +297,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async processEvents(): Promise<ProcessEventsResult> {
         try {
-            const response = await axios.post(`${this.API}/events/process`);
+            const response = await this.axios.post(`${this.API}/events/process`);
             return response.data;
         }
         catch (error) {
@@ -297,7 +307,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async addJSON(data: object): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/cas/json`, data);
+            const response = await this.axios.post(`${this.API}/cas/json`, data);
             return response.data;
         }
         catch (error) {
@@ -307,7 +317,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getJSON(cid: string): Promise<object> {
         try {
-            const response = await axios.get(`${this.API}/cas/json/${cid}`);
+            const response = await this.axios.get(`${this.API}/cas/json/${cid}`);
             return response.data;
         }
         catch (error) {
@@ -317,7 +327,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async addText(data: string): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/cas/text`, data, {
+            const response = await this.axios.post(`${this.API}/cas/text`, data, {
                 headers: {
                     'Content-Type': 'text/plain'
                 }
@@ -330,7 +340,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getText(cid: string): Promise<string> {
         try {
-            const response = await axios.get(`${this.API}/cas/text/${cid}`);
+            const response = await this.axios.get(`${this.API}/cas/text/${cid}`);
             return response.data;
         }
         catch (error) {
@@ -340,7 +350,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async addData(data: Buffer): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/cas/data`, data, {
+            const response = await this.axios.post(`${this.API}/cas/data`, data, {
                 headers: {
                     'Content-Type': 'application/octet-stream'
                 }
@@ -354,7 +364,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getData(cid: string): Promise<Buffer> {
         try {
-            const response = await axios.get(`${this.API}/cas/data/${cid}`, {
+            const response = await this.axios.get(`${this.API}/cas/data/${cid}`, {
                 responseType: 'arraybuffer'
             });
             return Buffer.from(response.data);
@@ -374,7 +384,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
             const url = block
                 ? `${this.API}/block/${registry}/${block}`
                 : `${this.API}/block/${registry}/latest`;
-            const response = await axios.get(url);
+            const response = await this.axios.get(url);
             return response.data;
         } catch (error) {
             throwError(error);
@@ -383,7 +393,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async addBlock(registry: string, block: BlockInfo): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/block/${registry}`, block);
+            const response = await this.axios.post(`${this.API}/block/${registry}`, block);
             return response.data;
         }
         catch (error) {
