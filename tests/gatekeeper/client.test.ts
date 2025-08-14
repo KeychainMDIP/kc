@@ -907,9 +907,14 @@ describe('addCustomHeader', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
 
-        // Access the private axios instance's headers
-        const headers = gatekeeper['axios'].defaults.headers.common;
-        expect(headers[CustomHeader]).toBe(CustomHeaderValue);
+        // Use nock to intercept and inspect the header
+        const scope = nock(GatekeeperURL)
+            .get('/api/v1/registries')
+            .matchHeader(CustomHeader, CustomHeaderValue)
+            .reply(200, ['local', 'hyperswarm']);
+
+        await gatekeeper.listRegistries();
+        expect(scope.isDone()).toBe(true);
     });
 });
 
@@ -919,8 +924,13 @@ describe('removeCustomHeader', () => {
         gatekeeper.addCustomHeader(CustomHeader, CustomHeaderValue);
         gatekeeper.removeCustomHeader(CustomHeader);
 
-        // Access the private axios instance's headers
-        const headers = gatekeeper['axios'].defaults.headers.common;
-        expect(headers[CustomHeader]).toBeUndefined();
+        // Use nock to intercept and ensure the header is not present
+        const scope = nock(GatekeeperURL)
+            .get('/api/v1/registries')
+            .matchHeader(CustomHeader, (val) => val === undefined)
+            .reply(200, ['local', 'hyperswarm']);
+
+        await gatekeeper.listRegistries();
+        expect(scope.isDone()).toBe(true);
     });
 });
