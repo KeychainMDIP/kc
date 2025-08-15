@@ -63,6 +63,8 @@ const BATCH_SIZE = 100;
 
 const knownNodes: Record<string, NodeInfo> = {};
 const connectionInfo: Record<string, ConnectionInfo> = {};
+const addedPeers: Record<string, number> = {};
+const badPeers: Record<string, number> = {};
 
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
@@ -359,50 +361,50 @@ function newBatch(batch: Operation[]): boolean {
 }
 
 async function addPeer(did: string): Promise<void> {
-    const docs = await keymaster.resolveDID(did);
-    const data = docs.didDocumentData as { node: NodeInfo };
+    // Check peer suffix to avoid duplicate DID aliases
+    const suffix = did.split(':').pop() || '';
 
-    if (!data?.node || !data.node.ipfs) {
+    if (suffix in addedPeers) {
         return;
     }
 
-    const { id, addresses } = data.node.ipfs;
+    console.log(`Adding peer ${did}...`);
+    addedPeers[suffix] = Date.now();
 
-    if (!id || !addresses) {
-        return;
+    try {
+        const docs = await keymaster.resolveDID(did);
+        const data = docs.didDocumentData as { node: NodeInfo };
+
+        if (!data?.node || !data.node.ipfs) {
+            return;
+        }
+
+        const { id, addresses } = data.node.ipfs;
+
+        if (!id || !addresses) {
+            return;
+        }
+
+        if (id !== nodeInfo.ipfs.id) {
+            // A node should never add itself as a peer node
+            await ipfs.addPeeringPeer(id, addresses);
+        }
+
+        knownNodes[did] = {
+            name: data.node.name,
+            ipfs: {
+                id,
+                addresses,
+            },
+        };
+
+        console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
     }
-
-    if (id !== nodeInfo.ipfs.id) {
-        // A node should never add itself as a peer node
-        await ipfs.addPeeringPeer(id, addresses);
-    }
-
-    knownNodes[did] = {
-        name: data.node.name,
-        ipfs: {
-            id,
-            addresses,
-        },
-    };
-}
-
-const badPeers: Record<string, number> = {};
-
-async function syncPeers(peers: string[]): Promise<void> {
-    for (const did of peers) {
-        if (!(did in knownNodes)) {
-            try {
-                await addPeer(did);
-                console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
-            }
-            catch (error) {
-                if (!(did in badPeers)) {
-                    // Store time of first error so we can later implement a retry mechanism
-                    badPeers[did] = Date.now();
-                    console.error(`Error adding IPFS peer: ${did}`, error);
-                }
-                continue;
-            }
+    catch (error) {
+        if (!(did in badPeers)) {
+            // Store time of first error so we can later implement a retry mechanism
+            badPeers[did] = Date.now();
+            console.error(`Error adding IPFS peer: ${did}`, error);
         }
     }
 }
@@ -450,7 +452,9 @@ async function receiveMsg(peerKey: string, json: string): Promise<void> {
         connectionInfo[peerKey].nodeName = nodeName;
 
         if (msg.peers) {
-            await syncPeers(msg.peers);
+            for (const did of msg.peers) {
+                addPeer(did);
+            }
         }
 
         return;
@@ -533,9 +537,12 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        const peers = await ipfs.getPeeringPeers();
-        console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
-        console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
+        //const peers = await ipfs.getPeeringPeers();
+        //console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
+        //console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
+        for (const [did, node] of Object.entries(knownNodes)) {
+            console.log(`known node: ${did} (${node.name})`);
+        }
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
