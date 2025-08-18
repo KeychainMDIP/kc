@@ -61,8 +61,9 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 
-const knownNodes: Record<string, NodeInfo> = {};
 const connectionInfo: Record<string, ConnectionInfo> = {};
+const knownNodes: Record<string, NodeInfo> = {};
+const knownPeers: Record<string, string> = {};
 const addedPeers: Record<string, number> = {};
 const badPeers: Record<string, number> = {};
 
@@ -400,6 +401,8 @@ async function addPeer(did: string): Promise<void> {
             },
         };
 
+        knownPeers[id] = data.node.name;
+
         console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
     }
     catch (error) {
@@ -542,11 +545,11 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        const peers = Object.entries(knownNodes);
+        const peers = Object.entries(knownPeers);
         console.log(`IPFS peers: ${peers.length}`);
         let n = 1;
-        for (const [did, node] of peers) {
-            console.log(`* peer ${n++} ${did} (${node.name})`);
+        for (const [id, name] of peers) {
+            console.log(`* peer ${n++} ${id} (${name})`);
         }
         console.log('connection loop waiting 60s...');
     } catch (error) {
