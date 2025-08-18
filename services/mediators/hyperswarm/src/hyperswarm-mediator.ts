@@ -548,7 +548,7 @@ async function connectionLoop(): Promise<void> {
         const peeringPeers = await ipfs.getPeeringPeers();
         console.log(`IPFS peers: ${peeringPeers.length}`);
         for (const peer of peeringPeers) {
-            console.log(`* peer ${peer.ID} ${knownPeers[peer.ID]})`);
+            console.log(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
         }
 
         console.log('connection loop waiting 60s...');
