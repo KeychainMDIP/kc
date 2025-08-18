@@ -230,6 +230,8 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
 async function relayMsg(msg: HyperMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
+    const connectionsCount = Object.keys(connectionInfo).length;
+    console.log(`Connected nodes: ${connectionsCount}`);
     console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
     for (const peerKey in connectionInfo) {
@@ -525,6 +527,9 @@ async function checkConnections(): Promise<void> {
 
 async function connectionLoop(): Promise<void> {
     try {
+        console.log(`Node info: ${JSON.stringify(nodeInfo, null, 4)}`);
+        console.log(`Connected to hyperswarm protocol: ${config.protocol}`);
+
         await checkConnections();
 
         const msg: PingMessage = {
@@ -537,11 +542,11 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        //const peers = await ipfs.getPeeringPeers();
-        //console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
-        //console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
-        for (const [did, node] of Object.entries(knownNodes)) {
-            console.log(`known node: ${did} (${node.name})`);
+        const peers = Object.entries(knownNodes);
+        console.log(`IPFS peers: ${peers.length}`);
+        let n = 1;
+        for (const [did, node] of peers) {
+            console.log(`* peer ${n++} ${did} (${node.name})`);
         }
         console.log('connection loop waiting 60s...');
     } catch (error) {
