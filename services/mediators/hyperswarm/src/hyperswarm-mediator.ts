@@ -545,12 +545,12 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        const peers = Object.entries(knownPeers);
-        console.log(`IPFS peers: ${peers.length}`);
-        let n = 1;
-        for (const [id, name] of peers) {
-            console.log(`* peer ${n++} ${id} (${name})`);
+        const peeringPeers = await ipfs.getPeeringPeers();
+        console.log(`IPFS peers: ${peeringPeers.length}`);
+        for (const peer of peeringPeers) {
+            console.log(`* peer ${peer.ID} ${knownPeers[peer.ID]})`);
         }
+
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
