@@ -61,8 +61,11 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 
-const knownNodes: Record<string, NodeInfo> = {};
 const connectionInfo: Record<string, ConnectionInfo> = {};
+const knownNodes: Record<string, NodeInfo> = {};
+const knownPeers: Record<string, string> = {};
+const addedPeers: Record<string, number> = {};
+const badPeers: Record<string, number> = {};
 
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
@@ -228,6 +231,8 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
 async function relayMsg(msg: HyperMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
+    const connectionsCount = Object.keys(connectionInfo).length;
+    console.log(`Connected nodes: ${connectionsCount}`);
     console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
     for (const peerKey in connectionInfo) {
@@ -359,50 +364,52 @@ function newBatch(batch: Operation[]): boolean {
 }
 
 async function addPeer(did: string): Promise<void> {
-    const docs = await keymaster.resolveDID(did);
-    const data = docs.didDocumentData as { node: NodeInfo };
+    // Check peer suffix to avoid duplicate DID aliases
+    const suffix = did.split(':').pop() || '';
 
-    if (!data?.node || !data.node.ipfs) {
+    if (suffix in addedPeers) {
         return;
     }
 
-    const { id, addresses } = data.node.ipfs;
+    console.log(`Adding peer ${did}...`);
+    addedPeers[suffix] = Date.now();
 
-    if (!id || !addresses) {
-        return;
+    try {
+        const docs = await keymaster.resolveDID(did);
+        const data = docs.didDocumentData as { node: NodeInfo };
+
+        if (!data?.node || !data.node.ipfs) {
+            return;
+        }
+
+        const { id, addresses } = data.node.ipfs;
+
+        if (!id || !addresses) {
+            return;
+        }
+
+        if (id !== nodeInfo.ipfs.id) {
+            // A node should never add itself as a peer node
+            await ipfs.addPeeringPeer(id, addresses);
+        }
+
+        knownNodes[did] = {
+            name: data.node.name,
+            ipfs: {
+                id,
+                addresses,
+            },
+        };
+
+        knownPeers[id] = data.node.name;
+
+        console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
     }
-
-    if (id !== nodeInfo.ipfs.id) {
-        // A node should never add itself as a peer node
-        await ipfs.addPeeringPeer(id, addresses);
-    }
-
-    knownNodes[did] = {
-        name: data.node.name,
-        ipfs: {
-            id,
-            addresses,
-        },
-    };
-}
-
-const badPeers: Record<string, number> = {};
-
-async function syncPeers(peers: string[]): Promise<void> {
-    for (const did of peers) {
-        if (!(did in knownNodes)) {
-            try {
-                await addPeer(did);
-                console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
-            }
-            catch (error) {
-                if (!(did in badPeers)) {
-                    // Store time of first error so we can later implement a retry mechanism
-                    badPeers[did] = Date.now();
-                    console.error(`Error adding IPFS peer: ${did}`, error);
-                }
-                continue;
-            }
+    catch (error) {
+        if (!(did in badPeers)) {
+            // Store time of first error so we can later implement a retry mechanism
+            badPeers[did] = Date.now();
+            console.error(`Error adding IPFS peer: ${did}`, error);
         }
     }
 }
@@ -450,7 +457,9 @@ async function receiveMsg(peerKey: string, json: string): Promise<void> {
         connectionInfo[peerKey].nodeName = nodeName;
 
         if (msg.peers) {
-            await syncPeers(msg.peers);
+            for (const did of msg.peers) {
+                addPeer(did);
+            }
         }
 
         return;
@@ -521,6 +530,9 @@ async function checkConnections(): Promise<void> {
 
 async function connectionLoop(): Promise<void> {
     try {
+        console.log(`Node info: ${JSON.stringify(nodeInfo, null, 4)}`);
+        console.log(`Connected to hyperswarm protocol: ${config.protocol}`);
+
         await checkConnections();
 
         const msg: PingMessage = {
@@ -533,9 +545,12 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        const peers = await ipfs.getPeeringPeers();
-        console.log(`IPFS peers: ${JSON.stringify(peers, null, 4)}`);
-        console.log(`known nodes: ${JSON.stringify(knownNodes, null, 4)}`);
+        const peeringPeers = await ipfs.getPeeringPeers();
+        console.log(`IPFS peers: ${peeringPeers.length}`);
+        for (const peer of peeringPeers) {
+            console.log(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+        }
+
         console.log('connection loop waiting 60s...');
     } catch (error) {
         console.error(`Error in pingLoop: ${error}`);
