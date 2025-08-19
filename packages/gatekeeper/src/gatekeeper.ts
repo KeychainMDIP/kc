@@ -488,7 +488,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return did;
     }
 
-    async generateDoc(anchor: Operation): Promise<MdipDocument> {
+    async generateDoc(anchor: Operation, did?: string): Promise<MdipDocument> {
         let doc: MdipDocument = {};
         try {
             if (!anchor?.mdip) {
@@ -507,7 +507,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return {};
             }
 
-            const did = await this.generateDID(anchor);
+            if (!did) {
+                did = await this.generateDID(anchor);
+            }
 
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
@@ -580,7 +582,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         const anchor = events[0];
-        let doc = await this.generateDoc(anchor.operation);
+        let doc = await this.generateDoc(anchor.operation, did);
 
         if (atTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(atTime)) {
             // TBD What to return if DID was created after specified time?
