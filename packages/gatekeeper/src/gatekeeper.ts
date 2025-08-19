@@ -488,7 +488,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         return did;
     }
 
-    async generateDoc(anchor: Operation, did?: string): Promise<MdipDocument> {
+    async generateDoc(anchor: Operation, defaultDID?: string): Promise<MdipDocument> {
         let doc: MdipDocument = {};
         try {
             if (!anchor?.mdip) {
@@ -507,9 +507,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return {};
             }
 
-            if (!did) {
-                did = await this.generateDID(anchor);
-            }
+            const did = defaultDID ?? await this.generateDID(anchor);
 
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
