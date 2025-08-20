@@ -22,7 +22,6 @@
     "morgan": "^1.10.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
-    "tiny-secp256k1": "^2.2.4",
-    "varuint-bitcoin": "^2.0.0"
+    "tiny-secp256k1": "^2.2.4"
   }
 }

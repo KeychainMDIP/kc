@@ -22,9 +22,19 @@ export interface DiscoveredInscribedItem {
     error?: string;
 }
 
-export interface HDInfo {
-    hdkeypath: string,
-    hdmasterfingerprint: string
+export type SupportedTypes = 'p2wpkh' | 'p2tr';
+
+export interface FundInput {
+    type: SupportedTypes;
+    txid: string;
+    vout: number;
+    amount: number;
+    hdkeypath: string;
+}
+
+export interface AccountKeys {
+    bip86: string;
+    bip84?: string;
 }
 
 export interface MediatorDb {
@@ -40,7 +50,7 @@ export interface MediatorDb {
     pendingTaproot?: {
         commitTxid?: string;
         revealTxids?: string[];
-        hdInfo: HDInfo;
+        hdkeypath: string;
         blockCount: number,
     }
 }
