@@ -552,6 +552,17 @@ describe('resolveDID', () => {
         expect(doc).toStrictEqual(expected);
     });
 
+    it('should return requested DID in docs', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const suffix = did.split(':').pop();
+        const altDID = `did:alt:prefix:${suffix}`;
+        const doc = await gatekeeper.resolveDID(altDID);
+
+        expect(doc!.didDocument!.id).toStrictEqual(altDID);
+    });
+
     it('should not resolve an invalid DID', async () => {
         const BadFormat = 'bad format';
 
