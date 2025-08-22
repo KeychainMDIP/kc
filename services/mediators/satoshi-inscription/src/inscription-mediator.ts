@@ -4,7 +4,6 @@ import * as ecc from 'tiny-secp256k1';
 import { gunzipSync } from 'zlib';
 import { BIP32Factory } from 'bip32';
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
@@ -26,7 +25,6 @@ const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 const SMART_FEE_MODE = "conservative";
 
 const gatekeeper = new GatekeeperClient();
-const keymaster = new KeymasterClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
@@ -722,13 +720,6 @@ async function main() {
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
-
-    await keymaster.connect({
-        url: config.keymasterURL,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,

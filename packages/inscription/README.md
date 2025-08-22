@@ -4,16 +4,6 @@ High‑level TypeScript/JavaScript library for creating and fee‑bumping Taproo
 
 ---
 
-## Features
-
-* ✅ Commit + Reveal transaction construction for Taproot inscriptions
-* ✅ Mixed‑input funding: P2TR and P2WPKH
-* ✅ Account‑level signing with BIP86 (Taproot) and optional BIP84 (bech32) xprvs
-* ✅ No seed key required, account‑level keys only
-* ✅ Fee bumping (RBF/CPFP style for reveal)
-
----
-
 ## Installation
 
 ```bash
@@ -54,7 +44,7 @@ export interface FundInput {
   txid: string;           // funding txid
   vout: number;           // output index
   amount: number;         // amount in satoshis
-  hdkeypath: string;      // full path, e.g. m/86'/1'/0'/0/123
+  hdkeypath: string;      // full path, e.g. m/86/1/0/0/123
 }
 
 export interface AccountKeys {
@@ -68,7 +58,7 @@ export interface InscriptionOptions {
 }
 ```
 
-> **Note:** `FundInput.amount` is satoshis (number). `hdkeypath` must be a concrete child path under the relevant account (no hardened steps beyond the account level, e.g. `m/86'/1'/0'/0/42`).
+> **Note:** `FundInput.amount` is satoshis (number). `hdkeypath` must be a concrete child path under the relevant account.
 
 ---
 
@@ -120,7 +110,7 @@ const queue = await gatekeeper.getQueue(REGISTRY);
 
 const { commitHex, revealHex, batch } = await inscription.createTransactions(
   queue,                    // Operation[]
-  "m/86'/0'/0'/0/0",       // Taproot address path for outputs/change
+  "m/86/0/0/0/0",           // Taproot address path for outputs/change
   utxos,                    // FundInput[] (P2TR/P2WPKH) under the same accounts
   35,                       // estSatPerVByte (sat/vB)
   {
@@ -157,7 +147,7 @@ Creates a replacement reveal transaction at a higher fee rate. This is a CPFP/RB
 
 ```ts
 const newRevealHex = await inscription.bumpTransactionFee(
-  "m/86'/0'/0'/0/0",
+  "m/86/0/0/0/0",
   utxos,             // new UTXOs to fund the bump
   25,                // curSatPerVb currently paid by reveal
   40,                // estSatPerVByte target
@@ -169,6 +159,57 @@ const newRevealHex = await inscription.bumpTransactionFee(
   revealHex
 );
 // broadcast newRevealHex
+```
+
+---
+
+# Address derivation helpers
+
+The library exposes convenience methods to derive addresses directly from account‑level xprv keys and a full BIP32 path.
+
+> ⚠️ These helpers expect account xprvs (e.g., BIP86: `m/86'/{coin}'/{acct}'` and BIP84: `m/84'/{coin}'/{acct}'`).
+
+## `deriveP2TRAddress(bip86Xprv: string, hdkeypath: string): string`
+
+Derives a Taproot (BIP86) bech32m address from an account‑level BIP86 xprv and an address path.
+
+* **Parameters**
+
+    * `bip86Xprv` – Account‑level extended private key for BIP86 (e.g., `tprv...` on testnet, `xprv...` on mainnet).
+    * `hdkeypath` – Full BIP32 path to the desired address under that account (e.g., `m/86/1/0'/0/0`).
+* **Returns**: A Taproot bech32m address string (e.g., `tb1p...` on testnet or `bc1p...` on mainnet).
+
+**Example**
+
+```ts
+import Inscription from '@mdip/inscription';
+
+const ins = new Inscription({ feeMax: 0.002, network: 'testnet' });
+const addr = ins.deriveP2TRAddress(process.env.BIP86_XPRV, "m/86/1/0/0/0");
+console.log('Taproot address:', addr);
+```
+
+---
+
+## `derviceP2WPKHAddress(bip84Xprv: string, hdkeypath: string): string`
+
+Derives a Native SegWit (BIP84) bech32 P2WPKH address from an account‑level BIP84 xprv and an address path.
+
+* **Parameters**
+
+    * `bip84Xprv` – Account‑level extended private key for BIP84 (e.g., `tprv...` on testnet, `xprv...` on mainnet).
+    * `hdkeypath` – Full BIP32 path under that account (e.g., `m/84/1/0/0/0`).
+* **Returns**: A bech32 P2WPKH address string (e.g., `tb1q...` on testnet or `bc1q...` on mainnet).
+
+
+**Example**
+
+```ts
+import Inscription from '@mdip/inscription';
+
+const ins = new Inscription({ feeMax: 0.002, network: 'testnet' });
+const addr = ins.derviceP2WPKHAddress(process.env.BIP84_XPRV, "m/84/1/0/0/0");
+console.log('P2WPKH address:', addr);
 ```
 
 ---

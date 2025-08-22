@@ -28,6 +28,8 @@ const INPUT_VBYTES: Record<SupportedTypes, number> = {
 const DUST = 546;
 const P2TR_OUTPUT_VBYTES = 43;
 const OVERHEAD_VBYTES = 11;
+const OP_RETURN_VBYTES = 16;
+const NONWITNESS_IN_VBYTES = 41;
 
 export default class Inscription {
     feeMax: number;
@@ -75,9 +77,9 @@ export default class Inscription {
                 throw new Error('Failed to derive p2tr script address');
             }
 
-            const WITNESS_FIXED_OVERHEAD = 128;
-            const revealVSize = this.virtualSizeFromWitness(tScript.length + WITNESS_FIXED_OVERHEAD);
-            outputMap[p2tr.address] = estSatPerVByte * revealVSize;
+            const revealVSize = this.estimateRevealInputVbytes(tScript.length, slices.length);
+            const outputAmount = estSatPerVByte * revealVSize;
+            outputMap[p2tr.address] = outputAmount >= DUST ? outputAmount : DUST;
         }
 
         const commitTx = await this.createCommitTransaction(
@@ -489,6 +491,25 @@ export default class Inscription {
         return psbt.extractTransaction().toHex();
     }
 
+    private compactSizeLen(n: number): number {
+        if (n < 253) {
+            return 1;
+        }
+        if (n <= 0xffff) {
+            return 3;
+        }
+        if (n <= 0xffffffff) {
+            return 5;
+        }
+        return 9;
+    }
+
+    private estimateRevealInputVbytes(tScriptLen: number, nInputs: number): number {
+        const witnessBytes = 100 + this.compactSizeLen(tScriptLen) + tScriptLen; // see above
+        const perInputOverhead = Math.ceil((OVERHEAD_VBYTES + OP_RETURN_VBYTES) / nInputs);
+        return NONWITNESS_IN_VBYTES + Math.ceil(witnessBytes / 4) + perInputOverhead;
+    }
+
     private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer, merkleRoot?: Buffer) {
         const P = ecc.pointFromScalar(priv, true);
         if (!P) {
@@ -615,10 +636,6 @@ export default class Inscription {
         ]);
     }
 
-    private virtualSizeFromWitness(bytes: number): number {
-        return Math.ceil((16 + bytes) / 4);
-    }
-
     private deriveP2TRAddressFromAccount(bip86Xprv: string, hdkeypath: string) {
         const priv = this.deriveFromAccountXprv(bip86Xprv, hdkeypath);
         const xonly = this.xonlyFromPriv(priv);
@@ -627,6 +644,22 @@ export default class Inscription {
             throw new Error('Failed to derive taproot address');
         }
         return { address: p2tr.address, xonly };
+    }
+
+    deriveP2TRAddress(bip86Xprv: string, hdkeypath: string) {
+        const { address } = this.deriveP2TRAddressFromAccount(bip86Xprv, hdkeypath);
+        return address;
+    }
+
+    derviceP2WPKHAddress(bip84Xprv: string, hdkeypath: string) {
+        const priv = this.deriveFromAccountXprv(bip84Xprv, hdkeypath);
+        const keyPair = ECPair.fromPrivateKey(priv);
+        const pubkey = Buffer.from(keyPair.publicKey);
+        const p2wpkh = bitcoin.payments.p2wpkh({ pubkey, network: bitcoin.networks[this.network] });
+        if (!p2wpkh.address) {
+            throw new Error('Failed to derive p2wpkh address');
+        }
+        return p2wpkh.address;
     }
 
     private toXOnly(pubkey33: Buffer) {
