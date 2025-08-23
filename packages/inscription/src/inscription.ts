@@ -34,6 +34,7 @@ const NONWITNESS_IN_VBYTES = 41;
 export default class Inscription {
     feeMax: number;
     network: NetworkName;
+    supported: SupportedTypes[] = ['p2wpkh', 'p2tr'];
 
     constructor(options: InscriptionOptions) {
         this.feeMax = options.feeMax;
@@ -217,7 +218,7 @@ export default class Inscription {
         let changeSat = 0;
 
         for (const input of inputs) {
-            if (input.type !== 'p2wpkh' && input.type !== 'p2tr') {
+            if (!this.supported.includes(input.type as SupportedTypes)) {
                 throw new Error(`Unsupported input type: ${input.type}`);
             }
 
