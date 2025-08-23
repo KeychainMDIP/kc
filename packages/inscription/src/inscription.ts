@@ -651,7 +651,7 @@ export default class Inscription {
         return address;
     }
 
-    derviceP2WPKHAddress(bip84Xprv: string, hdkeypath: string) {
+    deriveP2WPKHAddress(bip84Xprv: string, hdkeypath: string) {
         const priv = this.deriveFromAccountXprv(bip84Xprv, hdkeypath);
         const keyPair = ECPair.fromPrivateKey(priv);
         const pubkey = Buffer.from(keyPair.publicKey);

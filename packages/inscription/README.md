@@ -191,7 +191,7 @@ console.log('Taproot address:', addr);
 
 ---
 
-## `derviceP2WPKHAddress(bip84Xprv: string, hdkeypath: string): string`
+## `deriveP2WPKHAddress(bip84Xprv: string, hdkeypath: string): string`
 
 Derives a Native SegWit (BIP84) bech32 P2WPKH address from an account‑level BIP84 xprv and an address path.
 
@@ -208,7 +208,7 @@ Derives a Native SegWit (BIP84) bech32 P2WPKH address from an account‑level BI
 import Inscription from '@mdip/inscription';
 
 const ins = new Inscription({ feeMax: 0.002, network: 'testnet' });
-const addr = ins.derviceP2WPKHAddress(process.env.BIP84_XPRV, "m/84/1/0/0/0");
+const addr = ins.deriveP2WPKHAddress(process.env.BIP84_XPRV, "m/84/1/0/0/0");
 console.log('P2WPKH address:', addr);
 ```
 
