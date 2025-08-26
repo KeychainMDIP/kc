@@ -200,7 +200,7 @@ async function replaceByFee(db: MediatorDb) {
         return true;
     }
     
-    const curSatPerVb = Math.ceil(revealMeta.fee / revealMeta.vsize);
+    const curSatPerVb = Math.floor(revealMeta.fee / revealMeta.vsize);
     const estSatPerVByte = await getRecommendedFee();
 
     const commitTxid = db.pendingTaproot.commitTxid;

@@ -431,8 +431,8 @@ async function replaceByFee(): Promise<boolean> {
     const feeResp = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
     const estSatPerVByte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
 
-    const currFeeSat = Math.floor(revealEntry.fees.modified * 1e8);
-    const curSatPerVb = Math.ceil(currFeeSat / revealEntry.vsize);
+    const currFeeSat = Math.round(revealEntry.fees.modified * 1e8);
+    const curSatPerVb = Math.floor(currFeeSat / revealEntry.vsize);
 
     const utxos = await getUnspentOutputs();
     const keys = await getAccountXprvsFromCore();
