@@ -60,7 +60,7 @@ export default class Inscription {
 
         const slices = this.splitPayload(this.encodePayload(batch));
 
-        const { address: parentTapAddr, xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
+        const { xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
         const outputMap: Record<string, number> = {};
         const tapScripts: Buffer[] = [];
 
@@ -78,25 +78,22 @@ export default class Inscription {
                 throw new Error('Failed to derive p2tr script address');
             }
 
-            const revealVSize = this.estimateRevealInputVbytes(tScript.length, slices.length);
-            const outputAmount = estSatPerVByte * revealVSize;
-            outputMap[p2tr.address] = outputAmount >= DUST ? outputAmount : DUST;
+            outputMap[p2tr.address] = DUST;
         }
 
         const commitTx = await this.createCommitTransaction(
             outputMap,
             estSatPerVByte,
             utxos,
-            keys,
-            parentTapAddr,
+            keys
         );
 
         const revealHex = await this.createRevealTransactionHex(
             commitTx,
             hdkeypath,
-            xonly,
             tapScripts,
-            keys
+            keys,
+            estSatPerVByte
         );
 
         return {
@@ -116,79 +113,20 @@ export default class Inscription {
         revealHex: string
     ) {
 
-        const { address: parentTapAddr, xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
         const commitTx = bitcoin.Transaction.fromHex(commitHex);
         const tapScripts = await this.extractTapscripts(revealHex);
-
-        const baseFeeSat = tapScripts.reduce((sum, _t, idx) => {
-            return sum + commitTx.outs[idx].value;
-        }, 0);
-
-        const revealTx = bitcoin.Transaction.fromHex(revealHex);
-        const revealVsize = this.vsizeFromTransaction(revealTx);
-        const currFeeSat = curSatPerVb * revealVsize;
-        let targetSatPerVb = Math.max(estSatPerVByte, curSatPerVb + 1);
-
-        const chosen: FundInput[] = [];
-        let chosenSat = 0;
-        let requiredExtraSat = 0;
-        const incrementalSat = 1000; // Default min incremental fee
+        const targetSatPerVb = Math.max(estSatPerVByte, curSatPerVb + 1);
 
         console.log("Current Fee Sat/vB:", curSatPerVb);
         console.log("New Fee Sat/vB: ", targetSatPerVb);
 
-        let hasChange = false;
-        let newVsize = revealTx.outs.length > 1 ? (revealVsize - P2TR_OUTPUT_VBYTES) : revealVsize;
-        const changeOutputSat = P2TR_OUTPUT_VBYTES * targetSatPerVb;
-
-        for (const utxo of utxos) {
-            chosen.push(utxo);
-            chosenSat += utxo.amount;
-            newVsize += INPUT_VBYTES[utxo.type];
-
-            const calcFeeBump = Math.max(0, targetSatPerVb * newVsize - baseFeeSat);
-            const minIncremental = Math.max(0, (currFeeSat + incrementalSat) - baseFeeSat);
-
-            requiredExtraSat = Math.max(calcFeeBump, minIncremental);
-
-            const changeSat = chosenSat - requiredExtraSat;
-
-            if (!hasChange && changeSat >= DUST + changeOutputSat) {
-                hasChange = true;
-                newVsize += P2TR_OUTPUT_VBYTES;
-                requiredExtraSat += changeOutputSat;
-            } else if (hasChange && changeSat < DUST) {
-                hasChange = false;
-                newVsize -= P2TR_OUTPUT_VBYTES;
-                requiredExtraSat -= changeOutputSat;
-            }
-
-            if (chosenSat >= requiredExtraSat) {
-                break;
-            }
-        }
-
-        const newTotalFeeSat = baseFeeSat + requiredExtraSat;
-
-        if (chosenSat < requiredExtraSat) {
-            throw new Error(`RBF: insufficient UTXOs to bump fee to ~${(newTotalFeeSat / 1e8).toFixed(8)} BTC`);
-        }
-
-        if (newTotalFeeSat > this.feeMax * 1e8) {
-            throw new Error(`RBF: New fee exceeds max fee. Required: ${(newTotalFeeSat / 1e8).toFixed(8)} feeMax: ${this.feeMax}`);
-        }
-
         return await this.createRevealTransactionHex(
             commitTx,
             hdkeypath,
-            xonly,
             tapScripts,
             keys,
-            {
-                inputs: chosen,
-                extraFeeSat: requiredExtraSat,
-                changeAddr: parentTapAddr,
-            },
+            targetSatPerVb,
+            utxos
         );
     }
 
@@ -196,8 +134,7 @@ export default class Inscription {
         outputMap: Record<string, number>,
         estSatPerVByte: number,
         inputs: FundInput[],
-        keys: AccountKeys,
-        parentTapAddr: string
+        keys: AccountKeys
     ) {
 
         const nTapOuts = Object.keys(outputMap).length;
@@ -206,9 +143,9 @@ export default class Inscription {
         const sumInputVbytes = (ins: FundInput[]) =>
             ins.reduce((s, u) => s + INPUT_VBYTES[u.type], 0);
 
-        const estimateCommitVsize = (ins: FundInput[], nTapOuts: number, includeChange: boolean) => {
+        const estimateCommitVsize = (ins: FundInput[], nTapOuts: number) => {
             const inVB = sumInputVbytes(ins);
-            const outVB = nTapOuts * P2TR_OUTPUT_VBYTES + (includeChange ? P2TR_OUTPUT_VBYTES : 0);
+            const outVB = nTapOuts * P2TR_OUTPUT_VBYTES;
             return OVERHEAD_VBYTES + inVB + outVB;
         };
 
@@ -225,14 +162,7 @@ export default class Inscription {
             selected.push(input);
             selectedSat += input.amount;
 
-            const vNoChange = estimateCommitVsize(selected, nTapOuts, false);
-            const feeNoChange = estSatPerVByte * vNoChange;
-            const requiredNoChange = totalOutputsSat + feeNoChange;
-            const leftover = selectedSat - requiredNoChange;
-
-            const needChange = leftover >= (DUST + estSatPerVByte * P2TR_OUTPUT_VBYTES);
-
-            const vChosen = estimateCommitVsize(selected, nTapOuts, needChange);
+            const vChosen = estimateCommitVsize(selected, nTapOuts);
             requiredSat = totalOutputsSat + estSatPerVByte * vChosen;
             changeSat = Math.max(0, selectedSat - requiredSat);
 
@@ -251,7 +181,12 @@ export default class Inscription {
         }
 
         if (changeSat) {
-            outputMap[parentTapAddr] = (outputMap[parentTapAddr] || 0) + changeSat;
+            const keys = Object.keys(outputMap);
+            if (!keys.length) {
+                throw new Error('no taproot outputs');
+            }
+            const last = keys[keys.length - 1];
+            outputMap[last] = (outputMap[last] || 0) + changeSat;
         }
 
         const network = bitcoin.networks[this.network];
@@ -346,20 +281,18 @@ export default class Inscription {
     private async createRevealTransactionHex(
         commitTx: bitcoin.Transaction,
         hdkeypath: string,
-        xonly: Buffer,
         tapScripts: Buffer[],
         keys: AccountKeys,
-        extra?: {
-            inputs: FundInput[];
-            extraFeeSat: number;
-            changeAddr?: string;
-        }
+        estSatPerVByte: number,
+        inputs?: FundInput[]
     ) {
         const network = bitcoin.networks[this.network];
         const psbt = new bitcoin.Psbt({ network });
 
         const xprv86 = this.chooseAccountXprvForInput(keys, 'p2tr');
         const fp86 = this.masterFingerprintFromXprv(xprv86);
+
+        const { address: changeAddr, xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
 
         tapScripts.forEach((tScript, idx) => {
             const commitOut = commitTx.outs[idx];
@@ -387,9 +320,30 @@ export default class Inscription {
 
         const extraSigners: Array<{ index: number; signer: bitcoin.Signer }> = [];
 
-        if (extra?.inputs?.length) {
+        const candidates = inputs ?? [];
+        const chosenExtras: FundInput[] = [];
+
+        let totalIn = tapScripts.reduce((s, _t, idx) => s + commitTx.outs[idx].value, 0);
+
+        let targetVbytes = this.estimateRevealTotalVbytes(tapScripts, chosenExtras);
+        let targetFee = estSatPerVByte * targetVbytes;
+
+        for (let i = 0; totalIn < targetFee && i < candidates.length; ++i) {
+            const inp = candidates[i];
+            chosenExtras.push(inp);
+            totalIn += inp.amount;
+
+            targetVbytes = this.estimateRevealTotalVbytes(tapScripts, chosenExtras);
+            targetFee = estSatPerVByte * targetVbytes;
+        }
+
+        if (totalIn < targetFee) {
+            throw new Error(`RBF: insufficient candidate UTXOs to reach target fee`);
+        }
+
+        if (chosenExtras.length) {
             const offset = tapScripts.length;
-            extra.inputs.forEach((inp, i) => {
+            chosenExtras.forEach((inp, i) => {
                 const path = this.normalisePath(inp.hdkeypath);
 
                 if (inp.type === 'p2wpkh') {
@@ -466,16 +420,10 @@ export default class Inscription {
             value: 0,
         });
 
-        if (extra?.inputs?.length) {
-            const sumExtra = extra.inputs.reduce((s, i) => s + i.amount, 0);
-            const changeSat = sumExtra - extra.extraFeeSat;
+        const changeSat = totalIn - targetFee;
 
-            if (extra.changeAddr && changeSat >= DUST) {
-                psbt.addOutput({
-                    address: extra.changeAddr,
-                    value  : changeSat,
-                });
-            }
+        if (changeSat >= DUST) {
+            psbt.addOutput({ address: changeAddr, value: changeSat });
         }
 
         const privKey = this.deriveFromAccountXprv(keys.bip86, hdkeypath);
@@ -505,10 +453,16 @@ export default class Inscription {
         return 9;
     }
 
-    private estimateRevealInputVbytes(tScriptLen: number, nInputs: number): number {
-        const witnessBytes = 100 + this.compactSizeLen(tScriptLen) + tScriptLen; // see above
-        const perInputOverhead = Math.ceil((OVERHEAD_VBYTES + OP_RETURN_VBYTES) / nInputs);
-        return NONWITNESS_IN_VBYTES + Math.ceil(witnessBytes / 4) + perInputOverhead;
+    private estimateRevealTotalVbytes(tapScripts: Buffer[], extraIns?: FundInput[]) {
+        let base = OVERHEAD_VBYTES + OP_RETURN_VBYTES + P2TR_OUTPUT_VBYTES;
+        for (const script of tapScripts) {
+            const witnessBytes = 100 + this.compactSizeLen(script.length) + script.length;
+            base += NONWITNESS_IN_VBYTES + Math.ceil(witnessBytes / 4);
+        }
+        if (extraIns && extraIns.length) {
+            base += extraIns.reduce((s, u) => s + INPUT_VBYTES[u.type], 0);
+        }
+        return base;
     }
 
     private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer, merkleRoot?: Buffer) {
@@ -683,11 +637,6 @@ export default class Inscription {
             throw new Error('derived node has no private key');
         }
         return Buffer.from(child.privateKey);
-    }
-
-    private vsizeFromTransaction(tx: bitcoin.Transaction): number {
-        const weight = typeof tx.weight === 'function' ? tx.weight() : tx.virtualSize() * 4;
-        return Math.ceil(weight / 4);
     }
 
     private relativePathFromAccount(hdkeypath: string): string {
