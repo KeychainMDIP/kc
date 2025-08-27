@@ -1,8 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
     Box,
     Button,
+    Checkbox,
     IconButton,
+    ListItemIcon,
+    Menu,
     MenuItem,
     Select,
     TextField,
@@ -11,6 +14,7 @@ import {
 } from "@mui/material";
 import WarningModal from "../../shared/WarningModal";
 import {
+    ArrowDropDown,
     Article,
     Block,
     Delete,
@@ -41,6 +45,10 @@ function NamedDIDs() {
     const [revokeName, setRevokeName] = useState<string>("");
     const [transferOpen, setTransferOpen] = useState<boolean>(false);
     const [transferName, setTransferName] = useState<string>("");
+    const [bulkOpen, setBulkOpen] = useState<boolean>(false);
+    const [bulkMenuAnchor, setBulkMenuAnchor] = useState<null | HTMLElement>(null);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [lastIndex, setLastIndex] = useState<number | null>(null);
     type NameKind =
           | "all"
           | "agent"
@@ -76,6 +84,23 @@ function NamedDIDs() {
         refreshNames,
     } = useUIContext();
 
+    const mergedEntries = useMemo(() => {
+        if (!nameList && !unresolvedList) {
+            return [] as Array<[string, string]>;
+        }
+        return Object.entries({ ...nameList, ...unresolvedList })
+            .sort(([a], [b]) => a.localeCompare(b))
+            .filter(([name]) => {
+                const { kind } = getNameIcon(name);
+                return filter === "all" || kind === filter;
+            });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nameList, unresolvedList, filter]);
+
+    const allVisibleNames = mergedEntries.map(([name]) => name);
+    const allSelectedOnPage = allVisibleNames.every((n) => selected.has(n));
+    const someSelectedOnPage = allVisibleNames.some((n) => selected.has(n))
+
     async function clearFields() {
         await setAliasName("");
         await setAliasDID("");
@@ -101,12 +126,28 @@ function NamedDIDs() {
         }
         try {
             await keymaster.removeName(removeName);
-            await refreshNames()
+            await refreshNames();
         } catch (error: any) {
             setError(error);
         }
         setRemoveOpen(false);
         setRemoveName("");
+    };
+
+    const confirmBulkRemove = async () => {
+        if (!keymaster || selected.size === 0) {
+            setBulkOpen(false);
+            return;
+        }
+        try {
+            const names = Array.from(selected);
+            await Promise.allSettled(names.map((n) => keymaster.removeName(n)));
+            await refreshNames();
+        } catch (error: any) {
+            setError(error);
+        }
+        setSelected(new Set());
+        setBulkOpen(false);
     };
 
     const openRenameModal = (oldName: string, did: string) => {
@@ -198,6 +239,48 @@ function NamedDIDs() {
         };
     }
 
+    const toggleSelectAllVisible = () => {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (allSelectedOnPage) {
+                allVisibleNames.forEach((n) => next.delete(n));
+            } else {
+                allVisibleNames.forEach((n) => next.add(n));
+            }
+            return next;
+        });
+    };
+
+    const handleRowCheck = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        index: number,
+        name: string
+    ) => {
+        const checked = e.target.checked;
+        const shift = (e.nativeEvent as MouseEvent).shiftKey;
+
+
+        setSelected(prev => {
+            const next = new Set(prev);
+
+            if (shift && lastIndex !== null) {
+                const start = Math.min(lastIndex, index);
+                const end = Math.max(lastIndex, index);
+                for (let i = start; i <= end; i++) {
+                    const n = mergedEntries[i][0];
+                    if (checked) next.add(n);
+                    else next.delete(n);
+                }
+            } else {
+                if (checked) next.add(name);
+                else next.delete(name);
+            }
+            return next;
+        });
+
+        setLastIndex(index);
+    };
+
     return (
         <Box>
             <WarningModal
@@ -206,6 +289,14 @@ function NamedDIDs() {
                 isOpen={removeOpen}
                 onClose={() => setRemoveOpen(false)}
                 onSubmit={confirmRemove}
+            />
+
+            <WarningModal
+                title="Remove selected DIDs"
+                warningText={`Delete ${selected.size} selected item(s)? This cannot be undone.`}
+                isOpen={bulkOpen}
+                onClose={() => setBulkOpen(false)}
+                onSubmit={confirmBulkRemove}
             />
 
             <TextInputModal
@@ -300,7 +391,42 @@ function NamedDIDs() {
                 </Button>
             </Box>
 
-            <Box className="flex-box" sx={{ my: 1 }}>
+            <Box className="flex-box" sx={{ my: 1, alignItems: "center", gap: 1 }}>
+                <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <Checkbox
+                        checked={allSelectedOnPage}
+                        indeterminate={!allSelectedOnPage && someSelectedOnPage}
+                        onChange={toggleSelectAllVisible}
+                        inputProps={{ "aria-label": "select all" }}
+                        size="small"
+                    />
+                    <IconButton
+                        size="small"
+                        onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
+                        aria-label="bulk actions"
+                    >
+                        <ArrowDropDown />
+                    </IconButton>
+                    <Menu
+                        anchorEl={bulkMenuAnchor}
+                        open={Boolean(bulkMenuAnchor)}
+                        onClose={() => setBulkMenuAnchor(null)}
+                    >
+                        <MenuItem
+                            disabled={selected.size === 0}
+                            onClick={() => {
+                                setBulkMenuAnchor(null);
+                                setBulkOpen(true);
+                            }}
+                        >
+                            <ListItemIcon>
+                                <Delete fontSize="small" />
+                            </ListItemIcon>
+                            Delete
+                        </MenuItem>
+                    </Menu>
+                </Box>
+
                 <Select
                     size="small"
                     value={filter}
@@ -319,84 +445,84 @@ function NamedDIDs() {
                 </Select>
             </Box>
 
-            {nameList &&
-                Object.entries({...nameList, ...unresolvedList})
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .filter(([name]) => {
-                        const { kind } = getNameIcon(name);
-                        return filter === "all" || kind === filter;
-                    })
-                    .map(
-                        ([name, did]: [string, string], index) => (
-                            <Box
-                                key={index}
-                                display="flex"
-                                alignItems="center"
-                                justifyContent="space-between"
-                                width="100%"
-                                mb={1}
+            {mergedEntries.map(
+                ([name, did]: [string, string], index) => (
+                    <Box
+                        key={index}
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        width="100%"
+                        mb={1}
+                    >
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
+                            <Checkbox
+                                size="small"
+                                checked={selected.has(name)}
+                                onChange={(e) => handleRowCheck(e, index, name)}
+                            />
+                            <Typography
+                                noWrap
+                                sx={{
+                                    flex: 1,
+                                    maxWidth: 300,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    color: getNameIcon(name).kind === "unknown" ? "red" : "text.primary",
+                                }}
                             >
-                                <Typography
-                                    noWrap
-                                    sx={{
-                                        flex: 1,
-                                        maxWidth: 300,
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                        color: getNameIcon(name).kind === "unknown" ? "red" : "text.primary",
-                                    }}
+                                {getNameIcon(name).icon}
+                                {name}
+                            </Typography>
+                        </Box>
+                        <Box display="flex" alignItems="center">
+                            <CopyResolveDID did={did} />
+                            <Tooltip title="Rename">
+                                <IconButton
+                                    onClick={() => openRenameModal(name, did)}
+                                    size="small"
                                 >
-                                    {getNameIcon(name).icon}
-                                    {name}
-                                </Typography>
-                                <Box display="flex" alignItems="center">
-                                    <CopyResolveDID did={did} />
-                                    <Tooltip title="Rename">
-                                        <IconButton
-                                            onClick={() => openRenameModal(name, did)}
-                                            size="small"
-                                        >
-                                            <Edit />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Transfer">
-                                        <IconButton
-                                            onClick={() => {
-                                                setTransferName(name);
-                                                setTransferOpen(true);
-                                            }}
-                                            size="small"
-                                        >
-                                            <SwapHoriz />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Revoke">
-                                        <IconButton
-                                            onClick={() => {
-                                                setRevokeName(name);
-                                                setRevokeOpen(true);
-                                            }}
-                                            size="small"
-                                        >
-                                            <Block />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Delete">
-                                        <IconButton
-                                            onClick={() => {
-                                                setRemoveName(name);
-                                                setRemoveOpen(true);
-                                            }}
-                                            size="small"
-                                        >
-                                            <Delete />
-                                        </IconButton>
-                                    </Tooltip>
-                                </Box>
-                            </Box>
-                        ),
-                    )}
+                                    <Edit />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Transfer">
+                                <IconButton
+                                    onClick={() => {
+                                        setTransferName(name);
+                                        setTransferOpen(true);
+                                    }}
+                                    size="small"
+                                >
+                                    <SwapHoriz />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Revoke">
+                                <IconButton
+                                    onClick={() => {
+                                        setRevokeName(name);
+                                        setRevokeOpen(true);
+                                    }}
+                                    size="small"
+                                >
+                                    <Block />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                                <IconButton
+                                    onClick={() => {
+                                        setRemoveName(name);
+                                        setRemoveOpen(true);
+                                    }}
+                                    size="small"
+                                >
+                                    <Delete />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
+                    </Box>
+                ),
+            )}
         </Box>
     );
 }
