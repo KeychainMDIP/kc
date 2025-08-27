@@ -95,7 +95,7 @@ function NamedDIDs() {
                 return filter === "all" || kind === filter;
             });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nameList, unresolvedList]);
+    }, [nameList, unresolvedList, filter]);
 
     const allVisibleNames = mergedEntries.map(([name]) => name);
     const allSelectedOnPage = allVisibleNames.every((n) => selected.has(n));
