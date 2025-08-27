@@ -94,6 +94,7 @@ function NamedDIDs() {
                 const { kind } = getNameIcon(name);
                 return filter === "all" || kind === filter;
             });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nameList, unresolvedList]);
 
     const allVisibleNames = mergedEntries.map(([name]) => name);
