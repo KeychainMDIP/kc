@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -66,14 +66,30 @@
   },
   "typesVersions": {
     "*": {
-      "client": ["./dist/types/gatekeeper-client.d.ts"],
-      "db/json": ["./dist/types/db/json.d.ts"],
-      "db/json-cache": ["./dist/types/db/json-cache.d.ts"],
-      "db/json-memory": ["./dist/types/db/json-memory.d.ts"],
-      "db/sqlite": ["./dist/types/db/sqlite.d.ts"],
-      "db/redis": ["./dist/types/db/redis.d.ts"],
-      "db/mongo": ["./dist/types/db/mongo.d.ts"],
-      "types": ["./dist/types/types.d.ts"]
+      "client": [
+        "./dist/types/gatekeeper-client.d.ts"
+      ],
+      "db/json": [
+        "./dist/types/db/json.d.ts"
+      ],
+      "db/json-cache": [
+        "./dist/types/db/json-cache.d.ts"
+      ],
+      "db/json-memory": [
+        "./dist/types/db/json-memory.d.ts"
+      ],
+      "db/sqlite": [
+        "./dist/types/db/sqlite.d.ts"
+      ],
+      "db/redis": [
+        "./dist/types/db/redis.d.ts"
+      ],
+      "db/mongo": [
+        "./dist/types/db/mongo.d.ts"
+      ],
+      "types": [
+        "./dist/types/types.d.ts"
+      ]
     }
   },
   "scripts": {

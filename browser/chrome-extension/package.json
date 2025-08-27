@@ -1,6 +1,6 @@
 {
   "name": "mdip-chrome-extension",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MDIP Chrome Extension",
   "main": "index.js",
   "scripts": {
