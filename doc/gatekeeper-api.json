@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Gatekeeper API",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Documentation for Keymaster API"
   },
   "paths": {

@@ -1,6 +1,6 @@
 {
   "name": "@mdip/cipher",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MDIP cipher lib",
   "type": "module",
   "main": "./dist/cjs/cipher-web.cjs",
@@ -42,9 +42,15 @@
   },
   "typesVersions": {
     "*": {
-      "node": ["./dist/types/cipher-node.d.ts"],
-      "web": ["./dist/types/cipher-web.d.ts"],
-      "types": ["./dist/types/types.d.ts"]
+      "node": [
+        "./dist/types/cipher-node.d.ts"
+      ],
+      "web": [
+        "./dist/types/cipher-web.d.ts"
+      ],
+      "types": [
+        "./dist/types/types.d.ts"
+      ]
     }
   },
   "scripts": {

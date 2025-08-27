@@ -1,6 +1,6 @@
 {
   "name": "@mdip/ipfs",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MDIP IPFS lib",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -46,10 +46,18 @@
   },
   "typesVersions": {
     "*": {
-      "helia": ["./dist/types/helia-client.d.ts"],
-      "kubo": ["./dist/types/kubo-client.d.ts"],
-      "utils": ["./dist/types/utils.d.ts"],
-      "types": ["./dist/types/types.d.ts"]
+      "helia": [
+        "./dist/types/helia-client.d.ts"
+      ],
+      "kubo": [
+        "./dist/types/kubo-client.d.ts"
+      ],
+      "utils": [
+        "./dist/types/utils.d.ts"
+      ],
+      "types": [
+        "./dist/types/types.d.ts"
+      ]
     }
   },
   "scripts": {

@@ -1,6 +1,6 @@
 {
   "name": "inscription-mediator",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "MDIP satoshi blockchain mediator",
   "main": "src/index.js",

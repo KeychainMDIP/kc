@@ -1,6 +1,6 @@
 {
   "name": "@mdip/common",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MDIP common",
   "type": "module",
   "main": "./dist/cjs/index.cjs",
@@ -28,8 +28,12 @@
   },
   "typesVersions": {
     "*": {
-      "utils": ["./dist/types/utils.d.ts"],
-      "errors": ["./dist/types/errors.d.ts"]
+      "utils": [
+        "./dist/types/utils.d.ts"
+      ],
+      "errors": [
+        "./dist/types/errors.d.ts"
+      ]
     }
   },
   "scripts": {
