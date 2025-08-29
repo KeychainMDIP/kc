@@ -74,11 +74,7 @@ export default class Inscription {
                 network: bitcoin.networks[this.network]
             });
 
-            if (!p2tr.address) {
-                throw new Error('Failed to derive p2tr script address');
-            }
-
-            outputMap[p2tr.address] = DUST;
+            outputMap[p2tr.address!] = DUST;
         }
 
         const commitTx = await this.createCommitTransaction(
@@ -116,9 +112,6 @@ export default class Inscription {
         const commitTx = bitcoin.Transaction.fromHex(commitHex);
         const tapScripts = await this.extractTapscripts(revealHex);
         const targetSatPerVb = Math.max(estSatPerVByte, curSatPerVb + 1);
-
-        console.log("Current Fee Sat/vB:", curSatPerVb);
-        console.log("New Fee Sat/vB: ", targetSatPerVb);
 
         return await this.createRevealTransactionHex(
             commitTx,
@@ -186,7 +179,7 @@ export default class Inscription {
                 throw new Error('no taproot outputs');
             }
             const last = keys[keys.length - 1];
-            outputMap[last] = (outputMap[last] || 0) + changeSat;
+            outputMap[last] = outputMap[last] + changeSat;
         }
 
         const network = bitcoin.networks[this.network];
@@ -206,17 +199,7 @@ export default class Inscription {
                 const keyPair = ECPair.fromPrivateKey(priv);
                 const pubkey = Buffer.from(keyPair.publicKey);
                 const p2wpkh = bitcoin.payments.p2wpkh({ pubkey, network });
-                const script = p2wpkh.output;
-
-                if (!script) {
-                    throw new Error('Failed to derive p2wpkh script');
-                }
-
-                const h160 = bitcoin.crypto.hash160(pubkey);
-
-                if (script.length !== 22 || script[0] !== 0x00 || script[1] !== 0x14 || !h160.equals(script.subarray(2))) {
-                    throw new Error(`Derived pubkey does not match UTXO script at ${inp.hdkeypath}`);
-                }
+                const script = p2wpkh.output!;
 
                 psbt.addInput({
                     hash: inp.txid,
@@ -234,26 +217,20 @@ export default class Inscription {
                 const priv = this.deriveFromAccountXprv(xprv, inp.hdkeypath);
                 const xonlyChild = this.xonlyFromPriv(priv);
                 const p2tr = bitcoin.payments.p2tr({ internalPubkey: xonlyChild, network });
-                if (!p2tr.output || !p2tr.pubkey) {
-                    throw new Error('Failed to derive p2tr script');
-                }
-
+                const script = p2tr.output!;
+                const pubkey = p2tr.pubkey!;
                 const tweakedPriv = this.tweakPrivKeyTaproot(priv, xonlyChild);
-                const tweakedPub = ecc.pointFromScalar(tweakedPriv, true)!;
-                if (!this.toXOnly(Buffer.from(tweakedPub)).equals(p2tr.pubkey)) {
-                    throw new Error(`Tweaked pubkey mismatch at ${inp.hdkeypath}`);
-                }
 
                 psbt.addInput({
                     hash: inp.txid,
                     index: inp.vout,
                     sequence: 0xfffffffd,
-                    witnessUtxo: { script: p2tr.output, value: inp.amount },
+                    witnessUtxo: { script, value: inp.amount },
                     tapInternalKey: xonlyChild,
                     tapBip32Derivation: [{
                         masterFingerprint: fp86,
                         path,
-                        pubkey: p2tr.pubkey,
+                        pubkey,
                         leafHashes: [],
                     }]
                 });
@@ -296,7 +273,7 @@ export default class Inscription {
 
         tapScripts.forEach((tScript, idx) => {
             const commitOut = commitTx.outs[idx];
-            const leafHash = this.tapLeafHash(tScript, 0xc0);
+            const leafHash = this.tapLeafHash(tScript);
             const { parity } = this.tweakPubkey(xonly, leafHash);
 
             const controlByte = 0xc0 | parity;
@@ -353,16 +330,13 @@ export default class Inscription {
                     const pubkey = Buffer.from(keyPair.publicKey);
 
                     const p2wpkh = bitcoin.payments.p2wpkh({pubkey, network});
-                    if (!p2wpkh.output) {
-                        throw new Error('Failed to derive p2wpkh script for extra input');
-                    }
 
                     psbt.addInput({
                         hash: inp.txid,
                         index: inp.vout,
                         sequence: 0xfffffffd,
                         witnessUtxo: {
-                            script: p2wpkh.output,
+                            script: p2wpkh.output!,
                             value: inp.amount,
                         }
                     });
@@ -379,26 +353,20 @@ export default class Inscription {
                     const priv = this.deriveFromAccountXprv(xprv, inp.hdkeypath);
                     const xonlyChild = this.xonlyFromPriv(priv);
                     const p2tr = bitcoin.payments.p2tr({ internalPubkey: xonlyChild, network });
-                    if (!p2tr.output || !p2tr.pubkey) {
-                        throw new Error('Failed to derive p2tr script');
-                    }
-
+                    const pubkey = p2tr.pubkey!;
+                    const script = p2tr.output!;
                     const tweakedPriv = this.tweakPrivKeyTaproot(priv, xonlyChild);
-                    const tweakedPub = ecc.pointFromScalar(tweakedPriv, true)!;
-                    if (!this.toXOnly(Buffer.from(tweakedPub)).equals(p2tr.pubkey)) {
-                        throw new Error(`Tweaked pubkey mismatch at ${inp.hdkeypath}`);
-                    }
 
                     psbt.addInput({
                         hash: inp.txid,
                         index: inp.vout,
                         sequence: 0xfffffffd,
-                        witnessUtxo: { script: p2tr.output, value: inp.amount },
+                        witnessUtxo: { script, value: inp.amount },
                         tapInternalKey: xonlyChild,
                         tapBip32Derivation: [{
                             masterFingerprint: fp86,
                             path,
-                            pubkey: p2tr.pubkey,
+                            pubkey,
                             leafHashes: [],
                         }],
                     });
@@ -465,20 +433,19 @@ export default class Inscription {
         return base;
     }
 
-    private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer, merkleRoot?: Buffer) {
-        const P = ecc.pointFromScalar(priv, true);
-        if (!P) {
-            throw new Error('Invalid private key');
-        }
+    private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer) {
+        const P = ecc.pointFromScalar(priv, true)!;
         let dEven = Buffer.from(priv);
         if (P[0] === 0x03) {
             const neg = ecc.privateNegate(dEven);
-            if (!neg) throw new Error('privateNegate failed');
+            if (!neg) {
+                throw new Error('privateNegate failed');
+            }
             dEven = Buffer.from(neg);
         }
         const tweak = bitcoin.crypto.taggedHash(
             'TapTweak',
-            merkleRoot ? Buffer.concat([internalXOnly, merkleRoot]) : internalXOnly
+            internalXOnly
         );
         const tweaked = ecc.privateAdd(dEven, tweak);
         if (!tweaked) {
@@ -595,10 +562,7 @@ export default class Inscription {
         const priv = this.deriveFromAccountXprv(bip86Xprv, hdkeypath);
         const xonly = this.xonlyFromPriv(priv);
         const p2tr = bitcoin.payments.p2tr({ internalPubkey: xonly, network: bitcoin.networks[this.network] });
-        if (!p2tr.address) {
-            throw new Error('Failed to derive taproot address');
-        }
-        return { address: p2tr.address, xonly };
+        return { address: p2tr.address!, xonly };
     }
 
     deriveP2TRAddress(bip86Xprv: string, hdkeypath: string) {
@@ -611,10 +575,7 @@ export default class Inscription {
         const keyPair = ECPair.fromPrivateKey(priv);
         const pubkey = Buffer.from(keyPair.publicKey);
         const p2wpkh = bitcoin.payments.p2wpkh({ pubkey, network: bitcoin.networks[this.network] });
-        if (!p2wpkh.address) {
-            throw new Error('Failed to derive p2wpkh address');
-        }
-        return p2wpkh.address;
+        return p2wpkh.address!;
     }
 
     private toXOnly(pubkey33: Buffer) {
@@ -632,7 +593,7 @@ export default class Inscription {
     ) {
         const rel = this.relativePathFromAccount(hdkeypath);
         const node = bip32.fromBase58(accountXprv, bitcoin.networks[this.network]);
-        const child = rel ? node.derivePath(rel) : node;
+        const child = node.derivePath(rel);
         if (!child.privateKey) {
             throw new Error('derived node has no private key');
         }
