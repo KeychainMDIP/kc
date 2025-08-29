@@ -434,9 +434,9 @@ export default class Inscription {
     }
 
     private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer) {
-        const P = ecc.pointFromScalar(priv, true)!;
+        const P = ecc.pointFromScalar(priv, true);
         let dEven = Buffer.from(priv);
-        if (P[0] === 0x03) {
+        if (P && P[0] === 0x03) {
             const neg = ecc.privateNegate(dEven);
             if (!neg) {
                 throw new Error('privateNegate failed');
