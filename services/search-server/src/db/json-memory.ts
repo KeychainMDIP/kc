@@ -42,10 +42,10 @@ export default class DIDsDbMemory implements DIDsDb {
             return [];
         }
         const [rawPath, cond] = entry;
-        if (typeof cond !== 'object' || !Array.isArray((cond as any).$in)) {
+        if (typeof cond !== 'object' || !Array.isArray(cond.$in)) {
             throw new Error('Only {$in:[…]} supported');
         }
-        const list = (cond as any).$in;
+        const list = cond.$in;
 
         const isKeyWildcard = rawPath.endsWith('.*');
         const isValueWildcard = rawPath.includes('.*.');
