@@ -32,7 +32,7 @@ async function main() {
     let didDb: DIDsDb;
 
     if (SEARCH_SERVER_DB === 'sqlite') {
-        didDb = await DIDsSQLite.create()
+        didDb = await DIDsSQLite.create();
     } else {
         didDb = new DIDsDbMemory();
     }

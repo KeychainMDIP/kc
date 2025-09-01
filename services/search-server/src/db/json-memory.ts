@@ -101,7 +101,7 @@ export default class DIDsDbMemory implements DIDsDb {
         this.config.clear();
     }
 
-    private getPath(root: unknown, path: string): any {
+    private getPath(root: unknown, path: string): unknown {
         if (!path || root == null) {
             return undefined;
         }
