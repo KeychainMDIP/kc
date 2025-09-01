@@ -1,18 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
-
-export interface DIDsDb {
-    connect(): Promise<void>;
-    disconnect(): Promise<void>;
-
-    loadUpdatedAfter(): Promise<string | null>;
-    saveUpdatedAfter(timestamp: string): Promise<void>;
-
-    storeDID(did: string, doc: object): Promise<void>;
-    getDID(did: string): Promise<object | null>;
-    searchDocs(q: string): Promise<string[]>;
-    wipeDb(): Promise<void>;
-}
+import { DIDsDb } from "../types.js";
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
@@ -20,7 +8,7 @@ export default class Sqlite implements DIDsDb {
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
-    static async create(dbFileName: string = 'dids.db', dataFolder: string = 'data'): Promise<Sqlite> {
+    static async create(dbFileName: string = 'dids.db', dataFolder: string = 'data'): Promise<DIDsDb> {
         const db = new Sqlite(dbFileName, dataFolder);
         await db.connect();
         return db;

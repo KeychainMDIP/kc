@@ -3,7 +3,9 @@ import cors from "cors";
 import dotenv from "dotenv";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
+import DIDsDbMemory from './db/json-memory.js';
 import DidIndexer from "./DidIndexer.js";
+import {DIDsDb} from "./types.js";
 
 dotenv.config();
 
@@ -11,7 +13,8 @@ async function main() {
     const {
         SEARCH_SERVER_PORT = 4002,
         SEARCH_SERVER_GATEKEEPER_URL = 'http://localhost:4224',
-        SEARCH_SERVER_REFRESH_INTERVAL_MS = 60000
+        SEARCH_SERVER_REFRESH_INTERVAL_MS = 60000,
+        SEARCH_SERVER_DB = 'sqlite',
     } = process.env;
 
     const app = express();
@@ -26,7 +29,13 @@ async function main() {
     app.use(cors(corsOptions));
     app.use(express.json({ limit: '2mb' }));
 
-    const didDb = await DIDsSQLite.create();
+    let didDb: DIDsDb;
+
+    if (SEARCH_SERVER_DB === 'sqlite') {
+        didDb = await DIDsSQLite.create()
+    } else {
+        didDb = new DIDsDbMemory();
+    }
 
     const gatekeeper = new GatekeeperClient();
     await gatekeeper.connect({
