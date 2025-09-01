@@ -233,8 +233,8 @@ const DmailTab: React.FC = () => {
             return null;
         }
 
-        const toList = [sendTo, ...sendToList].filter(Boolean);
-        const ccList = [sendCc, ...sendCcList].filter(Boolean);
+        const toList = [sendTo, ...sendToList].map(s => s.trim()).filter(Boolean);
+        const ccList = [sendCc, ...sendCcList].map(s => s.trim()).filter(Boolean);
 
         return {
             to: toList,
