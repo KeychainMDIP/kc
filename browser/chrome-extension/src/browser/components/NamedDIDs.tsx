@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
     Box,
     Button,
@@ -80,6 +80,7 @@ function NamedDIDs() {
         vaultList,
     } = useCredentialsContext();
     const {
+        openBrowser,
         openBrowserWindow,
         refreshNames,
     } = useUIContext();
@@ -96,6 +97,21 @@ function NamedDIDs() {
             });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nameList, unresolvedList, filter]);
+
+    useEffect(() => {
+        if (!openBrowser) {
+            return;
+        }
+        const { did, tab } = openBrowser;
+
+        if (tab !== "names") {
+            return;
+        }
+
+        if (did) {
+            setAliasDID(did);
+        }
+    }, [openBrowser, setAliasDID]);
 
     const allVisibleNames = mergedEntries.map(([name]) => name);
     const allSelectedOnPage = allVisibleNames.every((n) => selected.has(n));
