@@ -3,6 +3,8 @@ import {
     Autocomplete,
     Box,
     Button,
+    Checkbox,
+    FormControlLabel,
     IconButton,
     InputAdornment,
     MenuItem,
@@ -31,6 +33,14 @@ import {
     Send,
     Tune,
     UploadFile,
+    Reply,
+    ReplyAll,
+    Forward,
+    Unarchive,
+    RestoreFromTrash,
+    Edit,
+    PersonAdd,
+    Link,
 } from "@mui/icons-material";
 import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
@@ -59,6 +69,9 @@ const DmailTab: React.FC = () => {
     const [searchResults, setSearchResults] = useState<Record<string, DmailItem>>({});
     const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(false);
     const [forwardSourceDid, setForwardSourceDid] = useState<string | null>(null);
+    const [ephemeral, setEphemeral] = useState<boolean>(false);
+    const [expiresAt, setExpiresAt] = useState<string>("");
+    const [dmailReference, setDmailReference] = useState<string>("");
     const {
         currentId,
         keymaster,
@@ -73,6 +86,7 @@ const DmailTab: React.FC = () => {
     const {
         getVaultItemIcon,
         refreshInbox,
+        setOpenBrowser
     } = useUIContext();
 
     const TAG = {
@@ -141,23 +155,29 @@ const DmailTab: React.FC = () => {
         if (!keymaster) {
             return;
         }
-        try {
-            const toArr  = [...sendToList,  sendTo].filter(Boolean);
-            const ccArr  = [...sendCcList,  sendCc].filter(Boolean);
 
-            if (toArr.length === 0) {
-                setError("Add at least one recipient");
+        const dmail = getDmailInputOrError();
+        if (!dmail) {
+            return;
+        }
+
+        if (ephemeral) {
+            if (registry !== "hyperswarm") {
+                setError("Ephemeral DMail is only supported on hyperswarm");
                 return;
             }
+            if (!expiresAt || !isFutureDate(expiresAt)) {
+                setError("Choose a future expiration date");
+                return;
+            }
+        }
 
-            const dmail: DmailMessage = {
-                to: toArr,
-                cc: ccArr,
-                subject: sendSubject,
-                body: sendBody,
-            };
+        const opts = ephemeral
+            ? { registry, validUntil: new Date(expiresAt).toISOString() }
+            : { registry };
 
-            const did = await keymaster.createDmail(dmail, { registry });
+        try {
+            const did = await keymaster.createDmail(dmail, opts);
             setDmailDid(did);
 
             const pendingAtt = { ...dmailAttachments };
@@ -197,26 +217,45 @@ const DmailTab: React.FC = () => {
         setRevokeOpen(false);
     };
 
+    function getDmailInputOrError() {
+        if (!sendTo && sendToList.length === 0) {
+            setError("Add at least one recipient");
+            return null;
+        }
+
+        if (!sendSubject) {
+            setError("Please enter a subject for the Dmail");
+            return null;
+        }
+
+        if (!sendBody) {
+            setError("Please enter a body for the Dmail");
+            return null;
+        }
+
+        const toList = [sendTo, ...sendToList].map(s => s.trim()).filter(Boolean);
+        const ccList = [sendCc, ...sendCcList].map(s => s.trim()).filter(Boolean);
+
+        return {
+            to: toList,
+            cc: ccList,
+            subject: sendSubject,
+            body: sendBody,
+            reference: dmailReference || undefined,
+        };
+    }
+
     async function handleUpdate() {
         if (!keymaster || !dmailDid) {
             return;
         }
+
+        const dmail = getDmailInputOrError();
+        if (!dmail) {
+            return;
+        }
+
         try {
-            const toArr  = [...sendToList,  sendTo].filter(Boolean);
-            const ccArr  = [...sendCcList,  sendCc].filter(Boolean);
-
-            if (toArr.length === 0) {
-                setError("Add at least one recipient");
-                return;
-            }
-
-            const dmail: DmailMessage = {
-                to: toArr,
-                cc: ccArr,
-                subject: sendSubject,
-                body: sendBody,
-            };
-
             const ok = await keymaster.updateDmail(dmailDid, dmail);
             if (ok) {
                 setSuccess("Dmail updated");
@@ -285,6 +324,9 @@ const DmailTab: React.FC = () => {
         setSendCcList(prefill.cc ?? []);
         setSendSubject(prefill.subject || "");
         setSendBody(prefill.body || "");
+        setEphemeral(false);
+        setExpiresAt("");
+        setDmailReference(prefill.reference || "");
     }
 
     function handleForward() {
@@ -314,6 +356,7 @@ const DmailTab: React.FC = () => {
             cc: ccList,
             subject: `Re: ${selected.message.subject}`,
             body: `\n\n----- Original message -----\n${selected.message.body}`,
+            reference: selected.did,
         });
     }
 
@@ -327,6 +370,9 @@ const DmailTab: React.FC = () => {
         setDmailDid("");
         setDmailAttachments({});
         setForwardSourceDid(null);
+        setEphemeral(false);
+        setExpiresAt("");
+        setDmailReference("");
     }
 
     function filteredList(): Record<string, DmailItem> {
@@ -472,6 +518,7 @@ const DmailTab: React.FC = () => {
         setSendSubject(selected.message.subject);
         setSendBody(selected.message.body);
         setDmailDid(selected.did);
+        setDmailReference(selected.message.reference || "");
         await refreshDmailAttachments();
         setActiveTab("send");
     }
@@ -567,6 +614,38 @@ const DmailTab: React.FC = () => {
         setActiveTab("results");
     }
 
+    function isFutureDate(isoLocal: string) {
+        const d = new Date(isoLocal);
+        return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
+    }
+
+    useEffect(() => {
+        if (registry !== "hyperswarm") {
+            setEphemeral(false);
+            setExpiresAt("");
+        }
+    }, [registry]);
+
+    function addDmailContact(senderDid: string) {
+        if (!setOpenBrowser || !senderDid.startsWith('did:')) {
+            return;
+        }
+        setOpenBrowser({
+            title: "",
+            did: senderDid,
+            tab: "names",
+        });
+    }
+
+    function openReferencedMessage(did: string) {
+        const item = dmailList[did];
+        if (!item) {
+            setError(`Referenced message not found: ${did}`);
+            return;
+        }
+        setSelected({ ...item, did });
+    }
+
     // eslint-disable-next-line sonarjs/no-duplicate-string
     const senderSx = { width: 192, maxWidth: 192, p: "8px 0", boxSizing: "border-box", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
     const subjectSx = { width: 450, maxWidth: 450, p: "8px 0", boxSizing: "border-box", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
@@ -652,33 +731,55 @@ const DmailTab: React.FC = () => {
 
                         <Box sx={{ my: 1 }}>
                             {cat==="inbox" && (
-                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={handleForward}>Forward</Button>
-                                    <Button variant="contained" onClick={() => handleReply(false)}>Reply</Button>
-                                    <Button variant="contained" onClick={() => handleReply(true)}>Reply-all</Button>
-                                    <Button variant="contained" onClick={archive}>Archive</Button>
-                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                <Box sx={{ gap: 0.5, display: "flex", flexDirection: "row" }}>
+                                    <Tooltip title="Forward">
+                                        <IconButton onClick={handleForward}><Forward /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Reply">
+                                        <IconButton onClick={() => handleReply(false)}><Reply /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Reply all">
+                                        <IconButton onClick={() => handleReply(true)}><ReplyAll /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Archive">
+                                        <IconButton onClick={archive}><Archive /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                        <IconButton onClick={del}><Delete /></IconButton>
+                                    </Tooltip>
                                 </Box>
                             )}
 
                             {(cat==="outbox" || cat==="drafts") && (
-                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={()=> editDmail(selected)}>Edit</Button>
-                                    <Button variant="contained" onClick={archive}>Archive</Button>
-                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                <Box sx={{ gap: 0.5, display: "flex", flexDirection: "row" }}>
+                                    <Tooltip title="Edit">
+                                        <IconButton onClick={()=> editDmail(selected)}><Edit /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Archive">
+                                        <IconButton onClick={archive}><Archive /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                        <IconButton onClick={del}><Delete /></IconButton>
+                                    </Tooltip>
                                 </Box>
                             )}
 
                             {cat==="archive" && (
-                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={unarchive}>Unarchive</Button>
-                                    <Button variant="contained" onClick={del}>Delete</Button>
+                                <Box sx={{ gap: 0.5, display: "flex", flexDirection: "row" }}>
+                                    <Tooltip title="Unarchive">
+                                        <IconButton onClick={unarchive}><Unarchive /></IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                        <IconButton onClick={del}><Delete /></IconButton>
+                                    </Tooltip>
                                 </Box>
                             )}
 
                             {cat==="trash" && (
-                                <Box sx={{ gap: 1, display: "flex", flexDirection: "row" }}>
-                                    <Button variant="contained" onClick={undelete}>Undelete</Button>
+                                <Box sx={{ gap: 0.5, display: "flex", flexDirection: "row" }}>
+                                    <Tooltip title="Restore">
+                                        <IconButton onClick={undelete}><RestoreFromTrash /></IconButton>
+                                    </Tooltip>
                                 </Box>
                             )}
                         </Box>
@@ -708,6 +809,17 @@ const DmailTab: React.FC = () => {
                             <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                 {selected.sender}
                             </Typography>
+                            {selected.sender.startsWith('did:') && (
+                                <Tooltip title="Add contact">
+                                    <IconButton
+                                        size="small"
+                                        sx={{ ml: 1 }}
+                                        onClick={() => addDmailContact(selected.sender)}
+                                    >
+                                        <PersonAdd />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                         </Box>
 
                         <Box display="flex" alignItems="center" mb={1}>
@@ -727,6 +839,26 @@ const DmailTab: React.FC = () => {
                                 {selected.message.subject}
                             </Typography>
                         </Box>
+
+                        {selected.message.reference && (
+                            <Box display="flex" alignItems="center" mb={1}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
+                                    Reference:
+                                </Typography>
+                                <Typography variant="body2">
+                                    {selected.message.reference}
+                                </Typography>
+                                <CopyResolveDID did={selected.message.reference} />
+                                <Tooltip title="Open referenced message">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => openReferencedMessage(selected.message.reference!)}
+                                    >
+                                        <Link />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        )}
 
                         {selected.attachments && Object.keys(selected.attachments).length > 0 && (
                             <Box mb={2}>
@@ -868,6 +1000,32 @@ const DmailTab: React.FC = () => {
                             </MenuItem>
                         ))}
                     </Select>
+
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                checked={ephemeral}
+                                onChange={(e) => setEphemeral(e.target.checked)}
+                                disabled={registry !== "hyperswarm"}
+                            />
+                        }
+                        label="Ephemeral"
+                    />
+
+                    <TextField
+                        size="small"
+                        label="Expires"
+                        type="datetime-local"
+                        value={expiresAt}
+                        onChange={(e) => setExpiresAt(e.target.value)}
+                        disabled={!ephemeral || registry !== "hyperswarm"}
+                        slotProps={{
+                            inputLabel: { shrink: true },
+                        }}
+                    />
+
+                </Box>
+                <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
 
                     <Button
                         variant="contained"
@@ -1023,6 +1181,7 @@ const DmailTab: React.FC = () => {
                 variant="scrollable"
                 scrollButtons="auto"
             >
+                <Tab label="Compose" value="send"    icon={<Send />} />
                 <Tab label="Inbox"   value="inbox"   icon={<Inbox />} />
                 <Tab label="Outbox"  value="outbox"  icon={<Outbox />} />
                 <Tab label="Drafts"  value="drafts"  icon={<Drafts />} />
@@ -1032,7 +1191,6 @@ const DmailTab: React.FC = () => {
                 {Object.keys(searchResults).length > 0 && (
                     <Tab label="Results" value="results" icon={<Search />} />
                 )}
-                <Tab label="Send"    value="send"    icon={<Send />} />
             </Tabs>
 
             {activeTab !== "send" && renderInbox()}
