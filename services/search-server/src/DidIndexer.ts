@@ -1,5 +1,5 @@
 import GatekeeperClient from "@mdip/gatekeeper/client";
-import type { DIDsDb } from "./db/sqlite.js";
+import type { DIDsDb } from "./types.js";
 
 export interface DidIndexerOptions {
     intervalMs: number;
