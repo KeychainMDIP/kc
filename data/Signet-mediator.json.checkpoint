@@ -1,0 +1,515 @@
+{
+    "height": 267978,
+    "time": "2025-09-03T18:41:30.000Z",
+    "blockCount": 267978,
+    "blocksScanned": 16079,
+    "blocksPending": 0,
+    "txnsScanned": 8125295,
+    "registered": [
+        {
+            "did": "did:mdip:z3v8AuaWGGrz66G6HU1YfxWeYyoJq17vh4WuWpyqm2XD98bkLfn",
+            "txid": "217a9ff28ad09b1f738903d68328977d683cb59354a41a201c2e57fd5e76c91f"
+        },
+        {
+            "did": "did:mdip:z3v8AuaW2XH3a4uQG5dowGvJat1KeSY9XbvhjzYJmUSms1ZsceW",
+            "txid": "46285bce3a14c9f0159c964118d18e3a5e8ea3afe9e3a31fcc9ca3d4877c3ee8"
+        },
+        {
+            "did": "did:mdip:z3v8AuaeRKyN6ePt3aZqz4CSR9imRNddne2z8tBLgNSyVN1LMtw",
+            "txid": "5e82e18262af2e5be49ff4a3e78f3608a6570a6b93d6841143aa2554475e2388"
+        },
+        {
+            "did": "did:mdip:z3v8AuaVxLQTSLWAShN1wmotkfM3YkyR3GzJrgviM6PWJjmPEcg",
+            "txid": "6a9a4ee58d2d0d7e8b6fbaeaa66b106da7969e75596a2b68f305363d4466d610"
+        },
+        {
+            "did": "did:mdip:z3v8Auadw7hwb3Td6vqYyREzwmqzZ4cr4CWkTik7oP6DGsbvWMx",
+            "txid": "53816c0d97744fd7c686f01f3a155e43e67717864da2032a27f5297f5123f2a3"
+        },
+        {
+            "did": "did:mdip:z3v8AuaeuGkzCP91g6UkrptAHEbqG17VXY2VKhSa7G5f7MQ5cEq",
+            "txid": "d33aaae19f0b8087c6845d79fe2e267e3ea9efb90911f4a8afe92d85d5b1a982"
+        },
+        {
+            "did": "did:mdip:z3v8AuaW7yLE9X2M9PkErmpXzDkbWLFkQN3q8quHPFZ5cbQ7zvi",
+            "txid": "b0e262837b772279ae2974589d1138d731fa9db124223cbecbaf12d12463196c"
+        },
+        {
+            "did": "did:mdip:z3v8AuaXegdsdbjHe46Fv9L74vaX8TgMcSTGVzpgLfJq6WMnKnj",
+            "txid": "4746cdefe1b7dc07603cebbb38506c18d0847d1b9d47a99f178ba969f2154071"
+        }
+    ],
+    "discovered": [
+        {
+            "height": 252317,
+            "index": 33,
+            "time": "2025-05-16T14:10:34.000Z",
+            "txid": "becdd799a649eb66fa4c2d2ff91356d88dc76b097f69a8517338fd339fb64fce",
+            "did": "did:test:z3v8AuaiHNWkkanTpCt1PibMvwNjNJCi5a6dWnPr9Q4GSdeWvnV",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 579
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252318,
+            "index": 61,
+            "time": "2025-05-16T14:24:21.000Z",
+            "txid": "71ef5633b11178b4318f5335ed08a10ddc7e8031d15b5cae076a9ff236273d6c",
+            "did": "did:test:z3v8AuacTHz3P2Km3B2DaSwuScpkXC9X49V7uzdQQGTQ7g6Dp48",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 584
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252319,
+            "index": 57,
+            "time": "2025-05-16T14:38:36.000Z",
+            "txid": "446b1662c5196f62d0397b014fa23a54b9d82fc5a4bc0eb5ee97f77e87c171fd",
+            "did": "did:test:z3v8AuaaamS7RCZMiCcUVjja1pMCrPooHNGJ8bjH4HAvncpT7mT",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 587
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252340,
+            "index": 82,
+            "time": "2025-05-16T18:46:40.000Z",
+            "txid": "217a9ff28ad09b1f738903d68328977d683cb59354a41a201c2e57fd5e76c91f",
+            "did": "did:mdip:z3v8AuaWGGrz66G6HU1YfxWeYyoJq17vh4WuWpyqm2XD98bkLfn",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 589
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252341,
+            "index": 71,
+            "time": "2025-05-16T19:13:50.000Z",
+            "txid": "46285bce3a14c9f0159c964118d18e3a5e8ea3afe9e3a31fcc9ca3d4877c3ee8",
+            "did": "did:mdip:z3v8AuaW2XH3a4uQG5dowGvJat1KeSY9XbvhjzYJmUSms1ZsceW",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 592
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252346,
+            "index": 41,
+            "time": "2025-05-16T19:41:54.000Z",
+            "txid": "5e82e18262af2e5be49ff4a3e78f3608a6570a6b93d6841143aa2554475e2388",
+            "did": "did:mdip:z3v8AuaeRKyN6ePt3aZqz4CSR9imRNddne2z8tBLgNSyVN1LMtw",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 594
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 252735,
+            "index": 100,
+            "time": "2025-05-19T20:31:50.000Z",
+            "txid": "3a8b3407868a5035d841fcf01e2dbc262b046f59092d9a33b5608bfcb7addc8d",
+            "did": "did:test:z3v8AuaVUwbeWyX4CLJ2FXBTmZ5o3cyJXve1NXsnAftvacgSUzz",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 596
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 253043,
+            "index": 965,
+            "time": "2025-05-22T07:29:11.000Z",
+            "txid": "c7eb60f68e222736fa8f34f0e6f4ef9c73b519226977c15689d887ebc470b7e9",
+            "did": "did:test:z3v8AuacytzZNb1KWtyVJgRj5v19Xi2A4RCeiC7fxLM5LhXtBpy",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 1
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 253049,
+            "index": 422,
+            "time": "2025-05-22T08:44:59.000Z",
+            "txid": "5838ab4511765c089a42b20de6e38e4a178f90599fb572b07f807368a436a1f8",
+            "did": "did:test:z3v8AuaUpZkxYxo8sJH4z5um9ZTPzFP8qe7d4GgCEvRa9F5u3D6",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 255768,
+            "index": 2697,
+            "time": "2025-06-10T08:05:57.000Z",
+            "txid": "4babda13c7167e62d3e4fd42682011a7de8c3644b74440d7d83ce21367823807",
+            "did": "did:test:z3v8AuaaYdPKbcveMj2jg1mHwfJKw8d7QEZmtikBEwj8ssodZiV",
+            "imported": {
+                "queued": 5,
+                "processed": 0,
+                "rejected": 0,
+                "total": 9
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 255769,
+            "index": 106,
+            "time": "2025-06-10T08:06:26.000Z",
+            "txid": "e409fbeeb52a6bc1657a8b9106d3e7ee3a2dfac00299a02c921b62561d94aee7",
+            "did": "did:test:z3v8AuaddHfVyiTcTFiEejrTEV3TbZ5ceUYuzvsiezzhwJ7pVzz",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 11
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 258474,
+            "index": 470,
+            "time": "2025-06-30T05:04:25.000Z",
+            "txid": "bdfbe67536f07905a398d4a8b23b888654731b7dcd28334a45c69cf287cc5367",
+            "did": "did:test:z3v8AuaXwCMid38vTuEUd7tkgWuJvgfJ284AzMiYPy4LhEoi724",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 13
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 258474,
+            "index": 471,
+            "time": "2025-06-30T05:04:25.000Z",
+            "txid": "d21187c5aea6d0327f409af668f08f26b71f9a8559cd75c2518036b044361adb",
+            "did": "did:test:z3v8AuahUiVULNEvRw8Ku3oEYoAHpYxjNMavbBf6tYNxbsHU5aD",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 17
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 258476,
+            "index": 713,
+            "time": "2025-06-30T05:20:07.000Z",
+            "txid": "d9d0841c0a8448dccf99a182b653dd93bcc4745ae3a215378b9301853ff1e33e",
+            "did": "did:test:z3v8AuaeJt846GvW4Uz57okWes3nNA5HuPQUXBLWEcn6QcMfKAM",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 19
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 260799,
+            "index": 553,
+            "time": "2025-07-16T00:05:59.000Z",
+            "txid": "6a9a4ee58d2d0d7e8b6fbaeaa66b106da7969e75596a2b68f305363d4466d610",
+            "did": "did:mdip:z3v8AuaVxLQTSLWAShN1wmotkfM3YkyR3GzJrgviM6PWJjmPEcg",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 23
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 261181,
+            "index": 437,
+            "time": "2025-07-18T14:41:51.000Z",
+            "txid": "53816c0d97744fd7c686f01f3a155e43e67717864da2032a27f5297f5123f2a3",
+            "did": "did:mdip:z3v8Auadw7hwb3Td6vqYyREzwmqzZ4cr4CWkTik7oP6DGsbvWMx",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 26
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 261989,
+            "index": 396,
+            "time": "2025-07-24T12:32:47.000Z",
+            "txid": "277e861f938b4b740d5a280ef5e7839500ddf021c6feb11895c7d8378d825278",
+            "did": "did:test:z3v8AuaYxdTEoRxyVQWEUzsjwkqKaJ7uYDLwB7DbP4VsbVrii9w",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 30
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 261991,
+            "index": 533,
+            "time": "2025-07-24T12:59:33.000Z",
+            "txid": "3bd00a446a24ed216256da5dd2ea41b66d53295a6e4658d68bdbc417fff41cee",
+            "did": "did:test:z3v8Auaa1x83CLyC5j3uiZhaHgudHQSB1gtNtBEKuJCg8itT2KY",
+            "imported": {
+                "queued": 5,
+                "processed": 0,
+                "rejected": 0,
+                "total": 36
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 264742,
+            "index": 34,
+            "time": "2025-08-11T19:52:49.000Z",
+            "txid": "d33aaae19f0b8087c6845d79fe2e267e3ea9efb90911f4a8afe92d85d5b1a982",
+            "did": "did:mdip:z3v8AuaeuGkzCP91g6UkrptAHEbqG17VXY2VKhSa7G5f7MQ5cEq",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 38
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 264744,
+            "index": 71,
+            "time": "2025-08-11T20:23:14.000Z",
+            "txid": "b0e262837b772279ae2974589d1138d731fa9db124223cbecbaf12d12463196c",
+            "did": "did:mdip:z3v8AuaW7yLE9X2M9PkErmpXzDkbWLFkQN3q8quHPFZ5cbQ7zvi",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 40
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 265494,
+            "index": 156,
+            "time": "2025-08-17T06:23:38.000Z",
+            "txid": "4746cdefe1b7dc07603cebbb38506c18d0847d1b9d47a99f178ba969f2154071",
+            "did": "did:mdip:z3v8AuaXegdsdbjHe46Fv9L74vaX8TgMcSTGVzpgLfJq6WMnKnj",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 42
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 266891,
+            "index": 52,
+            "time": "2025-08-27T01:13:37.000Z",
+            "txid": "7dbc09e30712d2bcff0dd0f7b1530bd6734fb868fdf439da30c265b5e04dc1cb",
+            "did": "did:test:z3v8Auac1maG53h3h1H9JJM9trvvyWuvktjdbrWAekwKVZdNLiQ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 44
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 266892,
+            "index": 50,
+            "time": "2025-08-27T01:32:29.000Z",
+            "txid": "44f85efffb415a25c9798467b3de1795d931875c4302901e385aa155c2dda84e",
+            "did": "did:test:z3v8AuaewhE1aScpG2ziwswr71VorNvMuwd19FmCP2FTw6raY5i",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 47
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 267173,
+            "index": 56,
+            "time": "2025-08-29T02:38:25.000Z",
+            "txid": "e62fcdea2c0e61c7fb850e0f8667a84bbb42268d829156f170d4b380f4b5031f",
+            "did": "did:test:z3v8Auac85Zp39ngjy1Y1waQfJhDN6T2mRjgM3PuPAZduXoYqw3",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 57
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 267174,
+            "index": 1,
+            "time": "2025-08-29T02:39:16.000Z",
+            "txid": "7ac140d7b9de06cd1e1b5f2757a9045fef93d35550ee774d4241fb8f32543b8e",
+            "did": "did:test:z3v8AuaX28781bBNN6WvWtxgGVbaqXdchmEBLYA3bYCM55w1n9b",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 61
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 267181,
+            "index": 38,
+            "time": "2025-08-29T03:36:16.000Z",
+            "txid": "6c368e99461d786b1edf74c59916083f0588bfd019ba94f936d04081744a5313",
+            "did": "did:test:z3v8AuabMvH7XiQVYzrZuiooheFiJyYDWvcztiUVzVj6qA2GzGe",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 66
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 267182,
+            "index": 51,
+            "time": "2025-08-29T03:55:10.000Z",
+            "txid": "d86b14c8880526d1559dfe0647c8ca9d7ef1472bd782268deacc8336f0667262",
+            "did": "did:test:z3v8AuajW2YGf94MQWrGmxmHoB3yrAiDgXBrhwtyM9qjPEZmrTC",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 70
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 267414,
+            "index": 92,
+            "time": "2025-08-30T16:53:20.000Z",
+            "txid": "59c5b97521cdbe05591ef16c24adbf7dcb4480b50295facd9d3bf6df6afdd0c3",
+            "did": "did:test:z3v8AuaXaH6u7D8nVcbMMGAaThzCpXKjipFpL21evmaGEFoErj3",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 2
+            },
+            "processed": {
+                "added": 2,
+                "merged": 0,
+                "rejected": 0,
+                "pending": 0
+            }
+        },
+        {
+            "height": 267415,
+            "index": 72,
+            "time": "2025-08-30T17:09:55.000Z",
+            "txid": "d40cc097d4063a436a6e988f767a543a6ecf631408b6d235d28356a7cd94039e",
+            "did": "did:test:z3v8AuafLgkekj21DW9QDCmadMxKCtNg6c5P6WnioG4ynzXHtRN",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 3
+            },
+            "processed": {
+                "added": 3,
+                "merged": 0,
+                "rejected": 0,
+                "pending": 0
+            }
+        }
+    ],
+    "lastExport": "2025-08-14T15:39:42.045Z"
+}

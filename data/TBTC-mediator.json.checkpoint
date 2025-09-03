@@ -1,11 +1,28 @@
 {
-    "height": 72996,
-    "time": "2025-03-07T16:06:03.000Z",
-    "blockCount": 72996,
-    "blocksScanned": 34997,
+    "height": 100515,
+    "time": "2025-09-03T20:22:01.000Z",
+    "blockCount": 100515,
+    "blocksScanned": 62516,
     "blocksPending": 0,
-    "txnsScanned": 7132867,
-    "registered": [],
+    "txnsScanned": 10937920,
+    "registered": [
+        {
+            "did": "did:mdip:z3v8AuaeipfrDvTXbvZtsnHjCTLda5fx4LxgMyi41BRhTPuGJAP",
+            "txid": "56945f6c627f255e4ff1ddb254431deb009fbdfab37a6a82ff5b5036fa9fff55"
+        },
+        {
+            "did": "did:mdip:z3v8AuaURPMVvF4BjzgDLmwXWTGoMsQLvpnFZsx2dVVruFnAdW2",
+            "txid": "2e8aafcfb134a7cc7992a1cfdd393fccebe5017bbd0f9634756d9cbb3fbc1bed"
+        },
+        {
+            "did": "did:mdip:z3v8AuaYpnYUQzXjkua8oP654DejhodJuSEKrSQEmaQeexJpPex",
+            "txid": "b8f70a9421911ca36deabc0e2bf26d1de1234dbbf5da26f6109923666645c76c"
+        },
+        {
+            "did": "did:mdip:z3v8AuagZBazdsGwvTnLaV6RjNV3JUu6woGevvYF5imjJfpY4aC",
+            "txid": "f0e4aee3bb3cb4048a4e62fed6e9f09260d955411937820bd300dd4bfd2fafd9"
+        }
+    ],
     "discovered": [
         {
             "height": 39290,
@@ -20,10 +37,7 @@
                 "total": 1
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -36,13 +50,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 2
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -55,13 +66,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 3
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -74,13 +82,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 4
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -93,13 +98,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 5
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -112,13 +114,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 6
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -131,13 +130,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 7
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -150,13 +146,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 8
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -169,13 +162,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 9
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -188,13 +178,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 10
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -207,13 +194,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 11
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -226,13 +210,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 12
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -245,13 +226,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 13
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -264,13 +242,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 14
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -283,13 +258,10 @@
                 "queued": 7,
                 "processed": 0,
                 "rejected": 0,
-                "total": 7
+                "total": 21
             },
             "processed": {
-                "added": 0,
-                "merged": 7,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -302,13 +274,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 23
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -321,13 +290,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 24
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -340,13 +306,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 25
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -359,13 +322,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 27
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -378,13 +338,10 @@
                 "queued": 8,
                 "processed": 0,
                 "rejected": 0,
-                "total": 8
+                "total": 35
             },
             "processed": {
-                "added": 0,
-                "merged": 8,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -397,13 +354,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 39
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -416,13 +370,10 @@
                 "queued": 5,
                 "processed": 0,
                 "rejected": 0,
-                "total": 5
+                "total": 44
             },
             "processed": {
-                "added": 0,
-                "merged": 5,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -435,13 +386,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 48
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -454,13 +402,10 @@
                 "queued": 5,
                 "processed": 0,
                 "rejected": 0,
-                "total": 5
+                "total": 53
             },
             "processed": {
-                "added": 0,
-                "merged": 5,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -473,13 +418,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 54
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -492,13 +434,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 56
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -511,13 +450,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 57
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -530,13 +466,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 58
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -549,13 +482,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 59
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -568,13 +498,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 61
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -587,13 +514,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 62
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -606,13 +530,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 63
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -625,13 +546,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 64
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -644,13 +562,10 @@
                 "queued": 9,
                 "processed": 0,
                 "rejected": 0,
-                "total": 9
+                "total": 73
             },
             "processed": {
-                "added": 0,
-                "merged": 9,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -663,13 +578,10 @@
                 "queued": 7,
                 "processed": 0,
                 "rejected": 0,
-                "total": 7
+                "total": 80
             },
             "processed": {
-                "added": 0,
-                "merged": 7,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -682,13 +594,10 @@
                 "queued": 19,
                 "processed": 0,
                 "rejected": 0,
-                "total": 19
+                "total": 99
             },
             "processed": {
-                "added": 0,
-                "merged": 19,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -701,13 +610,10 @@
                 "queued": 22,
                 "processed": 0,
                 "rejected": 0,
-                "total": 22
+                "total": 121
             },
             "processed": {
-                "added": 0,
-                "merged": 22,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -720,13 +626,10 @@
                 "queued": 11,
                 "processed": 0,
                 "rejected": 0,
-                "total": 11
+                "total": 132
             },
             "processed": {
-                "added": 0,
-                "merged": 11,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -739,13 +642,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 133
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -758,13 +658,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 134
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -777,13 +674,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 135
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -796,13 +690,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 139
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -815,13 +706,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 141
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -834,13 +722,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 142
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -853,13 +738,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 143
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -872,13 +754,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 146
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -894,10 +773,7 @@
                 "total": 15
             },
             "processed": {
-                "added": 0,
-                "merged": 15,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -910,13 +786,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 17
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -929,13 +802,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 19
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -948,13 +818,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 22
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -967,13 +834,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 24
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -986,13 +850,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 27
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1005,13 +866,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 30
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1024,13 +882,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 32
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1043,13 +898,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 34
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1062,13 +914,10 @@
                 "queued": 13,
                 "processed": 0,
                 "rejected": 0,
-                "total": 13
+                "total": 49
             },
             "processed": {
-                "added": 0,
-                "merged": 13,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1081,13 +930,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 51
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1100,13 +946,10 @@
                 "queued": 9,
                 "processed": 0,
                 "rejected": 0,
-                "total": 9
+                "total": 61
             },
             "processed": {
-                "added": 0,
-                "merged": 9,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1119,13 +962,10 @@
                 "queued": 6,
                 "processed": 0,
                 "rejected": 0,
-                "total": 6
+                "total": 68
             },
             "processed": {
-                "added": 0,
-                "merged": 6,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1138,13 +978,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 70
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1157,13 +994,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 73
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1176,13 +1010,10 @@
                 "queued": 3,
                 "processed": 0,
                 "rejected": 0,
-                "total": 3
+                "total": 77
             },
             "processed": {
-                "added": 0,
-                "merged": 3,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1195,13 +1026,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 79
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1214,13 +1042,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 81
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1233,13 +1058,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 83
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1252,13 +1074,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 85
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1271,13 +1090,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 87
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1290,13 +1106,10 @@
                 "queued": 3,
                 "processed": 0,
                 "rejected": 0,
-                "total": 3
+                "total": 91
             },
             "processed": {
-                "added": 0,
-                "merged": 3,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1309,13 +1122,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 94
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1328,13 +1138,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 96
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1347,13 +1154,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 98
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1366,13 +1170,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 101
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1385,13 +1186,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 104
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1404,13 +1202,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 108
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1423,13 +1218,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 110
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1442,13 +1234,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 138
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1461,13 +1250,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 140
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1480,13 +1266,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 143
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1499,13 +1282,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 145
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1518,13 +1298,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 148
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1537,13 +1314,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 151
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1556,13 +1330,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 155
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1575,13 +1346,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 157
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1594,13 +1362,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 159
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1613,13 +1378,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 161
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1632,13 +1394,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 184
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1651,13 +1410,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 185
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1670,13 +1426,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 188
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1689,13 +1442,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 190
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1708,13 +1458,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 193
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1727,13 +1474,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 195
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1746,13 +1490,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 198
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1765,13 +1506,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 203
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1784,13 +1522,10 @@
                 "queued": 5,
                 "processed": 0,
                 "rejected": 0,
-                "total": 5
+                "total": 209
             },
             "processed": {
-                "added": 0,
-                "merged": 5,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1803,13 +1538,10 @@
                 "queued": 7,
                 "processed": 0,
                 "rejected": 0,
-                "total": 7
+                "total": 217
             },
             "processed": {
-                "added": 0,
-                "merged": 7,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1822,13 +1554,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 223
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1841,13 +1570,10 @@
                 "queued": 13,
                 "processed": 0,
                 "rejected": 0,
-                "total": 13
+                "total": 237
             },
             "processed": {
-                "added": 0,
-                "merged": 13,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1860,13 +1586,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 239
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1879,13 +1602,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 242
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1898,13 +1618,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 244
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1917,13 +1634,10 @@
                 "queued": 3,
                 "processed": 0,
                 "rejected": 0,
-                "total": 3
+                "total": 5
             },
             "processed": {
-                "added": 0,
-                "merged": 3,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1936,13 +1650,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 6
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1955,13 +1666,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 11
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1974,13 +1682,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 20
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -1993,13 +1698,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 37
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2012,13 +1714,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 42
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2031,13 +1730,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 48
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2050,13 +1746,10 @@
                 "queued": 9,
                 "processed": 0,
                 "rejected": 0,
-                "total": 9
+                "total": 61
             },
             "processed": {
-                "added": 0,
-                "merged": 9,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2069,13 +1762,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 77
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2088,13 +1778,10 @@
                 "queued": 3,
                 "processed": 0,
                 "rejected": 0,
-                "total": 3
+                "total": 84
             },
             "processed": {
-                "added": 0,
-                "merged": 3,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2107,13 +1794,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 89
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2126,13 +1810,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 94
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2145,13 +1826,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 99
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2164,13 +1842,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 104
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2183,13 +1858,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 121
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2202,13 +1874,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 126
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2221,13 +1890,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 131
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2240,13 +1906,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 137
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2259,13 +1922,10 @@
                 "queued": 4,
                 "processed": 0,
                 "rejected": 0,
-                "total": 4
+                "total": 147
             },
             "processed": {
-                "added": 0,
-                "merged": 4,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2278,13 +1938,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 155
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2297,13 +1954,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 162
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2316,13 +1970,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 169
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2335,13 +1986,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 170
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2354,13 +2002,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 208
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2373,13 +2018,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 229
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2392,13 +2034,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 237
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2411,13 +2050,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 245
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2430,13 +2066,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 267
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2449,13 +2082,10 @@
                 "queued": 2,
                 "processed": 0,
                 "rejected": 0,
-                "total": 2
+                "total": 283
             },
             "processed": {
-                "added": 0,
-                "merged": 2,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2468,13 +2098,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 298
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2487,13 +2114,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 307
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2506,13 +2130,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 323
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2525,13 +2146,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 364
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2544,13 +2162,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 381
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2563,13 +2178,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 390
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2582,13 +2194,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 399
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2601,13 +2210,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 401
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2620,13 +2226,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 403
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2639,13 +2242,10 @@
                 "queued": 3,
                 "processed": 0,
                 "rejected": 0,
-                "total": 3
+                "total": 407
             },
             "processed": {
-                "added": 0,
-                "merged": 3,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2658,13 +2258,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 409
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2677,13 +2274,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 411
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2696,13 +2290,10 @@
                 "queued": 1,
                 "processed": 0,
                 "rejected": 0,
-                "total": 1
+                "total": 414
             },
             "processed": {
-                "added": 0,
-                "merged": 1,
-                "rejected": 0,
-                "pending": 0
+                "busy": true
             }
         },
         {
@@ -2715,15 +2306,682 @@
                 "queued": 12,
                 "processed": 0,
                 "rejected": 0,
-                "total": 12
+                "total": 427
             },
             "processed": {
-                "added": 0,
-                "merged": 12,
+                "busy": true
+            }
+        },
+        {
+            "height": 73014,
+            "index": 314,
+            "time": "2025-03-07T20:06:16.000Z",
+            "txid": "dec6c6a7f4afd437d4f5e7799c3871d44005d522acc1bd81d4717eb7984cc1a1",
+            "did": "did:test:z3v8AuacMYdLU8jA8R6q4ABYZZtcTqb6rm5fiUQAzZXaymHwD36",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
                 "rejected": 0,
-                "pending": 0
+                "total": 429
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 76375,
+            "index": 1702,
+            "time": "2025-04-08T14:09:38.000Z",
+            "txid": "12ad5f945c23cbc5109660efe1bec74904f4dbbca151e66c492725188ed2434d",
+            "did": "did:test:z3v8Auab8P33XEsvv9yGZAXMtP6A8rxC44xErooswxDtm4qpQmv",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 431
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 77555,
+            "index": 1303,
+            "time": "2025-04-15T13:05:13.000Z",
+            "txid": "5db3cb2b87776c0201662f202ffc764a910777b77ec90dfbe04a5e28168355b7",
+            "did": "did:test:z3v8AuaUC3AdfRvCJSVKQ2CeTDT7jndehfddeGHFJN5nRLUjuCz"
+        },
+        {
+            "height": 77555,
+            "index": 1304,
+            "time": "2025-04-15T13:05:13.000Z",
+            "txid": "c590b2b19dcf40fa5ede88ab659dba2bfd9695978d805f6103f9c81915e1ec7c",
+            "did": "did:test:z3v8AuadutCQ6yA88JbaPmvFAYe5uV1iPqZsMMLDKySpf9D3LBk"
+        },
+        {
+            "height": 81063,
+            "index": 103,
+            "time": "2025-05-05T18:05:29.000Z",
+            "txid": "56945f6c627f255e4ff1ddb254431deb009fbdfab37a6a82ff5b5036fa9fff55",
+            "did": "did:mdip:z3v8AuaeipfrDvTXbvZtsnHjCTLda5fx4LxgMyi41BRhTPuGJAP",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 447
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 81090,
+            "index": 21,
+            "time": "2025-05-05T22:45:46.000Z",
+            "txid": "2e8aafcfb134a7cc7992a1cfdd393fccebe5017bbd0f9634756d9cbb3fbc1bed",
+            "did": "did:mdip:z3v8AuaURPMVvF4BjzgDLmwXWTGoMsQLvpnFZsx2dVVruFnAdW2",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 449
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 81094,
+            "index": 173,
+            "time": "2025-05-05T22:05:45.000Z",
+            "txid": "2e8aafcfb134a7cc7992a1cfdd393fccebe5017bbd0f9634756d9cbb3fbc1bed",
+            "did": "did:mdip:z3v8AuaURPMVvF4BjzgDLmwXWTGoMsQLvpnFZsx2dVVruFnAdW2",
+            "imported": {
+                "queued": 0,
+                "processed": 1,
+                "rejected": 0,
+                "total": 452
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84108,
+            "index": 10,
+            "time": "2025-05-28T18:00:24.000Z",
+            "txid": "43a83dfde433669a059c3a2130265991ea31f43f08206b2d5d7827479ecd9f62",
+            "did": "did:test:z3v8AuaZq7r4JWQoxvE952mV7fC7ZViyyGgx6ghEnciZmKqXu6c",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 455
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84109,
+            "index": 113,
+            "time": "2025-05-28T18:20:25.000Z",
+            "txid": "c42987e349179e767f85531c38058febb06a958503998ec1b0db21e3136315a3",
+            "did": "did:test:z3v8Auaad1Cn6QyS2VxgTrDSrv9p9eMmavd8VrWx4YEzisxdJDa",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 457
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84124,
+            "index": 3580,
+            "time": "2025-05-28T21:20:35.000Z",
+            "txid": "c42987e349179e767f85531c38058febb06a958503998ec1b0db21e3136315a3",
+            "did": "did:test:z3v8Auaad1Cn6QyS2VxgTrDSrv9p9eMmavd8VrWx4YEzisxdJDa",
+            "imported": {
+                "queued": 0,
+                "processed": 1,
+                "rejected": 0,
+                "total": 458
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84124,
+            "index": 3581,
+            "time": "2025-05-28T21:20:35.000Z",
+            "txid": "0bcda04fd9d62b3bf1a080f27e44ca4a675e4b23cf8458ffc878f2a20c89b98e",
+            "did": "did:test:z3v8AuaWpB6MDGrYeoxa1dYaR4e3D7mGgS1UMBaDR3GcuVWnEMk",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 460
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84124,
+            "index": 3584,
+            "time": "2025-05-28T21:20:35.000Z",
+            "txid": "89301262ff0e322eb18f9e26a282f83d53c2e09a8ca4130083cce6609ea61179",
+            "did": "did:test:z3v8AuahZmMMwDT9mSkdwN3pkeoCzDgaAiSbEF1Tbq5FS4Kn8zg",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 462
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84132,
+            "index": 281,
+            "time": "2025-05-28T23:25:34.000Z",
+            "txid": "b9b38b98caf6ad331a7503d35e7ec8289a1e57a11fa3c6836e0c1feede647b9d",
+            "did": "did:test:z3v8AuafQDF67tcyMFbVguhuwJeXbWjr8gNUzidC6F4UJfS4eHD",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 464
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 84845,
+            "index": 401,
+            "time": "2025-06-03T17:14:43.000Z",
+            "txid": "1cbe39f797349e120968ed8da3c5d89b2d4ad2968323b61324741dcda2524775",
+            "did": "did:test:z3v8AuagWRJF9LraNicrCrQYrSsbmoboGotv2i7jABA43maCi14",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 469
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85089,
+            "index": 138,
+            "time": "2025-06-05T17:26:44.000Z",
+            "txid": "994ca2060588b4d327362722754b98e6e3c51505c181a7f92e3175ede1ed33e3",
+            "did": "did:test:z3v8AuaXJmeeJx8cxgmvmdDPYUdLMt5Ro7HJegDcjUKSCVbhijL",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 474
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85096,
+            "index": 433,
+            "time": "2025-06-05T18:41:16.000Z",
+            "txid": "7f4e0c947872633df48c269fac2b40da07078739371e4001a52c92c50b803782",
+            "did": "did:test:z3v8Auad6i5bGQfPbfNMwDgTbTi6oxKgds9a4uc8VLoLsV9tGQm",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 477
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85113,
+            "index": 41,
+            "time": "2025-06-05T20:41:23.000Z",
+            "txid": "863882f289eec54ef3e9bbb2dc1aa2aa546854a714fc5c52a2378491b82f6532",
+            "did": "did:test:z3v8AuajA8L1P5Zrv63VPe2WEH9bakChRSPjsqHWQACUJFpwRpm",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 480
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85117,
+            "index": 76,
+            "time": "2025-06-05T21:43:58.000Z",
+            "txid": "1f191e1910b25788933c59f89aa7197dcd55e64ae5f49c8f56f7e711d7c4d51a",
+            "did": "did:test:z3v8AuaWTtv911ZCnT7ywWNpoYBTSsdosSCi2Jga5hXwYAoMNNT",
+            "imported": {
+                "queued": 4,
+                "processed": 0,
+                "rejected": 0,
+                "total": 486
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85119,
+            "index": 127,
+            "time": "2025-06-05T22:24:00.000Z",
+            "txid": "18a88343b145337e77bc995634b8b096e79a5693b6b7b1b13b0e1f2d33a25db5",
+            "did": "did:test:z3v8AuageK6bGNi8QpFaMGExbKWQLRN5bp29UpEVCWM6zmFGa6m",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 497
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85123,
+            "index": 407,
+            "time": "2025-06-05T21:43:59.000Z",
+            "txid": "18a88343b145337e77bc995634b8b096e79a5693b6b7b1b13b0e1f2d33a25db5",
+            "did": "did:test:z3v8AuageK6bGNi8QpFaMGExbKWQLRN5bp29UpEVCWM6zmFGa6m",
+            "imported": {
+                "queued": 0,
+                "processed": 3,
+                "rejected": 0,
+                "total": 498
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85604,
+            "index": 1217,
+            "time": "2025-06-09T14:44:51.000Z",
+            "txid": "14fd43eeb12cdfc00d422981d6a605169a1ca3ffed48d86f9ba3270baba11cca",
+            "did": "did:test:z3v8Auad8cdHBaBhDQfjmN4AWJDNSrdVrn2KXP5tipHwcXadvoS",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 501
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85916,
+            "index": 75,
+            "time": "2025-06-11T21:59:37.000Z",
+            "txid": "75d9d4c045b26fa9bcd6287e5319d47267411326e32c04bcfb2f70230a22cb71",
+            "did": "did:test:z3v8AuahJVuyQwRW8HTwyk914BxaGdMavqPX44vSFRsi52Apv5e",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 503
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85920,
+            "index": 384,
+            "time": "2025-06-11T21:39:36.000Z",
+            "txid": "75d9d4c045b26fa9bcd6287e5319d47267411326e32c04bcfb2f70230a22cb71",
+            "did": "did:test:z3v8AuahJVuyQwRW8HTwyk914BxaGdMavqPX44vSFRsi52Apv5e",
+            "imported": {
+                "queued": 0,
+                "processed": 1,
+                "rejected": 0,
+                "total": 504
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 85920,
+            "index": 385,
+            "time": "2025-06-11T21:39:36.000Z",
+            "txid": "f4097c84453c610dc855857691615ea49fce594ebb7c3fcdb5299f54df9e69cd",
+            "did": "did:test:z3v8AuagAnxkdDqJRporunaj5ANDQTrbVBwKgHwkV3GY3s5BSw8",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 507
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 86171,
+            "index": 467,
+            "time": "2025-06-13T15:35:13.000Z",
+            "txid": "d521eac0a41b171798efad9b2385551b4e366f64d819e0ebdbf68fe8ece79c71",
+            "did": "did:test:z3v8AuaXQtu7Y9W9Xm8Qn5d1q5c2Tg8T7ouK3nMbbbR54K9Wpsg",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 510
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 86953,
+            "index": 39,
+            "time": "2025-06-18T20:27:17.000Z",
+            "txid": "652d6741e1baa0e04afd37515e4cda1a15c33b773a5640e8ef09184d4239f9f7",
+            "did": "did:test:z3v8AuafBim3HGVkubPSRXjTKAUpzK1fjHzLtFJQDrHuCBMDeNr",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 512
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 90660,
+            "index": 322,
+            "time": "2025-07-11T16:40:57.000Z",
+            "txid": "aac1795f5e6a1171e9c62b0d3e7f64ee8354190b2edffc2244f6c3840774b8a5",
+            "did": "did:test:z3v8Auab1FR3WN4h6LP7Fwn5YyRsUnQwzk9sXaYF9mZppbRc6JY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 514
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 90686,
+            "index": 794,
+            "time": "2025-07-11T21:41:14.000Z",
+            "txid": "778385c35dffc8a2f1f9880de95bb1ddebc330f3c3b28b1bfa9f6cdd322f3f73",
+            "did": "did:test:z3v8Auah8oWXqoByjuRVurbTDHZefiUW1VvwcrfwdzEg5VF6mcZ",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 516
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91134,
+            "index": 8,
+            "time": "2025-07-14T22:00:16.000Z",
+            "txid": "d829cbbdf871fe4a5408fd1e3bdfbc700a3031b8af6e7d3dac92130bd08bb8b2",
+            "did": "did:test:z3v8Auagx2tbqamV7ic2yybBMo97zpoVV48qsTQ1XrQ4o1AFiNh",
+            "imported": {
+                "queued": 3,
+                "processed": 0,
+                "rejected": 0,
+                "total": 520
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91140,
+            "index": 23,
+            "time": "2025-07-14T22:40:19.000Z",
+            "txid": "f6823b7f1257d2afdfa1843c61ae4adb84b9c4c3da2026688b11ec37aab9f611",
+            "did": "did:test:z3v8Auaaa2JDHgHG5CwkMiRyGwokH8tS9WnQ5aPiqQRy1eGKVRx",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 522
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91141,
+            "index": 14,
+            "time": "2025-07-14T23:00:20.000Z",
+            "txid": "56f4286e62b01250e3f0f16d6bd448540a4ccb8f74d0ea0bb6e764d5e4f4f2f4",
+            "did": "did:test:z3v8AuagwwfiKxtjdmEo6c38FRjZqmx8Nk8Y6SpX4LVy7exmauX",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 525
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91282,
+            "index": 291,
+            "time": "2025-07-15T19:46:41.000Z",
+            "txid": "33e9ce12bac752d2677ccca9a9f2d694fcee08b4c45c9d77c2e6bcdc4f023e0b",
+            "did": "did:test:z3v8AuahUgmZTN4mF9fk9hpLFpcyzNirPZmhVXXKj8vXoaXMiRS",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 529
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91290,
+            "index": 32,
+            "time": "2025-07-15T21:05:25.000Z",
+            "txid": "c7ae765bc1aaf80b3f0ecdaf580b4af6ac2c9a869daf38efc1d6656d37e24881",
+            "did": "did:test:z3v8Auag6F537fMg9XvJmoCZGwQEbghXbjpeawsb1Bi6k6pZzEx",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 531
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91424,
+            "index": 43,
+            "time": "2025-07-16T22:04:00.000Z",
+            "txid": "0392ed518dd6c5f0701b88c16f1663a4b624801b3a0bc9c2b2fc51e0742db563",
+            "did": "did:test:z3v8AuabGspDVrtgMvmBhVMGjwtXTovhkXKpLo2BaLefMUZZWaK",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 533
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91839,
+            "index": 565,
+            "time": "2025-07-18T19:28:17.000Z",
+            "txid": "28c1c227f0bdb452adfb88c18caf5ff2d09b8a586ed497a6bf8b01f8a0e23eeb",
+            "did": "did:test:z3v8Auah3HrRMemDCvjvZxv7o2mj57urGxKkNgwMsZxdJJFYC9Z",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 535
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 91840,
+            "index": 17,
+            "time": "2025-07-18T17:55:54.000Z",
+            "txid": "6e10ff1f5163038b457e1e178cbfb2657500e0d8ce78a7fd4539d82f21e33f35",
+            "did": "did:test:z3v8AuaVqny8JDGWJmuVkZn11G6pn8rLX1Sjie55GXGkoHc11XP",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 539
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 95949,
+            "index": 37,
+            "time": "2025-08-09T06:22:20.000Z",
+            "txid": "ca8d2bca714f94dd2f3767ad199e2054c8bff6029dca0b20c1f843bce073e7c0",
+            "did": "did:test:z3v8AuabvaYsLZcBYBWMcjUytD6LWRMLzEhdiAV4vhCH4qxfWhn",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 544
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 96430,
+            "index": 136,
+            "time": "2025-08-11T20:21:54.000Z",
+            "txid": "f0e4aee3bb3cb4048a4e62fed6e9f09260d955411937820bd300dd4bfd2fafd9",
+            "did": "did:mdip:z3v8AuagZBazdsGwvTnLaV6RjNV3JUu6woGevvYF5imjJfpY4aC",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 546
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 98226,
+            "index": 7,
+            "time": "2025-08-20T19:35:19.000Z",
+            "txid": "0d24071a0c03fd16ebd09d54d3f58cf317b274a5a2baba35861b94f9395f069c",
+            "did": "did:test:z3v8AuafnLxFv7aeiKGXFRZyNLoahkh77cNofFX3oeTNAmHhJqY",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 549
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 99324,
+            "index": 307,
+            "time": "2025-08-27T21:19:59.000Z",
+            "txid": "cdef46e161cfbafb16d06c3c0128caec82d78df975dced564e176377754b0ec1",
+            "did": "did:test:z3v8AuaWRRajE3zFjW39EZQbfJ6hr3BBA7fDAs36i5n11DXo9cD",
+            "imported": {
+                "queued": 1,
+                "processed": 0,
+                "rejected": 0,
+                "total": 551
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 99335,
+            "index": 510,
+            "time": "2025-08-27T23:01:50.000Z",
+            "txid": "8a2fdaa31101b26f8b67e46d1eff7ff30be8aaaa696c4e93209e373f2d2bf455",
+            "did": "did:test:z3v8AuaZ4U68ijzKKhktC8zTsB8i8EYK5TAKAwRAmfiCBGJDaC5",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 554
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 99519,
+            "index": 1421,
+            "time": "2025-08-28T20:47:46.000Z",
+            "txid": "cf231e1a8f2e8d9ee6417d1c9c7c992a4a50d09fc57f4e262ed53a874518ef2c",
+            "did": "did:test:z3v8AuaXMhyvcXadiQZccz6HjnV92ibJqft96HzKiPu8HuDC5wr",
+            "imported": {
+                "queued": 2,
+                "processed": 0,
+                "rejected": 0,
+                "total": 557
+            },
+            "processed": {
+                "busy": true
+            }
+        },
+        {
+            "height": 99547,
+            "index": 1108,
+            "time": "2025-08-29T02:08:04.000Z",
+            "txid": "5b7256e11d11289688e70a99766400ec189ab23811fefc6bfac788d8be683c79",
+            "did": "did:test:z3v8AuajGbhbkWrB5MQ3TtkUR4jceB3yXgG9FBhbjNhiAhzRksU",
+            "imported": {
+                "queued": 6,
+                "processed": 0,
+                "rejected": 0,
+                "total": 564
+            },
+            "processed": {
+                "busy": true
             }
         }
     ],
-    "lastExport": "2025-02-21T03:10:44.189Z"
+    "lastExport": "2025-08-11T19:32:55.159Z"
 }
