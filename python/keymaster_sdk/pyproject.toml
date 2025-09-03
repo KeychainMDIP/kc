@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keymaster-sdk"
-version = "0.1.0"
+version = "1.2.1"
 description = "Keymaster is a client library for the MDIP"
 readme = "README.md"
 license = { file = "LICENSE" }

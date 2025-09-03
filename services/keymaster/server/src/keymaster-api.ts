@@ -5275,7 +5275,7 @@ v1router.get('/dmail', async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               dmail:
+ *               message:
  *                 type: object
  *                 description: The Dmail message object to create.
  *                 example:
