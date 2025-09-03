@@ -228,9 +228,9 @@ def test_agent(identifier):
     return response["test"]
 
 
-def create_template(schema_id):
+def create_template(id):
     response = proxy_request(
-        "POST", f"{_keymaster_api}/schemas/{schema_id}/template", json={"id": schema_id}
+        "POST", f"{_keymaster_api}/schemas/{id}/template", json={"id": id}
     )
     return response["template"]
 
