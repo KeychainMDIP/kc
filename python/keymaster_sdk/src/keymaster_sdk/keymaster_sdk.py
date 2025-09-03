@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 
 _base_url = os.environ.get("KC_KEYMASTER_URL", "http://localhost:4226")
 _keymaster_api = _base_url + "/api/v1"
@@ -227,9 +228,9 @@ def test_agent(identifier):
     return response["test"]
 
 
-def create_template(schema):
+def create_template(schema_id):
     response = proxy_request(
-        "POST", f"{_keymaster_api}/schemas/did/template", json={"schema": schema}
+        "POST", f"{_keymaster_api}/schemas/{schema_id}/template", json={"id": schema_id}
     )
     return response["template"]
 
@@ -544,7 +545,7 @@ def vote_poll(poll, vote, options=None):
         options = {}
     response = proxy_request(
         "POST",
-        f"{_keymaster_api}/polls/vote",
+        f"{_keymaster_api}/polls/{poll}/vote",
         json={"poll": poll, "vote": vote, "options": options},
     )
     return response["did"]
@@ -571,3 +572,314 @@ def publish_poll(poll, options=None):
 def unpublish_poll(poll):
     response = proxy_request("POST", f"{_keymaster_api}/polls/{poll}/unpublish")
     return response["ok"]
+
+
+def revoke_did(did):
+    response = proxy_request("DELETE", f"{_keymaster_api}/did/{did}")
+    return response["ok"]
+
+
+def list_dmail(owner=None):
+    url = f"{_keymaster_api}/dmail"
+    if owner:
+        url = f"{url}?owner={owner}"
+    response = proxy_request("GET", url)
+    return response["dmail"]
+
+
+def create_dmail(message, options=None):
+    if options is None:
+        options = {}
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/dmail",
+        json={"message": message, "options": options},
+    )
+    return response["did"]
+
+
+def import_dmail(did):
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/dmail/import",
+        json={"did": did},
+    )
+    return response["ok"]
+
+
+def get_dmail_message(identifier):
+    response = proxy_request("GET", f"{_keymaster_api}/dmail/{identifier}")
+    return response["message"]
+
+
+def update_dmail(identifier, message):
+    response = proxy_request(
+        "PUT",
+        f"{_keymaster_api}/dmail/{identifier}",
+        json={"message": message},
+    )
+    return response["ok"]
+
+
+def remove_dmail(identifier):
+    response = proxy_request("DELETE", f"{_keymaster_api}/dmail/{identifier}")
+    return response["ok"]
+
+
+def send_dmail(identifier):
+    response = proxy_request("POST", f"{_keymaster_api}/dmail/{identifier}/send")
+    return response["did"]
+
+
+def file_dmail(identifier, tags):
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/dmail/{identifier}/file",
+        json={"tags": tags},
+    )
+    return response["ok"]
+
+
+def list_dmail_attachments(identifier):
+    response = proxy_request("GET", f"{_keymaster_api}/dmail/{identifier}/attachments")
+    return response["attachments"]
+
+
+def add_dmail_attachment(identifier, name, data):
+    if isinstance(data, (bytes, bytearray)):
+        raw = data
+    else:
+        with open(data, "rb") as f:
+            raw = f.read()
+
+    safe_name = str(name).replace("\\", "\\\\").replace('"', '\\"')
+    headers = {
+        "Content-Type": "application/octet-stream",
+        "X-Options": f'{{"name":"{safe_name}"}}',
+    }
+
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/dmail/{identifier}/attachments",
+        data=raw,
+        headers=headers,
+    )
+    return response["ok"]
+
+
+def remove_dmail_attachment(identifier, name):
+    safe = requests.utils.quote(str(name), safe="")
+    response = proxy_request(
+        "DELETE",
+        f"{_keymaster_api}/dmail/{identifier}/attachments/{safe}",
+    )
+    return response["ok"]
+
+
+def get_dmail_attachment(identifier, name):
+    safe = requests.utils.quote(str(name), safe="")
+    url = f"{_keymaster_api}/dmail/{identifier}/attachments/{safe}"
+    resp = requests.get(url)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.content
+
+
+def create_notice(message, options=None):
+    if options is None:
+        options = {}
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/notices",
+        json={"message": message, "options": options},
+    )
+    return response["did"]
+
+
+def update_notice(identifier, message):
+    response = proxy_request(
+        "PUT",
+        f"{_keymaster_api}/notices/{identifier}",
+        json={"message": message},
+    )
+    return response["ok"]
+
+
+def refresh_notices():
+    response = proxy_request("POST", f"{_keymaster_api}/notices/refresh")
+    return response["ok"]
+
+
+def create_group_vault(options=None):
+    if options is None:
+        options = {}
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/groupVaults",
+        json={"options": options},
+    )
+    return response["did"]
+
+
+def get_group_vault(identifier):
+    response = proxy_request("GET", f"{_keymaster_api}/groupVaults/{identifier}")
+    return response["groupVault"]
+
+
+def test_group_vault(identifier):
+    response = proxy_request("POST", f"{_keymaster_api}/groupVaults/{identifier}/test")
+    return response["test"]
+
+
+def add_group_vault_member(vault_id, member_id):
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/groupVaults/{vault_id}/members",
+        json={"memberId": member_id},
+    )
+    return response["ok"]
+
+
+def remove_group_vault_member(vault_id, member_id):
+    safe_member = requests.utils.quote(str(member_id), safe="")
+    response = proxy_request(
+        "DELETE",
+        f"{_keymaster_api}/groupVaults/{vault_id}/members/{safe_member}",
+    )
+    return response["ok"]
+
+
+def list_group_vault_members(vault_id):
+    response = proxy_request("GET", f"{_keymaster_api}/groupVaults/{vault_id}/members")
+    return response["members"]
+
+
+def add_group_vault_item(vault_id, name, data):
+    if isinstance(data, (bytes, bytearray)):
+        raw = data
+    else:
+        with open(data, "rb") as f:
+            raw = f.read()
+
+    safe_name = str(name).replace("\\", "\\\\").replace('"', '\\"')
+    headers = {
+        "Content-Type": "application/octet-stream",
+        "X-Options": f'{{"name":"{safe_name}"}}',
+    }
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/groupVaults/{vault_id}/items",
+        data=raw,
+        headers=headers,
+    )
+    return response["ok"]
+
+
+def remove_group_vault_item(vault_id, name):
+    safe = requests.utils.quote(str(name), safe="")
+    response = proxy_request(
+        "DELETE",
+        f"{_keymaster_api}/groupVaults/{vault_id}/items/{safe}",
+    )
+    return response["ok"]
+
+
+def list_group_vault_items(vault_id):
+    response = proxy_request("GET", f"{_keymaster_api}/groupVaults/{vault_id}/items")
+    return response["items"]
+
+
+def get_group_vault_item(vault_id, name):
+    safe = requests.utils.quote(str(name), safe="")
+    url = f"{_keymaster_api}/groupVaults/{vault_id}/items/{safe}"
+    resp = requests.get(url)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.content
+
+
+def get_cas_data(cid):
+    safe_cid = requests.utils.quote(str(cid), safe="")
+    url = f"{_keymaster_api}/cas/data/{safe_cid}"
+    resp = requests.get(url)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.content
+
+
+def create_image(data, options=None):
+    if options is None:
+        options = {}
+    headers = {"Content-Type": "application/octet-stream"}
+    if options:
+        headers["X-Options"] = json.dumps(options)
+    resp = requests.post(f"{_keymaster_api}/images", data=data, headers=headers)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()["did"]
+
+
+def update_image(identifier, data):
+    headers = {"Content-Type": "application/octet-stream"}
+    resp = requests.put(f"{_keymaster_api}/images/{identifier}", data=data, headers=headers)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()["ok"]
+
+
+def get_image(identifier):
+    response = proxy_request("GET", f"{_keymaster_api}/images/{identifier}")
+    return response["image"]
+
+
+def test_image(identifier):
+    response = proxy_request("POST", f"{_keymaster_api}/images/{identifier}/test")
+    return response["test"]
+
+
+def create_document(data, options=None):
+    if options is None:
+        options = {}
+    headers = {"Content-Type": "application/octet-stream"}
+    if options:
+        headers["X-Options"] = json.dumps(options)
+    resp = requests.post(f"{_keymaster_api}/documents", data=data, headers=headers)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()["did"]
+
+
+def update_document(identifier, data, options=None):
+    if options is None:
+        options = {}
+    headers = {"Content-Type": "application/octet-stream"}
+    if options:
+        headers["X-Options"] = json.dumps(options)
+    resp = requests.put(f"{_keymaster_api}/documents/{identifier}", data=data, headers=headers)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise KeymasterError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()["ok"]
+
+
+def get_document(identifier):
+    response = proxy_request("GET", f"{_keymaster_api}/documents/{identifier}")
+    return response["document"]
+
+
+def test_document(identifier):
+    response = proxy_request("POST", f"{_keymaster_api}/documents/{identifier}/test")
+    return response["test"]
