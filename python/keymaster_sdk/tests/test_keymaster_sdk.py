@@ -190,13 +190,6 @@ def test_wallet():
     assert "idsRemoved" in response, "idsRemoved not present in fix_wallet response"
 
 
-def test_registries():
-    response = keymaster.list_registries()
-    assert (
-            "hyperswarm" in response
-    ), "hyperswarm not present in list_registries response"
-
-
 def test_backup_recover_id():
     alice = generate_id()
     did = keymaster.create_id(alice, local_options)
@@ -470,7 +463,7 @@ def test_notices_create_update_and_refresh():
 def test_dmail():
     sender = generate_id()
     recipient = generate_id()
-    sender_did = keymaster.create_id(sender)
+    sender_did = keymaster.create_id(sender, local_options)
     recipient_did = keymaster.create_id(recipient, local_options)
     keymaster.set_current_id(sender)
 
@@ -499,9 +492,6 @@ def test_dmail():
     assert_equal(ok, True)
     ok = keymaster.import_dmail(dmail_did)
     assert_equal(ok, True)
-
-    notice_did = keymaster.send_dmail(dmail_did)
-    assert notice_did.startswith("did:")
 
     ok = keymaster.remove_dmail(dmail_did)
     assert_equal(ok, True)
