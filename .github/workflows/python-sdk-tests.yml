@@ -1,0 +1,76 @@
+name: Python Keymaster SDK tests
+
+on:
+  pull_request:
+
+jobs:
+  test_python_sdk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup .env for Testing
+        working-directory: ./tests/cli-tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y expect
+          ./generate_test_env.sh
+          cat ../../.env
+
+      - name: Run Node
+        run: |
+          docker compose up -d mongodb redis ipfs gatekeeper search-server keymaster
+          docker compose ps
+          sleep 30
+
+      - name: Wait for Keymaster readiness
+        env:
+          KM: http://localhost:4226
+        run: |
+          for i in {1..90}; do
+            if curl -fsS "$KM/api/v1/ready" | grep -q '"ready":true'; then
+              echo "Keymaster is ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Keymaster did not become ready in time" >&2
+          exit 1
+
+      - name: Install Python deps
+        working-directory: ./python/keymaster_sdk
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Run Python tests
+        working-directory: ./python/keymaster_sdk
+        env:
+          KC_KEYMASTER_URL: http://localhost:4226
+        run: |
+          pytest -q tests/test_keymaster_sdk.py
+
+      - name: Grab logs
+        if: always()
+        run: |
+          docker compose logs --no-color keymaster > docker-services-logs.txt || true
+          cat docker-services-logs.txt
+
+      - name: Teardown Docker
+        run: |
+          ./stop-node
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-services-logs
+          path: docker-services-logs.txt
+
