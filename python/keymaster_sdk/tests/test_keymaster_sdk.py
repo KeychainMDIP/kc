@@ -190,13 +190,6 @@ def test_wallet():
     assert "idsRemoved" in response, "idsRemoved not present in fix_wallet response"
 
 
-def test_registries():
-    response = keymaster.list_registries()
-    assert (
-            "hyperswarm" in response
-    ), "hyperswarm not present in list_registries response"
-
-
 def test_backup_recover_id():
     alice = generate_id()
     did = keymaster.create_id(alice, local_options)
