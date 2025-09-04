@@ -24,11 +24,14 @@ jobs:
           ./generate_test_env.sh
           cat ../../.env
 
+      - name: Build images from this PR
+        run: |
+          docker compose build mongodb redis ipfs gatekeeper search-server keymaster
+
       - name: Run Node
         run: |
           docker compose up -d mongodb redis ipfs gatekeeper search-server keymaster
           docker compose ps
-          sleep 30
 
       - name: Wait for Keymaster readiness
         env:
