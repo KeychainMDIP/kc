@@ -51,7 +51,7 @@ export interface MediatorDb {
         commitTxid?: string;
         revealTxids?: string[];
         hdkeypath: string;
-        blockCount: number,
+        blockCount: number;
     }
 }
 

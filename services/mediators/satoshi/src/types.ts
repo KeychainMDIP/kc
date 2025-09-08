@@ -28,7 +28,7 @@ export interface MediatorDb {
     lastExport?: string;
     pending?: {
         txids?: string[];
-        blockCount: number,
+        blockCount: number;
     }
 }
 

@@ -29,7 +29,7 @@ const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
-    host: 'http://' + config.host + ':' + config.port,
+    host: `http://${config.host}:${config.port}`,
     wallet: config.wallet,
 });
 const inscription = new Inscription({
@@ -391,7 +391,7 @@ async function getEntryFromMempool(txids: string[]) {
     throw new Error('RBF: Cannot find pending reveal transaction in mempool');
 }
 
-async function checkPendingTransactions() {
+async function checkPendingTransactions(): Promise<boolean> {
     const db = await loadDb();
     if (!db.pendingTaproot) {
         return false;

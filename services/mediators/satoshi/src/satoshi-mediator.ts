@@ -1,4 +1,4 @@
-import BtcClient, {FundRawTransactionOptions, RawTransactionVerbose} from 'bitcoin-core';
+import BtcClient, {FundRawTransactionOptions, MempoolEntry, RawTransactionVerbose} from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -18,7 +18,7 @@ const keymaster = new KeymasterClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
-    host: 'http://' + config.host + ':' + config.port,
+    host: `http://${config.host}:${config.port}`,
     wallet: config.wallet,
 });
 
@@ -231,13 +231,13 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
     return txid;
 }
 
-async function checkPendingTransactions(txids: string[]) {
+async function checkPendingTransactions(txids: string[]): Promise<boolean> {
     const isMined = async (txid: string) => {
         const tx = await btcClient.getRawTransaction(txid, 1).catch(() => undefined) as RawTransactionVerbose | undefined;
         return !!(tx && tx.blockhash);
     };
 
-    const checkPendingTxs = async (txids: string[]) => {
+    const checkPendingTxs = async (txids: string[]): Promise<number> => {
         for (let i = 0; i < txids.length; i++) {
             if (await isMined(txids[i])) {
                 return i;
@@ -259,7 +259,7 @@ async function checkPendingTransactions(txids: string[]) {
     return true;
 }
 
-async function getEntryFromMempool(txids: string[]) {
+async function getEntryFromMempool(txids: string[]): Promise<{ entry: MempoolEntry, txid: string }>  {
     if (!txids.length) {
         throw new Error('RBF: empty array');
     }
