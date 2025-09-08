@@ -1,11 +1,13 @@
 import fs from 'fs';
-import { MediatorDb, MediatorDbInterface } from '../types.js';
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 
-export default class JsonFile implements MediatorDbInterface {
+export default class JsonFile extends AbstractDB {
     private readonly dataFolder: string;
     private readonly fileName: string;
 
     constructor(registry: string, dataFolder = 'data') {
+        super();
         this.dataFolder = dataFolder;
         this.fileName = `${dataFolder}/${registry}-mediator.json`;
     }
@@ -15,7 +17,9 @@ export default class JsonFile implements MediatorDbInterface {
             fs.mkdirSync(this.dataFolder, { recursive: true });
         }
 
-        fs.writeFileSync(this.fileName, JSON.stringify(data, null, 4));
+        const tmp = this.fileName + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 4));
+        fs.renameSync(tmp, this.fileName);
         return true;
     }
 

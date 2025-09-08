@@ -201,22 +201,23 @@ Following these initial Gatekeeper configuration variables, the file contains MD
 
 WARNING: Changes to these variables are likely to **break** the Docker Compose functionality.
 
-| Variable                    | Default Value | Description                                                                |
-|-----------------------------|---------------|----------------------------------------------------------------------------|
-| # Bitcoin testnet4 mediator |               |                                                                            |
-| `KC_TBTC_HOST`              | `localhost`   | Host name for the Bitcoin Testnet node                                     |
-| `KC_TBTC_CHAIN`             | `TBTC`        | MDIP registry name for the Bitcoin Testnet network                         |
-| `KC_TBTC_NETWORK`           | `testnet`     |                                                                            |
-| `KC_TBTC_START_BLOCK`       | `38000`       |                                                                            |
-| `KC_TBTC_PORT`              | `48332`       | Bitcoin Testnet node RPC port                                              |
-| `KC_TBTC_USER`              | `testnet4`    | Bitcoin Testnet node RPC user                                              |
-| `KC_TBTC_PASS`              | `testnet4`    | Bitcoin Testnet node RPC password                                          |
-| `KC_TBTC_WALLET`            | `mdip`        | Name of the Bitcoin Testnet wallet to draw funds from for transaction fees |
-| `KC_TBTC_IMPORT_INTERVAL`   | `1`           | MDIP Satoshi Mediator import loop wait interval (in minutes)               |
-| `KC_TBTC_EXPORT_INTERVAL`   | `1`           | MDIP Satoshi Mediator export loop wait interval (in minutes)               |
-| `KC_TBTC_FEE_MIN`           | `0.00000200`  | Bitcoin Testnet transaction minimum fee                                    |
-| `KC_TBTC_FEE_MAX`           | `0.00000600`  | Bitcoin Testnet transaction maximum fee                                    |
-| `KC_TBTC_FEE_INC`           | `0`           |                                                                            |
+| Variable                        | Default Value | Description                                                                |
+|---------------------------------|---------------|----------------------------------------------------------------------------|
+| # Bitcoin testnet4 mediator     |               |                                                                            |
+| `KC_TBTC_HOST`                  | `localhost`   | Host name for the Bitcoin Testnet node                                     |
+| `KC_TBTC_CHAIN`                 | `TBTC`        | MDIP registry name for the Bitcoin Testnet network                         |
+| `KC_TBTC_NETWORK`               | `testnet`     |                                                                            |
+| `KC_TBTC_START_BLOCK`           | `38000`       |                                                                            |
+| `KC_TBTC_PORT`                  | `48332`       | Bitcoin Testnet node RPC port                                              |
+| `KC_TBTC_USER`                  | `testnet4`    | Bitcoin Testnet node RPC user                                              |
+| `KC_TBTC_PASS`                  | `testnet4`    | Bitcoin Testnet node RPC password                                          |
+| `KC_TBTC_WALLET`                | `mdip`        | Name of the Bitcoin Testnet wallet to draw funds from for transaction fees |
+| `KC_TBTC_IMPORT_INTERVAL`       | `1`           | MDIP Satoshi Mediator import loop wait interval (in minutes)               |
+| `KC_TBTC_EXPORT_INTERVAL`       | `1`           | MDIP Satoshi Mediator export loop wait interval (in minutes)               |
+| `KC_TBTC_FEE_BLOCK_TARGET`      | `1`           | Number of blocks to pass before Replace-By-Fee is used if enabled          |
+| `KC_TBTC_FEE_FALLBACK_SAT_BYTE` | `10`          | Fallback Sat/Byte if estimatesmartfee does not have enough data            |
+| `KC_TBTC_FEE_MAX`               | `0.00000600`  | Bitcoin Testnet transaction maximum fee                                    |
+| `KC_TBTC_RBF_ENABLED`           | false         | Whether Replace-By-Fee is enabled                                          |
 
 ### Customizing the docker-compose.yml services
 
@@ -322,9 +323,10 @@ In the example below, we use a generic bitcoin-code node configured to operate o
       - KC_SAT_WALLET=${KC_TBTC_WALLET}
       - KC_SAT_IMPORT_INTERVAL=${KC_TBTC_IMPORT_INTERVAL}
       - KC_SAT_EXPORT_INTERVAL=${KC_TBTC_EXPORT_INTERVAL}
-      - KC_SAT_FEE_MIN=${KC_TBTC_FEE_MIN}
+      - KC_SAT_FEE_BLOCK_TARGET=${KC_TBTC_FEE_BLOCK_TARGET}
+      - KC_SAT_FEE_FALLBACK_SAT_BYTE=${KC_TBTC_FEE_FALLBACK_SAT_BYTE}
       - KC_SAT_FEE_MAX=${KC_TBTC_FEE_MAX}
-      - KC_SAT_FEE_INC=${KC_TBTC_FEE_INC}
+      - KC_SAT_RBF_ENABLED=${KC_TBTC_RBF_ENABLED}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"

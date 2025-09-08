@@ -55,7 +55,14 @@ export interface MediatorDb {
     }
 }
 
+export interface InscribedKey {
+    height: number,
+    index: number,
+    txid: string,
+}
+
 export interface MediatorDbInterface {
     loadDb(): Promise<MediatorDb | null>;
     saveDb(data: MediatorDb): Promise<boolean>;
+    updateDb(mutator: (db: MediatorDb) => void | Promise<void>): Promise<void>;
 }

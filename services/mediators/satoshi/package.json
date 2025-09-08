@@ -12,7 +12,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "bitcoin-core": "^4.2.0",
+    "bitcoin-core": "^5.0.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "ioredis": "^5.5.0",

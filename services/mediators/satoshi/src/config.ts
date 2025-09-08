@@ -19,9 +19,10 @@ export interface AppConfig {
     pass?: string;
     importInterval: number;
     exportInterval: number;
-    feeMin: number;
+    feeConf: number;
     feeMax: number;
-    feeInc: number;
+    feeFallback: number;
+    rbfEnabled: boolean;
     startBlock: number;
     reimport: boolean;
     db: SatoshiDB;
@@ -87,9 +88,10 @@ const config: AppConfig = {
     pass: process.env.KC_SAT_PASS,
     importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
     exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
-    feeMin: process.env.KC_SAT_FEE_MIN ? parseFloat(process.env.KC_SAT_FEE_MIN) : 0.00002,
+    feeConf: process.env.KC_SAT_FEE_BLOCK_TARGET ? parseInt(process.env.KC_SAT_FEE_BLOCK_TARGET) : 1,
+    feeFallback: process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE ? parseInt(process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE) : 10,
     feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
-    feeInc: process.env.KC_SAT_FEE_INC ? parseFloat(process.env.KC_SAT_FEE_INC) : 0.00000,
+    rbfEnabled: process.env.KC_SAT_RBF_ENABLED === 'true',
     startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
     reimport: process.env.KC_SAT_REIMPORT ? (process.env.KC_SAT_REIMPORT === 'true') : true,
     db: toDB(process.env.KC_SAT_DB),

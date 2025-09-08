@@ -1,7 +1,8 @@
 import { MongoClient, Db, Collection } from 'mongodb';
-import { MediatorDb, MediatorDbInterface } from '../types.js';
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 
-export default class JsonMongo implements MediatorDbInterface {
+export default class JsonMongo extends AbstractDB {
     private client: MongoClient;
     private readonly dbName: string;
     private readonly collectionName: string;
@@ -15,6 +16,7 @@ export default class JsonMongo implements MediatorDbInterface {
     }
 
     constructor(registry: string) {
+        super();
         const url = process.env.KC_MONGODB_URL || 'mongodb://localhost:27017';
         this.client = new MongoClient(url);
         this.dbName = 'sat-mediator';
