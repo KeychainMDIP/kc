@@ -1,8 +1,9 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
-import { MediatorDb, MediatorDbInterface } from '../types.js';
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 
-export default class JsonSQLite implements MediatorDbInterface {
+export default class JsonSQLite extends AbstractDB {
     private readonly fileName: string;
     private db?: Database;
 
@@ -13,6 +14,7 @@ export default class JsonSQLite implements MediatorDbInterface {
     }
 
     constructor(registry: string, dataFolder = 'data') {
+        super();
         this.fileName = `${dataFolder}/${registry}-mediator.db`;
     }
 

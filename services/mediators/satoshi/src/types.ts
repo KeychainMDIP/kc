@@ -26,10 +26,14 @@ export interface MediatorDb {
     registered: RegisteredItem[];
     discovered: DiscoveredItem[];
     lastExport?: string;
-    pendingTxid?: string;
+    pending?: {
+        txids?: string[];
+        blockCount: number;
+    }
 }
 
 export interface MediatorDbInterface {
     loadDb(): Promise<MediatorDb | null>;
     saveDb(data: MediatorDb): Promise<boolean>;
+    updateDb(mutator: (db: MediatorDb) => void | Promise<void>): Promise<void>;
 }

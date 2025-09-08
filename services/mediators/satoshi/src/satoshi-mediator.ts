@@ -1,4 +1,4 @@
-import BtcClient from 'bitcoin-core';
+import BtcClient, {FundRawTransactionOptions, MempoolEntry, RawTransactionVerbose} from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -11,19 +11,20 @@ import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 
 const REGISTRY = config.chain;
+const SMART_FEE_MODE = "CONSERVATIVE";
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const btcClient = new BtcClient({
-    network: config.network,
     username: config.user,
     password: config.pass,
-    host: config.host,
-    port: config.port,
+    host: `http://${config.host}:${config.port}`,
     wallet: config.wallet,
 });
 
 let jsonPersister: MediatorDbInterface;
+let importRunning = false;
+let exportRunning = false;
 
 async function loadDb(): Promise<MediatorDb> {
     const newDb: MediatorDb = {
@@ -42,10 +43,6 @@ async function loadDb(): Promise<MediatorDb> {
     return db || newDb;
 }
 
-async function saveDb(db: MediatorDb): Promise<boolean> {
-    return await jsonPersister.saveDb(db);
-}
-
 async function fetchTransaction(height: number, index: number, timestamp: string, txid: string): Promise<void> {
     try {
         const txn = await btcClient.getTransactionByHash(txid);
@@ -56,15 +53,9 @@ async function fetchTransaction(height: number, index: number, timestamp: string
             const textString = Buffer.from(hexString, 'hex').toString('utf8');
 
             if (isValidDID(textString)) {
-                const db = await loadDb();
-                db.discovered.push({
-                    height: height,
-                    index: index,
-                    time: timestamp,
-                    txid: txid,
-                    did: textString,
+                await jsonPersister.updateDb((db) => {
+                    db.discovered.push({ height, index, time: timestamp, txid, did: textString });
                 });
-                await saveDb(db);
             }
         }
     }
@@ -85,14 +76,14 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             await fetchTransaction(height, i, timestamp, txid);
         }
 
-        const db = await loadDb();
-        db.height = height;
-        db.time = timestamp;
-        db.blocksScanned = height - config.startBlock + 1;
-        db.txnsScanned = db.txnsScanned + block.nTx;
-        db.blockCount = blockCount;
-        db.blocksPending = blockCount - height;
-        await saveDb(db);
+        await jsonPersister.updateDb((db) => {
+            db.height = height;
+            db.time = timestamp;
+            db.blocksScanned = height - config.startBlock + 1;
+            db.txnsScanned += block.nTx;
+            db.blockCount = blockCount;
+            db.blocksPending = blockCount - height;
+        });
         await addBlock(height, blockHash, block.time);
 
     } catch (error) {
@@ -119,7 +110,7 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-async function importBatch(item: DiscoveredItem): Promise<void> {
+async function importBatch(item: DiscoveredItem) {
     if (item.error) {
         return;
     }
@@ -154,15 +145,21 @@ async function importBatch(item: DiscoveredItem): Promise<void> {
         });
     }
 
+    let update: DiscoveredItem = { ...item };
+
     try {
-        item.imported = await gatekeeper.importBatch(batch);
-        item.processed = await gatekeeper.processEvents();
-    }
-    catch (error) {
-        item.error = JSON.stringify(error);
+        update.imported = await gatekeeper.importBatch(batch);
+        update.processed = await gatekeeper.processEvents();
+    } catch (error) {
+        update.error = JSON.stringify(error);
     }
 
-    console.log(JSON.stringify(item, null, 4));
+    console.log(JSON.stringify(update, null, 4));
+    return update;
+}
+
+function sameItem(a: DiscoveredItem, b: DiscoveredItem) {
+    return a.height === b.height && a.index === b.index && a.txid === b.txid && a.did === b.did;
 }
 
 async function importBatches(): Promise<boolean> {
@@ -170,7 +167,18 @@ async function importBatches(): Promise<boolean> {
 
     for (const item of db.discovered) {
         try {
-            await importBatch(item);
+            const update = await importBatch(item);
+            if (!update) {
+                continue;
+            }
+
+            await jsonPersister.updateDb((db) => {
+                const list = db.discovered ?? [];
+                const idx = list.findIndex(d => sameItem(d, update));
+                if (idx >= 0) {
+                    list[idx] = update;
+                }
+            });
         }
         catch (error: any) {
             // OK if DID not found, we'll just try again later
@@ -180,48 +188,41 @@ async function importBatches(): Promise<boolean> {
         }
     }
 
-    return await saveDb(db);
+    return true;
 }
 
 export async function createOpReturnTxn(opReturnData: string): Promise<string | undefined> {
-    const txnfee = config.feeMin;
-    const utxos = await btcClient.listUnspent();
-    const utxo = utxos.find(utxo => utxo.amount > txnfee);
-
-    if (!utxo) {
-        return;
-    }
-
-    const amountIn = utxo.amount;
-    const amountBack = amountIn - txnfee;
-
-    // Convert the OP_RETURN data to a hex string
     const opReturnHex = Buffer.from(opReturnData, 'utf8').toString('hex');
 
-    // Fetch a new address for the transaction output
-    const address = await btcClient.getNewAddress();
+    const raw = await btcClient.createRawTransaction([], { data: opReturnHex });
 
-    const rawTxn = await btcClient.createRawTransaction([{
-        txid: utxo.txid,
-        vout: utxo.vout,
-        sequence: 0xffffffff - 2  // Make this transaction RBF
-    }], {
-        data: opReturnHex,
-        [address]: amountBack.toFixed(8)
-    });
+    const { version } = await btcClient.getNetworkInfo();
 
-    // Sign the raw transaction
+    const feeResp = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
+    const estSatPerVByte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
+
+    const fundOpts: FundRawTransactionOptions = {
+        changeAddress: await btcClient.getNewAddress('change'),
+        changePosition: 1,
+        replaceable: true,
+    };
+
+    if (version >= 210000) {
+        fundOpts.fee_rate = estSatPerVByte;
+    } else {
+        fundOpts.feeRate = estSatPerVByte * 1e-5;
+    }
+
+    const funded = await btcClient.fundRawTransaction(raw, fundOpts);
+
     let signedTxn;
     try {
-        signedTxn = await btcClient.signRawTransactionWithWallet(rawTxn);
-    }
-    catch {
-        // fall back to older version of the method
-        signedTxn = await btcClient.signRawTransaction(rawTxn);
+        signedTxn = await btcClient.signRawTransactionWithWallet(funded.hex);
+    } catch {
+        signedTxn = await btcClient.signRawTransaction(funded.hex);
     }
 
     console.log(JSON.stringify(signedTxn, null, 4));
-    console.log(amountBack);
 
     // Broadcast the transaction
     const txid = await btcClient.sendRawTransaction(signedTxn.hex);
@@ -230,70 +231,94 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
     return txid;
 }
 
+async function checkPendingTransactions(txids: string[]): Promise<boolean> {
+    const isMined = async (txid: string) => {
+        const tx = await btcClient.getRawTransaction(txid, 1).catch(() => undefined) as RawTransactionVerbose | undefined;
+        return !!(tx && tx.blockhash);
+    };
+
+    const checkPendingTxs = async (txids: string[]): Promise<number> => {
+        for (let i = 0; i < txids.length; i++) {
+            if (await isMined(txids[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    if (txids.length) {
+        const mined = await checkPendingTxs(txids);
+        if (mined >= 0) {
+            await jsonPersister.updateDb((db) => { db.pending = undefined; });
+            return false;
+        } else {
+            console.log('pending txid', txids.at(-1));
+        }
+    }
+
+    return true;
+}
+
+async function getEntryFromMempool(txids: string[]): Promise<{ entry: MempoolEntry, txid: string }>  {
+    if (!txids.length) {
+        throw new Error('RBF: empty array');
+    }
+
+    for (let i = txids.length - 1; i >= 0; i--) {
+        const txid = txids[i];
+        const entry = await btcClient.getMempoolEntry(txid).catch(() => undefined);
+        if (entry) {
+            if (entry.fees.modified >= config.feeMax) {
+                throw new Error('RBF: Pending reveal transaction already at max fee');
+            }
+            return { entry, txid };
+        }
+    }
+
+    throw new Error('RBF: Cannot find pending reveal transaction in mempool');
+}
+
+function toEightDpCeil(x: number): number {
+    return Math.ceil(x * 1e8) / 1e8;
+}
+
 async function replaceByFee(): Promise<boolean> {
     const db = await loadDb();
 
-    if (!db.pendingTxid) {
+    if (!db.pending?.txids || !(await checkPendingTransactions(db.pending.txids))) {
         return false;
     }
 
-    console.log('pendingTxid', db.pendingTxid);
-
-    const tx = await btcClient.getRawTransaction(db.pendingTxid, 1);
-
-    if (tx.blockhash) {
-        db.pendingTxid = undefined;
-        await saveDb(db);
-        return false;
-    }
-
-    // Assigning zero to the fee increment will disable RBF
-    if (config.feeInc === 0) {
+    if (!config.rbfEnabled) {
         return true;
     }
 
-    console.log(JSON.stringify(tx, null, 4));
-
-    const mempoolEntry = await btcClient.getMempoolEntry(db.pendingTxid);
-
-    // If we're already at the maximum fee, wait it out
-    if (mempoolEntry && mempoolEntry.fee >= config.feeMax) {
+    const blockCount = await btcClient.getBlockCount();
+    if (db.pending.blockCount + config.feeConf >= blockCount) {
         return true;
     }
 
-    const inputs = tx.vin.map((vin: any) => ({ txid: vin.txid, vout: vin.vout, sequence: vin.sequence }));
-    const opReturnHex = tx.vout[0].scriptPubKey.hex;
-    const address = tx.vout[1].scriptPubKey.address;
-    const amountBack = tx.vout[1].value - config.feeInc;
+    const { entry, txid } = await getEntryFromMempool(db.pending.txids);
+    const { version } = await btcClient.getNetworkInfo();
 
-    if (amountBack < 0) {
-        // TBD add additional inputs and continue if possible
-        return true;
+    const feeResp = await btcClient.estimateSmartFee(config.feeConf, SMART_FEE_MODE);
+    const estSatPerVByte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
+    const currFeeSat = Math.round(entry.fees.modified * 1e8);
+    const curSatPerVb = Math.floor(currFeeSat / entry.vsize);
+    const targetSatPerVb = Math.max(estSatPerVByte, curSatPerVb + 1);
+    const fee_rate = version < 210000 ? toEightDpCeil(targetSatPerVb * 1e-5) : targetSatPerVb;
+
+    const result = await btcClient.bumpFee(txid, { fee_rate });
+
+    if (result.txid) {
+        const txid = result.txid;
+        console.log(`RBF: Transaction broadcast with txid: ${txid}`);
+        await jsonPersister.updateDb((db) => {
+            if (db.pending?.txids) {
+                db.pending.txids.push(txid);
+            }
+        });
     }
-
-    const rawTxn = await btcClient.createRawTransaction(inputs, {
-        data: opReturnHex.substring(4),
-        [address]: amountBack.toFixed(8)
-    });
-
-    let signedTxn;
-    try {
-        signedTxn = await btcClient.signRawTransactionWithWallet(rawTxn);
-    }
-    catch {
-        // fall back to older version of the method
-        signedTxn = await btcClient.signRawTransaction(rawTxn);
-    }
-
-    console.log(JSON.stringify(signedTxn, null, 4));
-    console.log(amountBack);
-
-    const txid = await btcClient.sendRawTransaction(signedTxn.hex);
-
-    console.log(`Transaction broadcasted with txid: ${txid}`);
-
-    db.pendingTxid = txid;
-    await saveDb(db);
 
     return true;
 }
@@ -302,8 +327,11 @@ async function checkExportInterval(): Promise<boolean> {
     const db = await loadDb();
 
     if (!db.lastExport) {
-        db.lastExport = new Date().toISOString();
-        await saveDb(db);
+        await jsonPersister.updateDb((data) => {
+            if (!data.lastExport) {
+                data.lastExport = new Date().toISOString();
+            }
+        });
         return true;
     }
 
@@ -350,21 +378,18 @@ async function anchorBatch(): Promise<void> {
             const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
             if (ok) {
-                const db = await loadDb();
-
-                if (!db.registered) {
-                    db.registered = [];
-                }
-
-                db.registered.push({
-                    did,
-                    txid,
-                })
-
-                db.pendingTxid = txid;
-                db.lastExport = new Date().toISOString();
-
-                await saveDb(db);
+                const blockCount = await btcClient.getBlockCount();
+                await jsonPersister.updateDb(async (db) => {
+                    (db.registered ??= []).push({
+                        did,
+                        txid: txid!
+                    });
+                    db.pending = {
+                        txids: [txid!],
+                        blockCount
+                    };
+                    db.lastExport = new Date().toISOString();
+                });
             }
         }
     }
@@ -374,24 +399,44 @@ async function anchorBatch(): Promise<void> {
 }
 
 async function importLoop(): Promise<void> {
+    if (importRunning) {
+        setTimeout(importLoop, config.importInterval * 60 * 1000);
+        console.log(`import loop busy, waiting ${config.importInterval} minute(s)...`);
+        return;
+    }
+
+    importRunning = true;
+
     try {
         await scanBlocks();
         await importBatches();
-        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
     } catch (error: any) {
         console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
+    } finally {
+        importRunning = false;
+        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
+        setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
-    setTimeout(importLoop, config.importInterval * 60 * 1000);
 }
 
 async function exportLoop(): Promise<void> {
+    if (exportRunning) {
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        console.log(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
+        return;
+    }
+
+    exportRunning = true;
+
     try {
         await anchorBatch();
-        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
+    } finally {
+        exportRunning = false;
+        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
-    setTimeout(exportLoop, config.exportInterval * 60 * 1000);
 }
 
 async function waitForChain() {
@@ -504,14 +549,8 @@ async function main() {
 
     if (config.reimport) {
         const db = await loadDb();
-
-        for (const item of db.discovered) {
-            delete item.imported;
-            delete item.processed;
-            delete item.error;
-        }
-
-        await saveDb(db);
+        db.discovered = [];
+        await jsonPersister.saveDb(db);
     }
 
     const ok = await waitForChain();
@@ -543,7 +582,7 @@ async function main() {
 
     if (config.exportInterval > 0) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${config.chain}): minimum: ${config.feeMin}, maximum: ${config.feeMax}, increment ${config.feeInc}`);
+        console.log(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }

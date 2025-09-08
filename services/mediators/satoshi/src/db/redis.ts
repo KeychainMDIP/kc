@@ -1,7 +1,8 @@
 import { Redis } from 'ioredis'
-import { MediatorDb, MediatorDbInterface } from '../types.js';
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 
-export default class JsonRedis implements MediatorDbInterface {
+export default class JsonRedis extends AbstractDB {
     private readonly url: string;
     private readonly dbKey: string;
     private redis?: Redis;
@@ -13,6 +14,7 @@ export default class JsonRedis implements MediatorDbInterface {
     }
 
     constructor(registry: string) {
+        super();
         this.url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.dbKey = `sat-mediator/${registry}`;
     }

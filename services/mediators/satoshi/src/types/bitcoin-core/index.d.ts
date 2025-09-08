@@ -320,6 +320,26 @@ export interface WalletCreateFundedPsbtResult {
     changepos: number;
 }
 
+export interface FundRawTransactionOptions {
+    changeAddress?: string;
+    changePosition?: number;
+    change_type?: 'legacy' | 'p2sh-segwit' | 'bech32' | 'bech32m';
+    includeWatching?: boolean;
+    lockUnspents?: boolean;
+    fee_rate?: number | string;
+    feeRate?: number | string;
+    subtractFeeFromOutputs?: number[];
+    replaceable?: boolean;
+    conf_target?: number;
+    estimate_mode?: EconomyModes;
+}
+
+export interface FundRawTransactionResult {
+    hex: string;
+    fee: number;
+    changepos: number;
+}
+
 export default class BtcClient {
     constructor(options: BtcClientOptions);
     getTransactionByHash(txid: string): Promise<TransactionByHash>;
@@ -381,4 +401,9 @@ export default class BtcClient {
     listDescriptors(private: boolean): Promise<ListDescriptorsResult>;
     decodeRawTransaction(hexstring: string, iswitness?: boolean): Promise<DecodedRawTransaction>;
     getMempoolDescendants(txid: string, verbose?: boolean): Promise<MempoolDescendantsResult>;
+    fundRawTransaction(
+        hexstring: string,
+        options?: FundRawTransactionOptions,
+        iswitness?: boolean
+    ): Promise<FundRawTransactionResult>;
 }

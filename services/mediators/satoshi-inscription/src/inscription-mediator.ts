@@ -18,17 +18,18 @@ import {
     DiscoveredItem,
     DiscoveredInscribedItem,
     FundInput,
+    InscribedKey,
 } from './types.js';
 
 const REGISTRY = config.chain + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
-const SMART_FEE_MODE = "conservative";
+const SMART_FEE_MODE = "CONSERVATIVE";
 
 const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
-    host: 'http://' + config.host + ':' + config.port,
+    host: `http://${config.host}:${config.port}`,
     wallet: config.wallet,
 });
 const inscription = new Inscription({
@@ -57,10 +58,6 @@ async function loadDb(): Promise<MediatorDb> {
     const db = await jsonPersister.loadDb();
 
     return db || newDb;
-}
-
-async function saveDb(db: MediatorDb): Promise<boolean> {
-    return await jsonPersister.saveDb(db);
 }
 
 async function fetchTransaction(height: number, index: number, timestamp: string, txid: string): Promise<void> {
@@ -149,10 +146,9 @@ async function fetchTransaction(height: number, index: number, timestamp: string
             }
         }));
 
-        const db = await loadDb();
-        db.discovered ??= [];
-        db.discovered.push({events});
-        await saveDb(db);
+        await jsonPersister.updateDb((db) => {
+            (db.discovered ??= []).push({ events });
+        });
     }
     catch (error) {
         console.error(`Error fetching txn: ${error}`);
@@ -171,14 +167,14 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             await fetchTransaction(height, i, timestamp, txid);
         }
 
-        const db = await loadDb();
-        db.height = height;
-        db.time = timestamp;
-        db.blocksScanned = height - config.startBlock + 1;
-        db.txnsScanned = db.txnsScanned + block.nTx;
-        db.blockCount = blockCount;
-        db.blocksPending = blockCount - height;
-        await saveDb(db);
+        await jsonPersister.updateDb((db) => {
+            db.height = height;
+            db.time = timestamp;
+            db.blocksScanned = height - config.startBlock + 1;
+            db.txnsScanned += block.nTx;
+            db.blockCount = blockCount;
+            db.blocksPending = blockCount - height;
+        });
         await addBlock(height, blockHash, block.time);
 
     } catch (error) {
@@ -215,33 +211,59 @@ async function importBatch(item: DiscoveredInscribedItem) {
         return;
     }
 
-    // Recreate the same logging as non-inscribed mediator
     let logObj: DiscoveredItem = {
-        height: events[0].ordinal![0],
-        index: events[0].blockchain!.index!,
-        time: events[0].time,
-        txid: events[0].blockchain!.txid!,
+        height: item.events[0].ordinal![0],
+        index: item.events[0].blockchain!.index!,
+        time: item.events[0].time,
+        txid: item.events[0].blockchain!.txid!,
     };
 
+    let update: DiscoveredInscribedItem = { ...item };
+
     try {
-        item.imported  = await gatekeeper.importBatch(events);
-        item.processed = await gatekeeper.processEvents();
-        logObj = { ...logObj, imported: item.imported, processed: item.processed, error: item.error };
+        update.imported  = await gatekeeper.importBatch(events);
+        update.processed = await gatekeeper.processEvents();
+        logObj = { ...logObj, imported: update.imported, processed: update.processed };
     } catch (error) {
-        item.error = JSON.stringify(`Error importing inscribed batch: ${error}`);
+        update.error = JSON.stringify(`Error importing inscribed batch: ${error}`);
+        logObj = { ...logObj, error: update.error };
     }
 
     console.log(JSON.stringify(logObj, null, 4));
+    return update;
+}
+
+function sameItem(a: InscribedKey, b: InscribedKey) {
+    return a.height === b.height && a.index === b.index && a.txid === b.txid;
+}
+
+function keyFromItem(item: DiscoveredInscribedItem): InscribedKey {
+    return {
+        height: item.events[0]!.blockchain!.height!,
+        index: item.events[0]!.blockchain!.index!,
+        txid: item.events[0]!.blockchain!.txid!,
+    };
 }
 
 async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
     for (const item of db.discovered ?? []) {
-        await importBatch(item);
+        const update = await importBatch(item);
+        if (!update) {
+            continue;
+        }
+
+        await jsonPersister.updateDb((db) => {
+            const list = db.discovered ?? [];
+            const idx = list.findIndex(d => sameItem(keyFromItem(d), keyFromItem(update)));
+            if (idx >= 0) {
+                list[idx] = update;
+            }
+        });
     }
 
-    return await saveDb(db);
+    return true;
 }
 
 async function extractCommitHex(revealHex: string) {
@@ -369,7 +391,8 @@ async function getEntryFromMempool(txids: string[]) {
     throw new Error('RBF: Cannot find pending reveal transaction in mempool');
 }
 
-async function checkPendingTransactions(db: MediatorDb) {
+async function checkPendingTransactions(): Promise<boolean> {
+    const db = await loadDb();
     if (!db.pendingTaproot) {
         return false;
     }
@@ -391,8 +414,11 @@ async function checkPendingTransactions(db: MediatorDb) {
     if (db.pendingTaproot.commitTxid) {
         const mined = await checkPendingTxs([db.pendingTaproot.commitTxid]);
         if (mined >= 0) {
-            db.pendingTaproot.commitTxid = undefined;
-            await saveDb(db);
+            await jsonPersister.updateDb((db) => {
+                if (db.pendingTaproot) {
+                    db.pendingTaproot.commitTxid = undefined;
+                }
+            });
         } else {
             console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
         }
@@ -401,8 +427,9 @@ async function checkPendingTransactions(db: MediatorDb) {
     if (db.pendingTaproot.revealTxids?.length) {
         const mined = await checkPendingTxs(db.pendingTaproot.revealTxids);
         if (mined >= 0) {
-            db.pendingTaproot = undefined;
-            await saveDb(db);
+            await jsonPersister.updateDb((db) => {
+                db.pendingTaproot = undefined;
+            });
             return false;
         } else {
             console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxids.at(-1));
@@ -415,8 +442,12 @@ async function checkPendingTransactions(db: MediatorDb) {
 async function replaceByFee(): Promise<boolean> {
     const db = await loadDb();
 
-    if (!db.pendingTaproot?.revealTxids || !(await checkPendingTransactions(db))) {
+    if (!db.pendingTaproot?.revealTxids || !(await checkPendingTransactions())) {
         return false;
+    }
+
+    if (!config.rbfEnabled) {
+        return true;
     }
 
     const blockCount = await btcClient.getBlockCount();
@@ -437,10 +468,6 @@ async function replaceByFee(): Promise<boolean> {
     const utxos = await getUnspentOutputs();
     const keys = await getAccountXprvsFromCore();
 
-    if (!config.rbfEnabled) {
-        return true;
-    }
-
     console.log("Bump Fees");
 
     const newRevealHex = await inscription.bumpTransactionFee(
@@ -454,9 +481,12 @@ async function replaceByFee(): Promise<boolean> {
     );
     const newRevealTxid = await btcClient.sendRawTransaction(newRevealHex);
 
-    db.pendingTaproot.revealTxids.push(newRevealTxid);
-    db.blockCount = blockCount;
-    await saveDb(db);
+    await jsonPersister.updateDb((db) => {
+        if (db.pendingTaproot?.revealTxids?.length) {
+            db.pendingTaproot.revealTxids.push(newRevealTxid);
+            db.blockCount = blockCount;
+        }
+    });
 
     console.log(`Reveal TXID: ${newRevealTxid}`);
 
@@ -467,8 +497,11 @@ async function checkExportInterval(): Promise<boolean> {
     const db = await loadDb();
 
     if (!db.lastExport) {
-        db.lastExport = new Date().toISOString();
-        await saveDb(db);
+        await jsonPersister.updateDb((data) => {
+            if (!data.lastExport) {
+                data.lastExport = new Date().toISOString();
+            }
+        });
         return true;
     }
 
@@ -489,6 +522,10 @@ async function fundWalletMessage() {
 }
 
 async function anchorBatch(): Promise<void> {
+
+    if (await checkExportInterval()) {
+        return;
+    }
 
     if (await replaceByFee()) {
         return;
@@ -539,15 +576,15 @@ async function anchorBatch(): Promise<void> {
 
         if (ok) {
             const blockCount = await btcClient.getBlockCount();
-            const db = await loadDb();
-            db.pendingTaproot = {
-                commitTxid: commitTxid,
-                revealTxids: [revealTxid],
-                hdkeypath: tapInfo.hdkeypath,
-                blockCount,
-            };
-            db.lastExport = new Date().toISOString();
-            await saveDb(db);
+            await jsonPersister.updateDb(async (db) => {
+                db.pendingTaproot = {
+                    commitTxid: commitTxid,
+                    revealTxids: [revealTxid],
+                    hdkeypath: tapInfo.hdkeypath!,
+                    blockCount
+                };
+                db.lastExport = new Date().toISOString();
+            });
         }
     } catch (err) {
         console.error(`Taproot anchor error: ${err}`);
@@ -585,10 +622,6 @@ async function exportLoop(): Promise<void> {
     exportRunning = true;
 
     try {
-        if (await checkExportInterval()) {
-            return;
-        }
-
         await anchorBatch();
     } catch (error) {
         console.error(`Error in exportLoop: ${error}`);
@@ -709,7 +742,7 @@ async function main() {
     if (config.reimport) {
         const db = await loadDb();
         db.discovered = [];
-        await saveDb(db);
+        await jsonPersister.saveDb(db);
     }
 
     const ok = await waitForChain();
