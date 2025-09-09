@@ -121,6 +121,16 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
+    private async mutateWallet(
+        mutator: (wallet: WalletFile) => void | Promise<void>
+    ): Promise<void> {
+        await this.loadWallet(); // Create wallet if it doesn't exist
+        await this.db.updateWallet(async (stored) => {
+            const wallet = stored as WalletFile;
+            await mutator(wallet);
+        });
+    }
+
     async loadWallet(): Promise<WalletFile> {
         let wallet = await this.db.loadWallet();
 
@@ -279,103 +289,91 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async fixWallet(): Promise<FixWalletResult> {
-        const wallet = await this.loadWallet();
         let idsRemoved = 0;
         let ownedRemoved = 0;
         let heldRemoved = 0;
         let namesRemoved = 0;
 
-        for (const name of Object.keys(wallet.ids)) {
-            let remove = false;
+        await this.mutateWallet(async (wallet) => {
 
-            try {
-                const doc = await this.resolveDID(wallet.ids[name].did);
-
-                if (doc.didDocumentMetadata?.deactivated) {
-                    remove = true;
-                }
-            }
-            catch (error) {
-                remove = true;
-            }
-
-            if (remove) {
-                delete wallet.ids[name];
-                idsRemoved += 1;
-            }
-        }
-
-        for (const id of Object.values(wallet.ids)) {
-            if (id.owned) {
-                for (let i = 0; i < id.owned.length; i++) {
-                    let remove = false;
-
-                    try {
-                        const doc = await this.resolveDID(id.owned[i]);
-
-                        if (doc.didDocumentMetadata?.deactivated) {
-                            remove = true;
-                        }
-                    }
-                    catch {
-                        remove = true;
-                    }
-
-                    if (remove) {
-                        id.owned.splice(i, 1);
-                        i--; // Decrement index to account for the removed item
-                        ownedRemoved += 1;
-                    }
-                }
-            }
-
-            if (id.held) {
-                for (let i = 0; i < id.held.length; i++) {
-                    let remove = false;
-
-                    try {
-                        const doc = await this.resolveDID(id.held[i]);
-
-                        if (doc.didDocumentMetadata?.deactivated) {
-                            remove = true;
-                        }
-                    }
-                    catch {
-                        remove = true;
-                    }
-
-                    if (remove) {
-                        id.held.splice(i, 1);
-                        i--; // Decrement index to account for the removed item
-                        heldRemoved += 1;
-                    }
-                }
-            }
-        }
-
-        if (wallet.names) {
-            for (const name of Object.keys(wallet.names)) {
+            for (const name of Object.keys(wallet.ids)) {
                 let remove = false;
-
                 try {
-                    const doc = await this.resolveDID(wallet.names[name]);
-
+                    const doc = await this.resolveDID(wallet.ids[name].did);
                     if (doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
-                }
-                catch (error) {
+                } catch {
                     remove = true;
                 }
 
                 if (remove) {
-                    delete wallet.names[name];
-                    namesRemoved += 1;
+                    delete wallet.ids[name];
+                    idsRemoved++;
                 }
             }
-        }
 
-        await this.saveWallet(wallet);
+            for (const id of Object.values(wallet.ids)) {
+                if (id.owned) {
+                    for (let i = 0; i < id.owned.length; i++) {
+                        let remove = false;
+                        try {
+                            const doc = await this.resolveDID(id.owned[i]);
+                            if (doc.didDocumentMetadata?.deactivated) {
+                                remove = true;
+                            }
+                        } catch {
+                            remove = true;
+                        }
+
+                        if (remove) {
+                            id.owned.splice(i, 1);
+                            i--;
+                            ownedRemoved++;
+                        }
+                    }
+                }
+
+                if (id.held) {
+                    for (let i = 0; i < id.held.length; i++) {
+                        let remove = false;
+                        try {
+                            const doc = await this.resolveDID(id.held[i]);
+                            if (doc.didDocumentMetadata?.deactivated) {
+                                remove = true;
+                            }
+                        } catch {
+                            remove = true;
+                        }
+
+                        if (remove) {
+                            id.held.splice(i, 1);
+                            i--;
+                            heldRemoved++;
+                        }
+                    }
+                }
+            }
+
+            if (wallet.names) {
+                for (const name of Object.keys(wallet.names)) {
+                    let remove = false;
+                    try {
+                        const doc = await this.resolveDID(wallet.names[name]);
+                        if (doc.didDocumentMetadata?.deactivated) {
+                            remove = true;
+                        }
+                    } catch {
+                        remove = true;
+                    }
+
+                    if (remove) {
+                        delete wallet.names[name];
+                        namesRemoved++;
+                    }
+                }
+            }
+        });
 
         return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
     }
@@ -510,8 +508,14 @@ export default class Keymaster implements KeymasterInterface {
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
             const wallet = JSON.parse(backup);
 
-            await this.saveWallet(wallet);
-            return wallet;
+            await this.mutateWallet((current) => {
+                for (const k in current) {
+                    delete current[k as keyof StoredWallet];
+                }
+                Object.assign(current, wallet);
+            });
+
+            return this.loadWallet();
         }
         catch (error) {
             // If we can't recover the wallet, just return the current one
@@ -530,14 +534,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async setCurrentId(name: string) {
-        const wallet = await this.loadWallet();
-        if (name in wallet.ids) {
+        await this.mutateWallet((wallet) => {
+            if (!(name in wallet.ids)) {
+                throw new UnknownIDError();
+            }
             wallet.current = name;
-            return this.saveWallet(wallet);
-        }
-        else {
-            throw new UnknownIDError();
-        }
+        });
+        return true;
     }
 
     didMatch(
@@ -1068,53 +1071,52 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         owner?: string
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
-        const owned = new Set(id.owned);
-
-        owned.add(did);
-        id.owned = Array.from(owned);
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(owner, wallet);
+            const owned = new Set(id.owned);
+            owned.add(did);
+            id.owned = Array.from(owned);
+        });
+        return true;
     }
 
     async removeFromOwned(
         did: string,
         owner: string
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(owner, wallet);
-        if (!id.owned) {
-            return false;
-        }
-
-        id.owned = id.owned.filter(item => item !== did);
-
-        return this.saveWallet(wallet);
+        let ownerFound = false;
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(owner, wallet);
+            if (!id.owned) {
+                return;
+            }
+            ownerFound = true;
+            id.owned = id.owned.filter(item => item !== did);
+        });
+        return ownerFound;
     }
 
     async addToHeld(did: string): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current!];
-        const held = new Set(id.held);
-
-        held.add(did);
-        id.held = Array.from(held);
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet((wallet) => {
+            const id = wallet.ids[wallet.current!];
+            const held = new Set(id.held);
+            held.add(did);
+            id.held = Array.from(held);
+        });
+        return true;
     }
 
     async removeFromHeld(did: string): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current!];
-        const held = new Set(id.held);
-
-        if (held.delete(did)) {
-            id.held = Array.from(held);
-            return this.saveWallet(wallet);
-        }
-
-        return false;
+        let changed = false;
+        await this.mutateWallet((wallet) => {
+            const id = wallet.ids[wallet.current!];
+            const held = new Set(id.held);
+            if (held.delete(did)) {
+                id.held = Array.from(held);
+                changed = true;
+            }
+        });
+        return changed;
     }
 
     async lookupDID(name: string): Promise<string> {
@@ -1276,94 +1278,90 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<string> {
         const { registry = this.defaultRegistry } = options;
 
-        const wallet = await this.loadWallet();
-        name = this.validateName(name, wallet);
+        let createdDid = '';
+        await this.mutateWallet(async (wallet) => {
+            name = this.validateName(name, wallet);
 
-        const account = wallet.counter;
-        const index = 0;
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
-        const path = `m/44'/0'/${account}'/0/${index}`;
-        const didkey = hdkey.derive(path);
-        const keypair = this.cipher.generateJwk(didkey.privateKey!);
-        const block = await this.gatekeeper.getBlock(registry);
-        const blockid = block?.hash;
+            const account = wallet.counter;
+            const index = 0;
 
-        const operation: Operation = {
-            type: "create",
-            created: new Date().toISOString(),
-            blockid,
-            mdip: {
-                version: 1,
-                type: "agent",
-                registry: registry,
-            },
-            publicJwk: keypair.publicJwk,
-        };
+            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+            const path = `m/44'/0'/${account}'/0/${index}`;
+            const didkey = hdkey.derive(path);
+            const keypair = this.cipher.generateJwk(didkey.privateKey!);
 
-        const msgHash = this.cipher.hashJSON(operation);
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-        const signed: Operation = {
-            ...operation,
-            signature: {
-                signed: new Date().toISOString(),
-                hash: msgHash,
-                value: signature
-            }
-        }
-        const did = await this.gatekeeper.createDID(signed);
+            const block = await this.gatekeeper.getBlock(registry);
+            const blockid = block?.hash;
 
-        wallet.ids[name] = {
-            did: did,
-            account: account,
-            index: index,
-        };
-        wallet.counter += 1;
-        wallet.current = name;
-        await this.saveWallet(wallet);
+            const operation: Operation = {
+                type: 'create',
+                created: new Date().toISOString(),
+                blockid,
+                mdip: {
+                    version: 1,
+                    type: 'agent',
+                    registry
+                },
+                publicJwk: keypair.publicJwk,
+            };
 
-        return did;
+            const msgHash = this.cipher.hashJSON(operation);
+            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+            const signed: Operation = {
+                ...operation,
+                signature: {
+                    signed: new Date().toISOString(),
+                    hash: msgHash,
+                    value: signature
+                },
+            };
+
+            const did = await this.gatekeeper.createDID(signed);
+            createdDid = did;
+
+            wallet.ids[name] = { did, account, index };
+            wallet.counter += 1;
+            wallet.current = name;
+        });
+
+        return createdDid;
     }
 
     async removeId(name: string): Promise<boolean> {
-        const wallet = await this.loadWallet();
-
-        if (!(name in wallet.ids)) {
-            throw new UnknownIDError();
-        }
-
-        delete wallet.ids[name];
-
-        if (wallet.current === name) {
-            wallet.current = Object.keys(wallet.ids)[0] || '';
-        }
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet((wallet) => {
+            if (!(name in wallet.ids)) {
+                throw new UnknownIDError();
+            }
+            delete wallet.ids[name];
+            if (wallet.current === name) {
+                wallet.current = Object.keys(wallet.ids)[0] || '';
+            }
+        });
+        return true;
     }
 
     async renameId(
         id: string,
         name: string
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
+        await this.mutateWallet((wallet) => {
+            name = this.validateName(name);
 
-        name = this.validateName(name);
+            if (!(id in wallet.ids)) {
+                throw new UnknownIDError();
+            }
+            if (name in wallet.ids) {
+                throw new InvalidParameterError('name already used');
+            }
 
-        if (!(id in wallet.ids)) {
-            throw new UnknownIDError();
-        }
+            wallet.ids[name] = wallet.ids[id];
+            delete wallet.ids[id];
 
-        if (name in wallet.ids) {
-            throw new InvalidParameterError('name already used');
-        }
-
-        wallet.ids[name] = wallet.ids[id];
-        delete wallet.ids[id];
-
-        if (wallet.current && wallet.current === id) {
-            wallet.current = name;
-        }
-
-        return this.saveWallet(wallet);
+            if (wallet.current && wallet.current === id) {
+                wallet.current = name;
+            }
+        });
+        return true;
     }
 
     async backupId(id?: string): Promise<boolean> {
@@ -1396,7 +1394,6 @@ export default class Keymaster implements KeymasterInterface {
 
     async recoverId(did: string): Promise<string> {
         try {
-            const wallet = await this.loadWallet();
             const keypair = await this.hdKeyPair();
 
             const doc = await this.resolveDID(did);
@@ -1405,69 +1402,66 @@ export default class Keymaster implements KeymasterInterface {
                 throw new InvalidDIDError('didDocumentData missing vault');
             }
 
-            const vault = await this.resolveAsset(docData.vault);
-            const castVault = vault as { backup?: string };
-            if (typeof castVault.backup !== 'string') {
+            const vault = await this.resolveAsset(docData.vault) as { backup?: string };
+            if (typeof vault.backup !== 'string') {
                 throw new InvalidDIDError('backup not found in vault');
             }
 
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castVault.backup);
-            const data = JSON.parse(backup);
+            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
+            const data = JSON.parse(backup) as { name: string; id: IDInfo };
 
-            if (wallet.ids[data.name]) {
-                throw new KeymasterError(`${data.name} already exists in wallet`);
-            }
+            await this.mutateWallet((wallet) => {
+                if (wallet.ids[data.name]) {
+                    throw new KeymasterError(`${data.name} already exists in wallet`);
+                }
+                wallet.ids[data.name] = data.id;
+                wallet.current = data.name;
+                wallet.counter += 1;
+            });
 
-            wallet.ids[data.name] = data.id;
-            wallet.current = data.name;
-            wallet.counter += 1;
-
-            await this.saveWallet(wallet);
-            return wallet.current!;
-        }
-        catch (error: any) {
+            return data.name;
+        } catch (error: any) {
             if (error.type === 'Keymaster') {
                 throw error;
-            }
-            else {
+            } else {
                 throw new InvalidDIDError();
             }
         }
     }
 
     async rotateKeys(): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = wallet.ids[wallet.current!];
-        const nextIndex = id.index + 1;
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
-        const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
-        const didkey = hdkey.derive(path);
-        const keypair = this.cipher.generateJwk(didkey.privateKey!);
-        const doc = await this.resolveDID(id.did);
+        let ok = false;
 
-        if (!doc.didDocumentMetadata?.confirmed) {
-            throw new KeymasterError('Cannot rotate keys');
-        }
+        await this.mutateWallet(async (wallet) => {
+            const id = wallet.ids[wallet.current!];
+            const nextIndex = id.index + 1;
 
-        if (!doc.didDocument?.verificationMethod) {
-            throw new KeymasterError('DID Document missing verificationMethod');
-        }
+            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+            const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
+            const didkey = hdkey.derive(path);
+            const keypair = this.cipher.generateJwk(didkey.privateKey!);
 
-        const vmethod = doc.didDocument.verificationMethod[0];
+            const doc = await this.resolveDID(id.did);
 
-        vmethod.id = `#key-${nextIndex + 1}`;
-        vmethod.publicKeyJwk = keypair.publicJwk;
-        doc.didDocument.authentication = [vmethod.id];
+            if (!doc.didDocumentMetadata?.confirmed) {
+                throw new KeymasterError('Cannot rotate keys');
+            }
+            if (!doc.didDocument?.verificationMethod) {
+                throw new KeymasterError('DID Document missing verificationMethod');
+            }
 
-        const ok = await this.updateDID(doc);
+            const vmethod = doc.didDocument.verificationMethod[0];
+            vmethod.id = `#key-${nextIndex + 1}`;
+            vmethod.publicKeyJwk = keypair.publicJwk;
+            doc.didDocument.authentication = [vmethod.id];
 
-        if (ok) {
-            id.index = nextIndex;
-            await this.saveWallet(wallet);
-        }
-        else {
-            throw new KeymasterError('Cannot rotate keys');
-        }
+            ok = await this.updateDID(doc);
+            if (!ok) {
+                throw new KeymasterError('Cannot rotate keys');
+            }
+
+            id.index = nextIndex; // persist in same mutation
+        });
 
         return ok;
     }
@@ -1494,15 +1488,14 @@ export default class Keymaster implements KeymasterInterface {
         name: string,
         did: string
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
-
-        if (!wallet.names) {
-            wallet.names = {};
-        }
-
-        name = this.validateName(name, wallet);
-        wallet.names[name] = did;
-        return this.saveWallet(wallet);
+        await this.mutateWallet((wallet) => {
+            if (!wallet.names) {
+                wallet.names = {};
+            }
+            name = this.validateName(name, wallet);
+            wallet.names[name] = did;
+        });
+        return true;
     }
 
     async getName(name: string): Promise<string | null> {
@@ -1516,13 +1509,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeName(name: string): Promise<boolean> {
-        const wallet = await this.loadWallet();
-
-        if (wallet.names && name in wallet.names) {
+        await this.mutateWallet((wallet) => {
+            if (!wallet.names || !(name in wallet.names)) {
+                return;
+            }
             delete wallet.names[name];
-            await this.saveWallet(wallet);
-        }
-
+        });
         return true;
     }
 
@@ -3038,30 +3030,26 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         tags: string[]
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
         const verifiedTags = this.verifyTagList(tags);
-
-        if (!id.dmail) {
-            id.dmail = {};
-        }
-
-        id.dmail[did] = { tags: verifiedTags };
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(undefined, wallet);
+            if (!id.dmail) {
+                id.dmail = {};
+            }
+            id.dmail[did] = { tags: verifiedTags };
+        });
+        return true;
     }
 
     async removeDmail(did: string): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
-
-        if (!id.dmail || !id.dmail[did]) {
-            return true;
-        }
-
-        delete id.dmail[did];
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(undefined, wallet);
+            if (!id.dmail || !id.dmail[did]) {
+                return;
+            }
+            delete id.dmail[did];
+        });
+        return true;
     }
 
     async verifyRecipientList(list: string[]): Promise<string[]> {
@@ -3305,17 +3293,13 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         tags: string[]
     ): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
         const verifiedTags = this.verifyTagList(tags);
-
-        if (!id.notices) {
-            id.notices = {};
-        }
-
-        id.notices[did] = { tags: verifiedTags };
-
-        return this.saveWallet(wallet);
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(undefined, wallet);
+            if (!id.notices) id.notices = {};
+            id.notices[did] = { tags: verifiedTags };
+        });
+        return true;
     }
 
     async importNotice(did: string): Promise<boolean> {
@@ -3426,26 +3410,24 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async cleanupNotices(): Promise<boolean> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
-
-        if (!id.notices) {
-            return true; // No notices to clean up
-        }
-
-        for (const did of Object.keys(id.notices)) {
-            try {
-                const asset = await this.resolveAsset(did) as { notice?: NoticeMessage };
-
-                if (!asset || !asset.notice) {
-                    delete id.notices[did]; // revoked or invalid
-                }
-            } catch (error) {
-                delete id.notices[did]; // expired
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(undefined, wallet);
+            if (!id.notices) {
+                return;
             }
-        }
 
-        return this.saveWallet(wallet);
+            for (const nDid of Object.keys(id.notices)) {
+                try {
+                    const asset = await this.resolveAsset(nDid) as { notice?: NoticeMessage };
+                    if (!asset || !asset.notice) {
+                        delete id.notices[nDid]; // revoked or invalid
+                    }
+                } catch {
+                    delete id.notices[nDid]; // expired/unresolvable
+                }
+            }
+        });
+        return true;
     }
 
     async refreshNotices(): Promise<boolean> {

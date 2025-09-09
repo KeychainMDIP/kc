@@ -520,4 +520,28 @@ describe('fixWallet', () => {
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
     });
+
+    describe('WalletEncrypted passthrough for unencrypted data', () => {
+        it('returns the plain wallet when base wallet is not encrypted', async () => {
+            const base = new WalletJsonMemory();
+            const plain: WalletFile = { seed: {} as Seed, counter: 42, ids: {}, names: { foo: 'did:test:abc' } };
+            await base.saveWallet(plain, true);
+            const wrapped = new WalletEncrypted(base, 'passphrase');
+            const loaded = await wrapped.loadWallet();
+
+            expect(loaded).toStrictEqual(plain);
+        });
+    });
+
+    describe('updateWallet', () => {
+        it('should throw when no wallet has been created', async () => {
+            const test = new WalletJsonMemory();
+            try {
+                await test.updateWallet(() => {});
+                throw new ExpectedExceptionError();
+            } catch (error: any) {
+                expect(error.message).toBe('updateWallet: no wallet found to update');
+            }
+        });
+    });
 });

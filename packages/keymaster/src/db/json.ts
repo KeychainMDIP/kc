@@ -1,11 +1,13 @@
 import fs from 'fs';
-import { StoredWallet, WalletBase } from '../types.js';
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 
-export default class WalletJson implements WalletBase {
+export default class WalletJson extends AbstractBase {
     private readonly dataFolder: string;
     walletName: string;
 
     constructor(walletFileName = 'wallet.json', dataFolder = 'data') {
+        super();
         this.dataFolder = dataFolder;
         this.walletName = `${dataFolder}/${walletFileName}`;
     }

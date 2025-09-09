@@ -211,8 +211,9 @@ export interface GroupVaultLogin {
 export type StoredWallet = EncryptedWallet | WalletFile | null;
 
 export interface WalletBase {
-    saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>
-    loadWallet(): Promise<StoredWallet>
+    saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
+    loadWallet(): Promise<StoredWallet>;
+    updateWallet(mutator: (wallet: StoredWallet) => void | Promise<void>): Promise<void>;
 }
 
 export interface SearchEngine {

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import {WalletBase, StoredWallet} from '../types.js'
+import { StoredWallet, WalletBase } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'aes-256-gcm';      // Algorithm
@@ -9,11 +10,12 @@ const saltLength = 16;                // 128-bit salt
 const iterations = 100000;            // PBKDF2 iterations
 const digest = 'sha512';              // PBKDF2 hash function
 
-export default class WalletEncrypted implements WalletBase {
+export default class WalletEncrypted extends AbstractBase {
     private baseWallet: WalletBase;
     private readonly passphrase: string;
 
     constructor(baseWallet: WalletBase, passphrase: string) {
+        super();
         this.baseWallet = baseWallet;
         this.passphrase = passphrase;
     }
