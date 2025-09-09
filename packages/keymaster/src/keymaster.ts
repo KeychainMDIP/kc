@@ -508,12 +508,7 @@ export default class Keymaster implements KeymasterInterface {
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
             const wallet = JSON.parse(backup);
 
-            await this.mutateWallet((current) => {
-                for (const k of Object.keys(current as any)) {
-                    delete (current as any)[k];
-                }
-                Object.assign(current as any, wallet);
-            });
+            await this.mutateWallet(() => wallet);
 
             return this.loadWallet();
         }
@@ -1090,8 +1085,9 @@ export default class Keymaster implements KeymasterInterface {
             if (!id.owned) {
                 return;
             }
+            const before = id.owned.length;
             id.owned = id.owned.filter(item => item !== did);
-            removed = true;
+            removed = id.owned.length < before;
         });
         return removed;
     }
