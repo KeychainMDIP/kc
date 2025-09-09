@@ -1,8 +1,9 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 
-export default class WalletSQLite implements WalletBase {
+export default class WalletSQLite extends AbstractBase {
     private readonly walletName: string;
     private db: Database | null;
 
@@ -13,6 +14,7 @@ export default class WalletSQLite implements WalletBase {
     }
 
     constructor(walletFileName: string = 'wallet.db', dataFolder: string = 'data') {
+        super();
         this.walletName = `${dataFolder}/${walletFileName}`;
         this.db = null
     }

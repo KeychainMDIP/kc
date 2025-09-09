@@ -1,9 +1,11 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 
-export default class WalletWeb implements WalletBase {
+export default class WalletWeb extends AbstractBase {
     walletName: string;
 
     constructor(walletName: string = 'mdip-keymaster') {
+        super();
         this.walletName = walletName;
     }
 
