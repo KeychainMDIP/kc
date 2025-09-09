@@ -1079,17 +1079,16 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         owner: string
     ): Promise<boolean> {
-        let removed = false;
+        let ownerFound = false;
         await this.mutateWallet(async (wallet) => {
             const id = await this.fetchIdInfo(owner, wallet);
             if (!id.owned) {
                 return;
             }
-            const before = id.owned.length;
+            ownerFound = true;
             id.owned = id.owned.filter(item => item !== did);
-            removed = id.owned.length < before;
         });
-        return removed;
+        return ownerFound;
     }
 
     async addToHeld(did: string): Promise<boolean> {
