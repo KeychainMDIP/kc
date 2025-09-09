@@ -508,7 +508,12 @@ export default class Keymaster implements KeymasterInterface {
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
             const wallet = JSON.parse(backup);
 
-            await this.mutateWallet(() => wallet);
+            await this.mutateWallet((current) => {
+                for (const k in current) {
+                    delete current[k as keyof StoredWallet];
+                }
+                Object.assign(current, wallet);
+            });
 
             return this.loadWallet();
         }
