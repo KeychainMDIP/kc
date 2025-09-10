@@ -76,12 +76,24 @@ export default class DbMongo implements GatekeeperDb {
     }
 
     async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
-        await this.deleteEvents(did);
-
-        // Add new events
-        for (const event of events) {
-            await this.addEvent(did, event);
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR)
         }
+        if (!did) {
+            throw new InvalidDIDError();
+        }
+        const suffix = did.split(':').pop();
+        if (!suffix) {
+            throw new InvalidDIDError();
+        }
+
+        await this.db
+            .collection<DidsDoc>('dids')
+            .updateOne(
+                { suffix },
+                { $set: { events } },
+                { upsert: true }
+            );
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
@@ -130,7 +142,7 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        const result = await this.db.collection<{ id: string, ops: Operation[] }>('queue').findOneAndUpdate(
+        const result = await this.db.collection<QueueDoc>('queue').findOneAndUpdate(
             { id: registry },
             {
                 $push: {
@@ -168,20 +180,20 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         try {
-            const queueCollection = this.db.collection<QueueDoc>('queue')
-            const oldQueueDocument = await queueCollection.findOne({ id: registry });
-            if (!oldQueueDocument?.ops) {
-                return true
+            const hashes = batch
+                .map(op => op.signature?.hash)
+                .filter((h): h is string => !!h);
+
+            if (hashes.length === 0) {
+                return true;
             }
 
-            const oldQueue = oldQueueDocument.ops;
-            const newQueue = oldQueue.filter(item => !batch.some(op => op.signature?.value === item.signature?.value));
-
-            await queueCollection.updateOne(
-                { id: registry },
-                { $set: { ops: newQueue } },
-                { upsert: true }
-            );
+            await this.db
+                .collection<QueueDoc>('queue')
+                .updateOne(
+                    { id: registry },
+                    { $pull: { ops: { 'signature.hash': { $in: hashes } } } } as any
+                );
 
             return true;
         }
