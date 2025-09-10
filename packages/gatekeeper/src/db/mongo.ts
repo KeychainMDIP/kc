@@ -25,6 +25,17 @@ export default class DbMongo implements GatekeeperDb {
         this.db = null
     }
 
+    private splitSuffix(did: string): string {
+        if (!did) {
+            throw new InvalidDIDError();
+        }
+        const suffix = did.split(':').pop();
+        if (!suffix) {
+            throw new InvalidDIDError();
+        }
+        return suffix;
+    }
+
     async start(): Promise<void> {
         this.client = new MongoClient(process.env.KC_MONGODB_URL || 'mongodb://localhost:27017');
         await this.client.connect();
@@ -56,11 +67,8 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+        const id = this.splitSuffix(did);
 
-        const id = did.split(':').pop() || '';
         const result = await this.db.collection<DidsDoc>('dids').updateOne(
             { id },
             {
@@ -79,13 +87,8 @@ export default class DbMongo implements GatekeeperDb {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-        const id = did.split(':').pop();
-        if (!id) {
-            throw new InvalidDIDError();
-        }
+
+        const id = this.splitSuffix(did);
 
         await this.db
             .collection<DidsDoc>('dids')
@@ -100,12 +103,11 @@ export default class DbMongo implements GatekeeperDb {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+
+        const id = this.splitSuffix(did);
 
         try {
-            const id = did.split(':').pop() || '';
+
             const row = await this.db.collection('dids').findOne({ id });
             return row?.events ?? [];
         }
@@ -119,11 +121,8 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+        const id = this.splitSuffix(did);
 
-        const id = did.split(':').pop() || '';
         const result = await this.db.collection('dids').deleteOne({ id });
         return result.deletedCount ?? 0
     }
