@@ -780,22 +780,26 @@ export default class Gatekeeper implements GatekeeperInterface {
             const didList: string[] = [];
 
             for (const did of dids) {
-                const doc = await this.resolveDID(did, { confirm, verify });
-                const updatedStr = doc.didDocumentMetadata?.updated ?? doc.didDocumentMetadata?.created ?? 0;
-                const updated = new Date(updatedStr);
+                try {
+                    const doc = await this.resolveDID(did, { confirm, verify });
+                    const updatedStr = doc.didDocumentMetadata?.updated ?? doc.didDocumentMetadata?.created ?? 0;
+                    const updated = new Date(updatedStr);
 
-                if (start && updated <= start) {
+                    if (start && updated <= start) {
+                        continue;
+                    }
+
+                    if (end && updated >= end) {
+                        continue;
+                    }
+
+                    if (resolve) {
+                        docList.push(doc);
+                    } else {
+                        didList.push(did);
+                    }
+                } catch {
                     continue;
-                }
-
-                if (end && updated >= end) {
-                    continue;
-                }
-
-                if (resolve) {
-                    docList.push(doc);
-                } else {
-                    didList.push(did);
                 }
             }
 

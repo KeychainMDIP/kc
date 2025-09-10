@@ -25,6 +25,17 @@ export default class DbMongo implements GatekeeperDb {
         this.db = null
     }
 
+    private splitSuffix(did: string): string {
+        if (!did) {
+            throw new InvalidDIDError();
+        }
+        const suffix = did.split(':').pop();
+        if (!suffix) {
+            throw new InvalidDIDError();
+        }
+        return suffix;
+    }
+
     async start(): Promise<void> {
         this.client = new MongoClient(process.env.KC_MONGODB_URL || 'mongodb://localhost:27017');
         await this.client.connect();
@@ -56,11 +67,8 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+        const id = this.splitSuffix(did);
 
-        const id = did.split(':').pop() || '';
         const result = await this.db.collection<DidsDoc>('dids').updateOne(
             { id },
             {
@@ -76,24 +84,30 @@ export default class DbMongo implements GatekeeperDb {
     }
 
     async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
-        await this.deleteEvents(did);
-
-        // Add new events
-        for (const event of events) {
-            await this.addEvent(did, event);
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR)
         }
+
+        const id = this.splitSuffix(did);
+
+        await this.db
+            .collection<DidsDoc>('dids')
+            .updateOne(
+                { id },
+                { $set: { events } },
+                { upsert: true }
+            );
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+
+        const id = this.splitSuffix(did);
 
         try {
-            const id = did.split(':').pop() || '';
+
             const row = await this.db.collection('dids').findOne({ id });
             return row?.events ?? [];
         }
@@ -107,11 +121,8 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
+        const id = this.splitSuffix(did);
 
-        const id = did.split(':').pop() || '';
         const result = await this.db.collection('dids').deleteOne({ id });
         return result.deletedCount ?? 0
     }
@@ -130,7 +141,7 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        const result = await this.db.collection<{ id: string, ops: Operation[] }>('queue').findOneAndUpdate(
+        const result = await this.db.collection<QueueDoc>('queue').findOneAndUpdate(
             { id: registry },
             {
                 $push: {
@@ -168,20 +179,20 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         try {
-            const queueCollection = this.db.collection<QueueDoc>('queue')
-            const oldQueueDocument = await queueCollection.findOne({ id: registry });
-            if (!oldQueueDocument?.ops) {
-                return true
+            const hashes = batch
+                .map(op => op.signature?.hash)
+                .filter((h): h is string => !!h);
+
+            if (hashes.length === 0) {
+                return true;
             }
 
-            const oldQueue = oldQueueDocument.ops;
-            const newQueue = oldQueue.filter(item => !batch.some(op => op.signature?.value === item.signature?.value));
-
-            await queueCollection.updateOne(
-                { id: registry },
-                { $set: { ops: newQueue } },
-                { upsert: true }
-            );
+            await this.db
+                .collection<QueueDoc>('queue')
+                .updateOne(
+                    { id: registry },
+                    { $pull: { ops: { 'signature.hash': { $in: hashes } } } } as any
+                );
 
             return true;
         }
