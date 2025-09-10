@@ -518,6 +518,13 @@ describe('gatekeeper.db', () => {
         expect(events).toStrictEqual([]);
     });
 
+    it('getEvents should return empty list on malformed DID with no suffix', async () => {
+        // @ts-expect-error Testing invalid DID
+        const events = await gatekeeper.db.getEvents("did:test:");
+
+        expect(events).toStrictEqual([]);
+    });
+
     it('addEvent should throw exception on invalid did', async () => {
         try {
             // @ts-expect-error Testing invalid DID
