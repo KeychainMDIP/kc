@@ -82,15 +82,15 @@ export default class DbMongo implements GatekeeperDb {
         if (!did) {
             throw new InvalidDIDError();
         }
-        const suffix = did.split(':').pop();
-        if (!suffix) {
+        const id = did.split(':').pop();
+        if (!id) {
             throw new InvalidDIDError();
         }
 
         await this.db
             .collection<DidsDoc>('dids')
             .updateOne(
-                { suffix },
+                { id },
                 { $set: { events } },
                 { upsert: true }
             );
