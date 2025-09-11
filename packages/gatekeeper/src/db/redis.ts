@@ -5,8 +5,16 @@ import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '..
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 
 export default class DbRedis implements GatekeeperDb {
-    private readonly dbName: string
-    private redis: Redis | null
+    private readonly dbName: string;
+    private redis: Redis | null;
+
+    private _lock: Promise<void> = Promise.resolve();
+    private runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
+        const run = async () => await fn();
+        const chained = this._lock.then(run, run);
+        this._lock = chained.then(() => undefined, () => undefined);
+        return chained;
+    }
 
     constructor(dbName: string) {
         this.dbName = dbName;
@@ -52,10 +60,6 @@ export default class DbRedis implements GatekeeperDb {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
         const key = this.didKey(did);
         const val = JSON.stringify(event);
 
@@ -67,16 +71,26 @@ export default class DbRedis implements GatekeeperDb {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        await this.deleteEvents(did);
+        const key = this.didKey(did);
+        const payloads = events.map(e => JSON.stringify(e));
 
-        // Add new events
-        for (const event of events) {
-            await this.addEvent(did, event);
-        }
+        await this.runExclusive(async () => {
+            const multi = this.redis!.multi().del(key);
+            if (payloads.length) {
+                multi.rpush(key, ...payloads);
+            }
+            await multi.exec();
+        });
     }
 
     private didKey(did: string): string {
-        const id = did.split(':').pop() || '';
+        if (!did) {
+            throw new InvalidDIDError();
+        }
+        const id = did.split(':').pop();
+        if (!id) {
+            throw new InvalidDIDError();
+        }
         return `${this.dbName}/dids/${id}`;
     }
 
@@ -143,22 +157,52 @@ export default class DbRedis implements GatekeeperDb {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        try {
-            const ops = await this.getQueue(registry);
-            const newOps = ops.filter(op => !batch.some(b => b.signature?.value === op.signature?.value));
+        const hashes = batch
+            .map(op => op.signature?.hash)
+            .filter((h): h is string => !!h);
 
-            // Clear the current queue and add back the filtered operations
-            const queueKey = this.queueKey(registry);
-            await this.redis.del(queueKey);
-            if (newOps.length > 0) {
-                await this.redis.rpush(queueKey, ...newOps.map(op => JSON.stringify(op)));
-            }
-
+        if (hashes.length === 0) {
             return true;
-        } catch (error) {
-            console.error(error);
-            return false;
         }
+
+        const key = this.queueKey(registry);
+
+        const script = `
+                      local key = KEYS[1]
+                      local n   = tonumber(ARGV[1])
+                      local idx = 2
+                      local want = {}
+                      for i=1,n do
+                        want[ARGV[idx]] = true
+                        idx = idx + 1
+                      end
+                      local list = redis.call('LRANGE', key, 0, -1)
+                      if #list == 0 then return 0 end
+                      local keep = {}
+                      for i=1,#list do
+                        local ok, obj = pcall(cjson.decode, list[i])
+                        if ok and obj and obj.signature and obj.signature.hash and want[obj.signature.hash] then
+                          -- drop
+                        else
+                          table.insert(keep, list[i])
+                        end
+                      end
+                      redis.call('DEL', key)
+                      if #keep > 0 then
+                        redis.call('RPUSH', key, unpack(keep))
+                      end
+                      return #list - #keep
+                    `;
+
+        return this.runExclusive(async () => {
+            try {
+                await this.redis!.eval(script, 1, key, hashes.length.toString(), ...hashes);
+                return true;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+        });
     }
 
     private blockKey(registry: string, hash: string): string {
