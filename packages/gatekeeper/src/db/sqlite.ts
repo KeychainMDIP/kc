@@ -24,6 +24,42 @@ export default class DbSqlite implements GatekeeperDb {
         this.db = null
     }
 
+    private _lock: Promise<void> = Promise.resolve();
+    private runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
+        const run = async () => await fn();
+        const chained = this._lock.then(run, run);
+        this._lock = chained.then(() => undefined, () => undefined);
+        return chained;
+    }
+
+    private async withTx<T>(fn: () => Promise<T>): Promise<T> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+        await this.db.exec('BEGIN IMMEDIATE');
+        try {
+            const result = await fn();
+            await this.db.exec('COMMIT');
+            return result;
+        } catch (e) {
+            try {
+                await this.db.exec('ROLLBACK');
+            } catch {}
+            throw e;
+        }
+    }
+
+    private splitSuffix(did: string): string {
+        if (!did) {
+            throw new InvalidDIDError();
+        }
+        const suffix = did.split(':').pop();
+        if (!suffix) {
+            throw new InvalidDIDError();
+        }
+        return suffix;
+    }
+
     async start(): Promise<void> {
         this.db = await sqlite.open({
             filename: this.dbName,
@@ -65,9 +101,13 @@ export default class DbSqlite implements GatekeeperDb {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
-
-        await this.db.run('DELETE FROM dids');
-        await this.db.run('DELETE FROM queue');
+        await this.runExclusive(async () => {
+            await this.withTx(async () => {
+                await this.db!.run('DELETE FROM dids');
+                await this.db!.run('DELETE FROM queue');
+                await this.db!.run('DELETE FROM blocks');
+            });
+        });
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
@@ -75,24 +115,49 @@ export default class DbSqlite implements GatekeeperDb {
             throw new InvalidDIDError();
         }
 
-        const events = await this.getEvents(did);
-        events.push(event);
-
-        return this.setEvents(did, events);
+        return this.runExclusive(() =>
+            this.withTx(async () => {
+                const id = this.splitSuffix(did);
+                const events = await this.getEventsStrict(id);
+                events.push(event);
+                return this.setEventsStrict(id, events);
+            })
+        );
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
+    private async setEventsStrict(id: string, events: GatekeeperEvent[]): Promise<number> {
         if (!this.db) {
-            throw new Error(SQLITE_NOT_STARTED_ERROR)
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
+        const res = await this.db.run(
+            `INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`,
+            id,
+            JSON.stringify(events)
+        );
+        return res.changes ?? 0;
+    }
 
-        if (!did) {
-            throw new InvalidDIDError();
+
+    async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
+        const id = this.splitSuffix(did);
+        return this.runExclusive(() =>
+            this.withTx(() => this.setEventsStrict(id, events))
+        );
+    }
+
+    private async getEventsStrict(id: string): Promise<GatekeeperEvent[]> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
-
-        const id = did.split(':').pop() || '';
-        const result = await this.db.run(`INSERT OR REPLACE INTO dids(id, events) VALUES(?, ?)`, id, JSON.stringify(events));
-        return result.changes ?? 0;
+        const row = await this.db!.get<DidsRow>('SELECT events FROM dids WHERE id = ?', id);
+        if (!row) {
+            return [];
+        }
+        const events = JSON.parse(row.events);
+        if (!Array.isArray(events)) {
+            throw new Error('events is not an array');
+        }
+        return events as GatekeeperEvent[];
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
@@ -100,22 +165,10 @@ export default class DbSqlite implements GatekeeperDb {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
         try {
-            const id = did.split(':').pop() || '';
-            const row = await this.db.get<DidsRow>('SELECT * FROM dids WHERE id = ?', id);
-
-            if (row?.events) {
-                return JSON.parse(row.events) as GatekeeperEvent[];
-            }
-            else {
-                return [];
-            }
-        }
-        catch {
+            const id = this.splitSuffix(did);
+            return await this.getEventsStrict(id);
+        } catch {
             return [];
         }
     }
@@ -125,13 +178,13 @@ export default class DbSqlite implements GatekeeperDb {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
 
-        if (!did) {
-            throw new InvalidDIDError();
-        }
-
-        const id = did.split(':').pop() || '';
-        const result = await this.db.run('DELETE FROM dids WHERE id = ?', id);
-        return result.changes ?? 0;
+        return this.runExclusive(() =>
+            this.withTx(async () => {
+                const id = this.splitSuffix(did);
+                const result = await this.db!.run('DELETE FROM dids WHERE id = ?', id);
+                return result.changes ?? 0;
+            })
+        );
     }
 
     async queueOperation(registry: string, op: Operation): Promise<number> {
@@ -139,30 +192,46 @@ export default class DbSqlite implements GatekeeperDb {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
 
-        const ops = await this.getQueue(registry);
+        return this.runExclusive(async () =>
+            this.withTx(async () => {
+                const ops = await this.getQueueStrict(registry);
+                ops.push(op);
+                await this.db!.run(
+                    `INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`,
+                    registry,
+                    JSON.stringify(ops)
+                );
+                return ops.length;
+            })
+        );
+    }
 
-        ops.push(op);
+    private async getQueueStrict(registry: string): Promise<Operation[]> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
 
-        await this.db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(ops));
+        const row = await this.db.get<QueueRow>('SELECT ops FROM queue WHERE id = ?', registry);
+        if (!row) {
+            return [];
+        }
 
-        return ops.length;
+        const ops = JSON.parse(row.ops);
+        if (!Array.isArray(ops)) {
+            throw new Error('queue row malformed: ops is not an array');
+        }
+
+        return ops as Operation[];
     }
 
     async getQueue(registry: string): Promise<Operation[]> {
         if (!this.db) {
-            throw new Error(SQLITE_NOT_STARTED_ERROR)
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
 
         try {
-            const row = await this.db.get<QueueRow>('SELECT * FROM queue WHERE id = ?', registry);
-
-            if (!row) {
-                return [];
-            }
-
-            return JSON.parse(row.ops) as Operation[];
-        }
-        catch {
+            return await this.getQueueStrict(registry);
+        } catch {
             return [];
         }
     }
@@ -172,17 +241,27 @@ export default class DbSqlite implements GatekeeperDb {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
 
-        try {
-            const oldQueue = await this.getQueue(registry);
-            const newQueue = oldQueue.filter(item => !batch.some(op => op.signature?.value === item.signature?.value));
+        return this.runExclusive(async () =>
+            this.withTx(async () => {
+                const oldQueue = await this.getQueueStrict(registry);
 
-            await this.db.run(`INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`, registry, JSON.stringify(newQueue));
-            return true;
-        }
-        catch (error) {
-            console.error(error);
-            return false;
-        }
+                const batchHashes = new Set(
+                    batch.map(b => b.signature?.hash).filter((h): h is string => h !== undefined)
+                );
+                const newQueue = oldQueue.filter(
+                    item => !batchHashes.has(item.signature?.hash || '')
+                );
+                await this.db!.run(
+                    `INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`,
+                    registry,
+                    JSON.stringify(newQueue)
+                );
+                return true;
+            }).catch(err => {
+                console.error(err);
+                return false;
+            })
+        );
     }
 
     async getAllKeys(): Promise<string[]> {
@@ -201,12 +280,15 @@ export default class DbSqlite implements GatekeeperDb {
 
         try {
             // Insert or replace the block information
-            await this.db.run(
-                `INSERT OR REPLACE INTO blocks (registry, hash, height, time) VALUES (?, ?, ?, ?)`,
-                registry,
-                blockInfo.hash,
-                blockInfo.height,
-                blockInfo.time,
+            await this.runExclusive(async () =>
+                await this.db!.run(
+                    `INSERT OR REPLACE INTO blocks (registry, hash, height, time, txns) VALUES (?, ?, ?, ?, ?)`,
+                    registry,
+                    blockInfo.hash,
+                    blockInfo.height,
+                    blockInfo.time,
+                    0
+                )
             );
 
             return true;
