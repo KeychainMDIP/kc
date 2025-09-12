@@ -194,15 +194,13 @@ export default class DbRedis implements GatekeeperDb {
                       return #list - #keep
                     `;
 
-        return this.runExclusive(async () => {
-            try {
-                await this.redis!.eval(script, 1, key, hashes.length.toString(), ...hashes);
-                return true;
-            } catch (e) {
-                console.error(e);
-                return false;
-            }
-        });
+        try {
+            await this.redis!.eval(script, 1, key, hashes.length.toString(), ...hashes);
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
     }
 
     private blockKey(registry: string, hash: string): string {
