@@ -246,7 +246,7 @@ export default class DbSqlite implements GatekeeperDb {
                 const oldQueue = await this.getQueueStrict(registry);
 
                 const batchHashes = new Set(
-                    batch.map(b => b.signature?.hash).filter((h): h is string => !!h)
+                    batch.map(b => b.signature?.hash).filter((h): h is string => h !== undefined)
                 );
                 const newQueue = oldQueue.filter(
                     item => !batchHashes.has(item.signature?.hash || '')
