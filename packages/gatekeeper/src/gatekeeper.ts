@@ -40,17 +40,18 @@ enum ImportStatus {
 }
 
 export default class Gatekeeper implements GatekeeperInterface {
-    private db: GatekeeperDb
-    private eventsQueue: GatekeeperEvent[]
-    private readonly eventsSeen: Record<string, boolean>
-    private verifiedDIDs: Record<string, boolean>
-    private isProcessingEvents: boolean
-    private ipfs: IPFSClient
-    private cipher: CipherNode
-    readonly didPrefix: string
-    private readonly maxOpBytes: number
-    private readonly maxQueueSize: number
-    supportedRegistries: string[]
+    private db: GatekeeperDb;
+    private eventsQueue: GatekeeperEvent[];
+    private readonly eventsSeen: Record<string, boolean>;
+    private verifiedDIDs: Record<string, boolean>;
+    private isProcessingEvents: boolean;
+    private ipfs: IPFSClient;
+    private cipher: CipherNode;
+    readonly didPrefix: string;
+    private readonly maxOpBytes: number;
+    private readonly maxQueueSize: number;
+    supportedRegistries: string[];
+    private didLocks = new Map<string, Promise<void>>();
 
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
@@ -81,6 +82,24 @@ export default class Gatekeeper implements GatekeeperInterface {
         for (const registry of this.supportedRegistries) {
             if (!ValidRegistries.includes(registry)) {
                 throw new InvalidParameterError(`registry=${registry}`);
+            }
+        }
+    }
+
+    private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.didLocks.get(did) ?? Promise.resolve();
+        let release!: () => void;
+        const gate = new Promise<void>(r => (release = r));
+
+        this.didLocks.set(did, prev.then(() => gate, () => gate));
+
+        try {
+            await prev;
+            return await fn();
+        } finally {
+            release();
+            if (this.didLocks.get(did) === gate) {
+                this.didLocks.delete(did);
             }
         }
     }
@@ -468,24 +487,26 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         const did = await this.generateDID(operation);
-        const ops = await this.exportDID(did);
 
-        // Check to see if we already have this DID in the db
-        if (ops.length > 0) {
+        return this.withDidLock(did, async () => {
+            const ops = await this.exportDID(did);
+
+            // Check to see if we already have this DID in the db
+            if (ops.length > 0) {
+                return did;
+            }
+
+            await this.db.addEvent(did, {
+                registry: 'local',
+                time: operation.created!,
+                ordinal: [0],
+                operation,
+                did
+            });
+
+            await this.queueOperation(registry, operation);
             return did;
-        }
-
-        await this.db.addEvent(did, {
-            registry: 'local',
-            time: operation.created!,
-            ordinal: [0],
-            operation,
-            did
         });
-
-        await this.queueOperation(registry, operation);
-
-        return did;
     }
 
     async generateDoc(anchor: Operation, defaultDID?: string): Promise<MdipDocument> {
@@ -749,17 +770,19 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError(`registry ${registry} not supported`);
         }
 
-        await this.db.addEvent(operation.did, {
-            registry: 'local',
-            time: operation.signature?.signed || '',
-            ordinal: [0],
-            operation,
-            did: operation.did
+        return this.withDidLock(operation.did, async () => {
+            await this.db.addEvent(operation.did!, {
+                registry: 'local',
+                time: operation.signature?.signed || '',
+                ordinal: [0],
+                operation,
+                did: operation.did
+            });
+
+            await this.queueOperation(registry, operation);
+
+            return true;
         });
-
-        await this.queueOperation(registry, operation);
-
-        return true;
     }
 
     async deleteDID(operation: Operation): Promise<boolean> {
@@ -859,87 +882,90 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             const did = event.did;
-            const currentEvents = await this.db.getEvents(did);
 
-            for (const e of currentEvents) {
-                if (!e.opid) {
-                    e.opid = await this.generateCID(e.operation, true);
-                }
-            }
+            return await this.withDidLock(did, async () => {
+                const currentEvents = await this.db.getEvents(did);
 
-            if (!event.opid) {
-                event.opid = await this.generateCID(event.operation, true);
-            }
-
-            const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);
-
-            if (opMatch) {
-                const first = currentEvents[0];
-                const nativeRegistry = first.operation.mdip?.registry;
-
-                if (opMatch.registry === nativeRegistry) {
-                    // If this event is already confirmed on the native registry, no need to update
-                    return ImportStatus.MERGED;
-                }
-
-                if (event.registry === nativeRegistry) {
-                    // If this import is on the native registry, replace the current one
-                    const index = currentEvents.indexOf(opMatch);
-                    currentEvents[index] = event;
-                    await this.db.setEvents(did, currentEvents);
-                    return ImportStatus.ADDED;
-                }
-
-                return ImportStatus.MERGED;
-            }
-            else {
-                const ok = await this.verifyOperation(event.operation);
-
-                if (!ok) {
-                    return ImportStatus.REJECTED;
-                }
-
-                if (currentEvents.length === 0) {
-                    await this.db.addEvent(did, event);
-                    return ImportStatus.ADDED;
-                }
-
-                // TEMP during did:test, operation.previd is optional
-                if (!event.operation.previd) {
-                    await this.db.addEvent(did, event);
-                    return ImportStatus.ADDED;
-                }
-
-                const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
-
-                if (!idMatch) {
-                    return ImportStatus.DEFERRED;
-                }
-
-                const index = currentEvents.indexOf(idMatch);
-
-                if (index === currentEvents.length - 1) {
-                    await this.db.addEvent(did, event);
-                    return ImportStatus.ADDED;
-                }
-
-                const first = currentEvents[0];
-                const nativeRegistry = first.operation.mdip?.registry;
-
-                if (event.registry === nativeRegistry) {
-                    const nextEvent = currentEvents[index + 1];
-
-                    if (nextEvent.registry !== event.registry ||
-                        (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
-                        // reorg event, discard the rest of the operation sequence and replace with this event
-                        const newSequence = [...currentEvents.slice(0, index + 1), event];
-                        await this.db.setEvents(did, newSequence);
-                        return ImportStatus.ADDED;
+                for (const e of currentEvents) {
+                    if (!e.opid) {
+                        e.opid = await this.generateCID(e.operation, true);
                     }
                 }
-            }
-        }
-        catch (error: any) {
+
+                if (!event.opid) {
+                    event.opid = await this.generateCID(event.operation, true);
+                }
+
+                const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);
+
+                if (opMatch) {
+                    const first = currentEvents[0];
+                    const nativeRegistry = first.operation.mdip?.registry;
+
+                    if (opMatch.registry === nativeRegistry) {
+                        // If this event is already confirmed on the native registry, no need to update
+                        return ImportStatus.MERGED;
+                    }
+
+                    if (event.registry === nativeRegistry) {
+                        // If this import is on the native registry, replace the current one
+                        const index = currentEvents.indexOf(opMatch);
+                        currentEvents[index] = event;
+                        await this.db.setEvents(did, currentEvents);
+                        return ImportStatus.ADDED;
+                    }
+
+                    return ImportStatus.MERGED;
+                } else {
+                    const ok = await this.verifyOperation(event.operation);
+
+                    if (!ok) {
+                        return ImportStatus.REJECTED;
+                    }
+
+                    if (currentEvents.length === 0) {
+                        await this.db.addEvent(did, event);
+                        return ImportStatus.ADDED;
+                    }
+
+                    // TEMP during did:test, operation.previd is optional
+                    if (!event.operation.previd) {
+                        await this.db.addEvent(did, event);
+                        return ImportStatus.ADDED;
+                    }
+
+                    const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
+
+                    if (!idMatch) {
+                        return ImportStatus.DEFERRED;
+                    }
+
+                    const index = currentEvents.indexOf(idMatch);
+
+                    if (index === currentEvents.length - 1) {
+                        await this.db.addEvent(did, event);
+                        return ImportStatus.ADDED;
+                    }
+
+                    const first = currentEvents[0];
+                    const nativeRegistry = first.operation.mdip?.registry;
+
+                    if (event.registry === nativeRegistry) {
+                        const nextEvent = currentEvents[index + 1];
+
+                        if (nextEvent.registry !== event.registry ||
+                            (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
+                            // reorg event, discard the rest of the operation sequence and replace with this event
+                            const newSequence = [...currentEvents.slice(0, index + 1), event];
+                            await this.db.setEvents(did, newSequence);
+                            return ImportStatus.ADDED;
+                        }
+                    }
+                }
+
+                return ImportStatus.REJECTED;
+            });
+        } catch (error: any) {
             if (error.message === 'Invalid DID: unknown') {
                 // Could be an event with a controller DID that hasn't been imported yet
                 return ImportStatus.DEFERRED;
