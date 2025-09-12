@@ -88,7 +88,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.didLocks.get(did) ?? Promise.resolve();
-        let release!: () => void;
+        let release: () => void = () => {};
         const gate = new Promise<void>(r => (release = r));
 
         this.didLocks.set(did, prev.then(() => gate, () => gate));
