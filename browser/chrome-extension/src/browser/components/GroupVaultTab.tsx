@@ -187,7 +187,11 @@ function GroupVaultTab() {
             const item = JSON.parse(buffer.toString('utf-8'));
 
             if (item.login) {
-                setRevealLogin(item.login);
+                const parsedFromName = name.replace(/^login:\s*/i, '');
+                const service  = item.login.service || parsedFromName;
+                const username = item.login.username ?? '';
+                const password = item.login.password ?? '';
+                setRevealLogin({ service, username, password });
                 setRevealLoginOpen(true);
                 return;
             }
