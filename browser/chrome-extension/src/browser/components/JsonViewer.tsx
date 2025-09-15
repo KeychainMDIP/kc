@@ -7,10 +7,16 @@ import React, {
 import JsonView from '@uiw/react-json-view';
 import {
     Box,
-    Button,
     TextField,
-    Typography
+    Typography,
+    IconButton,
+    Tooltip,
+    InputAdornment,
 } from "@mui/material";
+import {
+    LockOpen,
+    ManageSearch,
+} from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import {MdipDocument} from "@mdip/gatekeeper/types";
@@ -226,30 +232,46 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                         onChange={(e) => trimQuotes(e)}
                         size="small"
                         className="text-field single-line"
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && formDid) {
+                                e.preventDefault();
+                                handleResolveDID();
+                            }
+                        }}
                         slotProps={{
                             htmlInput: {
                                 maxLength: 80,
                             },
+                            input: {
+                                endAdornment: (
+                                    <InputAdornment position="end" sx={{ gap: 0.5 }}>
+                                        <Tooltip title="Resolve DID" placement="top">
+                                            <span>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => handleResolveDID()}
+                                                    disabled={!formDid}
+                                                >
+                                                    <ManageSearch fontSize="small" />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                        <Tooltip title="Decrypt" placement="top">
+                                            <span>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={handleDecrypt}
+                                                    disabled={!canDecrypt}
+                                                >
+                                                    <LockOpen fontSize="small" />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                    </InputAdornment>
+                                ),
+                            }
                         }}
                     />
-                    <Button
-                        variant="contained"
-                        onClick={() => handleResolveDID()}
-                        size="small"
-                        className="button-center"
-                        disabled={!formDid}
-                    >
-                        Resolve
-                    </Button>
-                    <Button
-                        variant="contained"
-                        onClick={handleDecrypt}
-                        size="small"
-                        className="button-right"
-                        disabled={!canDecrypt}
-                    >
-                        Decrypt
-                    </Button>
                 </Box>
             }
             {currentTitle &&

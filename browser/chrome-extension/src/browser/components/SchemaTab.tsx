@@ -23,7 +23,6 @@ const SchemaTab = ()=> {
     } = useCredentialsContext();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [schemaName, setSchemaName] = useState<string>('');
-    const [schemaDID, setSchemaDID] = useState<string>('');
     const [selectedSchemaName, setSelectedSchemaName] = useState<string>('');
     const [schemaString, setSchemaString] = useState<string>('');
     const [renameOpen, setRenameOpen] = useState<boolean>(false);
@@ -58,15 +57,16 @@ const SchemaTab = ()=> {
         if (!keymaster) {
             return;
         }
+
+        const name = schemaName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
+        setSchemaName('');
+
         try {
-            if (Object.keys(nameList).includes(schemaName)) {
-                setError(`${schemaName} already in use`);
-                return;
-            }
-
-            const name = schemaName;
-            setSchemaName('');
-
             const schemaDID = await keymaster.createSchema(null, { registry });
             await keymaster.addName(name, schemaDID);
 
@@ -76,10 +76,6 @@ const SchemaTab = ()=> {
         } catch (error: any) {
             setError(error);
         }
-    }
-
-    function populateCopyButton(name: string) {
-        setSchemaDID(nameList[name]);
     }
 
     const openRenameModal = () => {
@@ -92,11 +88,18 @@ const SchemaTab = ()=> {
         if (!newName || newName === selectedSchemaName || !keymaster) {
             return;
         }
+
+        const name = newName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
         try {
-            await keymaster.addName(newName, schemaDID);
+            await keymaster.addName(name, nameList[selectedSchemaName]);
             await keymaster.removeName(selectedSchemaName);
             await refreshNames();
-            setSelectedSchemaName(newName);
+            setSelectedSchemaName(name);
             setRenameOldName("");
             setSuccess("Schema renamed");
         } catch (error: any) {
@@ -166,7 +169,6 @@ const SchemaTab = ()=> {
                         onChange={async (event) => {
                             const name = event.target.value;
                             setSelectedSchemaName(name);
-                            populateCopyButton(name);
                             await editSchema(name);
                         }}
                     >
@@ -192,7 +194,7 @@ const SchemaTab = ()=> {
                         </span>
                     </Tooltip>
 
-                    <CopyResolveDID did={schemaDID} />
+                    <CopyResolveDID did={nameList[selectedSchemaName] ?? ""} />
                 </Box>
             }
             {schemaString &&

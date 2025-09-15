@@ -59,6 +59,8 @@ function NamedDIDs() {
           | "document"
           | "unknown";
     const [filter, setFilter] = useState<NameKind>("all");
+    type RegistryFilter = "all" | "unresolved" | string;
+    const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
     const {
         isBrowser,
         keymaster,
@@ -72,6 +74,7 @@ function NamedDIDs() {
         groupList,
         imageList,
         nameList,
+        nameRegistry,
         pollList,
         schemaList,
         setAliasDID,
@@ -85,6 +88,24 @@ function NamedDIDs() {
         refreshNames,
     } = useUIContext();
 
+    const registryOptions = useMemo(() => {
+        const regs = new Set<string>();
+        Object.values(nameRegistry || {}).forEach((r) => {
+            if (r) regs.add(r);
+        });
+        return Array.from(regs).sort();
+    }, [nameRegistry]);
+
+    useEffect(() => {
+        if (
+            registryFilter !== "all" &&
+            registryFilter !== "unresolved" &&
+            !registryOptions.includes(registryFilter)
+        ) {
+            setRegistryFilter("all");
+        }
+    }, [registryOptions, registryFilter]);
+
     const mergedEntries = useMemo(() => {
         if (!nameList && !unresolvedList) {
             return [] as Array<[string, string]>;
@@ -93,10 +114,16 @@ function NamedDIDs() {
             .sort(([a], [b]) => a.localeCompare(b))
             .filter(([name]) => {
                 const { kind } = getNameIcon(name);
-                return filter === "all" || kind === filter;
+                const passesKind = (filter === "all" || kind === filter);
+
+                const reg = nameRegistry[name];
+                const regTag: RegistryFilter = reg ?? "unresolved";
+                const passesRegistry = (registryFilter === "all" || regTag === registryFilter);
+
+                return passesKind && passesRegistry;
             });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nameList, unresolvedList, filter]);
+    }, [nameList, nameRegistry, unresolvedList, filter, registryFilter]);
 
     useEffect(() => {
         if (!openBrowser) {
@@ -258,7 +285,7 @@ function NamedDIDs() {
     const toggleSelectAllVisible = () => {
         setSelected((prev) => {
             const next = new Set(prev);
-            if (allSelectedOnPage) {
+            if (someSelectedOnPage) {
                 allVisibleNames.forEach((n) => next.delete(n));
             } else {
                 allVisibleNames.forEach((n) => next.add(n));
@@ -449,7 +476,7 @@ function NamedDIDs() {
                     onChange={(e) => setFilter(e.target.value as NameKind)}
                     sx={{ width: 200 }}
                 >
-                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="all">Type: All</MenuItem>
                     <MenuItem value="agent">Agents</MenuItem>
                     <MenuItem value="document">Documents</MenuItem>
                     <MenuItem value="group">Groups</MenuItem>
@@ -458,6 +485,23 @@ function NamedDIDs() {
                     <MenuItem value="schema">Schemas</MenuItem>
                     <MenuItem value="vault">Vaults</MenuItem>
                     <MenuItem value="unknown">Unknown</MenuItem>
+                </Select>
+
+                <Select
+                    size="small"
+                    value={registryFilter}
+                    onChange={(e) => setRegistryFilter(e.target.value)}
+                    sx={{ width: 200 }}
+                >
+                    <MenuItem value="all">Registry: All</MenuItem>
+
+                    {registryOptions.map((r) => (
+                        <MenuItem key={r} value={r}>
+                            {r}
+                        </MenuItem>
+                    ))}
+
+                    <MenuItem value="unresolved">Unresolved</MenuItem>
                 </Select>
             </Box>
 

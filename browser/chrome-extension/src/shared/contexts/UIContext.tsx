@@ -116,6 +116,7 @@ export function UIProvider(
         setIssuedList,
         setIssuedString,
         setNameList,
+        setNameRegistry,
         setUnresolvedList,
         setGroupList,
         setSchemaList,
@@ -377,6 +378,7 @@ export function UIProvider(
 
         let nameList : Record<string, string> = {};
         let unresolvedList : Record<string, string> = {};
+        const registryMap: Record<string, string> = {};
 
         const allNames = await keymaster.listNames();
         const allNamesSorted = Object.fromEntries(
@@ -400,6 +402,12 @@ export function UIProvider(
             try {
                 const doc = await keymaster.resolveDID(name);
                 nameList[name] = did;
+
+                const reg = doc.mdip?.registry;
+                if (reg) {
+                    registryMap[name] = reg;
+                }
+
                 const data = doc.didDocumentData as Record<string, unknown>;
 
                 if (doc.mdip?.type === 'agent') {
@@ -444,6 +452,7 @@ export function UIProvider(
 
         setNameList(nameList);
         setUnresolvedList(unresolvedList);
+        setNameRegistry(registryMap);
 
         const uniqueSortedAgents = [...new Set(agentList)]
             .sort((a, b) => a.localeCompare(b));
