@@ -47,7 +47,6 @@ function GroupVaultTab() {
     const [warningOpen,  setWarningOpen]  = useState(false);
     const [warningTitle, setWarningTitle] = useState("");
     const [warningText,  setWarningText]  = useState("");
-    const [groupVaultDID, setGroupVaultDID] = useState<string>('');
     const [renameOpen, setRenameOpen] = useState<boolean>(false);
     const [renameOldName, setRenameOldName] = useState<string>("");
     const warningCbRef = useRef<() => Promise<void> | void>(() => {});
@@ -67,10 +66,6 @@ function GroupVaultTab() {
         getVaultItemIcon,
         refreshNames,
     } = useUIContext();
-
-    function populateCopyButton(name: string) {
-        setGroupVaultDID(nameList[name]);
-    }
 
     function removeVaultMember(did: string): void {
         showWarning(
@@ -192,7 +187,11 @@ function GroupVaultTab() {
             const item = JSON.parse(buffer.toString('utf-8'));
 
             if (item.login) {
-                setRevealLogin(item.login);
+                const parsedFromName = name.replace(/^login:\s*/i, '');
+                const service  = item.login.service || parsedFromName;
+                const username = item.login.username ?? '';
+                const password = item.login.password ?? '';
+                setRevealLogin({ service, username, password });
                 setRevealLoginOpen(true);
                 return;
             }
@@ -213,15 +212,15 @@ function GroupVaultTab() {
         if (!keymaster) {
             return;
         }
+
+        const name = vaultName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
+        setVaultName('');
         try {
-            if (vaultName in nameList) {
-                alert(`${vaultName} already in use`);
-                return;
-            }
-
-            const name = vaultName;
-            setVaultName('');
-
             await keymaster.createGroupVault({ registry, name });
 
             await refreshNames();
@@ -432,11 +431,18 @@ function GroupVaultTab() {
         if (!newName || newName === selectedVaultName || !keymaster) {
             return;
         }
+
+        const name = newName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
         try {
-            await keymaster.addName(newName, groupVaultDID);
+            await keymaster.addName(name, nameList[selectedVaultName]);
             await keymaster.removeName(selectedVaultName);
             await refreshNames();
-            setSelectedVaultName(newName);
+            setSelectedVaultName(name);
             setRenameOldName("");
             setSuccess("Vault renamed");
         } catch (error: any) {
@@ -537,7 +543,6 @@ function GroupVaultTab() {
                             onChange={async (event) => {
                                 const selectedName = event.target.value;
                                 await refreshVault(selectedName);
-                                populateCopyButton(selectedName);
                             }}
                         >
                             <MenuItem value="" disabled>
@@ -562,7 +567,7 @@ function GroupVaultTab() {
                             </span>
                         </Tooltip>
 
-                        <CopyResolveDID did={groupVaultDID} />
+                        <CopyResolveDID did={nameList[selectedVaultName]} />
                     </Box>
                 )}
 

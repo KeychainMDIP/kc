@@ -28,7 +28,6 @@ const GroupsTab = () => {
 
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [groupName, setGroupName] = useState<string>('');
-    const [groupDID, setGroupDID] = useState<string>('');
     const [selectedGroupName, setSelectedGroupName] = useState<string>('');
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [memberDID, setMemberDID] = useState<string>('');
@@ -45,17 +44,18 @@ const GroupsTab = () => {
         if (!keymaster) {
             return;
         }
+
+        const name = groupName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
+        setGroupName('');
+
         try {
-            if (Object.keys(nameList).includes(groupName)) {
-                setError(`${groupName} already in use`);
-                return;
-            }
-
-            const name = groupName;
-            setGroupName('');
-
             const groupDID = await keymaster.createGroup(name, { registry });
-            await keymaster.addName(groupName, groupDID);
+            await keymaster.addName(name, groupDID);
 
             await refreshNames();
             setSelectedGroupName(name);
@@ -83,10 +83,6 @@ const GroupsTab = () => {
         } catch (error: any) {
             setError(error);
         }
-    }
-
-    function populateCopyButton(name: string) {
-        setGroupDID(nameList[name]);
     }
 
     async function addMember(did: string) {
@@ -145,11 +141,18 @@ const GroupsTab = () => {
         if (!newName || newName === selectedGroupName || !keymaster) {
             return;
         }
+
+        const name = newName.trim();
+        if (name in nameList) {
+            setError(`${name} already in use`);
+            return;
+        }
+
         try {
-            await keymaster.addName(newName, groupDID);
+            await keymaster.addName(name, nameList[selectedGroupName]);
             await keymaster.removeName(selectedGroupName);
             await refreshNames();
-            setSelectedGroupName(newName);
+            setSelectedGroupName(name);
             setRenameOldName("");
             setSuccess("Group renamed");
         } catch (error: any) {
@@ -228,7 +231,6 @@ const GroupsTab = () => {
                             onChange={async (event) => {
                                 const name = event.target.value;
                                 setSelectedGroupName(name);
-                                populateCopyButton(name);
                                 await refreshGroup(name);
                             }}
                         >
@@ -255,7 +257,7 @@ const GroupsTab = () => {
                             </span>
                         </Tooltip>
 
-                        <CopyResolveDID did={groupDID} />
+                        <CopyResolveDID did={nameList[selectedGroupName]} />
                     </Box>
                 }
                 {selectedGroup &&
