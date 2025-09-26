@@ -29,6 +29,7 @@ function AuthTab() {
             setChallenge(pendingChallenge);
             setPendingChallenge(null);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingChallenge]);
 
     async function newChallenge() {
