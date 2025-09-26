@@ -1,0 +1,52 @@
+name: Android Debug APK (manual)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-android-debug:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node 22.15.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build
+
+      - name: Install app dependencies
+        working-directory: ./apps/android
+        run: npm ci
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 35
+          build-tools: '35.0.0'
+
+      - name: Build Android debug APK
+        working-directory: ./apps/android
+        env:
+          CI: true
+        run: npm run android:build
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdip-android-debug-${{ github.sha }}
+          path: apps/android/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

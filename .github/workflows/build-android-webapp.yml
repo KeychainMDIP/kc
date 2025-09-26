@@ -1,10 +1,10 @@
-name: Build Explorer
+name: Build Android webapp
 
 on:
   push:
 
 jobs:
-  build-explorer:
+  build-android-webapp:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,18 +17,18 @@ jobs:
           node-version: '22.15.0'
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Compile TypeScript
         run: npm run build
 
-      - name: Install explorer dependencies
+      - name: Install dependencies
         run: |
-          cd ./services/explorer
-          npm install
+          cd ./apps/android
+          npm ci
 
       - name: Build extension
         run: |
-          cd ./services/explorer
+          cd ./apps/android
           npm run build
 
