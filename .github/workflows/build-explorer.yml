@@ -1,10 +1,10 @@
-name: Build Chrome Extension
+name: Build Explorer
 
 on:
   push:
 
 jobs:
-  build-chrome-extension:
+  build-explorer:
     runs-on: ubuntu-latest
 
     steps:

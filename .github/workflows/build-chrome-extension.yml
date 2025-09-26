@@ -24,11 +24,11 @@ jobs:
 
       - name: Install extension dependencies
         run: |
-          cd ./browser/chrome-extension
+          cd ./apps/chrome-extension
           npm install
 
       - name: Build extension
         run: |
-          cd ./browser/chrome-extension
+          cd ./apps/chrome-extension
           npm start
 
