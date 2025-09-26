@@ -5,6 +5,7 @@ import "./extension.css";
 import "./utils/polyfills";
 import { App } from '@capacitor/app';
 import { queueDeepLink } from './utils/deepLinkQueue';
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
 App.addListener('appUrlOpen', ({ url }) => {
     queueDeepLink(url);
@@ -17,6 +18,15 @@ App.addListener('appUrlOpen', ({ url }) => {
         queueDeepLink(launch.url);
         window.dispatchEvent(new Event('mdip:deepLinkQueued'));
     }
+})();
+
+(async () => {
+    try {
+        const has = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+        if (!has) {
+            await BarcodeScanner.installGoogleBarcodeScannerModule();
+        }
+    } catch {}
 })();
 
 const BrowserUI = () => {

@@ -138,6 +138,17 @@ function AuthTab() {
         }
     }
 
+    async function ensureGoogleModuleReady(timeoutMs = 8000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            if (await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()) {
+                return true;
+            }
+            await new Promise(r => setTimeout(r, 400));
+        }
+        return false;
+    }
+
     async function scanChallengeQR() {
         try {
             const perm = await BarcodeScanner.requestPermissions();
@@ -147,9 +158,10 @@ function AuthTab() {
                 return;
             }
 
-            const installed = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
-            if (!installed) {
-                await BarcodeScanner.installGoogleBarcodeScannerModule();
+            const ready = await ensureGoogleModuleReady();
+            if (!ready) {
+                setWarning('Barcode module still installing. Try again in a moment or relaunch the app.');
+                return;
             }
 
             const { barcodes } = await BarcodeScanner.scan();

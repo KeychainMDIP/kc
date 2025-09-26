@@ -188,7 +188,7 @@ function GroupVaultTab() {
             if (result) {
                 await refreshVault(selectedVaultName);
             } else {
-                setError(`Cannot add vault owner`);
+                setError(`Cannot add vault owner as a member. The owner is a member by default.`);
             }
         } catch (error: any) {
             setError(error);
