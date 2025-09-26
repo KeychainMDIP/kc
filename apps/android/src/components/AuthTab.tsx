@@ -147,6 +147,11 @@ function AuthTab() {
                 return;
             }
 
+            const installed = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+            if (!installed) {
+                await BarcodeScanner.installGoogleBarcodeScannerModule();
+            }
+
             const { barcodes } = await BarcodeScanner.scan();
 
             let did: string | null = null;
