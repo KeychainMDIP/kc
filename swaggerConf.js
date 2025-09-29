@@ -5,7 +5,7 @@ const baseDefinition = {
     openapi: '3.0.0',
     info: {
         title: 'Keymaster API',
-        version: '1.2.1',
+        version: '1.3.0',
         description: 'Documentation for Keymaster API'
     },
 };
