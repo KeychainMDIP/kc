@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import {Box, Button, TextField, IconButton, InputAdornment, Tooltip} from "@mui/material";
 import { CameraAlt } from "@mui/icons-material";
-import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 import axios from "axios";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
-import { extractDid } from "../utils/utils";
+import { scanQrCode } from "../utils/utils";
 
 function AuthTab() {
     const [authDID, setAuthDID] = useState<string>("");
@@ -138,52 +137,14 @@ function AuthTab() {
         }
     }
 
-    async function ensureGoogleModuleReady(timeoutMs = 8000) {
-        const start = Date.now();
-        while (Date.now() - start < timeoutMs) {
-            if (await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()) {
-                return true;
-            }
-            await new Promise(r => setTimeout(r, 400));
-        }
-        return false;
-    }
-
     async function scanChallengeQR() {
-        try {
-            const perm = await BarcodeScanner.requestPermissions();
-
-            if (perm.camera !== 'granted') {
-                setWarning('Camera permission denied');
-                return;
-            }
-
-            const ready = await ensureGoogleModuleReady();
-            if (!ready) {
-                setWarning('Barcode module still installing. Try again in a moment or relaunch the app.');
-                return;
-            }
-
-            const { barcodes } = await BarcodeScanner.scan();
-
-            let did: string | null = null;
-            for (const b of barcodes) {
-                const candidate = extractDid(b.rawValue);
-                if (candidate) {
-                    did = candidate;
-                    break;
-                }
-            }
-
-            if (!did) {
-                setWarning("No DID found in QR code");
-                return;
-            }
-
-            setChallenge(did);
-        } catch (err: any) {
-            setError(err);
+        const qr = await scanQrCode();
+        if (!qr) {
+            setError("Failed to scan QR code");
+            return;
         }
+
+        setChallenge(qr);
     }
 
     return (

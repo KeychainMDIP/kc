@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Box, Button, TextField } from "@mui/material";
+import { Box, Button, IconButton, InputAdornment, TextField, Tooltip } from "@mui/material";
+import { CameraAlt } from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "./DisplayDID";
+import {scanQrCode} from "../utils/utils";
 
 function HeldTab() {
     const [open, setOpen] = useState<boolean>(false);
@@ -180,6 +182,16 @@ function HeldTab() {
         });
     }
 
+    async function scanCredentialQR() {
+        const qr = await scanQrCode();
+        if (!qr) {
+            setError("Failed to scan QR code");
+            return;
+        }
+
+        setHeldDID(qr);
+    }
+
     return (
         <Box>
             <WarningModal
@@ -198,6 +210,27 @@ function HeldTab() {
                     onChange={(e) => setHeldDID(e.target.value)}
                     size="small"
                     className="text-field top"
+                    slotProps={{
+                        htmlInput: {
+                            maxLength: 80,
+                        },
+                        input: {
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <Tooltip title="Scan QR" placement="top">
+                                        <span>
+                                            <IconButton
+                                                edge="end"
+                                                onClick={scanCredentialQR}
+                                            >
+                                                <CameraAlt />
+                                            </IconButton>
+                                        </span>
+                                    </Tooltip>
+                                </InputAdornment>
+                            ),
+                        }
+                    }}
                 />
             </Box>
 
