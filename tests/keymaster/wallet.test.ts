@@ -230,6 +230,19 @@ describe('saveWallet', () => {
 
         expect(testWallet).toStrictEqual(expectedWallet);
     });
+
+    it('should save augmented wallet', async () => {
+        await keymaster.createId('Bob');
+        const wallet = await keymaster.loadWallet();
+
+        wallet.ids['Bob'].icon = 'smiley';
+        wallet.metadata = { foo: 'bar' };
+        await keymaster.saveWallet(wallet, true);
+
+        const wallet2 = await keymaster.loadWallet();
+
+        expect(wallet).toStrictEqual(wallet2);
+    });
 });
 
 describe('decryptMnemonic', () => {
@@ -332,6 +345,23 @@ describe('recoverWallet', () => {
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
         const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupWallet();
+
+        // Recover wallet from mnemonic
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(wallet).toStrictEqual(recovered);
+    });
+
+    it('should recover augmented wallet from seed bank', async () => {
+        await keymaster.createId('Bob');
+        const wallet = await keymaster.loadWallet();
+        const mnemonic = await keymaster.decryptMnemonic();
+
+        wallet.ids['Bob'].icon = 'smiley';
+        wallet.metadata = { foo: 'bar' };
+        await keymaster.saveWallet(wallet, true);
         await keymaster.backupWallet();
 
         // Recover wallet from mnemonic
