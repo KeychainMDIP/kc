@@ -341,6 +341,23 @@ describe('recoverWallet', () => {
         expect(wallet).toStrictEqual(recovered);
     });
 
+    it('should recover augmented wallet from seed bank', async () => {
+        await keymaster.createId('Bob');
+        const wallet = await keymaster.loadWallet();
+        const mnemonic = await keymaster.decryptMnemonic();
+
+        wallet.ids['Bob'].icon = 'smiley';
+        wallet.metadata = { foo: 'bar' };
+        await keymaster.saveWallet(wallet, true);
+        await keymaster.backupWallet();
+
+        // Recover wallet from mnemonic
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(wallet).toStrictEqual(recovered);
+    });
+
     it('should recover wallet from backup DID', async () => {
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
