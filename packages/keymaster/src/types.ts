@@ -29,7 +29,7 @@ export interface IDInfo {
     owned?: string[];
     dmail?: Record<string, any>;
     notices?: Record<string, any>;
-    [key: string]: unknown; // Catch-all for truly arbitrary fields
+    [key: string]: any; // Allow custom metadata fields
 }
 
 export interface WalletFile {
@@ -38,7 +38,7 @@ export interface WalletFile {
     ids: Record<string, IDInfo>;
     current?: string;
     names?: Record<string, string>;
-    [key: string]: unknown; // Catch-all for truly arbitrary fields
+    [key: string]: any; // Allow custom metadata fields
 }
 
 export interface CheckWalletResult {
