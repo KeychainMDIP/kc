@@ -3,7 +3,7 @@ title: Keychain MDIP Full Trustless Node Deployment Guide
 sidebar_label: Deployment Guide
 ---
 
-Keychain MDIP is a suite of software tools, libraries, and services that implement the Multi-Dimensional Identity Protocol as defined and documented by the [MDIP DID Scheme](/docs/mdip/scheme). This document refers to the [MDIP v.0.3-beta release](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta).
+Keychain MDIP is a suite of software tools, libraries, and services that implement the Multi-Dimensional Identity Protocol as defined and documented by the [MDIP DID Scheme](https://keychain.org/docs/protocol/scheme). This document refers to the [MDIP v.1.3.0 Fall 2025 release](https://github.com/KeychainMDIP/kc/releases/tag/v.1.3.0).
 
 There are countless ways to deploy MDIP technology. These guidelines reflect current lessons learned and best practices. Feedback, recommendations, and additional best practices are welcome. Recommendations can be sent by opening an [issue](https://github.com/KeychainMDIP/kc/issues) against this document to share your experience with MDIP; these may be incorporated in future versions of this document. You can also comment diretly at the bottom of any docs page, provided you have a GitHub account.
 
@@ -47,28 +47,22 @@ MDIP operators can interact with their server's Keymaster in multiple ways:
 - use the Keymaster WebUI at `http://localhost:4226`,
 - use the Keymaster REST OpenAPI at `http://localhost:4226/api/v1/`.
 
-The MDIP [Integration Guide](https://github.com/KeychainMDIP/kc/blob/ab36a8a7b3b6bbb60de93c0b9516f8629fa4f690/doc/integration_guide.md) focuses on Keymaster deployments, Keymaster OpenAPI interface, and integration of MDIP wallet functionality with 3rd party applications.
-
 ### MDIP Components
 
 ![MDIP-components](./mdip_components.png)
 
-All the MDIP components illustrated above are composed together using Docker Compose in the official ['kc' v.0.3-beta](https://github.com/KeychainMDIP/kc/releases/tag/v0.3-beta) release. The release provides a simple [`start-node`](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/start-node) script that will compile, dockerize, and launch all required MDIP components. The convenience of this script will be preserved as we explore configuration and deployment options below.
-
-Each MDIP component can also be manually launched using native nodeJS commands. The dockerfile for each component will reveal the particular shell command being executed within the Docker environment. Using [Dockerfile.gatekeeper](https://github.com/KeychainMDIP/kc/blob/v0.3-beta/Dockerfile.gatekeeper) as an example, we see the command used to launch the Gatekeeper API:
-`CMD ["node", "server/dist/gatekeeper-api.js"]
-
-While perhaps not optimal for a production environment, developement environments can be deployed with all the required components on a single moderately-sized server. The statistics below demonstrate a typical development environment:
+All the MDIP components illustrated above are composed together using Docker Compose in the official ['kc'](https://github.com/KeychainMDIP/kc/releases/tag/) release. The release provides a simple `start-node` script that will compile, dockerize, and launch all required MDIP components. The convenience of this script will be preserved as we explore configuration and deployment options below.
 
 ![MDIP-resources](./mdip-resource-usage.png)
 
-- kc-gatekeeper-1 is the MDIP Gatekeeper, a reference implementation of the [MDIP DID Scheme](/docs/mdip/scheme) exposing a REST API interface.
-- kc-keymaster-1 is the MDIP Keymaster, which provides an interface to the server's keymaster wallet and expose a REST [Keymaster API](https://keychain.org/docs/keychain/library/api/) to manage the server's MDIP identity.
+- kc-gatekeeper-1 is the MDIP Gatekeeper, a reference implementation of MDIP exposing a REST [Gatekeeper API](../../gatekeeper-api.json) interface.
+- kc-keymaster-1 is the MDIP Keymaster, which provides an interface to the server's keymaster wallet and expose a REST [Keymaster API](../../keymaster-api.json) to manage the server's MDIP identity.
 - kc-hyperswarm-1 is the document distribution protocol service built on [Hyperswarm](https://github.com/holepunchto/hyperswarm).
 - kc-tftc-mediator-1 is the MDIP Mediator for [Feathercoin Testnet](https://feathercoin.com/)
 - kc-tbtc-mediator-1 is the MDIP Mediator for [Bitcoin Testnet](https://github.com/bitcoin/)
 - kc-tftc-node is a generic Feathercoin Testnet node
 - kc-tbtc-node is a generic [Bitcoin Testnet4](https://github.com/bitcoin/bitcoin/pull/29775) node
+- kc-signet-node is a generic [Bitcoin Signet] node
 
 ## Systems Requirements
 
@@ -130,10 +124,10 @@ Clone MDIP from its source repository:
 ```bash
 git clone https://github.com/KeychainMDIP/kc
 cd kc
-git checkout v0.3-beta
+git checkout v.1.3.0
 ```
 
-This will checkout the current LTS v0.3-beta version. More adventurous node operators can consider the `main` nightly branch at their own risk!
+This will checkout the current v.1.3.0 version. More adventurous node operators can consider the `main` nightly branch at their own risk!
 
 ### MDIP Directory Structure
 
@@ -197,7 +191,7 @@ The `.env` file includes the following customizable environment variables. At a 
 | `KC_GATEKEEPER_URL`        | http://localhost:4224  | URL for client-facing apps, to be replaced with an `https` address once configured                   |
 | `# KC_KEYMASTER_URL`       | http://localhost:4226  | Commented: clients use in-process keymaster library.<br/>Set: uses `localhost:4226` keymaster API    |
 
-Following these initial Gatekeeper configuration variables, the file contains MDIP Registry Mediator configuration variables. The following block of variables is repeated for each *Satoshi Mediator* network. The Bitcoin Testnet block is used as an example here. No changes are needed in these blocks. The TESS registry was used in the early development of the protocol and is being deprecated; KC_TESS_* variables can be removed.
+Following these initial Gatekeeper configuration variables, the file contains MDIP Registry Mediator configuration variables. The following block of variables is repeated for each *Satoshi Mediator* network. The Bitcoin Testnet block is used as an example here. No changes are needed in these blocks. 
 
 WARNING: Changes to these variables are likely to **break** the Docker Compose functionality.
 
@@ -222,8 +216,6 @@ WARNING: Changes to these variables are likely to **break** the Docker Compose f
 ### Customizing the docker-compose.yml services
 
 Another important file controlling the behavior of an MDIP node is the `kc/docker-compose.yml` file. Although no changes to this file are necessary, a node operator will want to be familiar with the ports and variables used for each MDIP service. This file shows and explains how each components is launched.
-
-Note that the TESS network is being deprecated. If installing v.0.3-beta, a node operator can practice customizing the `docker-compose.yml` file by removing the `tess-node` and `tess-mediator` sections.
 
 Operators wanting to operate MDIP in a Kubernetes or similar virtualized environment will find the environment variable dependencies for each MDIP component in the `kc/docker-compose.yml` file.
 
@@ -334,16 +326,6 @@ In the example below, we use a generic bitcoin-code node configured to operate o
       - tbtc-node
 ```
 
-### Install Local CLI Dependencies
-
-NodeJS dependencies should be resolved both locally on the Host and within the Docker containers. Dependencies resolved on the host machine enables command-line admin tools and scripts.
-
-The following command will launch the `clean` installation of all npm package dependencies for MDIP:
-
-```bash
-npm ci
-```
-
 ## Launching and Running an MDIP Node
 
 Once the server requirements and dependencies are resolved, the next step will create and launch the docker containers:
@@ -352,7 +334,7 @@ Once the server requirements and dependencies are resolved, the next step will c
 ./start-node
 ```
 
-On the first run, the `start-node` command will take up to 15 minutes to prepare the docker containers needed by the MDIP node. This will include Bitcoin Testnet and Feathercoin Testnet as registries. 
+On the first run, the `start-node` command will take up to 30 minutes to prepare the docker containers needed by the MDIP node. This will include Bitcoin Testnet and Feathercoin Testnet as registries. Full network sync time may take many hours.
 
 The script contains 2 commands:
 
@@ -367,7 +349,7 @@ The `build` process will download numerous containers and dependencies as define
 
 ```log
 Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Server is running on port 4224, persisting with json
-Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Supported registries: hyperswarm,TESS,TBTC,TFTC
+Oct 16 18:11:49 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | Supported registries: hyperswarm,TBTC,TFTC,Signet
 Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: gatekeeper-1     | GET /api/v1/ready 200 9.088 ms - 4
 Oct 16 18:11:50 mdip-gatekeeper start-node[3151048]: hyperswarm-1     | Gatekeeper service is ready!
 ```
@@ -377,10 +359,7 @@ Likewise, the MDIP node's Keymaster becomes available once the following logs ar
 ```log
 Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | Gatekeeper service is ready!
 Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | keymaster server running on port 4226
-Oct 16 18:11:53 mdip-gatekeeper start-node[3151048]: keymaster-1      | Error: No current ID
 ```
-
-We will resolve the `No current ID` error in the next section.
 
 ### Post-Launch Server Configuration
 
@@ -395,29 +374,17 @@ The MDIP node's Keymaster wallet is located in `data/wallet.json`. There are two
 - `kc`, the command line interface.
 - the Keymaster web interface on `http://localhost:4226`.
 
-This document will provide examples using the `kc` CLI tool. The following command will create a new wallet and show its content:
-
-```bash
-./kc create-wallet
-```
-
-We can now create an Agent DID for our MDIP node. This DID should be given an aliased name that matches the `KC_NODE_ID` environment variable.
-
-The following command will create this new DID and schedule it for registration on the Bitcoin blockchain (to be configured below):
-
-```bash
-./kc create-id mynodeDID TBTC
-```
+This document will provide examples using the `kc` CLI tool. The following command will show the server's DID, which was created on launch.
 
 The `./kc show-wallet` command will show an updated JSON wallet containing the newly created DID. To resolve a specific DID Document, use the command `./kc resolve-did mynodeDID` and replace `mynodeDID` with a specific DID or aliased name.
 
 #### DID Registries Setup
 
-MDIP v.0.3-beta currently support 2 decentralized registries: Bitcoin Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the registry contains the concensus on order of MDIP operations. Some releases may also have the Tesseract (TESS) registry, which is being deprecated in post-0.3-beta releases.
+MDIP supports multiple decentralized registries: Bitcoin, Signet, Testnet4 and Feathercoin Testnet. More registries will become available over time. Decentralized registries are an important part of decentralizing identitity; the registry contains the concensus on order of MDIP operations. 
 
 By default, the MDIP Satoshi Mediator will be looking for a wallet named `mdip`. The Bitcoin Testnet4 node is configured to store its data in the `data/tbtc` directory.
 
-The following command will create that wallet in the expected directory:
+The following command will show your wallet information
 
 ```bash
 ./scripts/tbtc-cli createwallet mdip
@@ -787,21 +754,3 @@ server {
     }
 ```
 
-## Using an MDIP Node
-
-This section contains tips and information on how to get started with your new MDIP node.
-
-### Basic Tests and Common Links
-
-The MDIP Gatekeeper offers a developer-friend identity wallet on port `4224` that can be used to interact with the protocol.
-
-![Keymaster Wallet UI](mdip-keymaster-webui.png)
-
-Most of the Keymaster functions are available over the Keymaster web UI. Documentation for the Keymaster web UI is available in the [Keymaster Web UI](/docs/keychain/clients/webui/) section.
-
-#### Private Server-Side Wallet
-
-MDIP is a peer-to-peer system. Interactions between human users and server hosts are:
-
-- Keymaster Private Wallet (web and cli)
-- Gatekeeper API (private or public)
