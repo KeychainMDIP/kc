@@ -31,7 +31,7 @@ function measureEnvInset(side: 'top' | 'bottom' | 'left' | 'right'): number {
 }
 
 function computeVisualViewportInsets(): SafeAreaInsets {
-    const view = (window as any).visualViewport as VisualViewport | undefined;
+    const view = window.visualViewport;
     if (!view) {
         return {top: 0, bottom: 0, left: 0, right: 0};
     }
@@ -68,17 +68,17 @@ export function SafeAreaProvider({ children }: { children: ReactNode }) {
 
         update();
 
-        const view = (window as any).visualViewport as VisualViewport | undefined;
+        const view = window.visualViewport;
         view?.addEventListener('resize', update);
         view?.addEventListener('scroll', update);
         window.addEventListener('resize', update);
-        window.addEventListener('orientationchange', update as any);
+        window.addEventListener('orientationchange', update);
 
         return () => {
             view?.removeEventListener('resize', update);
             view?.removeEventListener('scroll', update);
             window.removeEventListener('resize', update);
-            window.removeEventListener('orientationchange', update as any);
+            window.removeEventListener('orientationchange', update);
         };
     }, []);
 
