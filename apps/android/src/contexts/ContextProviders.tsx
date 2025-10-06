@@ -4,6 +4,7 @@ import { CredentialsProvider } from "./CredentialsProvider";
 import { UIProvider } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Box } from "@mui/material";
+import { SafeAreaProvider } from "./SafeAreaContext";
 
 interface ThemeContextValue {
     darkMode: boolean;
@@ -64,13 +65,15 @@ export function ContextProviders(
                         p: 0,
                     }}
                 >
-                    <WalletProvider>
-                        <CredentialsProvider>
-                            <UIProvider>
-                                {children}
-                            </UIProvider>
-                        </CredentialsProvider>
-                    </WalletProvider>
+                    <SafeAreaProvider>
+                        <WalletProvider>
+                            <CredentialsProvider>
+                                <UIProvider>
+                                    {children}
+                                </UIProvider>
+                            </CredentialsProvider>
+                        </WalletProvider>
+                    </SafeAreaProvider>
                 </Box>
             </ThemeProvider>
         </ThemeContext.Provider>
