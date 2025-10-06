@@ -18,6 +18,7 @@ import type { WalletFile } from '@mdip/keymaster/types'
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { Alert, AlertColor, Snackbar } from "@mui/material";
+import { useSafeArea } from "./SafeAreaContext";
 import PassphraseModal from "../components/PassphraseModal";
 import { takeDeepLink } from '../utils/deepLinkQueue';
 import { extractDid } from '../utils/utils';
@@ -83,6 +84,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [modalAction, setModalAction] = useState<string>("");
     const [isReady, setIsReady] = useState<boolean>(false);
+    const { top: safeTop } = useSafeArea();
 
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
@@ -325,7 +327,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 onClose={handleSnackbarClose}
                 anchorOrigin={{ vertical: "top", horizontal: "center" }}
                 sx={{
-                    mt: "env(safe-area-inset-top)",
+                    mt: `${safeTop}px`,
                 }}
             >
                 <Alert

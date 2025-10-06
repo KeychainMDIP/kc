@@ -37,6 +37,7 @@ import JsonViewer from "./components/JsonViewer";
 import { useWalletContext } from "./contexts/WalletProvider";
 import { useUIContext } from "./contexts/UIContext";
 import { useThemeContext } from "./contexts/ContextProviders";
+import { useSafeArea } from "./contexts/SafeAreaContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import NamedDIDs from "./components/NamedDIDs";
 import AssetsTab from "./components/AssetsTab";
@@ -58,6 +59,7 @@ function BrowserContent() {
         setPendingSubTab
     } = useUIContext();
     const { darkMode } = useThemeContext();
+    const { top: safeTop, bottom: safeBottom } = useSafeArea();
 
     const theme = useMemo(
         () =>
@@ -151,7 +153,7 @@ function BrowserContent() {
                 sx={{
                     position: 'fixed',
                     inset: 0,
-                    pt: 'env(safe-area-inset-top)',
+                    pt: `${safeTop}px`,
                     display: 'flex',
                     flexDirection: 'column',
                     bgcolor: 'background.default',
@@ -167,7 +169,7 @@ function BrowserContent() {
                             overflow: "auto",
                             WebkitOverflowScrolling: 'touch',
                             px: 1,
-                            pb: 'calc(env(safe-area-inset-bottom, 0px) + 56px)',
+                            pb: `calc(${safeBottom}px + 56px)`,
                         }}
                     >
                         <TabPanel value="identities" sx={{ p: 0 }}>
@@ -232,8 +234,10 @@ function BrowserContent() {
                         position: 'fixed',
                         left: 0,
                         right: 0,
-                        bottom: 'calc(env(safe-area-inset-bottom, 0px))',
-                        pb: 'env(safe-area-inset-bottom)',
+                        bottom: 0,
+                        pb: `${safeBottom}px`,
+                        alignItems: 'flex-start',
+                        minHeight: 56,
                         bgcolor: 'background.paper',
                         borderTop: (t) => `1px solid ${t.palette.divider}`,
                         zIndex: (t) => t.zIndex.appBar,
