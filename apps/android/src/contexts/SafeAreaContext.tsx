@@ -82,9 +82,7 @@ export function SafeAreaProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const value = useMemo(() => insets, [insets.top, insets.bottom, insets.left, insets.right]);
-
-    return <SafeAreaContext.Provider value={value}>{children}</SafeAreaContext.Provider>;
+    return <SafeAreaContext.Provider value={insets}>{children}</SafeAreaContext.Provider>;
 }
 
 export function useSafeArea(): SafeAreaInsets {
