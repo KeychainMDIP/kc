@@ -1,4 +1,4 @@
-import React, { createContext, ReactNode, useContext, useMemo, useState } from "react";
+import React, { createContext, ReactNode, useContext, useState } from "react";
 import { Alert, AlertColor, Snackbar } from "@mui/material";
 
 interface SnackbarContextValue {
@@ -27,7 +27,7 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
     };
 
     const setError = (error: any) => {
-        const errorMessage = error?.error || error?.message || String(error);
+        const errorMessage = error?.error || error?.message || (typeof error === "string" ? error : JSON.stringify(error));
         setSnackbar({ open: true, message: errorMessage, severity: "error" });
     };
 
@@ -39,7 +39,11 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
         setSnackbar({ open: true, message, severity: "success" });
     };
 
-    const value = useMemo<SnackbarContextValue>(() => ({ setError, setWarning, setSuccess }), []);
+    const value: SnackbarContextValue = {
+        setError,
+        setWarning,
+        setSuccess
+    };
 
     return (
         <SnackbarContext.Provider value={value}>
