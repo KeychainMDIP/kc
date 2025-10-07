@@ -1,18 +1,22 @@
 ---
 title: Credentials
-experimental: true
-author: Christian
 ---
 
-The Credentials screen allows a user to decrypt, accept, or issue verifiable credentials. Users must register  a schema on the MDIP network, or select an existing schema's DID, before a credential can be issued.
+The Credentials screen allows a user to accept and issue fully P2P Verifiable Credentials. Users must first register a schema on the MDIP network, or select an existing schema DID, before a credential can be issued.
 
-The credential's subjects are listed from known Agent DIDs contained in the wallet (from the [IDENTITIES](./identities) and [DIDS](./dids) screens).
+The credential subjects are listed from known Agent DIDs contained in the wallet (from the [IDENTITIES](./identities) and [DIDS](./dids) screens).
 
 ![Credentials screen](credentials-screen.png)
 
-The credential screen also allows the issuing user to fill in the credential with recipient-specific content. The credential below attests Bob's membership to Alice:
+The credential screen also allows the issuing user to fill in the credential with recipient-specific content. In the credential Alice creates a VC that attests a memberName to Charlie's Agent DID.
 
 ![Issue Credential](issue-credential.png)
+
+## ISSUED Screen
+
+In the "ISSUED" Credentials screen, a user can manage the VCs they issued.
+
+![Issued Credentials](issued-credentials.png)
 
 ## HELD Screen
 
@@ -32,6 +36,6 @@ In the "HELD" Credentials screen, a user can chose from a variety of options:
 
 - **Unpublish**: This removes the credential from a DID manifest. Note: other nodes on the network may retain the *history* of a DID; once published or revealed a credential has been winessed by other nodes.
 
-The image below shows a portion of Bob's Agent DID with a revealed "isMember: true" credential in the visible portion of his DID document:
+The image below shows a portion of Alice's Agent DID with a revealed membership Verifiable Credential in the Manifest section of her DID document:
 
 ![revealed membership](revealed-membership.png)

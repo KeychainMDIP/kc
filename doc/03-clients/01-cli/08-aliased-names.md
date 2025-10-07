@@ -1,6 +1,5 @@
 ---
 title: Working with Aliased Names
-experimental: true
 sidebar_label: Aliased Names
 slug: aliased-names
 ---

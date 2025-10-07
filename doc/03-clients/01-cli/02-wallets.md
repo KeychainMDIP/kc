@@ -4,11 +4,6 @@ sidebar_label: Wallets
 slug: wallets
 ---
 
-> [!WARNING]
-> The Keychain CLI wallet is only to be used for experimental and development purposes.
->
-> The Keychain CLI wallet is not encrypted and is stored on the local user's file system. Future MDIP wallets will implement additional capabilities (ex: SIWYS). 3rd party wallet developers will also be invited to create MDIP-compatible user wallet implementations.
-
 ## What is a Wallet?
 
 The wallet contains a user's private data, including secret keys and associated DIDs. The Keychain-CLI wallet also includes a user's locally named alias for each identity DID.
