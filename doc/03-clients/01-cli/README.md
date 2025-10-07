@@ -1,6 +1,5 @@
 ---
 title: Keychain-MDIP CLI User Manual
-experimental: true
 sidebar_label: CLI
 ---
 

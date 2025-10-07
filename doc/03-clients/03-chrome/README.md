@@ -1,6 +1,5 @@
 ---
 title: MDIP Chrome Browser Extension
-experimental: true
 sidebar_label: Chrome Extension
 pagination_prev: null
 ---

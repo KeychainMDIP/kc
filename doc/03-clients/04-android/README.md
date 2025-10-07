@@ -1,6 +1,5 @@
 ---
 title: MDIP Android App
-experimental: true
 sidebar_label: Android APK
 pagination_prev: null
 ---

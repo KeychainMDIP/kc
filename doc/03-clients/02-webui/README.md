@@ -1,8 +1,6 @@
 ---
 title: MDIP Keymaster WebUI
-experimental: true
 sidebar_label: Tutorial
-author: Christian
 pagination_prev: null
 ---
 
