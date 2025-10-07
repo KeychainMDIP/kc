@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 export type SafeAreaInsets = {
     top: number;
@@ -82,9 +82,7 @@ export function SafeAreaProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
-    const value = useMemo(() => insets, [insets.top, insets.bottom, insets.left, insets.right]);
-
-    return <SafeAreaContext.Provider value={value}>{children}</SafeAreaContext.Provider>;
+    return <SafeAreaContext.Provider value={insets}>{children}</SafeAreaContext.Provider>;
 }
 
 export function useSafeArea(): SafeAreaInsets {

@@ -6,6 +6,7 @@ import {
 } from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "./WarningModal";
 import MnemonicModal from "./MnemonicModal";
 import Keymaster from "@mdip/keymaster";
@@ -32,7 +33,8 @@ const WalletTab = () => {
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
-    const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
+    const { keymaster, initialiseWallet } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const { setOpenBrowser } = useUIContext();
 
     const storageKey = "jsonViewerState-wallet-noSubTab";

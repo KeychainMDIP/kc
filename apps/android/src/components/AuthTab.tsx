@@ -3,6 +3,7 @@ import {Box, Button, TextField, IconButton, InputAdornment, Tooltip} from "@mui/
 import { CameraAlt } from "@mui/icons-material";
 import axios from "axios";
 import { useWalletContext } from "../contexts/WalletProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { scanQrCode } from "../utils/utils";
 
@@ -14,14 +15,16 @@ function AuthTab() {
     const [disableSendResponse, setDisableSendResponse] = useState<boolean>(true);
     const {
         keymaster,
-        setError,
-        setWarning,
     } = useWalletContext();
     const {
         setOpenBrowser,
         pendingChallenge,
         setPendingChallenge
     } = useUIContext();
+    const {
+        setError,
+        setWarning,
+    } = useSnackbar();
 
     useEffect(() => {
         if (pendingChallenge && pendingChallenge !== challenge) {

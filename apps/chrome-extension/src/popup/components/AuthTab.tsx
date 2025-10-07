@@ -4,13 +4,13 @@ import axios from "axios";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useAuthContext } from "../../shared/contexts/AuthContext";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 
 function AuthTab() {
     const {
         keymaster,
-        setError,
-        setWarning,
     } = useWalletContext();
+    const { setError, setWarning } = useSnackbar();
     const {
         authDID,
         challenge,

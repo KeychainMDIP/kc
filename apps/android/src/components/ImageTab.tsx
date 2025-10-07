@@ -4,6 +4,7 @@ import {Edit} from "@mui/icons-material";
 import {useWalletContext} from "../contexts/WalletProvider";
 import {useUIContext} from "../contexts/UIContext";
 import {useCredentialsContext} from "../contexts/CredentialsProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
@@ -21,9 +22,8 @@ const ImageTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         refreshNames,
     } = useUIContext();

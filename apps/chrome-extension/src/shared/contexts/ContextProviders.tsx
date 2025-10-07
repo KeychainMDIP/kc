@@ -7,6 +7,7 @@ import { RefreshMode, UIProvider, openBrowserValues } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Box } from "@mui/material";
 import { requestBrowserRefresh } from "../sharedScripts";
+import { SnackbarProvider } from "./SnackbarProvider";
 
 interface ThemeContextValue {
     darkMode: boolean;
@@ -82,24 +83,26 @@ export function ContextProviders(
                         p: isBrowser ? 0 : 1,
                     }}
                 >
-                    <WalletProvider isBrowser={isBrowser}>
-                        <CredentialsProvider>
-                            <AuthProvider>
-                                <MessageProvider>
-                                    <UIProvider
-                                        pendingAuth={pendingAuth}
-                                        pendingCredential={pendingCredential}
-                                        openBrowser={openBrowser}
-                                        browserRefresh={browserRefresh}
-                                        setBrowserRefresh={setBrowserRefresh}
-                                        setOpenBrowser={setOpenBrowser}
-                                    >
-                                        {children}
-                                    </UIProvider>
-                                </MessageProvider>
-                            </AuthProvider>
-                        </CredentialsProvider>
-                    </WalletProvider>
+                    <SnackbarProvider>
+                        <WalletProvider isBrowser={isBrowser}>
+                            <CredentialsProvider>
+                                <AuthProvider>
+                                    <MessageProvider>
+                                        <UIProvider
+                                            pendingAuth={pendingAuth}
+                                            pendingCredential={pendingCredential}
+                                            openBrowser={openBrowser}
+                                            browserRefresh={browserRefresh}
+                                            setBrowserRefresh={setBrowserRefresh}
+                                            setOpenBrowser={setOpenBrowser}
+                                        >
+                                            {children}
+                                        </UIProvider>
+                                    </MessageProvider>
+                                </AuthProvider>
+                            </CredentialsProvider>
+                        </WalletProvider>
+                    </SnackbarProvider>
                 </Box>
             </ThemeProvider>
         </ThemeContext.Provider>

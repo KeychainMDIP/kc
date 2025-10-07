@@ -17,8 +17,7 @@ import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards'
 import type { WalletFile } from '@mdip/keymaster/types'
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
-import { Alert, AlertColor, Snackbar } from "@mui/material";
-import { useSafeArea } from "./SafeAreaContext";
+import { useSnackbar } from "./SnackbarProvider";
 import PassphraseModal from "../components/PassphraseModal";
 import { takeDeepLink } from '../utils/deepLinkQueue';
 import { extractDid } from '../utils/utils';
@@ -37,11 +36,6 @@ import {
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
 
-interface SnackbarState {
-    open: boolean;
-    message: string;
-    severity: AlertColor;
-}
 
 interface WalletContextValue {
     currentId: string;
@@ -58,9 +52,6 @@ interface WalletContextValue {
     setIdList: Dispatch<SetStateAction<string[]>>;
     unresolvedIdList: string[];
     setUnresolvedIdList: Dispatch<SetStateAction<string[]>>;
-    setError(error: string): void;
-    setWarning(warning: string): void;
-    setSuccess(message: string): void;
     manifest: Record<string, unknown> | undefined;
     setManifest: Dispatch<SetStateAction<Record<string, unknown> | undefined>>;
     resolveDID: () => Promise<void>;
@@ -84,42 +75,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [modalAction, setModalAction] = useState<string>("");
     const [isReady, setIsReady] = useState<boolean>(false);
-    const { top: safeTop } = useSafeArea();
-
-    const [snackbar, setSnackbar] = useState<SnackbarState>({
-        open: false,
-        message: "",
-        severity: "warning",
-    });
-
-    const setError = (error: any) => {
-        const errorMessage = error.error || error.message || String(error);
-        setSnackbar({
-            open: true,
-            message: errorMessage,
-            severity: "error",
-        });
-    };
-
-    const setSuccess = (message: string) => {
-        setSnackbar({
-            open: true,
-            message: message,
-            severity: "success",
-        });
-    };
-
-    const setWarning = (warning: string) => {
-        setSnackbar({
-            open: true,
-            message: warning,
-            severity: "warning",
-        });
-    };
-
-    const handleSnackbarClose = () => {
-        setSnackbar((prev) => ({ ...prev, open: false }));
-    };
+    const { setError } = useSnackbar();
 
     function openEvent(did: string, type: string) {
         const evt = new CustomEvent(type, { detail: { did } });
@@ -299,9 +255,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setUnresolvedIdList,
         manifest,
         setManifest,
-        setError,
-        setWarning,
-        setSuccess,
         resolveDID,
         initialiseWallet,
         keymaster: keymasterRef.current,
@@ -321,23 +274,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 encrypt={modalAction === "encrypt"}
             />
 
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={5000}
-                onClose={handleSnackbarClose}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                sx={{
-                    mt: `${safeTop}px`,
-                }}
-            >
-                <Alert
-                    onClose={handleSnackbarClose}
-                    severity={snackbar.severity}
-                    sx={{ width: "100%" }}
-                >
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
 
             {isReady && (
                 <WalletContext.Provider value={value}>

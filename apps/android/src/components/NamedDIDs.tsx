@@ -31,6 +31,7 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import TextInputModal from "./TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
 
@@ -62,8 +63,10 @@ function NamedDIDs() {
     const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
     const {
         keymaster,
-        setError,
     } = useWalletContext();
+    const {
+        setError,
+    } = useSnackbar();
     const {
         agentList,
         aliasName,

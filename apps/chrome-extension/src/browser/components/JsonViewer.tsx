@@ -19,6 +19,7 @@ import {
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import {MdipDocument} from "@mdip/gatekeeper/types";
 import VersionNavigator from "./VersionNavigator";
 
@@ -32,7 +33,8 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const [formDid, setFormDid] = useState<string>("");
     const [currentDid, setCurrentDid] = useState<string>("");
     const [currentTitle, setCurrentTitle] = useState<string>("");
-    const { keymaster, setError } = useWalletContext();
+    const { keymaster } = useWalletContext();
+    const { setError } = useSnackbar();
     const { openBrowser, setOpenBrowser } = useUIContext();
     const [canDecrypt,     setCanDecrypt]     = useState(false);
     const [decryptedCache, setDecryptedCache] = useState<Record<string, unknown>|null>(null);

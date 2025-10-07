@@ -3,6 +3,7 @@ import { Box, Button, TextField } from "@mui/material";
 import { OpenInNew } from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 import { useWalletContext } from "./contexts/WalletProvider";
+import { useSnackbar } from "./contexts/SnackbarProvider";
 import { useCredentialsContext } from "./contexts/CredentialsProvider";
 import { useUIContext } from "./contexts/UIContext";
 import JsonViewer from "../browser/components/JsonViewer";
@@ -17,8 +18,6 @@ function HeldTab() {
         isBrowser,
         manifest,
         resolveDID,
-        setError,
-        setWarning,
         keymaster,
     } = useWalletContext();
     const {
@@ -31,6 +30,10 @@ function HeldTab() {
         openBrowserWindow,
         refreshHeld,
     } = useUIContext();
+    const {
+        setError,
+        setWarning,
+    } = useSnackbar();
 
     async function acceptCredential() {
         if (!keymaster) {

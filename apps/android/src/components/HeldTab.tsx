@@ -5,6 +5,7 @@ import WarningModal from "./WarningModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "./DisplayDID";
 import {scanQrCode} from "../utils/utils";
@@ -17,10 +18,9 @@ function HeldTab() {
     const {
         manifest,
         resolveDID,
-        setError,
-        setWarning,
         keymaster,
     } = useWalletContext();
+    const { setError, setWarning } = useSnackbar();
     const {
         heldList,
     } = useCredentialsContext();

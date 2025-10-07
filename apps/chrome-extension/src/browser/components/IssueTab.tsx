@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import CredentialForm from "./CredentialForm";
 import {
     Box,
@@ -15,9 +16,9 @@ function IssueTab() {
         keymaster,
         registries,
         registry,
-        setError,
         setRegistry,
     } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         agentList,
         credentialDID,

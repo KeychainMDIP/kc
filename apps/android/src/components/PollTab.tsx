@@ -28,6 +28,7 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import PollResultsModal from "./PollResultsModal";
 import {NoticeMessage, Poll, PollResults} from "@mdip/keymaster/types";
 import TextInputModal from "./TextInputModal";
@@ -41,9 +42,11 @@ const PollsTab: React.FC = () => {
         currentId,
         keymaster,
         registries,
+    } = useWalletContext();
+    const {
         setError,
         setSuccess,
-    } = useWalletContext();
+    } = useSnackbar();
     const {
         groupList,
         nameList,

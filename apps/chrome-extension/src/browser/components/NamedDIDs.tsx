@@ -31,6 +31,7 @@ import {
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import { requestBrowserRefresh } from "../../shared/sharedScripts";
 import TextInputModal from "../../shared/TextInputModal";
 import CopyResolveDID from "../../shared/CopyResolveDID";
@@ -64,8 +65,8 @@ function NamedDIDs() {
     const {
         isBrowser,
         keymaster,
-        setError,
     } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         agentList,
         aliasName,

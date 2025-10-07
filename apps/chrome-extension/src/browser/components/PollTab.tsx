@@ -26,6 +26,7 @@ import {
     HowToVote,
 } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
 import PollResultsModal from "./PollResultsModal";
@@ -41,9 +42,11 @@ const PollsTab: React.FC = () => {
         currentId,
         keymaster,
         registries,
+    } = useWalletContext();
+    const {
         setError,
         setSuccess,
-    } = useWalletContext();
+    } = useSnackbar();
     const {
         groupList,
         nameList,
