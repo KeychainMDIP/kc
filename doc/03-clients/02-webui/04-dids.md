@@ -1,6 +1,5 @@
 ---
 title: DIDs
-experimental: true
 author: Christian
 ---
 

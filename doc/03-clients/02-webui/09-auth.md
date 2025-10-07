@@ -1,7 +1,5 @@
 ---
 title: Authentication
-experimental: true
-author: Christian
 ---
 
 The Authentication screen allows a user to issue and/or respond to MDIP challenges. A challenge DID is entered (or generated) to the **Challenge** text field; a user can create a Response DID to the provided challenge. The response to a challenge will prove to the challenger that the responder conrols the private keys of a particular DID.

@@ -1,6 +1,5 @@
 ---
 title: Working with Encryption
-experimental: true
 sidebar_label: Encryption
 slug: encryption
 ---

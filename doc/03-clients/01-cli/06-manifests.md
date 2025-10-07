@@ -1,6 +1,5 @@
 ---
 title: What is the DID Manifest?
-experimental: true
 sidebar_label: DID Manifest
 slug: manifests
 ---
