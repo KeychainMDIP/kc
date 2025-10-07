@@ -17,6 +17,7 @@ import {
     Token,
 } from '@mui/icons-material';
 import { useWalletContext } from "./WalletProvider";
+import { useSnackbar } from "./SnackbarProvider";
 import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useMessageContext} from "./MessageContext";
@@ -89,7 +90,6 @@ export function UIProvider(
         setIdList,
         setUnresolvedIdList,
         keymaster,
-        setError,
         storeState,
         setManifest,
         setRegistries,
@@ -98,6 +98,9 @@ export function UIProvider(
         refreshFlag,
         reloadBrowserWallet,
     } = useWalletContext();
+    const {
+        setError,
+    } = useSnackbar();
     const {
         setResponse,
         setCallback,

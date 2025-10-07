@@ -6,13 +6,12 @@ import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider
 import { Edit } from "@mui/icons-material";
 import TextInputModal from "../../shared/TextInputModal";
 import CopyResolveDID from "../../shared/CopyResolveDID";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 
 const SchemaTab = ()=> {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
     const {
         refreshNames,
@@ -21,6 +20,10 @@ const SchemaTab = ()=> {
         nameList,
         schemaList,
     } = useCredentialsContext();
+    const {
+        setError,
+        setSuccess,
+    } = useSnackbar();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [schemaName, setSchemaName] = useState<string>('');
     const [selectedSchemaName, setSelectedSchemaName] = useState<string>('');

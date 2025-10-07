@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "./WarningModal";
 import TextInputModal from "./TextInputModal";
 
@@ -16,10 +17,9 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        setError,
-        setSuccess,
         keymaster,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         refreshAll,
         resetCurrentID,

@@ -3,12 +3,13 @@ import { TabPanel } from "@mui/lab";
 import { Box, Button, TextField } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useMessageContext } from "../../shared/contexts/MessageContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 
 function MessageReceiveTab({ tabValue }: { tabValue: string }) {
     const {
         keymaster,
-        setError,
     } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         messageDID,
         setMessageDID,

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useWalletContext } from "./contexts/WalletProvider";
+import { useSnackbar } from "./contexts/SnackbarProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 import { useUIContext } from "./contexts/UIContext";
 import { requestBrowserRefresh } from "./sharedScripts";
@@ -18,14 +19,16 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        setError,
-        setSuccess,
         keymaster,
     } = useWalletContext();
     const {
         refreshAll,
         resetCurrentID,
     } = useUIContext();
+    const {
+        setError,
+        setSuccess,
+    } = useSnackbar();
 
     const handleCreateId = async () => {
         if (!keymaster) {

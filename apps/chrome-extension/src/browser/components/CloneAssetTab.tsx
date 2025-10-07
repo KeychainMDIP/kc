@@ -2,13 +2,15 @@ import React, { useState } from "react";
 import { Box, TextField, Select, MenuItem, Button } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 
 function CloneAssetTab() {
     const [aliasName, setAliasName] = useState("");
     const [aliasDID, setAliasDID] = useState("");
     const [registry, setRegistry] = useState<string>('hyperswarm');
 
-    const { keymaster, registries, setError } = useWalletContext();
+    const { keymaster, registries } = useWalletContext();
+    const { setError } = useSnackbar();
     const { refreshNames } = useUIContext();
 
     async function handleClone() {

@@ -3,6 +3,7 @@ import {Box, Button, Divider, IconButton, MenuItem, Select, TextField, Tooltip, 
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import {Delete, Edit} from "@mui/icons-material";
 import WarningModal from "../../shared/WarningModal";
 import { Group } from '@mdip/keymaster/types'
@@ -13,9 +14,8 @@ const GroupsTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         groupList,
         nameList,

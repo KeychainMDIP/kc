@@ -46,6 +46,7 @@ import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import TextInputModal from "../../shared/TextInputModal";
 import WarningModal from "../../shared/WarningModal";
 import CopyResolveDID from "../../shared/CopyResolveDID";
@@ -77,9 +78,8 @@ const DmailTab: React.FC = () => {
         currentId,
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         agentList,
         dmailList,

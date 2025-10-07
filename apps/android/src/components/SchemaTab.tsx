@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {Box, Button, FormControl, IconButton, MenuItem, Select, TextField, Tooltip} from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
+import {useSnackbar} from "../contexts/SnackbarProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { Edit } from "@mui/icons-material";
@@ -11,9 +12,11 @@ const SchemaTab = ()=> {
     const {
         keymaster,
         registries,
+    } = useWalletContext();
+    const {
         setError,
         setSuccess,
-    } = useWalletContext();
+    } = useSnackbar();
     const {
         refreshNames,
     } = useUIContext();

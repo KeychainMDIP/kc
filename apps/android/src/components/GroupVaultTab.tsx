@@ -17,6 +17,7 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import LoginDialog from "./LoginDialog";
 import WarningModal from "./WarningModal";
 import TextInputModal from "./TextInputModal";
@@ -55,9 +56,8 @@ function GroupVaultTab() {
         currentDID,
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         agentList,
         nameList,

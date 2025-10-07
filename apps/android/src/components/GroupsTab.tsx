@@ -14,6 +14,7 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import {Delete, Edit} from "@mui/icons-material";
 import WarningModal from "./WarningModal";
 import { Group } from '@mdip/keymaster/types'
@@ -24,9 +25,8 @@ const GroupsTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         groupList,
         nameList,
