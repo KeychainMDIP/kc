@@ -18,7 +18,7 @@ import type { WalletFile } from '@mdip/keymaster/types'
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { useSnackbar } from "./SnackbarProvider";
-import PassphraseModal from "../components/PassphraseModal";
+import PassphraseModal from "../components/modals/PassphraseModal";
 import { takeDeepLink } from '../utils/deepLinkQueue';
 import { extractDid } from '../utils/utils';
 import {

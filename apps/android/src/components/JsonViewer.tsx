@@ -23,9 +23,6 @@ import {MdipDocument} from "@mdip/gatekeeper/types";
 import VersionNavigator from "./VersionNavigator";
 
 function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {browserTab: string, browserSubTab?: string, showResolveField?: boolean}) {
-    const subTabKey = browserSubTab ?? 'noSubTab';
-    const storageKey = `jsonViewerState-${browserTab}-${subTabKey}`;
-
     const [aliasDocs, setAliasDocs] = useState<Record<string, unknown> | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
@@ -71,42 +68,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     }
 
     useEffect(() => {
-        const stored = sessionStorage.getItem(storageKey);
-        if (stored) {
-            try {
-                const parsed = JSON.parse(stored);
-                setAliasDocs(parsed.aliasDocs);
-                setAliasDocsVersion(parsed.aliasDocsVersion ?? 1);
-                setAliasDocsVersionMax(parsed.aliasDocsVersionMax ?? 1);
-                setFormDid(parsed.formDid ?? "");
-                setCurrentDid(parsed.currentDid ?? "");
-            } catch (e) {}
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    useEffect(() => {
-        if (!aliasDocs) {
-            return;
-        }
-        const stateToStore = {
-            aliasDocs,
-            aliasDocsVersion,
-            aliasDocsVersionMax,
-            formDid,
-            currentDid,
-        };
-        sessionStorage.setItem(storageKey, JSON.stringify(stateToStore));
-    }, [
-        aliasDocs,
-        aliasDocsVersion,
-        aliasDocsVersionMax,
-        formDid,
-        currentDid,
-        storageKey
-    ]);
-
-    useEffect(() => {
         if (!openBrowser) {
             return;
         }
@@ -125,7 +86,6 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
         setAliasDocs(undefined);
 
         if (!did && !contents) {
-            sessionStorage.removeItem(storageKey);
             return;
         }
 

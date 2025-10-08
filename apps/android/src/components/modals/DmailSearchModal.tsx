@@ -32,7 +32,17 @@ const DmailSearchModal: React.FC<Props> = ({ open, onClose, onSearch }) => {
     const [hasAtt, setHasAtt] = useState<boolean>(false);
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+        <Dialog
+            open={open}
+            onClose={onClose}
+            maxWidth="lg"
+            fullWidth
+            sx={{
+                '& .MuiDialog-paper': {
+                    borderRadius: 0
+                }
+            }}
+        >
             <DialogTitle>Advanced Search</DialogTitle>
 
             <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>

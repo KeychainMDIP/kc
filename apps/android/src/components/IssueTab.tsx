@@ -10,6 +10,7 @@ import {
     MenuItem, FormControl,
 } from "@mui/material";
 import DisplayDID from "./DisplayDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 function IssueTab() {
     const {
@@ -32,6 +33,7 @@ function IssueTab() {
         setCredentialSubject,
         setIssuedList,
     } = useCredentialsContext();
+    const { isTabletUp } = useThemeContext();
 
     const [schemaObject, setSchemaObject] = useState<any>(null);
     const [isFormValid, setIsFormValid] = useState<boolean>(false);
@@ -98,7 +100,7 @@ function IssueTab() {
     }, [credentialString]);
 
     return (
-        <Box>
+        <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <Box display="flex" flexDirection="column" sx={{ mb: 2 }}>
                 <Select
                     value={credentialSubject}

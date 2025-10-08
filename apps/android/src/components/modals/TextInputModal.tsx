@@ -8,6 +8,7 @@ import {
     DialogContentText,
     TextField,
 } from "@mui/material";
+import { useThemeContext } from "../../contexts/ContextProviders";
 
 interface TextInputModalProps {
     isOpen: boolean;
@@ -32,6 +33,7 @@ const TextInputModal: React.FC<TextInputModalProps> = (
         onClose,
     }) => {
     const [value, setValue] = useState(defaultValue);
+    const { isTabletUp } = useThemeContext();
 
     useEffect(() => {
         if (isOpen) {
@@ -45,7 +47,19 @@ const TextInputModal: React.FC<TextInputModalProps> = (
     };
 
     return (
-        <Dialog open={isOpen} onClose={onClose} maxWidth="lg" fullWidth>
+        <Dialog
+            open={isOpen}
+            onClose={onClose}
+            maxWidth="lg"
+            fullWidth
+            slotProps={{
+                paper: {
+                    sx: {
+                        width: isTabletUp ? '50%' : '100%'
+                    }
+                }
+            }}
+        >
             <form onSubmit={handleConfirm}>
                 <DialogTitle>{title}</DialogTitle>
                 <DialogContent>

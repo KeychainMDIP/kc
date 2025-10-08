@@ -9,6 +9,7 @@ import {
     Typography,
 } from "@mui/material";
 import { PollResults } from "@mdip/keymaster/types";
+import { useThemeContext } from "../../contexts/ContextProviders";
 
 interface PollResultsModalProps {
     open: boolean;
@@ -17,6 +18,8 @@ interface PollResultsModalProps {
 }
 
 const PollResultsModal: React.FC<PollResultsModalProps> = ({ open, onClose, results }) => {
+    const { isTabletUp } = useThemeContext();
+
     if (!results) {
         return null;
     }
@@ -24,7 +27,19 @@ const PollResultsModal: React.FC<PollResultsModalProps> = ({ open, onClose, resu
     const { tally, votes } = results;
 
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+        <Dialog
+            open={open}
+            onClose={onClose}
+            maxWidth="lg"
+            fullWidth
+            slotProps={{
+                paper: {
+                    sx: {
+                        width: isTabletUp ? '50%' : '100%'
+                    }
+                }
+            }}
+        >
             <DialogTitle>Poll Results</DialogTitle>
 
             <DialogContent dividers>

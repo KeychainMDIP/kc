@@ -9,6 +9,7 @@ import {
     Typography,
     Box,
 } from "@mui/material";
+import { useThemeContext } from "../../contexts/ContextProviders";
 
 interface PassphraseModalProps {
     isOpen: boolean,
@@ -30,8 +31,11 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
     const combinedError = localError || errorText || "";
+    const { isTabletUp } = useThemeContext();
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -82,7 +86,19 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     };
 
     return (
-        <Dialog open={isOpen} onClose={handleClose} maxWidth="lg" fullWidth>
+        <Dialog
+            open={isOpen}
+            onClose={handleClose}
+            maxWidth="lg"
+            fullWidth
+            slotProps={{
+                paper: {
+                    sx: {
+                        width: isTabletUp ? '50%' : '100%'
+                    }
+                }
+            }}
+        >
             <DialogTitle>{title}</DialogTitle>
             <DialogContent>
                 {combinedError && (
