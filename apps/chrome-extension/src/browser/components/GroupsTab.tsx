@@ -37,9 +37,6 @@ const GroupsTab = () => {
     const [renameOpen, setRenameOpen] = useState<boolean>(false);
     const [renameOldName, setRenameOldName] = useState<string>("");
 
-    const storageKey = "jsonViewerState-groups-noSubTab";
-    sessionStorage.removeItem(storageKey);
-
     async function createGroup() {
         if (!keymaster) {
             return;

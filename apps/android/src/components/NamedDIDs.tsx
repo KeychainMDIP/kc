@@ -12,7 +12,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import WarningModal from "./WarningModal";
+import WarningModal from "./modals/WarningModal";
 import {
     ArrowDropDown,
     Article,
@@ -32,7 +32,7 @@ import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import TextInputModal from "./TextInputModal";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
 
 function NamedDIDs() {

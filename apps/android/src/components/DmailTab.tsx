@@ -42,11 +42,11 @@ import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import TextInputModal from "./TextInputModal";
-import WarningModal from "./WarningModal";
+import TextInputModal from "./modals/TextInputModal";
+import WarningModal from "./modals/WarningModal";
 import CopyResolveDID from "./CopyResolveDID";
 import CopyDID from "./CopyDID";
-import DmailSearchModal, { AdvancedSearchParams } from "./DmailSearchModal";
+import DmailSearchModal, { AdvancedSearchParams } from "./modals/DmailSearchModal";
 import DisplayDID from "./DisplayDID";
 
 const DmailTab: React.FC = () => {

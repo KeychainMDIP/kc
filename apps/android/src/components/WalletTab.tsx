@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import JsonViewer from "./JsonViewer";
 import {
     Box,
@@ -7,12 +7,13 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import WarningModal from "./WarningModal";
-import MnemonicModal from "./MnemonicModal";
+import WarningModal from "./modals/WarningModal";
+import MnemonicModal from "./modals/MnemonicModal";
 import Keymaster from "@mdip/keymaster";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import CipherWeb from "@mdip/cipher/web";
 import WalletWeb from "@mdip/keymaster/wallet/web";
+import { StoredWallet } from '@mdip/keymaster/types';
 import {
     DEFAULT_GATEKEEPER_URL,
     GATEKEEPER_KEY
@@ -24,7 +25,7 @@ const cipher = new CipherWeb();
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
-    const [pendingWallet, setPendingWallet] = useState<any>(null);
+    const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
@@ -36,16 +37,6 @@ const WalletTab = () => {
     const { keymaster, initialiseWallet } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
     const { setOpenBrowser } = useUIContext();
-
-    const storageKey = "jsonViewerState-wallet-noSubTab";
-
-    useEffect(() => {
-        const stored = sessionStorage.getItem(storageKey);
-        if (stored) {
-            setJsonViewerOpen(true);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -84,9 +75,9 @@ const WalletTab = () => {
         await wipeStoredValues();
     }
 
-    async function uploadWallet(wallet: any) {
+    async function uploadWallet(wallet: StoredWallet) {
         const walletWeb = new WalletWeb();
-        await wallet.saveWallet(walletWeb, true);
+        await walletWeb.saveWallet(wallet, true);
         await wipeStoredValues();
     }
 

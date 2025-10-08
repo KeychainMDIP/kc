@@ -7,6 +7,7 @@ import {
     Button,
     DialogContentText,
 } from "@mui/material";
+import { useThemeContext } from "../../contexts/ContextProviders";
 
 interface WarningModalProps {
     isOpen: boolean;
@@ -17,7 +18,11 @@ interface WarningModalProps {
 }
 
 const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText, onSubmit, onClose }) => {
-    if (!isOpen) return null;
+    const { isTabletUp } = useThemeContext();
+
+    if (!isOpen) {
+        return null;
+    }
 
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -29,7 +34,19 @@ const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText,
     }
 
     return (
-        <Dialog open={isOpen} onClose={handleClose} maxWidth="lg" fullWidth>
+        <Dialog
+            open={isOpen}
+            onClose={handleClose}
+            maxWidth="lg"
+            fullWidth
+            slotProps={{
+                paper: {
+                    sx: {
+                        width: isTabletUp ? '50%' : '100%'
+                    }
+                }
+            }}
+        >
             <form onSubmit={handleSubmit}>
                 <DialogTitle id="confirm-dialog-title">{title}</DialogTitle>
                 <DialogContent>
