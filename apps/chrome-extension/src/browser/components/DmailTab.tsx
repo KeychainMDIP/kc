@@ -835,6 +835,13 @@ const DmailTab: React.FC = () => {
         }
     }
 
+    const messageSubject = selectedView?.message.subject ?? selected?.message.subject;
+    const messageTo = selectedView?.message.to ?? selected?.message.to;
+    const messageCC = selectedView?.message.cc ?? selected?.message.cc;
+    const messageBody = selectedView?.message.body ?? selected?.message.body;
+    const messageReference = selectedView?.message.reference ?? selected?.message.reference;
+    const messageAttachments = selectedView?.attachments ?? selected?.attachments;
+
     const renderInbox = () => {
         const list = filteredList();
         const entries = Object.entries(list)
@@ -1029,7 +1036,7 @@ const DmailTab: React.FC = () => {
                                     To:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {(selectedView?.to ?? selected.to).join(", ")}
+                                    {messageTo?.join(", ")}
                                 </Typography>
                             </Box>
 
@@ -1038,7 +1045,7 @@ const DmailTab: React.FC = () => {
                                     Cc:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {(selectedView?.cc ?? selected.cc).join(", ")}
+                                    {messageCC?.join(", ")}
                                 </Typography>
                             </Box>
 
@@ -1087,23 +1094,23 @@ const DmailTab: React.FC = () => {
                                     Subject:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {selectedView?.message.subject ?? selected.message.subject}
+                                    {messageSubject}
                                 </Typography>
                             </Box>
 
-                            {(selectedView?.message.reference ?? selected.message.reference) && (
+                            {messageReference && (
                                 <Box display="flex" alignItems="center" mb={1}>
                                     <Typography variant="subtitle2" sx={{mr: 1}}>
                                         Reference:
                                     </Typography>
                                     <Typography variant="body2">
-                                        {selected.message.reference}
+                                        {messageReference}
                                     </Typography>
-                                    <CopyResolveDID did={selectedView?.message.reference ?? selected.message.reference!}/>
+                                    <CopyResolveDID did={messageReference}/>
                                     <Tooltip title="Open referenced message">
                                         <IconButton
                                             size="small"
-                                            onClick={() => openReferencedMessage(selectedView?.message.reference ?? selected.message.reference!)}
+                                            onClick={() => openReferencedMessage(messageReference)}
                                         >
                                             <Link/>
                                         </IconButton>
@@ -1111,10 +1118,10 @@ const DmailTab: React.FC = () => {
                                 </Box>
                             )}
 
-                            {(selectedView?.attachments ?? selected.attachments) && Object.keys(selectedView?.attachments ?? selected.attachments).length > 0 && (
+                            {messageAttachments && Object.keys(messageAttachments).length > 0 && (
                                 <Box mb={2}>
                                     <Typography variant="subtitle2">Attachments:</Typography>
-                                    {Object.entries(selectedView?.attachments ?? selected.attachments).map(([name, item]: [string, any]) => (
+                                    {Object.entries(messageAttachments).map(([name, item]: [string, any]) => (
                                         <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
                                             {getVaultItemIcon(name, item)}
                                             <Typography>{name}</Typography>
@@ -1132,7 +1139,7 @@ const DmailTab: React.FC = () => {
                             )}
 
                             <TextField
-                                value={selectedView?.message.body ?? selected.message.body}
+                                value={messageBody}
                                 multiline
                                 minRows={10}
                                 maxRows={30}
