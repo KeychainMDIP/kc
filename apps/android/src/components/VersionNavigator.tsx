@@ -1,5 +1,6 @@
 import React from "react";
-import { Box, Button, MenuItem, Select } from "@mui/material";
+import { Box, IconButton, MenuItem, Select } from "@mui/material";
+import { KeyboardDoubleArrowLeft, ChevronLeft, ChevronRight, KeyboardDoubleArrowRight } from "@mui/icons-material";
 
 interface VersionNavigatorProps {
     version: number;
@@ -21,32 +22,20 @@ const VersionNavigator: React.FC<VersionNavigatorProps> = ({version, maxVersion,
 
     return (
         <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Button
-                variant="contained"
-                onClick={goFirst}
-                disabled={version === 1}
-                sx={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-            >
-                First
-            </Button>
-            <Button
-                variant="contained"
-                onClick={goPrev}
-                disabled={version <= 1}
-                sx={{ borderRadius: 0 }}
-            >
-                Prev
-            </Button>
+            <IconButton onClick={goFirst} disabled={version === 1}>
+                <KeyboardDoubleArrowLeft />
+            </IconButton>
+            <IconButton onClick={goPrev} disabled={version <= 1}>
+                <ChevronLeft />
+            </IconButton>
 
             <Select
                 sx={{
                     width: 150,
-                    height: 40,
-                    borderRadius: 0,
-                    "& .MuiOutlinedInput-root": { borderRadius: 0 },
                 }}
+                size="small"
                 value={version}
-                onChange={(e) => onVersionChange(e.target.value as number)}
+                onChange={(e) => onVersionChange(Number(e.target.value))}
             >
                 {allVersions.map((ver) => (
                     <MenuItem key={ver} value={ver}>
@@ -55,22 +44,12 @@ const VersionNavigator: React.FC<VersionNavigatorProps> = ({version, maxVersion,
                 ))}
             </Select>
 
-            <Button
-                variant="contained"
-                onClick={goNext}
-                disabled={version >= maxVersion}
-                sx={{ borderRadius: 0 }}
-            >
-                Next
-            </Button>
-            <Button
-                variant="contained"
-                onClick={goLast}
-                disabled={version >= maxVersion}
-                sx={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
-            >
-                Last
-            </Button>
+            <IconButton onClick={goNext} disabled={version >= maxVersion}>
+                <ChevronRight />
+            </IconButton>
+            <IconButton onClick={goLast} disabled={version >= maxVersion}>
+                <KeyboardDoubleArrowRight />
+            </IconButton>
         </Box>
     );
 };

@@ -16,6 +16,8 @@ export interface AdvancedSearchParams {
     subject: string;
     body: string;
     hasAttach: boolean;
+    dateFrom: string;
+    dateTo: string;
 }
 
 interface Props {
@@ -30,6 +32,8 @@ const DmailSearchModal: React.FC<Props> = ({ open, onClose, onSearch }) => {
     const [subject, setSubject] = useState<string>("");
     const [body, setBody] = useState<string>("");
     const [hasAtt, setHasAtt] = useState<boolean>(false);
+    const [dateFrom, setDateFrom] = useState<string>("");
+    const [dateTo, setDateTo] = useState<string>("");
 
     return (
         <Dialog
@@ -57,6 +61,20 @@ const DmailSearchModal: React.FC<Props> = ({ open, onClose, onSearch }) => {
                     value={body}
                     onChange={e => setBody(e.target.value)}
                 />
+                <TextField
+                    label="Date from"
+                    type="date"
+                    value={dateFrom}
+                    onChange={e => setDateFrom(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                />
+                <TextField
+                    label="Date to"
+                    type="date"
+                    value={dateTo}
+                    onChange={e => setDateTo(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                />
                 <FormControlLabel
                     control={<Checkbox checked={hasAtt} onChange={e => setHasAtt(e.target.checked)} />}
                     label="Has attachments"
@@ -67,7 +85,7 @@ const DmailSearchModal: React.FC<Props> = ({ open, onClose, onSearch }) => {
                 <Button onClick={onClose}>Cancel</Button>
                 <Button
                     variant="contained"
-                    onClick={() => onSearch({ from, to, subject, body, hasAttach: hasAtt })}
+                    onClick={() => onSearch({ from, to, subject, body, hasAttach: hasAtt, dateFrom, dateTo })}
                 >
                     Search
                 </Button>
