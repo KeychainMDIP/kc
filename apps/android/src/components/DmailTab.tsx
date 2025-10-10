@@ -24,7 +24,6 @@ import {
     Inbox,
     Outbox,
     Refresh,
-    Search,
     Send,
     Tune,
     UploadFile,
@@ -36,6 +35,7 @@ import {
     Edit,
     PersonAdd,
     Link,
+    ArrowBack,
 } from "@mui/icons-material";
 import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
 import { useWalletContext } from "../contexts/WalletProvider";
@@ -48,10 +48,17 @@ import CopyResolveDID from "./CopyResolveDID";
 import CopyDID from "./CopyDID";
 import DmailSearchModal, { AdvancedSearchParams } from "./modals/DmailSearchModal";
 import DisplayDID from "./DisplayDID";
+import VersionNavigator from "./VersionNavigator";
+import { MdipDocument } from "@mdip/gatekeeper/types";
 
 const DmailTab: React.FC = () => {
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [selected, setSelected] = useState<DmailItem & { did: string } | null>(null);
+    const [selectedView, setSelectedView] = useState<(DmailItem & { did: string }) | null>(null);
+    const [docVersion, setDocVersion] = useState<number>(1);
+    const [docVersionMax, setDocVersionMax] = useState<number>(1);
+    const [docAtVersion, setDocAtVersion] = useState<MdipDocument | null>(null);
+    const [createdAt, setCreatedAt] = useState<string | null>(null);
     const [sendTo, setSendTo] = useState<string>("");
     const [sendSubject, setSendSubject] = useState<string>("");
     const [sendBody, setSendBody] = useState<string>("");
@@ -63,8 +70,8 @@ const DmailTab: React.FC = () => {
     const [dmailAttachments, setDmailAttachments] = useState<Record<string, any>>({});
     const [revokeOpen, setRevokeOpen] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState<string>("");
-    const [searchResults, setSearchResults] = useState<Record<string, DmailItem>>({});
     const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(false);
+    const [advParams, setAdvParams] = useState<AdvancedSearchParams | null>(null);
     const [forwardSourceDid, setForwardSourceDid] = useState<string | null>(null);
     const [ephemeral, setEphemeral] = useState<boolean>(false);
     const [expiresAt, setExpiresAt] = useState<string>("");
@@ -93,7 +100,7 @@ const DmailTab: React.FC = () => {
         deleted: "deleted",
         unread: "unread"
     };
-    type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send" | "results";
+    type Folder = "inbox" | "outbox" | "drafts" | "archive" | "trash" | "all" | "send";
 
     const [activeTab, setActiveTab] = useState<Folder>("inbox");
 
@@ -111,6 +118,7 @@ const DmailTab: React.FC = () => {
         }
         const { did, tags = [] } = selected;
         setSelected(null);
+        setSelectedView(null);
         await fileTags(did, [...tags, TAG.archived]);
     };
 
@@ -120,6 +128,7 @@ const DmailTab: React.FC = () => {
         }
         const { did, tags = [] } = selected;
         setSelected(null);
+        setSelectedView(null);
         await fileTags(did, tags.filter(t => t !== TAG.archived));
     };
 
@@ -129,6 +138,7 @@ const DmailTab: React.FC = () => {
         }
         const { did, tags = [] } = selected;
         setSelected(null);
+        setSelectedView(null);
         await fileTags(did, [...tags, TAG.deleted]);
     };
 
@@ -138,6 +148,7 @@ const DmailTab: React.FC = () => {
         }
         const { did, tags = [] } = selected;
         setSelected(null);
+        setSelectedView(null);
         await fileTags(did, tags.filter(t => t !== TAG.deleted));
     };
 
@@ -377,44 +388,95 @@ const DmailTab: React.FC = () => {
     }
 
     function filteredList(): Record<string, DmailItem> {
-        if (activeTab === "all" || activeTab === "send") {
-            return dmailList;
+        let base: Record<string, DmailItem> = {};
+        if (activeTab === "send") {
+            return base;
+        }
+        if (activeTab === "all") {
+            base = dmailList;
+        } else {
+            const outBase: Record<string, DmailItem> = {};
+            for (const [did, itm] of Object.entries(dmailList)) {
+                const has = (t:string)=>itm.tags?.includes(t);
+                const not = (t:string)=>!itm.tags?.includes(t);
+                switch (activeTab) {
+                case "inbox":
+                    if (has(TAG.inbox)  && not(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "outbox":
+                    {
+                        const isSelfAddressed = !!currentId && itm.sender === currentId && (itm.to?.includes(currentId) || itm.cc?.includes(currentId));
+                        if ((has(TAG.sent) || isSelfAddressed) && not(TAG.archived) && not(TAG.deleted) && not(TAG.draft)) {
+                            outBase[did] = itm;
+                        }
+                    }
+                    break;
+                case "drafts":
+                    if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "archive":
+                    if (has(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "trash":
+                    if (has(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                }
+            }
+            base = outBase;
         }
 
-        if (activeTab === "results") {
-            return searchResults;
-        }
+        const q = searchQuery.trim().toLowerCase();
+        const passesSimple = (itm: DmailItem) => {
+            if (!q) return true;
+            const body = itm.message.body.toLowerCase();
+            const subj = itm.message.subject.toLowerCase();
+            const from = itm.sender.toLowerCase();
+            const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
+            return body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q);
+        };
+
+        const passesAdvanced = (itm: DmailItem) => {
+            if (!advParams) return true;
+            const p = advParams;
+            if (p.from && !itm.sender.toLowerCase().includes(p.from.toLowerCase())) return false;
+            if (p.to) {
+                const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
+                if (!tocc.includes(p.to.toLowerCase())) return false;
+            }
+            if (p.subject && !itm.message.subject.toLowerCase().includes(p.subject.toLowerCase())) return false;
+            if (p.body && !itm.message.body.toLowerCase().includes(p.body.toLowerCase())) return false;
+            if (p.hasAttach && (!itm.attachments || Object.keys(itm.attachments).length === 0)) return false;
+            if (p.dateFrom || p.dateTo) {
+                try {
+                    const t = new Date(itm.date).getTime();
+                    if (Number.isNaN(t)) return false;
+                    if (p.dateFrom) {
+                        const fromTs = new Date(`${p.dateFrom}T00:00:00`).getTime();
+                        if (t < fromTs) return false;
+                    }
+                    if (p.dateTo) {
+                        const toTs = new Date(`${p.dateTo}T23:59:59.999`).getTime();
+                        if (t > toTs) return false;
+                    }
+                } catch {
+                    return false;
+                }
+            }
+            return true;
+        };
 
         const out: Record<string, DmailItem> = {};
-        for (const [did, itm] of Object.entries(dmailList)) {
-            const has = (t:string)=>itm.tags?.includes(t);
-            const not = (t:string)=>!itm.tags?.includes(t);
-            switch (activeTab) {
-            case "inbox":
-                if (has(TAG.inbox)  && not(TAG.archived) && not(TAG.deleted)) {
-                    out[did] = itm;
-                }
-                break;
-            case "outbox":
-                if (has(TAG.sent) && not(TAG.archived) && not(TAG.deleted)) {
-                    out[did] = itm;
-                }
-                break;
-            case "drafts":
-                if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
-                    out[did] = itm;
-                }
-                break;
-            case "archive":
-                if (has(TAG.archived) && not(TAG.deleted)) {
-                    out[did] = itm;
-                }
-                break;
-            case "trash":
-                if (has(TAG.deleted)) {
-                    out[did] = itm;
-                }
-                break;
+        for (const [did, itm] of Object.entries(base)) {
+            if (passesSimple(itm) && passesAdvanced(itm)) {
+                out[did] = itm;
             }
         }
         return out;
@@ -561,58 +623,12 @@ const DmailTab: React.FC = () => {
     }
 
     function runSimpleSearch(term: string) {
-        const q = term.trim().toLowerCase();
-        const res: Record<string, DmailItem> = {};
-
-        if (!q) {
-            setSearchResults(res);
-            return;
-        }
-
-        Object.entries(dmailList).forEach(([did, itm]) => {
-            const body = itm.message.body.toLowerCase();
-            const subj = itm.message.subject.toLowerCase();
-            const from = itm.sender.toLowerCase();
-            const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
-
-            if (body.includes(q) || subj.includes(q) || from.includes(q) || tocc.includes(q)) {
-                res[did] = itm;
-            }
-        });
-
-        setSearchResults(res);
-        setActiveTab("results");
+        setSearchQuery(term);
     }
 
     function runAdvancedSearch(p: AdvancedSearchParams) {
-        const res: Record<string, DmailItem> = {};
-
-        Object.entries(dmailList).forEach(([did, itm]) => {
-            if (p.from && !itm.sender.toLowerCase().includes(p.from.toLowerCase())) {
-                return;
-            }
-            if (p.to) {
-                const tocc = [...itm.to, ...(itm.cc ?? [])].join(", ").toLowerCase();
-                if (!tocc.includes(p.to.toLowerCase())) {
-                    return;
-                }
-            }
-            if (p.subject && !itm.message.subject.toLowerCase().includes(p.subject.toLowerCase())) {
-                return;
-            }
-            if (p.body && !itm.message.body.toLowerCase().includes(p.body.toLowerCase())) {
-                return;
-            }
-            if (p.hasAttach && (!itm.attachments || Object.keys(itm.attachments).length === 0)) {
-                return;
-            }
-
-            res[did] = itm;
-        });
-
-        setSearchResults(res);
+        setAdvParams(p);
         setAdvancedOpen(false);
-        setActiveTab("results");
     }
 
     function isFutureDate(isoLocal: string) {
@@ -643,7 +659,9 @@ const DmailTab: React.FC = () => {
             setError(`Referenced message not found: ${did}`);
             return;
         }
-        setSelected({ ...item, did });
+        const next = { ...item, did };
+        setSelected(next);
+        setSelectedView(next);
     }
 
     function shortDateOrTime(iso: string) {
@@ -654,29 +672,93 @@ const DmailTab: React.FC = () => {
             : d.toLocaleDateString();
     }
 
-    function classifyFolder(item: DmailItem): Folder {
-        const tags = item.tags ?? [];
+    const cat: Folder = activeTab;
 
-        if (tags.includes(TAG.deleted)) {
-            return "trash";
-        }
-        if (tags.includes(TAG.archived)) {
-            return "archive";
-        }
-        if (tags.includes(TAG.draft)) {
-            return "drafts";
-        }
-        if (tags.includes(TAG.sent)) {
-            return "outbox";
-        }
-        if (tags.includes(TAG.inbox)) {
-            return "inbox";
-        }
+    useEffect(() => {
+        setDocVersion(1);
+        setDocVersionMax(1);
+        setDocAtVersion(null);
+        setCreatedAt(null);
 
-        return "all";
+        const fetchVersions = async () => {
+            if (!keymaster || !selected?.did) {
+                return;
+            }
+            try {
+                let docs = await keymaster.resolveDID(selected.did);
+                const max = docs.didDocumentMetadata?.version ?? 1;
+                const adjustedMax = max > 1 ? max - 1 : 1;
+
+                setDocVersion(adjustedMax);
+                setDocVersionMax(adjustedMax);
+                setDocAtVersion(docs);
+
+                const latestMsg = await keymaster.getDmailMessage(selected.did);
+                const latestAtt = await keymaster.listDmailAttachments(selected.did);
+                if (latestMsg) {
+                    setSelectedView({
+                        ...selected,
+                        message: latestMsg,
+                        attachments: latestAtt
+                    });
+                }
+
+                if (max > 1) {
+                    docs = await keymaster.resolveDID(selected.did, { atVersion: 2 });
+                }
+
+                const created =
+                    docs?.didDocumentMetadata?.created ||
+                    docs?.didDocumentMetadata?.updated ||
+                    null;
+                setCreatedAt(created);
+            } catch (err: any) {
+                setError(err);
+            }
+        };
+
+        if (selected) {
+            fetchVersions();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selected, keymaster]);
+
+    async function handleVersionChange(v: number) {
+        if (!keymaster || !selected?.did) {
+            return;
+        }
+        setDocVersion(v);
+
+        try {
+            const apiVersion = v + 1;
+
+            const docs = await keymaster.resolveDID(selected.did, { atVersion: apiVersion });
+            setDocAtVersion(docs);
+
+            const [msg, atts] = await Promise.all([
+                keymaster.getDmailMessage(selected.did, { atVersion: apiVersion }),
+                keymaster.listDmailAttachments(selected.did, { atVersion: apiVersion }),
+            ]);
+
+            if (msg) {
+                setSelectedView({
+                    ...selected,
+                    message: msg,
+                    attachments: atts
+                });
+            }
+        } catch (err: any) {
+            console.error('Error in handleVersionChange:', err);
+            setError(err);
+        }
     }
 
-    const cat: Folder = activeTab === "results" && selected ? classifyFolder(selected) : activeTab;
+    const messageSubject = selectedView?.message.subject ?? selected?.message.subject;
+    const messageTo = selectedView?.message.to ?? selected?.message.to;
+    const messageCC = selectedView?.message.cc ?? selected?.message.cc;
+    const messageBody = selectedView?.message.body ?? selected?.message.body;
+    const messageReference = selectedView?.message.reference ?? selected?.message.reference;
+    const messageAttachments = selectedView?.attachments ?? selected?.attachments;
 
     const renderInbox = () => {
         const list = filteredList();
@@ -691,7 +773,6 @@ const DmailTab: React.FC = () => {
             trash:   "Trash is empty.",
             all:     "No messages to show.",
             send:    "",
-            results: "No results found.",
         };
 
         if (entries.length === 0) {
@@ -703,7 +784,6 @@ const DmailTab: React.FC = () => {
                     {activeTab === "archive" && <Archive fontSize="large" />}
                     {activeTab === "trash" && <Delete fontSize="large" />}
                     {activeTab === "all" && <AllInbox fontSize="large" />}
-                    {activeTab === "results" && <Search fontSize="large" />}
                     <Typography sx={{ mt: 1 }}>{emptyText[activeTab]}</Typography>
                 </Box>
             );
@@ -711,133 +791,153 @@ const DmailTab: React.FC = () => {
 
         return (
             <Box display="flex" flexDirection="column" mt={1}>
-                <Box>
-                    {entries.map(([did, item]) => {
-                        const unread = item.tags?.includes(TAG.unread);
-                        const isSelected = selected?.did === did;
-                        return (
-                            <Box
-                                key={did}
-                                onClick={() => {
-                                    setSelected({ ...item, did });
-                                    markAsRead(did, item.tags);
-                                }}
-                                sx={{
-                                    px: 1,
-                                    py: 1,
-                                    borderRadius: 1,
-                                    cursor: "pointer",
-                                    bgcolor: isSelected ? "action.selected" : "transparent",
-                                    "&:hover": { bgcolor: "action.hover" },
-                                }}
-                            >
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                {!selected && (
+                    <Box>
+                        {entries.map(([did, item]) => {
+                            const unread = item.tags?.includes(TAG.unread);
+                            return (
+                                <Box
+                                    key={did}
+                                    onClick={() => {
+                                        const next = { ...item, did };
+                                        setSelected(next);
+                                        setSelectedView(next);
+                                        markAsRead(did, item.tags);
+                                    }}
+                                    sx={{
+                                        px: 1,
+                                        py: 1,
+                                        borderRadius: 1,
+                                        cursor: "pointer",
+                                        bgcolor: "transparent",
+                                        "&:hover": { bgcolor: "action.hover" },
+                                    }}
+                                >
+                                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                        <Typography
+                                            sx={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                                fontWeight: unread ? 600 : 400,
+                                            }}
+                                        >
+                                            {item.sender}
+                                        </Typography>
+                                        <Typography
+                                            sx={{
+                                                ml: 1,
+                                                whiteSpace: "nowrap",
+                                                color: "text.secondary",
+                                                fontWeight: unread ? 600 : 400,
+                                            }}
+                                        >
+                                            {shortDateOrTime(item.date)}
+                                        </Typography>
+                                    </Box>
+
                                     <Typography
                                         sx={{
-                                            flex: 1,
-                                            minWidth: 0,
+                                            mt: 0.25,
                                             overflow: "hidden",
                                             textOverflow: "ellipsis",
                                             whiteSpace: "nowrap",
                                             fontWeight: unread ? 600 : 400,
                                         }}
                                     >
-                                        {item.sender}
-                                    </Typography>
-                                    <Typography
-                                        sx={{
-                                            ml: 1,
-                                            whiteSpace: "nowrap",
-                                            color: "text.secondary",
-                                            fontWeight: unread ? 600 : 400,
-                                        }}
-                                    >
-                                        {shortDateOrTime(item.date)}
+                                        {item.message.subject}
                                     </Typography>
                                 </Box>
-
-                                <Typography
-                                    sx={{
-                                        mt: 0.25,
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                        fontWeight: unread ? 600 : 400,
-                                    }}
-                                >
-                                    {item.message.subject}
-                                </Typography>
-                            </Box>
-                        );
-                    })}
-                </Box>
+                            );
+                        })}
+                    </Box>
+                )}
 
                 <Box flex={1}>
                     {selected && (
-                        <Box sx={{mt: 2}}>
+                        <Box>
+                            <Box sx={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                                <Box>
+                                    <Tooltip title="Back">
+                                        <IconButton onClick={() => { setSelected(null); setSelectedView(null); }}><ArrowBack/></IconButton>
+                                    </Tooltip>
+                                </Box>
+                                <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
+                                    {cat === "inbox" && (
+                                        <Box>
+                                            <Tooltip title="Forward">
+                                                <IconButton onClick={handleForward}><Forward/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Reply">
+                                                <IconButton onClick={() => handleReply(false)}><Reply/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Reply all">
+                                                <IconButton onClick={() => handleReply(true)}><ReplyAll/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Archive">
+                                                <IconButton onClick={archive}><Archive/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton onClick={del}><Delete/></IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    )}
+
+                                    {(cat === "outbox" || cat === "drafts") && (
+                                        <Box>
+                                            <Tooltip title="Edit">
+                                                <IconButton onClick={() => editDmail(selected)}><Edit/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Archive">
+                                                <IconButton onClick={archive}><Archive/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton onClick={del}><Delete/></IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    )}
+
+                                    {cat === "archive" && (
+                                        <Box>
+                                            <Tooltip title="Unarchive">
+                                                <IconButton onClick={unarchive}><Unarchive/></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton onClick={del}><Delete/></IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    )}
+
+                                    {cat === "trash" && (
+                                        <Box>
+                                            <Tooltip title="Restore">
+                                                <IconButton onClick={undelete}><RestoreFromTrash/></IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    )}
+                                </Box>
+                            </Box>
+
                             <DisplayDID did={selected.did} />
 
-                            <Box sx={{my: 1}}>
-                                {cat === "inbox" && (
-                                    <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
-                                        <Tooltip title="Forward">
-                                            <IconButton onClick={handleForward}><Forward/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Reply">
-                                            <IconButton onClick={() => handleReply(false)}><Reply/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Reply all">
-                                            <IconButton onClick={() => handleReply(true)}><ReplyAll/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Archive">
-                                            <IconButton onClick={archive}><Archive/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Delete">
-                                            <IconButton onClick={del}><Delete/></IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                )}
-
-                                {(cat === "outbox" || cat === "drafts") && (
-                                    <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
-                                        <Tooltip title="Edit">
-                                            <IconButton onClick={() => editDmail(selected)}><Edit/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Archive">
-                                            <IconButton onClick={archive}><Archive/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Delete">
-                                            <IconButton onClick={del}><Delete/></IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                )}
-
-                                {cat === "archive" && (
-                                    <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
-                                        <Tooltip title="Unarchive">
-                                            <IconButton onClick={unarchive}><Unarchive/></IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Delete">
-                                            <IconButton onClick={del}><Delete/></IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                )}
-
-                                {cat === "trash" && (
-                                    <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
-                                        <Tooltip title="Restore">
-                                            <IconButton onClick={undelete}><RestoreFromTrash/></IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                )}
-                            </Box>
+                            {docVersionMax > 1 && (
+                                <Box sx={{ mb: 1 }}>
+                                    <VersionNavigator
+                                        version={docVersion}
+                                        maxVersion={docVersionMax}
+                                        onVersionChange={handleVersionChange}
+                                    />
+                                </Box>
+                            )}
 
                             <Box display="flex" alignItems="center" mb={1}>
                                 <Typography variant="subtitle2" sx={{mr: 1}}>
                                     To:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {selected.to.join(", ")}
+                                    {messageTo?.join(", ")}
                                 </Typography>
                             </Box>
 
@@ -846,7 +946,7 @@ const DmailTab: React.FC = () => {
                                     Cc:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {selected.cc?.join(", ")}
+                                    {messageCC?.join(", ")}
                                 </Typography>
                             </Box>
 
@@ -872,35 +972,46 @@ const DmailTab: React.FC = () => {
 
                             <Box display="flex" alignItems="center" mb={1}>
                                 <Typography variant="subtitle2" sx={{mr: 1}}>
-                                    Date:
+                                    Created:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {new Date(selected.date).toLocaleString()}
+                                    {createdAt ? new Date(createdAt).toLocaleString() : ""}
                                 </Typography>
                             </Box>
+
+                            {docVersionMax > 1 && docAtVersion?.didDocumentMetadata?.updated && (
+                                <Box display="flex" alignItems="center" mb={1}>
+                                    <Typography variant="subtitle2" sx={{ mr: 1 }}>
+                                        Updated:
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
+                                        {new Date(docAtVersion.didDocumentMetadata.updated).toLocaleString()}
+                                    </Typography>
+                                </Box>
+                            )}
 
                             <Box display="flex" alignItems="center" mb={1}>
                                 <Typography variant="subtitle2" sx={{mr: 1}}>
                                     Subject:
                                 </Typography>
                                 <Typography variant="body2" sx={{wordBreak: "break-all"}}>
-                                    {selected.message.subject}
+                                    {messageSubject}
                                 </Typography>
                             </Box>
 
-                            {selected.message.reference && (
+                            {messageReference && (
                                 <Box display="flex" alignItems="center" mb={1}>
                                     <Typography variant="subtitle2" sx={{mr: 1}}>
                                         Reference:
                                     </Typography>
                                     <Typography variant="body2">
-                                        {selected.message.reference}
+                                        {messageReference}
                                     </Typography>
-                                    <CopyResolveDID did={selected.message.reference}/>
+                                    <CopyResolveDID did={messageReference}/>
                                     <Tooltip title="Open referenced message">
                                         <IconButton
                                             size="small"
-                                            onClick={() => openReferencedMessage(selected.message.reference!)}
+                                            onClick={() => openReferencedMessage(messageReference)}
                                         >
                                             <Link/>
                                         </IconButton>
@@ -908,10 +1019,10 @@ const DmailTab: React.FC = () => {
                                 </Box>
                             )}
 
-                            {selected.attachments && Object.keys(selected.attachments).length > 0 && (
+                            {messageAttachments && Object.keys(messageAttachments).length > 0 && (
                                 <Box mb={2}>
                                     <Typography variant="subtitle2">Attachments:</Typography>
-                                    {Object.entries(selected.attachments).map(([name, item]: [string, any]) => (
+                                    {Object.entries(messageAttachments).map(([name, item]: [string, any]) => (
                                         <Box key={name} display="flex" alignItems="center" gap={1} mt={0.5}>
                                             {getVaultItemIcon(name, item)}
                                             <Typography>{name}</Typography>
@@ -929,7 +1040,7 @@ const DmailTab: React.FC = () => {
                             )}
 
                             <TextField
-                                value={selected.message.body}
+                                value={messageBody}
                                 multiline
                                 minRows={10}
                                 maxRows={30}
@@ -1226,16 +1337,18 @@ const DmailTab: React.FC = () => {
                                 runSimpleSearch(searchQuery);
                             }
                         }}
-                        InputProps={{
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <Tooltip title="Advanced search">
-                                        <IconButton onClick={() => setAdvancedOpen(true)}>
-                                            <Tune />
-                                        </IconButton>
-                                    </Tooltip>
-                                </InputAdornment>
-                            )
+                        slotProps={{
+                            input: {
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <Tooltip title="Advanced search">
+                                            <IconButton onClick={() => setAdvancedOpen(true)}>
+                                                <Tune />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </InputAdornment>
+                                ),
+                            }
                         }}
                     />
                 </Box>
@@ -1244,6 +1357,7 @@ const DmailTab: React.FC = () => {
                     value={activeTab}
                     onChange={(_, v) => {
                         setSelected(null);
+                        setSelectedView(null);
                         setActiveTab(v);
                     }}
                     indicatorColor="primary"
@@ -1253,14 +1367,11 @@ const DmailTab: React.FC = () => {
                 >
                     <Tab label="Compose" value="send"    icon={<Send />} />
                     <Tab label="Inbox"   value="inbox"   icon={<Inbox />} />
-                    <Tab label="Outbox"  value="outbox"  icon={<Outbox />} />
+                    <Tab label="Sent"    value="outbox"  icon={<Outbox />} />
                     <Tab label="Drafts"  value="drafts"  icon={<Drafts />} />
                     <Tab label="Archive" value="archive" icon={<Archive />} />
                     <Tab label="Trash"   value="trash"   icon={<Delete />} />
                     <Tab label="All"     value="all"     icon={<AllInbox />} />
-                    {Object.keys(searchResults).length > 0 && (
-                        <Tab label="Results" value="results" icon={<Search />} />
-                    )}
                 </Tabs>
             </Box>
 
