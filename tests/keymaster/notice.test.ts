@@ -325,6 +325,10 @@ describe('importNotice', () => {
         expect(notices![noticeDid]).toBeDefined();
         expect(notices![noticeDid].tags).toBeDefined();
         expect(notices![noticeDid].tags.includes(NoticeTags.CREDENTIAL)).toBe(true);
+
+        const held = wallet.ids['Alice'].held;
+        expect(held).toBeDefined();
+        expect(held!.includes(vc)).toBe(true);
     });
 
     it('should return true if notice already imported', async () => {
