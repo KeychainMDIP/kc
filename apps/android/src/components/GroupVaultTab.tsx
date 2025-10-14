@@ -17,12 +17,14 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import LoginDialog from "./LoginDialog";
-import WarningModal from "./WarningModal";
-import TextInputModal from "./TextInputModal";
+import WarningModal from "./modals/WarningModal";
+import TextInputModal from "./modals/TextInputModal";
 import DmailDialog from "./DmailDialog";
 import { DmailMessage } from '@mdip/keymaster/types';
 import CopyResolveDID from "./CopyResolveDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 function GroupVaultTab() {
     const [registry, setRegistry] = useState<string>('hyperswarm');
@@ -55,9 +57,8 @@ function GroupVaultTab() {
         currentDID,
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         agentList,
         nameList,
@@ -67,6 +68,7 @@ function GroupVaultTab() {
         getVaultItemIcon,
         refreshNames,
     } = useUIContext();
+    const { isTabletUp } = useThemeContext();
 
     function removeVaultMember(did: string): void {
         showWarning(
@@ -376,7 +378,6 @@ function GroupVaultTab() {
                             size="small"
                             color="error"
                             onClick={() => removeVaultMember(did)}
-                            sx={{ mr: 1 }}
                         >
                             <Close fontSize="small" />
                         </IconButton>
@@ -485,7 +486,7 @@ function GroupVaultTab() {
     };
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1 }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <DmailDialog
                 open={revealDmailOpen}
                 onClose={() => setRevealDmailOpen(false)}

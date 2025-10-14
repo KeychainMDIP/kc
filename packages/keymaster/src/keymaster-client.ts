@@ -469,10 +469,17 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async resolveAsset(id: string): Promise<unknown | null> {
+    async resolveAsset(id: string, options?: ResolveDIDOptions): Promise<unknown | null> {
         try {
-            const response = await axios.get(`${this.API}/assets/${id}`);
-            return response.data.asset;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                const response = await axios.get(`${this.API}/assets/${id}?${queryParams.toString()}`);
+                return response.data.asset;
+            }
+            else {
+                const response = await axios.get(`${this.API}/assets/${id}`);
+                return response.data.asset;
+            }
         }
         catch (error) {
             throwError(error);
@@ -1040,19 +1047,26 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getGroupVault(id: string): Promise<GroupVault> {
+    async getGroupVault(id: string, options?: ResolveDIDOptions): Promise<GroupVault> {
         try {
-            const response = await axios.get(`${this.API}/groupVaults/${id}`);
-            return response.data.groupVault;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                const response = await axios.get(`${this.API}/groupVaults/${id}?${queryParams.toString()}`);
+                return response.data.groupVault;
+            }
+            else {
+                const response = await axios.get(`${this.API}/groupVaults/${id}`);
+                return response.data.groupVault;
+            }
         }
         catch (error) {
             throwError(error);
         }
     }
 
-    async testGroupVault(id: string): Promise<boolean> {
+    async testGroupVault(id: string, options?: ResolveDIDOptions): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groupVaults/${id}/test`);
+            const response = await axios.post(`${this.API}/groupVaults/${id}/test`, { options });
             return response.data.test;
         }
         catch (error) {
@@ -1129,19 +1143,32 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
+    async listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
         try {
-            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items`);
-            return response.data.items;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items?${queryParams.toString()}`);
+                return response.data.items;
+            }
+            else {
+                const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items`);
+                return response.data.items;
+            }
         }
         catch (error) {
             throwError(error);
         }
     }
 
-    async getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null> {
+    async getGroupVaultItem(vaultId: string, name: string, options?: ResolveDIDOptions): Promise<Buffer | null> {
         try {
-            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items/${name}`, {
+            let url = `${this.API}/groupVaults/${vaultId}/items/${name}`;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                url += `?${queryParams.toString()}`;
+            }
+
+            const response = await axios.get(url, {
                 responseType: 'arraybuffer'
             });
 
@@ -1235,20 +1262,34 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async getDmailMessage(did: string): Promise<DmailMessage | null> {
+    async getDmailMessage(did: string, options?: ResolveDIDOptions): Promise<DmailMessage | null> {
         try {
-            const response = await axios.get(`${this.API}/dmail/${did}`);
-            return response.data.message;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                const response = await axios.get(`${this.API}/dmail/${did}?${queryParams.toString()}`);
+                return response.data.message;
+            }
+            else {
+                const response = await axios.get(`${this.API}/dmail/${did}`);
+                return response.data.message;
+            }
         }
         catch (error) {
             throwError(error);
         }
     }
 
-    async listDmailAttachments(did: string): Promise<Record<string, any>> {
+    async listDmailAttachments(did: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
         try {
-            const response = await axios.get(`${this.API}/dmail/${did}/attachments`);
-            return response.data.attachments;
+            if (options) {
+                const queryParams = new URLSearchParams(options as Record<string, string>);
+                const response = await axios.get(`${this.API}/dmail/${did}/attachments?${queryParams.toString()}`);
+                return response.data.attachments;
+            }
+            else {
+                const response = await axios.get(`${this.API}/dmail/${did}/attachments`);
+                return response.data.attachments;
+            }
         }
         catch (error) {
             throwError(error);

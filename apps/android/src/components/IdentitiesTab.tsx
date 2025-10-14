@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { Box, Button, MenuItem, Select, TextField } from "@mui/material";
 import { useUIContext } from "../contexts/UIContext";
-import WarningModal from "./WarningModal";
-import TextInputModal from "./TextInputModal";
+import { useSnackbar } from "../contexts/SnackbarProvider";
+import WarningModal from "./modals/WarningModal";
+import TextInputModal from "./modals/TextInputModal";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 function IdentitiesTab() {
     const [name, setName] = useState<string>("");
@@ -16,14 +18,14 @@ function IdentitiesTab() {
         registry,
         setRegistry,
         registries,
-        setError,
-        setSuccess,
         keymaster,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         refreshAll,
         resetCurrentID,
     } = useUIContext();
+    const { isTabletUp } = useThemeContext();
 
     const handleCreateId = async () => {
         if (!keymaster) {
@@ -157,84 +159,82 @@ function IdentitiesTab() {
                 onClose={() => setRecoverModalOpen(false)}
             />
 
-            <Box className="flex-box mt-2">
-                <TextField
-                    label="Create ID"
-                    variant="outlined"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    size="small"
-                    className="text-field name"
-                    slotProps={{
-                        htmlInput: {
-                            maxLength: 30,
-                        },
-                    }}
-                />
+            <Box sx={{ mt: 2, width: isTabletUp ? '50%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+                <Box sx={{ display: 'flex', gap: 0, width: '100%', flexWrap: 'nowrap', flexDirection: 'row' }}>
+                    <TextField
+                        label="Create ID"
+                        variant="outlined"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        size="small"
+                        className="text-field name"
+                        slotProps={{
+                            htmlInput: {
+                                maxLength: 30,
+                            },
+                        }}
+                    />
 
-                <Select
-                    value={registries.includes(registry) ? registry : ""}
-                    onChange={(e) => setRegistry(e.target.value)}
-                    size="small"
-                    variant="outlined"
-                    className="select-small"
-                >
-                    {registries.map((r) => (
-                        <MenuItem key={r} value={r}>
-                            {r}
-                        </MenuItem>
-                    ))}
-                </Select>
+                    <Select
+                        value={registries.includes(registry) ? registry : ""}
+                        onChange={(e) => setRegistry(e.target.value)}
+                        size="small"
+                        variant="outlined"
+                        className="select-small"
+                    >
+                        {registries.map((r) => (
+                            <MenuItem key={r} value={r}>
+                                {r}
+                            </MenuItem>
+                        ))}
+                    </Select>
 
-                <Button
-                    variant="contained"
-                    onClick={handleCreateId}
-                    size="small"
-                    className="button-right"
-                >
-                    Create
-                </Button>
-            </Box>
-            <Box className="flex-box mt-2">
-                <Button
-                    className="mini-margin"
-                    variant="contained"
-                    color="primary"
-                    onClick={handleRenameId}
-                    sx={{ mr: 2 }}
-                >
-                    Rename
-                </Button>
+                    <Button
+                        variant="contained"
+                        onClick={handleCreateId}
+                        size="small"
+                        className="button-right"
+                    >
+                        Create
+                    </Button>
+                </Box>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'nowrap', flexDirection: 'row' }}>
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={handleRenameId}
+                    >
+                        Rename
+                    </Button>
 
-                <Button
-                    className="mini-margin"
-                    variant="contained"
-                    color="primary"
-                    onClick={handleRemoveId}
-                    sx={{ mr: 2 }}
-                >
-                    Remove
-                </Button>
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={handleRemoveId}
+                    >
+                        Remove
+                    </Button>
 
-                <Button
-                    className="mini-margin"
-                    variant="contained"
-                    color="primary"
-                    onClick={backupId}
-                    sx={{ mr: 2 }}
-                >
-                    Backup
-                </Button>
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={backupId}
+                    >
+                        Backup
+                    </Button>
 
-                <Button
-                    className="mini-margin"
-                    variant="contained"
-                    color="primary"
-                    onClick={handleRecoverId}
-                    sx={{ mr: 2 }}
-                >
-                    Recover
-                </Button>
+                    <Button
+                        className="mini-margin"
+                        variant="contained"
+                        color="primary"
+                        onClick={handleRecoverId}
+                    >
+                        Recover
+                    </Button>
+                </Box>
             </Box>
         </Box>
     );

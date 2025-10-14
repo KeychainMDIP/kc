@@ -77,9 +77,11 @@ export enum DmailTags {
     UNREAD = 'unread',
 }
 
-export enum PollTags {
+export enum NoticeTags {
+    DMAIL = 'dmail',
     BALLOT = "ballot",
     POLL = "poll",
+    CREDENTIAL = "credential",
 }
 
 export default class Keymaster implements KeymasterInterface {
@@ -1170,8 +1172,8 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async resolveAsset(did: string): Promise<any> {
-        const doc = await this.resolveDID(did);
+    async resolveAsset(did: string, options?: ResolveDIDOptions): Promise<any> {
+        const doc = await this.resolveDID(did, options);
 
         if (!doc?.didDocument?.controller || !doc?.didDocumentData || doc.didDocumentMetadata?.deactivated) {
             return {};
@@ -2697,8 +2699,8 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ groupVault }, options);
     }
 
-    async getGroupVault(groupVaultId: string): Promise<GroupVault> {
-        const asset = await this.resolveAsset(groupVaultId) as { groupVault?: GroupVault };
+    async getGroupVault(groupVaultId: string, options?: ResolveDIDOptions): Promise<GroupVault> {
+        const asset = await this.resolveAsset(groupVaultId, options) as { groupVault?: GroupVault };
 
         if (!asset.groupVault) {
             throw new InvalidParameterError('groupVaultId');
@@ -2707,9 +2709,9 @@ export default class Keymaster implements KeymasterInterface {
         return asset.groupVault;
     }
 
-    async testGroupVault(id: string): Promise<boolean> {
+    async testGroupVault(id: string, options?: ResolveDIDOptions): Promise<boolean> {
         try {
-            const groupVault = await this.getGroupVault(id);
+            const groupVault = await this.getGroupVault(id, options);
             return groupVault !== null;
         }
         catch (error) {
@@ -2937,16 +2939,16 @@ export default class Keymaster implements KeymasterInterface {
         return this.updateAsset(vaultId, { groupVault });
     }
 
-    async listGroupVaultItems(vaultId: string): Promise<Record<string, any>> {
-        const groupVault = await this.getGroupVault(vaultId);
+    async listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
+        const groupVault = await this.getGroupVault(vaultId, options);
         const { items } = await this.decryptGroupVault(groupVault);
 
         return items;
     }
 
-    async getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null> {
+    async getGroupVaultItem(vaultId: string, name: string, options?: ResolveDIDOptions): Promise<Buffer | null> {
         try {
-            const groupVault = await this.getGroupVault(vaultId);
+            const groupVault = await this.getGroupVault(vaultId, options);
             const { privateJwk, items } = await this.decryptGroupVault(groupVault);
 
             if (items[name]) {
@@ -3174,14 +3176,14 @@ export default class Keymaster implements KeymasterInterface {
         return notice;
     }
 
-    async getDmailMessage(did: string): Promise<DmailMessage | null> {
-        const isGroupVault = await this.testGroupVault(did);
+    async getDmailMessage(did: string, options?: ResolveDIDOptions): Promise<DmailMessage | null> {
+        const isGroupVault = await this.testGroupVault(did, options);
 
         if (!isGroupVault) {
             return null;
         }
 
-        const buffer = await this.getGroupVaultItem(did, DmailTags.DMAIL);
+        const buffer = await this.getGroupVaultItem(did, DmailTags.DMAIL, options);
 
         if (!buffer) {
             return null;
@@ -3196,8 +3198,8 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    async listDmailAttachments(did: string): Promise<Record<string, any>> {
-        let items = await this.listGroupVaultItems(did);
+    async listDmailAttachments(did: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
+        let items = await this.listGroupVaultItems(did, options);
 
         delete items[DmailTags.DMAIL]; // Remove the dmail item itself from attachments
 
@@ -3327,7 +3329,7 @@ export default class Keymaster implements KeymasterInterface {
                 const imported = await this.importDmail(noticeDID);
 
                 if (imported) {
-                    await this.addToNotices(did, [DmailTags.DMAIL]);
+                    await this.addToNotices(did, [NoticeTags.DMAIL]);
                 }
 
                 continue;
@@ -3342,7 +3344,7 @@ export default class Keymaster implements KeymasterInterface {
                 } catch { }
 
                 if (imported) {
-                    await this.addToNotices(did, [PollTags.BALLOT]);
+                    await this.addToNotices(did, [NoticeTags.BALLOT]);
                 }
 
                 continue;
@@ -3355,8 +3357,15 @@ export default class Keymaster implements KeymasterInterface {
                 if (!Object.values(names).includes(noticeDID)) {
                     await this.addUnnamedPoll(noticeDID);
                 }
-                await this.addToNotices(did, [PollTags.POLL]);
+                await this.addToNotices(did, [NoticeTags.POLL]);
 
+                continue;
+            }
+
+            const isCredential = await this.acceptCredential(noticeDID);
+
+            if (isCredential) {
+                await this.addToNotices(did, [NoticeTags.CREDENTIAL]);
                 continue;
             }
 

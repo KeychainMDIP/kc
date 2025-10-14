@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import CredentialForm from "./CredentialForm";
 import {
     Box,
@@ -9,15 +10,16 @@ import {
     MenuItem, FormControl,
 } from "@mui/material";
 import DisplayDID from "./DisplayDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 function IssueTab() {
     const {
         keymaster,
         registries,
         registry,
-        setError,
         setRegistry,
     } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         agentList,
         credentialDID,
@@ -31,6 +33,7 @@ function IssueTab() {
         setCredentialSubject,
         setIssuedList,
     } = useCredentialsContext();
+    const { isTabletUp } = useThemeContext();
 
     const [schemaObject, setSchemaObject] = useState<any>(null);
     const [isFormValid, setIsFormValid] = useState<boolean>(false);
@@ -97,7 +100,7 @@ function IssueTab() {
     }, [credentialString]);
 
     return (
-        <Box>
+        <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <Box display="flex" flexDirection="column" sx={{ mb: 2 }}>
                 <Select
                     value={credentialSubject}

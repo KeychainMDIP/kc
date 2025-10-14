@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import { useWalletContext } from "./WalletProvider";
 import { useCredentialsContext } from "./CredentialsProvider";
+import { useSnackbar } from "./SnackbarProvider";
 
 interface UIContextValue {
     selectedTab: string;
@@ -70,10 +71,10 @@ export function UIProvider(
         setIdList,
         setUnresolvedIdList,
         keymaster,
-        setError,
         setManifest,
         setRegistries,
     } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         credentialSchema,
         setCredentialSchema,

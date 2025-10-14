@@ -3,6 +3,7 @@ import { TabPanel } from "@mui/lab";
 import { Box, Button, Menu, MenuItem, Select, TextField } from "@mui/material";
 import { ArrowDropDown, Close, ContentCopy } from "@mui/icons-material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import { useMessageContext } from "../../shared/contexts/MessageContext";
 import { useCredentialsContext } from "../../shared/contexts/CredentialsProvider";
 
@@ -11,8 +12,10 @@ function MessageSendTab({ tabValue }: { tabValue: string }) {
     const {
         registries,
         keymaster,
-        setError,
     } = useWalletContext();
+    const {
+        setError,
+    } = useSnackbar();
     const {
         messageRegistry,
         setMessageRegistry,

@@ -9,7 +9,7 @@ import {
     InputLabel,
     SelectChangeEvent,
 } from "@mui/material";
-import { useWalletContext } from "../contexts/WalletProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 
 interface CredentialsFormProps {
     schemaObject: any;
@@ -22,7 +22,7 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
     baseCredential,
     onChange,
 }) => {
-    const { setError } = useWalletContext();
+    const { setError } = useSnackbar();
     const properties = schemaObject.properties;
     const requiredList: string[] = Array.isArray(schemaObject.required) ? schemaObject.required : [];
 

@@ -2,14 +2,18 @@ import { useState } from "react";
 import {Box, TextField, Select, MenuItem, Button, FormControl} from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 function CloneAssetTab() {
     const [aliasName, setAliasName] = useState("");
     const [aliasDID, setAliasDID] = useState("");
     const [registry, setRegistry] = useState<string>('hyperswarm');
 
-    const { keymaster, registries, setError } = useWalletContext();
+    const { keymaster, registries } = useWalletContext();
+    const { setError } = useSnackbar();
     const { refreshNames } = useUIContext();
+    const { isTabletUp } = useThemeContext();
 
     async function handleClone() {
         if (!keymaster) {
@@ -28,7 +32,7 @@ function CloneAssetTab() {
     const isDisabled = !aliasName || !aliasDID || !registry;
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0 }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <TextField
                 label="Asset Name"
                 size="small"

@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 import { ArrowDropDown } from "@mui/icons-material";
 import { useWalletContext } from "./contexts/WalletProvider";
+import { useSnackbar } from "./contexts/SnackbarProvider";
 import { useUIContext } from "./contexts/UIContext";
 import { requestBrowserRefresh } from './sharedScripts'
 import CopyResolveDID from "./CopyResolveDID";
@@ -18,9 +19,11 @@ const DropDownID = () => {
         idList,
         isBrowser,
         keymaster,
-        setError,
         unresolvedIdList,
     } = useWalletContext();
+    const {
+        setError,
+    } = useSnackbar();
     const {
         resetCurrentID,
     } = useUIContext();

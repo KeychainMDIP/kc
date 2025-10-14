@@ -12,7 +12,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
-import WarningModal from "./WarningModal";
+import WarningModal from "./modals/WarningModal";
 import {
     ArrowDropDown,
     Article,
@@ -31,7 +31,8 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
-import TextInputModal from "./TextInputModal";
+import { useSnackbar } from "../contexts/SnackbarProvider";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
 
 function NamedDIDs() {
@@ -62,8 +63,10 @@ function NamedDIDs() {
     const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
     const {
         keymaster,
-        setError,
     } = useWalletContext();
+    const {
+        setError,
+    } = useSnackbar();
     const {
         agentList,
         aliasName,

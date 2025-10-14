@@ -7,18 +7,20 @@ import {
 } from "@mui/material";
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useUIContext } from "../../shared/contexts/UIContext";
+import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import WarningModal from "../../shared/WarningModal";
 import MnemonicModal from "./MnemonicModal";
 import Keymaster from "@mdip/keymaster";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import CipherWeb from "@mdip/cipher/web";
+import { StoredWallet } from '@mdip/keymaster/types';
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
-    const [pendingWallet, setPendingWallet] = useState<any>(null);
+    const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
@@ -27,8 +29,9 @@ const WalletTab = () => {
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
-    const { setError, setSuccess, keymaster, initialiseWallet } = useWalletContext();
+    const { keymaster, initialiseWallet } = useWalletContext();
     const { setOpenBrowser } = useUIContext();
+    const { setError, setSuccess } = useSnackbar();
 
     const storageKey = "jsonViewerState-wallet-noSubTab";
 
@@ -82,7 +85,7 @@ const WalletTab = () => {
         await wipeStoredValues();
     }
 
-    async function uploadWallet(wallet: any) {
+    async function uploadWallet(wallet: StoredWallet) {
         const wallet_chrome = new WalletChrome();
         await wallet_chrome.saveWallet(wallet, true);
         await wipeStoredValues();

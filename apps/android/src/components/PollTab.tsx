@@ -28,12 +28,14 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
-import PollResultsModal from "./PollResultsModal";
+import { useSnackbar } from "../contexts/SnackbarProvider";
+import PollResultsModal from "./modals/PollResultsModal";
 import {NoticeMessage, Poll, PollResults} from "@mdip/keymaster/types";
-import TextInputModal from "./TextInputModal";
-import WarningModal from "./WarningModal";
+import TextInputModal from "./modals/TextInputModal";
+import WarningModal from "./modals/WarningModal";
 import CopyResolveDID from "./CopyResolveDID";
 import DisplayDID from "./DisplayDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 const PollsTab: React.FC = () => {
     const {
@@ -41,9 +43,11 @@ const PollsTab: React.FC = () => {
         currentId,
         keymaster,
         registries,
+    } = useWalletContext();
+    const {
         setError,
         setSuccess,
-    } = useWalletContext();
+    } = useSnackbar();
     const {
         groupList,
         nameList,
@@ -52,6 +56,7 @@ const PollsTab: React.FC = () => {
     const {
         refreshNames
     } = useUIContext();
+    const { isTabletUp } = useThemeContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [pollName, setPollName] = useState<string>("");
     const [description, setDescription] = useState<string>("");
@@ -461,7 +466,7 @@ const PollsTab: React.FC = () => {
             </Box>
 
             {activeTab === "create" && (
-                <Box>
+                <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
                     <TextField
                         fullWidth
                         label="Poll Name"
@@ -586,7 +591,7 @@ const PollsTab: React.FC = () => {
             )}
 
             {activeTab === "view" && (
-                <Box>
+                <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
                     {pollList.length > 0 ? (
                         <Box>
                             <Box className="flex-box" sx={{ display: "flex", alignItems: "center", width: "100%", flexWrap: "nowrap" }}>

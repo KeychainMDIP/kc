@@ -1,13 +1,13 @@
 services:
   mongodb:
-    image: mongo:latest
+    image: mongo:8.0
     volumes:
       - ./data/mongodb:/data/db
     ports:
       - 127.0.0.1:27017:27017
 
   redis:
-    image: redis:latest
+    image: redis:8.0.4-alpine
     command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf

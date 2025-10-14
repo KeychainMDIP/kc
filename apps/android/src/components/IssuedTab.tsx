@@ -7,15 +7,14 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
-import WarningModal from "./WarningModal";
+import WarningModal from "./modals/WarningModal";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "./DisplayDID";
+import {useSnackbar} from "../contexts/SnackbarProvider";
 
 function IssuedTab() {
-    const {
-        keymaster,
-        setError,
-    } = useWalletContext();
+    const { keymaster } = useWalletContext();
+    const { setError } = useSnackbar();
     const {
         issuedEdit,
         issuedList,

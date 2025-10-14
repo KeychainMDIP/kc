@@ -1,19 +1,23 @@
 import { useState } from "react";
 import {Box, Button, FormControl, IconButton, MenuItem, Select, TextField, Tooltip} from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
+import {useSnackbar} from "../contexts/SnackbarProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { Edit } from "@mui/icons-material";
-import TextInputModal from "./TextInputModal";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 const SchemaTab = ()=> {
     const {
         keymaster,
         registries,
+    } = useWalletContext();
+    const {
         setError,
         setSuccess,
-    } = useWalletContext();
+    } = useSnackbar();
     const {
         refreshNames,
     } = useUIContext();
@@ -21,6 +25,7 @@ const SchemaTab = ()=> {
         nameList,
         schemaList,
     } = useCredentialsContext();
+    const { isTabletUp } = useThemeContext();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [schemaName, setSchemaName] = useState<string>('');
     const [selectedSchemaName, setSelectedSchemaName] = useState<string>('');
@@ -108,7 +113,7 @@ const SchemaTab = ()=> {
     };
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1 }}>
+        <Box display="flex" flexDirection="column"  sx={{ mt: 1 }}>
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename Schema"
@@ -120,7 +125,7 @@ const SchemaTab = ()=> {
                 onClose={() => setRenameOpen(false)}
             />
 
-            <Box display="flex" flexDirection="column" sx={{ mb: 2, gap: 0 }}>
+            <Box display="flex" flexDirection="column" sx={{ mb: 2, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
                 <TextField
                     label="Schema Name"
                     size="small"
@@ -176,7 +181,7 @@ const SchemaTab = ()=> {
             </Box>
 
             {schemaList &&
-                <Box className="flex-box" sx={{ display: "flex", alignItems: "center", width: "100%", flexWrap: "nowrap" }}>
+                <Box sx={{ display: "flex", alignItems: "center", width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0, flexWrap: "nowrap" }}>
                     <FormControl sx={{ flex: 1, minWidth: 0 }}>
                         <Select
                             value={selectedSchemaName}

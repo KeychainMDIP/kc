@@ -3,12 +3,18 @@ import { WalletProvider } from "./WalletProvider";
 import { CredentialsProvider } from "./CredentialsProvider";
 import { UIProvider } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
-import { Box } from "@mui/material";
+import { Box, useMediaQuery } from "@mui/material";
+import { SafeAreaProvider } from "./SafeAreaContext";
+import { SnackbarProvider } from "./SnackbarProvider";
 
 interface ThemeContextValue {
     darkMode: boolean;
     handleDarkModeToggle: (event: React.ChangeEvent<HTMLInputElement>) => void;
     updateThemeFromStorage: () => void;
+    // Responsive helpers shared across the app
+    isMdUp: boolean;
+    isMin768: boolean;
+    isTabletUp: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -34,10 +40,17 @@ export function ContextProviders(
         localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
     }
 
+    const isMdUp = useMediaQuery(theme.breakpoints.up('md'));
+    const isMin768 = useMediaQuery('(min-width:768px)');
+    const isTabletUp = isMdUp || isMin768;
+
     const value: ThemeContextValue = {
         handleDarkModeToggle,
         darkMode,
         updateThemeFromStorage,
+        isMdUp,
+        isMin768,
+        isTabletUp,
     }
 
     function updateThemeFromStorage() {
@@ -64,13 +77,17 @@ export function ContextProviders(
                         p: 0,
                     }}
                 >
-                    <WalletProvider>
-                        <CredentialsProvider>
-                            <UIProvider>
-                                {children}
-                            </UIProvider>
-                        </CredentialsProvider>
-                    </WalletProvider>
+                    <SafeAreaProvider>
+                        <SnackbarProvider>
+                            <WalletProvider>
+                                <CredentialsProvider>
+                                    <UIProvider>
+                                        {children}
+                                    </UIProvider>
+                                </CredentialsProvider>
+                            </WalletProvider>
+                        </SnackbarProvider>
+                    </SafeAreaProvider>
                 </Box>
             </ThemeProvider>
         </ThemeContext.Provider>

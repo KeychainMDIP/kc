@@ -4,12 +4,14 @@ import {Edit} from "@mui/icons-material";
 import {useWalletContext} from "../contexts/WalletProvider";
 import {useUIContext} from "../contexts/UIContext";
 import {useCredentialsContext} from "../contexts/CredentialsProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
-import TextInputModal from "./TextInputModal";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 import {
     DEFAULT_GATEKEEPER_URL,
     GATEKEEPER_KEY
@@ -21,9 +23,8 @@ const ImageTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         refreshNames,
     } = useUIContext();
@@ -31,6 +32,7 @@ const ImageTab = () => {
         imageList,
         nameList,
     } = useCredentialsContext();
+    const { isTabletUp } = useThemeContext();
     const [registry, setRegistry] = useState<string>('hyperswarm');
     const [selectedImageName, setSelectedImageName] = useState<string>('');
     const [selectedImage, setSelectedImage] = useState<ImageAsset | null>(null);
@@ -245,6 +247,8 @@ const ImageTab = () => {
                     position: "sticky",
                     zIndex: (t) => t.zIndex.appBar,
                     bgcolor: "background.paper",
+                    width: isTabletUp ? '70%' : '100%',
+                    mx: isTabletUp ? 'auto' : 0
                 }}
             >
                 <Box display="flex" flexDirection="row" sx={{ gap: 0, width: "100%" }}>

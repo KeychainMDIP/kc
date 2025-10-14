@@ -14,19 +14,20 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import {Delete, Edit} from "@mui/icons-material";
-import WarningModal from "./WarningModal";
+import WarningModal from "./modals/WarningModal";
 import { Group } from '@mdip/keymaster/types'
-import TextInputModal from "./TextInputModal";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 
 const GroupsTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         groupList,
         nameList,
@@ -46,9 +47,7 @@ const GroupsTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [renameOpen, setRenameOpen] = useState<boolean>(false);
     const [renameOldName, setRenameOldName] = useState<string>("");
-
-    const storageKey = "jsonViewerState-groups-noSubTab";
-    sessionStorage.removeItem(storageKey);
+    const { isTabletUp } = useThemeContext();
 
     async function createGroup() {
         if (!keymaster) {
@@ -163,7 +162,7 @@ const GroupsTab = () => {
     };
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1 }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename Group"
@@ -285,6 +284,7 @@ const GroupsTab = () => {
                         <TextField
                             label="DID"
                             size="small"
+                            fullWidth
                             sx={{
                                 '& .MuiOutlinedInput-notchedOutline': {
                                     borderTopRightRadius: 0,
@@ -331,10 +331,6 @@ const GroupsTab = () => {
                         return (
                             <Box>
                                 <Box key={index} display="flex" alignItems="center" justifyContent="space-between" sx={{my: 1}}>
-                                    <Typography sx={{ fontFamily: alias ? "text.primary" : "Courier, monospace" }}
-                                    >
-                                        {alias ?? did}
-                                    </Typography>
                                     <Box display="flex" flexDirection="row">
                                         <CopyResolveDID did={did} />
                                         <Tooltip title="Delete">
@@ -346,6 +342,17 @@ const GroupsTab = () => {
                                             </IconButton>
                                         </Tooltip>
                                     </Box>
+                                    <Typography sx={{
+                                        fontFamily: "Courier, monospace",
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        minWidth: 0,
+                                        flex: 1,
+                                    }}
+                                    >
+                                        {alias ?? did}
+                                    </Typography>
                                 </Box>
                                 <Divider />
                             </Box>

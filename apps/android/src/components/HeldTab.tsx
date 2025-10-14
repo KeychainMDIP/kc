@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Box, Button, IconButton, InputAdornment, TextField, Tooltip } from "@mui/material";
 import { CameraAlt } from "@mui/icons-material";
-import WarningModal from "./WarningModal";
+import WarningModal from "./modals/WarningModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import JsonViewer from "./JsonViewer";
 import DisplayDID from "./DisplayDID";
 import {scanQrCode} from "../utils/utils";
@@ -17,10 +18,9 @@ function HeldTab() {
     const {
         manifest,
         resolveDID,
-        setError,
-        setWarning,
         keymaster,
     } = useWalletContext();
+    const { setError, setWarning } = useSnackbar();
     const {
         heldList,
     } = useCredentialsContext();

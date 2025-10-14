@@ -4,12 +4,14 @@ import {Download, Edit} from "@mui/icons-material";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useCredentialsContext } from "../contexts/CredentialsProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import { FileAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import VersionNavigator from "./VersionNavigator";
-import TextInputModal from "./TextInputModal";
+import TextInputModal from "./modals/TextInputModal";
 import CopyResolveDID from "./CopyResolveDID";
+import { useThemeContext } from "../contexts/ContextProviders";
 import {
     DEFAULT_GATEKEEPER_URL,
     GATEKEEPER_KEY
@@ -21,9 +23,8 @@ const DocumentTab = () => {
     const {
         keymaster,
         registries,
-        setError,
-        setSuccess,
     } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
     const {
         refreshNames,
     } = useUIContext();
@@ -31,6 +32,7 @@ const DocumentTab = () => {
         documentList,
         nameList,
     } = useCredentialsContext();
+    const { isTabletUp } = useThemeContext();
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [selectedDocumentName, setSelectedDocumentName] = useState<string>("");
     const [selectedDocument, setSelectedDocument] = useState<FileAsset | null>(null);
@@ -243,7 +245,7 @@ const DocumentTab = () => {
     }
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1, overflowX: "hidden" }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, overflowX: "hidden", width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename Document"

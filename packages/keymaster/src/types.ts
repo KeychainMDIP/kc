@@ -323,7 +323,7 @@ export interface KeymasterInterface {
     // Assets
     createAsset(data: unknown, options?: CreateAssetOptions): Promise<string>;
     listAssets(owner?: string): Promise<string[]>;
-    resolveAsset(did: string): Promise<unknown | null>;
+    resolveAsset(did: string, options?: ResolveDIDOptions): Promise<unknown | null>;
     updateAsset(did: string, data: Record<string, unknown>): Promise<boolean>;
 
     // Encryption
@@ -397,14 +397,14 @@ export interface KeymasterInterface {
 
     // GroupVaults
     createGroupVault(options?: CreateAssetOptions): Promise<string>;
-    getGroupVault(vaultId: string): Promise<GroupVault>;
-    testGroupVault(vaultId: string): Promise<boolean>;
+    getGroupVault(vaultId: string, options?: ResolveDIDOptions): Promise<GroupVault>;
+    testGroupVault(vaultId: string, options?: ResolveDIDOptions): Promise<boolean>;
     addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
     removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
-    listGroupVaultItems(vaultId: string): Promise<Record<string, any>>;
-    getGroupVaultItem(vaultId: string, name: string): Promise<Buffer | null>;
+    listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>>;
+    getGroupVaultItem(vaultId: string, name: string, options?: ResolveDIDOptions): Promise<Buffer | null>;
 
     // Dmail
     createDmail(message: DmailMessage, options?: CreateAssetOptions): Promise<string>;
@@ -412,12 +412,12 @@ export interface KeymasterInterface {
     fileDmail(did: string, tags: string[]): Promise<boolean>
     removeDmail(did: string): Promise<boolean>;
     importDmail(did: string): Promise<boolean>;
-    getDmailMessage(did: string): Promise<DmailMessage | null>;
+    getDmailMessage(did: string, options?: ResolveDIDOptions): Promise<DmailMessage | null>;
     listDmail(): Promise<Record<string, DmailItem>>;
     sendDmail(did: string): Promise<string | null>;
     addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean>;
     removeDmailAttachment(did: string, name: string): Promise<boolean>;
-    listDmailAttachments(did: string): Promise<Record<string, any>>;
+    listDmailAttachments(did: string, options?: ResolveDIDOptions): Promise<Record<string, any>>;
     getDmailAttachment(did: string, name: string): Promise<Buffer | null>;
 
     // Notices
