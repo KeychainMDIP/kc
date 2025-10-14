@@ -268,6 +268,41 @@ describe('importNotice', () => {
         expect(ok).toBe(true);
     });
 
+    it('should import a credential notice', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        const mockSchema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "properties": {
+                "email": {
+                    "format": "email",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "email"
+            ],
+            "type": "object"
+        };
+
+        const schema = await keymaster.createSchema(mockSchema);
+        const bc = await keymaster.bindCredential(schema, alice);
+        const vc = await keymaster.issueCredential(bc);
+
+        const notice: NoticeMessage = {
+            to: [alice],
+            dids: [vc],
+        };
+
+        const noticeDid = await keymaster.createNotice(notice);
+
+        await keymaster.setCurrentId('Alice');
+        const ok = await keymaster.importNotice(noticeDid);
+
+        expect(ok).toBe(true);
+    });
+
     it('should return true if notice already imported', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');

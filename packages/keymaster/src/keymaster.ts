@@ -77,9 +77,11 @@ export enum DmailTags {
     UNREAD = 'unread',
 }
 
-export enum PollTags {
+export enum NoticeTags {
+    DMAIL = 'dmail',
     BALLOT = "ballot",
     POLL = "poll",
+    CREDENTIAL = "credential",
 }
 
 export default class Keymaster implements KeymasterInterface {
@@ -3327,7 +3329,7 @@ export default class Keymaster implements KeymasterInterface {
                 const imported = await this.importDmail(noticeDID);
 
                 if (imported) {
-                    await this.addToNotices(did, [DmailTags.DMAIL]);
+                    await this.addToNotices(did, [NoticeTags.DMAIL]);
                 }
 
                 continue;
@@ -3342,7 +3344,7 @@ export default class Keymaster implements KeymasterInterface {
                 } catch { }
 
                 if (imported) {
-                    await this.addToNotices(did, [PollTags.BALLOT]);
+                    await this.addToNotices(did, [NoticeTags.BALLOT]);
                 }
 
                 continue;
@@ -3355,8 +3357,15 @@ export default class Keymaster implements KeymasterInterface {
                 if (!Object.values(names).includes(noticeDID)) {
                     await this.addUnnamedPoll(noticeDID);
                 }
-                await this.addToNotices(did, [PollTags.POLL]);
+                await this.addToNotices(did, [NoticeTags.POLL]);
 
+                continue;
+            }
+
+            const isCredential = await this.acceptCredential(noticeDID);
+
+            if (isCredential) {
+                await this.addToNotices(did, [NoticeTags.CREDENTIAL]);
                 continue;
             }
 
