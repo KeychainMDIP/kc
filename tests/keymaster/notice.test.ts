@@ -1,5 +1,5 @@
 import Gatekeeper from '@mdip/gatekeeper';
-import Keymaster, { NoticeTags } from '@mdip/keymaster';
+import Keymaster, { DmailTags, NoticeTags } from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
@@ -216,6 +216,13 @@ describe('importNotice', () => {
         expect(notices![noticeDid]).toBeDefined();
         expect(notices![noticeDid].tags).toBeDefined();
         expect(notices![noticeDid].tags.includes(NoticeTags.DMAIL)).toBe(true);
+
+        const dmails = wallet.ids['Alice'].dmail;
+        expect(dmails).toBeDefined();
+        expect(dmails![dmail]).toBeDefined();
+        expect(dmails![dmail].tags).toBeDefined();
+        expect(dmails![dmail].tags.includes(DmailTags.INBOX)).toBe(true);
+        expect(dmails![dmail].tags.includes(DmailTags.UNREAD)).toBe(true);
     });
 
     it('should import a poll notice', async () => {
