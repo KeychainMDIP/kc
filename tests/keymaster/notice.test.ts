@@ -1,5 +1,5 @@
 import Gatekeeper from '@mdip/gatekeeper';
-import Keymaster from '@mdip/keymaster';
+import Keymaster, { NoticeTags } from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
@@ -204,12 +204,18 @@ describe('importNotice', () => {
             dids: [dmail],
         };
 
-        const did = await keymaster.createNotice(notice1);
+        const noticeDid = await keymaster.createNotice(notice1);
 
         await keymaster.setCurrentId('Alice');
-        const ok = await keymaster.importNotice(did);
-
+        const ok = await keymaster.importNotice(noticeDid);
         expect(ok).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        const notices = wallet.ids['Alice'].notices;
+        expect(notices).toBeDefined();
+        expect(notices![noticeDid]).toBeDefined();
+        expect(notices![noticeDid].tags).toBeDefined();
+        expect(notices![noticeDid].tags.includes(NoticeTags.DMAIL)).toBe(true);
     });
 
     it('should import a poll notice', async () => {
@@ -233,8 +239,14 @@ describe('importNotice', () => {
 
         await keymaster.setCurrentId('Alice');
         const ok = await keymaster.importNotice(noticeDid);
-
         expect(ok).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        const notices = wallet.ids['Alice'].notices;
+        expect(notices).toBeDefined();
+        expect(notices![noticeDid]).toBeDefined();
+        expect(notices![noticeDid].tags).toBeDefined();
+        expect(notices![noticeDid].tags.includes(NoticeTags.POLL)).toBe(true);
     });
 
     it('should import a ballot notice', async () => {
@@ -264,8 +276,14 @@ describe('importNotice', () => {
 
         await keymaster.setCurrentId('Bob');
         const ok = await keymaster.importNotice(noticeDid);
-
         expect(ok).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        const notices = wallet.ids['Bob'].notices;
+        expect(notices).toBeDefined();
+        expect(notices![noticeDid]).toBeDefined();
+        expect(notices![noticeDid].tags).toBeDefined();
+        expect(notices![noticeDid].tags.includes(NoticeTags.BALLOT)).toBe(true);
     });
 
     it('should import a credential notice', async () => {
@@ -299,8 +317,14 @@ describe('importNotice', () => {
 
         await keymaster.setCurrentId('Alice');
         const ok = await keymaster.importNotice(noticeDid);
-
         expect(ok).toBe(true);
+
+        const wallet = await keymaster.loadWallet();
+        const notices = wallet.ids['Alice'].notices;
+        expect(notices).toBeDefined();
+        expect(notices![noticeDid]).toBeDefined();
+        expect(notices![noticeDid].tags).toBeDefined();
+        expect(notices![noticeDid].tags.includes(NoticeTags.CREDENTIAL)).toBe(true);
     });
 
     it('should return true if notice already imported', async () => {
