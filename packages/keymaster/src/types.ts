@@ -358,6 +358,7 @@ export interface KeymasterInterface {
     }): Promise<VerifiableCredential>;
 
     issueCredential(credential: Partial<VerifiableCredential>, options?: IssueCredentialsOptions): Promise<string>;
+    sendCredential(did: string): Promise<string | null>;
     updateCredential(did: string, credential: VerifiableCredential): Promise<boolean>;
     revokeCredential(did: string): Promise<boolean>;
     listIssued(issuer?: string): Promise<string[]>;

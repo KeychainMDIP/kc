@@ -2795,6 +2795,53 @@ v1router.get('/credentials/issued/:did', async (req, res) => {
 
 /**
  * @swagger
+ * /credentials/issued/{did}/send:
+ *   post:
+ *     summary: Send an issued credential to its subject.
+ *     description: >
+ *       Creates a notice to deliver the specified issued credential to its credentialSubject.
+ *       The notice is created in the ephemeral registry and is valid for 7 days by default.
+ *       Returns null if the credential cannot be found.
+ *     parameters:
+ *       - in: path
+ *         name: did
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The DID of the issued credential to send.
+ *     responses:
+ *       200:
+ *         description: The DID of the created notice, or null if the credential was not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 did:
+ *                   type: string
+ *                   nullable: true
+ *                   description: The DID of the notice created to deliver the credential, or null if the credential doesn't exist.
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/credentials/issued/:did/send', async (req, res) => {
+    try {
+        const did = await keymaster.sendCredential(req.params.did);
+        res.json({ did });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /credentials/issued/{did}:
  *   post:
  *     summary: Update an existing issued credential.
