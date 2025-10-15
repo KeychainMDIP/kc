@@ -140,6 +140,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [credentialSubject, setCredentialSubject] = useState('');
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
+    const [credentialSent, setCredentialSent] = useState(false);
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
@@ -938,8 +939,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const did = await keymaster.issueCredential(JSON.parse(credentialString), { registry });
             setCredentialDID(did);
+            setCredentialSent(false);
             // Add did to issuedList
             setIssuedList(prevIssuedList => [...prevIssuedList, did]);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function sendCredential() {
+        try {
+            await keymaster.sendCredential(credentialDID);
+            setCredentialSent(true);
         } catch (error) {
             showError(error);
         }
@@ -4293,6 +4304,13 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                         <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
                                                             {credentialDID}
                                                         </Typography>
+                                                    </Grid>
+                                                }
+                                                {credentialDID &&
+                                                    <Grid item>
+                                                        <Button variant="contained" color="primary" onClick={sendCredential} disabled={credentialSent}>
+                                                            Send Credential
+                                                        </Button>
                                                     </Grid>
                                                 }
                                             </Grid>
