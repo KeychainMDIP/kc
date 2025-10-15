@@ -86,6 +86,7 @@ describe('getCredential', () => {
             await keymaster.getCredential(agentDID);
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
