@@ -1836,6 +1836,38 @@ describe('issueCredential', () => {
     });
 });
 
+describe('sendCredential', () => {
+    const mockCredential = 'mockCredential';
+    const mockNotice = 'mockNotice';
+
+    it('should send credential DID', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .reply(200, { did: mockNotice });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const did = await keymaster.sendCredential(mockCredential);
+
+        expect(did).toBe(mockNotice);
+    });
+
+    it('should throw exception on sendCredential server error', async () => {
+        nock(KeymasterURL)
+            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.sendCredential(mockCredential);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('updateCredential', () => {
     const mockCredentialId = 'cred1';
 
