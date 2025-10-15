@@ -1583,6 +1583,23 @@ export default class Keymaster implements KeymasterInterface {
         return this.encryptJSON(signed, credential.credentialSubject!.id, { ...options, includeHash: true });
     }
 
+    async sendCredential(did: string): Promise<string | null> {
+        const vc = await this.getCredential(did);
+
+        if (!vc) {
+            return null;
+        }
+
+        const registry = this.ephemeralRegistry;
+        const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Default to 7 days
+        const message: NoticeMessage = {
+            to: [vc.credentialSubject!.id],
+            dids: [did],
+        };
+
+        return this.createNotice(message, { registry, validUntil });
+    }
+
     private isVerifiableCredential(obj: unknown): obj is VerifiableCredential {
         if (typeof obj !== 'object' || !obj) {
             return false;
