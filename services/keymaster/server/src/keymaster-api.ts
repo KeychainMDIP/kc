@@ -2833,7 +2833,8 @@ v1router.get('/credentials/issued/:did', async (req, res) => {
  */
 v1router.post('/credentials/issued/:did/send', async (req, res) => {
     try {
-        const did = await keymaster.sendCredential(req.params.did);
+        const { options } = req.body;
+        const did = await keymaster.sendCredential(req.params.did, options);
         res.json({ did });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

@@ -112,6 +112,21 @@ def test_issue_update_credentials():
     assert_equal(response, True)
 
 
+def test_send_credentials():
+    bob = generate_id()
+    bob_id = keymaster.create_id(bob, local_options)
+
+    schema = keymaster.create_schema(None, expire_options)
+
+    bc = keymaster.bind_credential(schema, bob, expire_options)
+    credential_id = keymaster.issue_credential(bc, expire_options)
+    notice_id = keymaster.send_credential(credential_id, expire_options)
+
+    asset = keymaster.resolve_asset(notice_id)
+    assert_equal(asset["notice"]["to"], [bob_id])
+    assert_equal(asset["notice"]["dids"], [credential_id])
+
+
 def test_bind_credentials():
     alice = generate_id()
     bob = generate_id()
