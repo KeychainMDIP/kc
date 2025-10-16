@@ -44,6 +44,7 @@ import {
     BarChart,
     Block,
     Clear,
+    Create,
     Groups,
     Delete,
     Download,
@@ -4443,6 +4444,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     variant="scrollable"
                                     scrollButtons="auto"
                                 >
+                                    <Tab key="compose" value="compose" label={'Compose'} icon={<Create />} />
                                     <Tab key="inbox" value="inbox" label={'Inbox'} icon={<Inbox />} />
                                     <Tab key="outbox" value="outbox" label={'Outbox'} icon={<Outbox />} />
                                     <Tab key="drafts" value="drafts" label={'Drafts'} icon={<Drafts />} />
@@ -4450,10 +4452,9 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     <Tab key="trash" value="trash" label={'Trash'} icon={<Delete />} />
                                     <Tab key="all" value="all" label={'All Dmail'} icon={<AllInbox />} />
                                     <Tab key="results" value="results" label={'Results'} icon={<Search />} />
-                                    <Tab key="send" value="send" label={'Send'} icon={<Send />} />
                                 </Tabs>
                             </Box>
-                            {dmailTab !== 'send' &&
+                            {dmailTab !== 'compose' &&
                                 <Box>
                                     <Box>
                                         <TableContainer component={Paper} style={{ maxHeight: '300px', overflow: 'auto' }}>
@@ -4761,7 +4762,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                     </Box>
                                 </Box>
                             }
-                            {dmailTab === 'send' &&
+                            {dmailTab === 'compose' &&
                                 <Box>
                                     <Grid container direction="column" spacing={1}>
                                         <Grid container direction="row" spacing={1} alignItems={'center'}>
