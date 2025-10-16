@@ -24,7 +24,7 @@ import {
     Inbox,
     Outbox,
     Refresh,
-    Send,
+    Create,
     Tune,
     UploadFile,
     Reply,
@@ -1365,7 +1365,7 @@ const DmailTab: React.FC = () => {
                     variant="scrollable"
                     scrollButtons="auto"
                 >
-                    <Tab label="Compose" value="send"    icon={<Send />} />
+                    <Tab label="Compose" value="send"    icon={<Create />} />
                     <Tab label="Inbox"   value="inbox"   icon={<Inbox />} />
                     <Tab label="Sent"    value="outbox"  icon={<Outbox />} />
                     <Tab label="Drafts"  value="drafts"  icon={<Drafts />} />
