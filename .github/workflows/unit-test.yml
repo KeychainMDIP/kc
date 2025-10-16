@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - '**'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -40,4 +46,7 @@ jobs:
 
     - name: Coveralls GitHub Action
       uses: coverallsapp/github-action@v2.3.0
-
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path-to-lcov: ./coverage/lcov.info
+        fail-on-error: true
