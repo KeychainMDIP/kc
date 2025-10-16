@@ -9,4 +9,5 @@ coverage/
 .vscode/
 dist/
 dids.db-journal
+.venv
 

@@ -734,6 +734,19 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async sendCredential(
+        did: string,
+        options?: CreateAssetOptions
+    ): Promise<string | null> {
+        try {
+            const response = await axios.post(`${this.API}/credentials/issued/${did}/send`, { options });
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async updateCredential(
         did: string,
         credential: VerifiableCredential

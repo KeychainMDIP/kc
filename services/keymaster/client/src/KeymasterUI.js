@@ -140,6 +140,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     const [credentialSubject, setCredentialSubject] = useState('');
     const [credentialSchema, setCredentialSchema] = useState('');
     const [credentialString, setCredentialString] = useState('');
+    const [credentialSent, setCredentialSent] = useState(false);
     const [heldList, setHeldList] = useState(null);
     const [heldDID, setHeldDID] = useState('');
     const [heldString, setHeldString] = useState('');
@@ -938,8 +939,19 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
         try {
             const did = await keymaster.issueCredential(JSON.parse(credentialString), { registry });
             setCredentialDID(did);
+            setCredentialSent(false);
             // Add did to issuedList
             setIssuedList(prevIssuedList => [...prevIssuedList, did]);
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function sendCredential() {
+        try {
+            await keymaster.sendCredential(credentialDID);
+            setCredentialSent(true);
+            showSuccess("Credential sent");
         } catch (error) {
             showError(error);
         }
@@ -1115,6 +1127,15 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                 const newIssuedList = issuedList.filter(item => item !== did);
                 setIssuedList(newIssuedList);
             }
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    async function sendIssued(did) {
+        try {
+            await keymaster.sendCredential(did);
+            showSuccess("Credential sent");
         } catch (error) {
             showError(error);
         }
@@ -4280,7 +4301,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                 </Grid>
                                                 <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                     <Grid item>
-                                                        <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString}>
+                                                        <Button variant="contained" color="primary" onClick={issueCredential} disabled={!credentialString || !registry}>
                                                             Issue Credential
                                                         </Button>
                                                     </Grid>
@@ -4289,11 +4310,18 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                     </Grid>
                                                 </Grid>
                                                 {credentialDID &&
-                                                    <Grid item>
-                                                        <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
-                                                            {credentialDID}
-                                                        </Typography>
-                                                    </Grid>
+                                                    <>
+                                                        <Grid item>
+                                                            <Typography style={{ fontSize: '1em', fontFamily: 'Courier' }}>
+                                                                {credentialDID}
+                                                            </Typography>
+                                                        </Grid>
+                                                        <Grid item>
+                                                            <Button variant="contained" color="primary" onClick={sendCredential} disabled={credentialSent}>
+                                                                Send Credential
+                                                            </Button>
+                                                        </Grid>
+                                                    </>
                                                 }
                                             </Grid>
                                         </Box>
@@ -4330,6 +4358,11 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                                                 <Grid item>
                                                                     <Button variant="contained" color="primary" onClick={() => revokeIssued(did)}>
                                                                         Revoke
+                                                                    </Button>
+                                                                </Grid>
+                                                                <Grid item>
+                                                                    <Button variant="contained" color="primary" onClick={() => sendIssued(did)}>
+                                                                        Send
                                                                     </Button>
                                                                 </Grid>
                                                             </Grid>
