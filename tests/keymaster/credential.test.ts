@@ -374,7 +374,7 @@ describe('issueCredential', () => {
 });
 
 describe('sendCredential', () => {
-    it('should create a notice for the crendential', async () => {
+    it('should create a notice for the credential', async () => {
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
         const boundCredential = await keymaster.bindCredential(schema, subject);
