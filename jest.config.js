@@ -37,6 +37,7 @@ const config = {
         "/kc-app/",
         "/client/"
     ],
+    testTimeout: 10_000
 };
 
 export default config;

@@ -32,11 +32,11 @@ proc validate_wallet_output {output} {
 
     # Define exact required keys
     set required_keys [list \
-        "seed" \
-        "mnemonic" \
-        "hdkey" \
-        "xpriv" \
-        "xpub" \
+        "version" \
+        "mnemonicEnc" \
+        "salt" \
+        "iv" \
+        "data" \
         "counter" \
         "ids" \
     ]
