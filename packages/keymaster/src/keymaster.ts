@@ -3572,7 +3572,7 @@ export default class Keymaster implements KeymasterInterface {
             passKey,
             { name: Keymaster.ENC_ALG, length: 256 },
             false,
-            ['encrypt','decrypt']
+            ['encrypt', 'decrypt']
         );
     }
 
@@ -3580,7 +3580,7 @@ export default class Keymaster implements KeymasterInterface {
         const { version, seed, ...rest } = decrypted;
 
         if (version === undefined || seed === undefined) {
-            throw new Error("Wallet file is missing required version or seed.");
+            throw new KeymasterError("Wallet file is missing required version or seed.");
         }
 
         const mnemonic = await this.getMnemonicForDerivation(decrypted);
