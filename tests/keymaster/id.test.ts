@@ -28,7 +28,7 @@ beforeEach(() => {
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
 });
 
 describe('createId', () => {
@@ -60,7 +60,7 @@ describe('createId', () => {
 
     it('should create a new ID on customized default registry', async () => {
         const defaultRegistry = 'TFTC';
-        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry });
+        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry, passphrase: 'passphrase' });
 
         const name = 'Bob';
         const did = await keymaster.createId(name);

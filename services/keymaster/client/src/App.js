@@ -5,7 +5,7 @@ import './App.css';
 function App() {
     const keymaster = new KeymasterClient();
     return (
-        <KeymasterUI keymaster={keymaster} title={'Keymaster Server Wallet Demo'} />
+        <KeymasterUI keymaster={keymaster} title={'Keymaster Server Wallet Demo'} serverMode />
     );
 }
 

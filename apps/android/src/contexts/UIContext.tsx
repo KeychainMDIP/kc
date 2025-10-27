@@ -103,6 +103,14 @@ export function UIProvider(
         setAliasDID,
     } = useCredentialsContext();
 
+    useEffect(() => {
+        const refresh = async () => {
+            await refreshAll();
+        };
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     function arraysEqual(a: string[], b: string[]): boolean {
         return a.length === b.length && a.every((v, i) => v === b[i]);
     }

@@ -255,6 +255,14 @@ export function UIProvider(
     }
 
     useEffect(() => {
+        const refresh = async () => {
+            await refreshAll();
+        };
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
         if (!refreshFlag) {
             return;
         }

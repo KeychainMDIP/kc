@@ -90,7 +90,7 @@ export default class WalletWebEncrypted extends AbstractBase {
         return await this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.passphrase) {
             throw new Error('Passphrase not set');
         }

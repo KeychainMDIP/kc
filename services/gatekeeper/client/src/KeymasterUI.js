@@ -97,7 +97,13 @@ const DmailTags = {
     UNREAD: 'unread',
 };
 
-function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
+const isEncryptedBlob = (w) =>
+    w && typeof w === 'object' && !!w.salt && !!w.iv && !!w.data;
+
+const isWalletFileV1 = (w) =>
+    w && typeof w === 'object' && w.version === 1 && w.seed && !!w.seed.mnemonicEnc;
+
+function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = false }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -1721,9 +1727,44 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                     const walletUpload = event.target.result;
                     const wallet = JSON.parse(walletUpload);
 
-                    if (window.confirm('Overwrite wallet with upload?')) {
+                    if (serverMode && isEncryptedBlob(wallet)) {
+                        window.alert('This server demo cannot accept encrypted blobs.');
+                        return;
+                    }
+
+                    if (!window.confirm('Overwrite wallet with upload?')) {
+                        return;
+                    }
+
+                    if (serverMode) {
+                        let backupMnemonic;
+                        try {
+                            backupMnemonic = await keymaster.decryptMnemonic();
+                            await keymaster.backupWallet();
+                        } catch {
+                            window.alert('Upload rejected: failed to backup existing wallet.');
+                            return;
+                        }
+                        await keymaster.saveWallet(wallet, true);
+
+                        try {
+                            await keymaster.decryptMnemonic();
+                            refreshAll();
+                        } catch (e) {
+                            try {
+                                await keymaster.newWallet(backupMnemonic, true);
+                                await keymaster.recoverWallet();
+                            } catch {}
+                            window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
+                        }
+                    } else {
                         await keymaster.saveWallet(wallet);
-                        refreshAll();
+                        try {
+                            await keymaster.decryptMnemonic();
+                            refreshAll();
+                        } catch {
+                            encryption?.setKeypass();
+                        }
                     }
                 };
 

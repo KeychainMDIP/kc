@@ -10,26 +10,26 @@ import { useUIContext } from "../../shared/contexts/UIContext";
 import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import WarningModal from "../../shared/WarningModal";
 import MnemonicModal from "./MnemonicModal";
-import Keymaster from "@mdip/keymaster";
-import GatekeeperClient from "@mdip/gatekeeper/client";
-import CipherWeb from "@mdip/cipher/web";
 import { StoredWallet } from '@mdip/keymaster/types';
-
-const gatekeeper = new GatekeeperClient();
-const cipher = new CipherWeb();
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
-    const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
-    const { keymaster, initialiseWallet } = useWalletContext();
+    const {
+        keymaster,
+        refreshFlag,
+        initialiseWallet,
+        pendingMnemonic,
+        setPendingMnemonic,
+        setWalletAction,
+    } = useWalletContext();
     const { setOpenBrowser } = useUIContext();
     const { setError, setSuccess } = useSnackbar();
 
@@ -42,6 +42,12 @@ const WalletTab = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        clearJsonWallet();
+        setMnemonicString("");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshFlag]);
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -59,8 +65,6 @@ const WalletTab = () => {
         setJsonViewerOpen(false);
         if (setOpenBrowser) {
             setOpenBrowser({
-                title: "",
-                did: "",
                 tab: "wallet",
             });
         }
@@ -74,9 +78,9 @@ const WalletTab = () => {
     async function wipeStoredValues() {
         await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        await initialiseWallet();
         clearJsonWallet();
         setMnemonicString("");
+        await initialiseWallet();
     }
 
     async function wipeAndClose() {
@@ -86,31 +90,24 @@ const WalletTab = () => {
     }
 
     async function uploadWallet(wallet: StoredWallet) {
+        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
+        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
+
         const wallet_chrome = new WalletChrome();
+        await chrome.storage.local.remove([wallet_chrome.walletName]);
         await wallet_chrome.saveWallet(wallet, true);
-        await wipeStoredValues();
-    }
 
-    async function getUnencryptedKeymaster() {
-        const { gatekeeperUrl } = await chrome.storage.sync.get([
-            "gatekeeperUrl",
-        ]);
-        await gatekeeper.connect({ url: gatekeeperUrl });
-
-        // Avoid using existing passphrase by using unencrypted keymaster
-        const wallet = new WalletChrome();
-        return new Keymaster({
-            gatekeeper,
-            wallet,
-            cipher,
-        });
+        clearJsonWallet();
+        setMnemonicString("");
+        await initialiseWallet();
     }
 
     async function restoreFromMnemonic() {
-        const localKeymaster = await getUnencryptedKeymaster();
-        await localKeymaster.newWallet(pendingMnemonic, true);
-        await localKeymaster.recoverWallet();
-        await wipeStoredValues();
+        setWalletAction("restore");
+        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
+        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
+        clearJsonWallet();
+        setMnemonicString("");
     }
 
     async function checkWallet() {
@@ -163,7 +160,6 @@ const WalletTab = () => {
             return;
         }
         await keymaster.recoverWallet();
-        await initialiseWallet();
         clearJsonWallet();
         setMnemonicString("");
     }
@@ -184,7 +180,6 @@ const WalletTab = () => {
         }
 
         setOpen(false);
-        setPendingMnemonic("");
         setPendingWallet(null);
         setPendingRecover(false);
     };
@@ -214,8 +209,6 @@ const WalletTab = () => {
             setJsonViewerOpen(true);
             if (setOpenBrowser) {
                 setOpenBrowser({
-                    title: "",
-                    did: "",
                     tab: "wallet",
                     contents: wallet,
                 });
@@ -243,15 +236,13 @@ const WalletTab = () => {
                 try {
                     const contents = e.target?.result as string;
                     const json = JSON.parse(contents);
-                    const isUnencrypted =
-                        "seed" in json && "counter" in json && "ids" in json;
-                    const isEncrypted =
-                        "salt" in json && "iv" in json && "data" in json;
 
-                    if (!isUnencrypted && !isEncrypted) {
-                        setError(
-                            "Invalid wallet JSON. Missing required fields.",
-                        );
+                    const isEncryptedBlob = typeof json?.salt === "string" && typeof json?.iv === "string" && typeof json?.data === "string";
+                    const isV1Plain = json?.version === 1 && json?.seed && typeof json.seed?.mnemonicEnc?.data === "string";
+                    const isV0Plain = !json?.version && json?.seed?.mnemonic && json?.seed?.hdkey?.xpub && json?.seed?.hdkey?.xpriv;
+
+                    if (!isEncryptedBlob && !isV1Plain && !isV0Plain) {
+                        setError("Unsupported wallet file. Upload an encrypted blob, a v1 wallet, or a legacy v0 wallet.");
                         return;
                     }
 
@@ -356,7 +347,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={handleClickOpen}
-                    sx={{ mr: 2 }}
                 >
                     New
                 </Button>
@@ -366,7 +356,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={importWallet}
-                    sx={{ mr: 2 }}
                 >
                     Import
                 </Button>
@@ -376,7 +365,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={backupWallet}
-                    sx={{ mr: 2 }}
                 >
                     Backup
                 </Button>
@@ -386,7 +374,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={handleRecoverWallet}
-                    sx={{ mr: 2 }}
                 >
                     Recover
                 </Button>
@@ -396,7 +383,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={checkWallet}
-                    sx={{ mr: 2 }}
                     disabled={checkingWallet}
                 >
                     Check
@@ -409,7 +395,6 @@ const WalletTab = () => {
                         variant="contained"
                         color="primary"
                         onClick={hideMnemonic}
-                        sx={{ mr: 2 }}
                     >
                         Hide Mnemonic
                     </Button>
@@ -419,7 +404,6 @@ const WalletTab = () => {
                         variant="contained"
                         color="primary"
                         onClick={showMnemonic}
-                        sx={{ mr: 2 }}
                     >
                         Show Mnemonic
                     </Button>
@@ -431,7 +415,6 @@ const WalletTab = () => {
                         variant="contained"
                         color="primary"
                         onClick={hideWallet}
-                        sx={{ mr: 2 }}
                     >
                         Hide Wallet
                     </Button>
@@ -441,7 +424,6 @@ const WalletTab = () => {
                         variant="contained"
                         color="primary"
                         onClick={showWallet}
-                        sx={{ mr: 2 }}
                     >
                         Show Wallet
                     </Button>
@@ -452,7 +434,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={downloadWallet}
-                    sx={{ mr: 2 }}
                 >
                     Download
                 </Button>
@@ -462,7 +443,6 @@ const WalletTab = () => {
                     variant="contained"
                     color="primary"
                     onClick={handleUploadClick}
-                    sx={{ mr: 2 }}
                 >
                     Upload
                 </Button>

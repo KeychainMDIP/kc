@@ -46,7 +46,7 @@ export default class WalletEncrypted extends AbstractBase {
         return this.baseWallet.saveWallet(encryptedData, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.passphrase) {
             throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }

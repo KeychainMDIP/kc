@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import JsonViewer from "./JsonViewer";
 import {
     Box,
@@ -9,34 +9,36 @@ import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "./modals/WarningModal";
 import MnemonicModal from "./modals/MnemonicModal";
-import Keymaster from "@mdip/keymaster";
-import GatekeeperClient from "@mdip/gatekeeper/client";
-import CipherWeb from "@mdip/cipher/web";
 import WalletWeb from "@mdip/keymaster/wallet/web";
 import { StoredWallet } from '@mdip/keymaster/types';
-import {
-    DEFAULT_GATEKEEPER_URL,
-    GATEKEEPER_KEY
-} from "./SettingsTab"
 import {clearSessionPassphrase} from "../utils/sessionPassphrase";
-
-const gatekeeper = new GatekeeperClient();
-const cipher = new CipherWeb();
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
-    const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
-    const { keymaster, initialiseWallet } = useWalletContext();
+    const {
+        keymaster,
+        refreshFlag,
+        initialiseWallet,
+        pendingMnemonic,
+        setPendingMnemonic,
+        setWalletAction,
+    } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
     const { setOpenBrowser } = useUIContext();
+
+    useEffect(() => {
+        clearJsonWallet();
+        setMnemonicString("");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshFlag]);
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -64,9 +66,9 @@ const WalletTab = () => {
 
     async function wipeStoredValues() {
         clearSessionPassphrase();
-        await initialiseWallet();
         clearJsonWallet();
         setMnemonicString("");
+        await initialiseWallet();
     }
 
     async function wipeAndClose() {
@@ -76,29 +78,21 @@ const WalletTab = () => {
     }
 
     async function uploadWallet(wallet: StoredWallet) {
+        clearSessionPassphrase();
+
         const walletWeb = new WalletWeb();
         await walletWeb.saveWallet(wallet, true);
-        await wipeStoredValues();
-    }
 
-    async function getUnencryptedKeymaster() {
-        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY);
-        await gatekeeper.connect({ url: gatekeeperUrl || DEFAULT_GATEKEEPER_URL });
-
-        // Avoid using existing passphrase by using unencrypted keymaster
-        const wallet = new WalletWeb();
-        return new Keymaster({
-            gatekeeper,
-            wallet,
-            cipher,
-        });
+        clearJsonWallet();
+        setMnemonicString("");
+        await initialiseWallet();
     }
 
     async function restoreFromMnemonic() {
-        const localKeymaster = await getUnencryptedKeymaster();
-        await localKeymaster.newWallet(pendingMnemonic, true);
-        await localKeymaster.recoverWallet();
-        await wipeStoredValues();
+        setWalletAction("restore");
+        clearSessionPassphrase();
+        clearJsonWallet();
+        setMnemonicString("");
     }
 
     async function checkWallet() {
@@ -172,7 +166,6 @@ const WalletTab = () => {
         }
 
         setOpen(false);
-        setPendingMnemonic("");
         setPendingWallet(null);
         setPendingRecover(false);
     };

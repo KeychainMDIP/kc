@@ -41,7 +41,8 @@ async function main() {
         keymaster = new Keymaster({
             gatekeeper: gatekeeperClient,
             wallet,
-            cipher
+            cipher,
+            passphrase: process.env.KC_ENCRYPTED_PASSPHRASE || "passphrase",
         });
     }
 
