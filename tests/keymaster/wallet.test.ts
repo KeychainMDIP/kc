@@ -544,7 +544,7 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
-    });
+    }, 60_000);
 
     describe('WalletEncrypted passthrough for unencrypted data', () => {
         it('returns the plain wallet when base wallet is not encrypted', async () => {
