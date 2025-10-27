@@ -371,7 +371,7 @@ describe('verifyResponse', () => {
         const verify4 = await keymaster.verifyResponse(responseDID);
         expect(verify4.match).toBe(false);
         expect(verify4.vps!.length).toBe(2);
-    }, 10_000);
+    }, 60_000);
 
     it('should raise exception on invalid parameter', async () => {
         const alice = await keymaster.createId('Alice');

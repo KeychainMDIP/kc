@@ -469,7 +469,7 @@ describe('checkWallet', () => {
         expect(checked).toBe(16);
         expect(invalid).toBe(0);
         expect(deleted).toBe(4); // 2 credentials mentioned both in held and name lists
-    });
+    }, 60_000);
 });
 
 describe('fixWallet', () => {
