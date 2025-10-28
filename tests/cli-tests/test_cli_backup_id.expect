@@ -7,7 +7,7 @@ set timeout 10
 set random_value [expr {int(rand() * 100)}]
 
 # Start the CLI program you want to test
-spawn bash kc create-id "$random_value" local
+spawn bash kc create-id -r local "$random_value"
 
 # Look for the specific DID pattern
 expect {
@@ -32,7 +32,7 @@ if {$captured_did eq ""} {
 }
 
 # Use the captured value in another function call
-spawn bash kc backup-id $captured_did
+spawn bash kc backup-id
 
 # Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
 expect {

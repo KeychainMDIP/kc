@@ -167,11 +167,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async loadWallet(): Promise<WalletFile> {
-        if (this._walletCache) {
+        let stored = await this.db.loadWallet() as WalletFile | null;
+
+        // Do not use cache if stored is null, wallet might have been deleted externally
+        if (stored && this._walletCache) {
             return this._walletCache;
         }
-
-        let stored = await this.db.loadWallet() as WalletFile | null;
 
         if (!stored) {
             await this.newWallet();

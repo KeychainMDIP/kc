@@ -7,7 +7,7 @@ set timeout 10
 set random_value [expr {int(rand() * 100)}]
 
 # Start the CLI program you want to test
-spawn bash kc create-id "$random_value" local
+spawn bash kc create-id -r local "$random_value"
 
 # Look for the specific DID pattern
 expect {
