@@ -46,6 +46,7 @@ import {
     WalletFile,
     WalletEncFile,
     SearchEngine,
+    Seed,
 } from './types.js';
 import {
     Cipher,
@@ -151,17 +152,33 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
+    private hashWalletData(w: WalletFile): string {
+        const { version, seed, ...rest } = w;
+        return this.cipher.hashJSON(rest);
+    }
+
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        // Create wallet if it doesn't exist
-        await this.loadWallet();
+        // Create wallet if none and make sure _walletCache is set
+        if (!this._walletCache) {
+            await this.loadWallet();
+        }
 
         await this.db.updateWallet(async (stored: StoredWallet) => {
-            const decrypted = await this.decryptWalletFromStorage(stored as WalletEncFile);
+            const decrypted = this._walletCache!;
+
+            const before = this.hashWalletData(decrypted);
             await mutator(decrypted);
+            const after = this.hashWalletData(decrypted);
+
+            if (before === after) {
+                return;
+            }
+
             const reenc = await this.encryptWalletForStorage(decrypted);
             Object.assign(stored as WalletEncFile, reenc);
+
             this._walletCache = decrypted;
         });
     }
@@ -653,9 +670,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async hdKeyPair(): Promise<EcdsaJwkPair> {
         const wallet = await this.loadWallet();
-        const mnemonic = await this.getMnemonicForDerivation(wallet);
-        const hdkey = this.cipher.generateHDKey(mnemonic);
-
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
@@ -678,8 +693,7 @@ export default class Keymaster implements KeymasterInterface {
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
-        const mnemonic = await this.getMnemonicForDerivation(wallet);
-        const hdkey = this.cipher.generateHDKey(mnemonic);
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         const doc = await this.resolveDID(id.did, { confirm: true });
         const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
@@ -938,8 +952,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): Promise<string> {
-        const mnemonic = await this.getMnemonicForDerivation(wallet);
-        const hdkey = this.cipher.generateHDKey(mnemonic);
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
 
         // Try all private keys for this ID, starting with the most recent and working backward
         let index = id.index;
@@ -1348,8 +1361,7 @@ export default class Keymaster implements KeymasterInterface {
             const account = wallet.counter;
             const index = 0;
 
-            const mnemonic = await this.getMnemonicForDerivation(wallet);
-            const hdkey = this.cipher.generateHDKey(mnemonic);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
             const path = `m/44'/0'/${account}'/0/${index}`;
             const didkey = hdkey.derive(path);
             const keypair = this.cipher.generateJwk(didkey.privateKey!);
@@ -1500,8 +1512,7 @@ export default class Keymaster implements KeymasterInterface {
             const id = wallet.ids[wallet.current!];
             const nextIndex = id.index + 1;
 
-            const mnemonic = await this.getMnemonicForDerivation(wallet);
-            const hdkey = this.cipher.generateHDKey(mnemonic);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
             const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
             const didkey = hdkey.derive(path);
             const keypair = this.cipher.generateJwk(didkey.privateKey!);
@@ -3549,10 +3560,6 @@ export default class Keymaster implements KeymasterInterface {
     private async upgradeWalletIfNeeded(wallet: WalletFile): Promise<WalletFile> {
         const version = wallet.version ? wallet.version : 0;
 
-        if (!this.passphrase || version >= CURRENT_WALLET_VERSION) {
-            return wallet;
-        }
-
         if (this.isLegacyV0(wallet)) {
             const upgraded = await this.convertLegacyToV1Inline(wallet);
             await this.saveWallet(upgraded, true);
@@ -3577,6 +3584,15 @@ export default class Keymaster implements KeymasterInterface {
         );
     }
 
+    private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
+        const maybe = wallet.seed?.hdkey;
+        if (maybe) {
+            return this.cipher.generateHDKeyJSON(maybe);
+        }
+        const mnemonic = await this.getMnemonicForDerivation(wallet);
+        return this.cipher.generateHDKey(mnemonic);
+    }
+
     private async encryptWalletForStorage(decrypted: WalletFile): Promise<WalletEncFile> {
         const { version, seed, ...rest } = decrypted;
 
@@ -3584,14 +3600,15 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError("Wallet file is missing required version or seed.");
         }
 
-        const mnemonic = await this.getMnemonicForDerivation(decrypted);
-        const hdkey = this.cipher.generateHDKey(mnemonic);
+        const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
+
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
         const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = JSON.stringify(rest);
         const enc = this.cipher.encryptMessage(publicJwk, privateJwk, plaintext);
 
-        return { version, seed, enc };
+        return { version, seed: safeSeed, enc };
     }
 
     private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
@@ -3616,7 +3633,16 @@ export default class Keymaster implements KeymasterInterface {
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
-        return { version: stored.version, seed: stored.seed, ...data };
+        const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
+
+        const xpriv = hdkey.privateExtendedKey ?? hdkey.toJSON().xpriv;
+        const xpub  = hdkey.publicExtendedKey  ?? hdkey.toJSON().xpub;
+
+        if (xpriv && xpub) {
+            wallet.seed.hdkey = { xpriv, xpub };
+        }
+
+        return wallet;
     }
 
     private async convertLegacyToV1Inline(legacy: WalletFile): Promise<WalletFile> {
