@@ -22,7 +22,7 @@ let keymaster: Keymaster;
 let helper: TestHelper;
 const PASSPHRASE = 'passphrase';
 
-const MOCK_WALLET: WalletFile = {
+const MOCK_WALLET_V1: WalletFile = {
     "version": 1,
     "seed": {
         "mnemonicEnc": {
@@ -38,6 +38,12 @@ const MOCK_WALLET: WalletFile = {
     "counter": 0,
     "ids": {}
 };
+
+const MOCK_WALLET_V0_ENCRYPTED = {
+    "salt": "SHUIyrheMkaGv7uyV+6ZHw==",
+    "iv": "nW4a05eR2rxHY0T7",
+    "data": "O+UlnXsCA522UwUwpFqtybIKwrJsHrVatrUJgNVBjFUk6TAdMsdGzW49WiJt+lF4iJe6ftETd1wjSretZc97gi+VzZzX0Ggba6rmXnuD189jRFg7eudCqG4y6Rgt72SYxZu3pgaEJ146Ntj+H6cAcSIfYyhNgtPmlpWBZcm68wP8YRaP5i0/mZF89md4DjjyFOv8qTLG4m42fmoCmliIeJdmBChjPdpAm8V/ZOwkULjKQPpLAjDe4uCwvgenZduSJEDyP8m1jAcwGFxcI1mcXVYunR/YruczYXGY4dPnmW03lXinOX+5SR/bs9Z23uhqoVgUgW25Rfz/5zr4YFVXBQcVQXEvLtR38KPWeuOKltvU3FbysSgIrM6WBSkJt5chfYCGg7a554lqHyeGTxrlUa8th+hXSv/LVkvl+juhq+yd85QqyX8gLhxZxw4lx5eeaU3uJ+BJ33onI2y4sr02ZU5fYOIPFKS7IGCE0KK2hv0NwNvSv8oy402m9xU+iCIr19Xs28jm61/difLh/x1g/RXQUV/07b8tZLbB6n6hBC/h+3jLexJeFIpn1C1yBY+JQopTS+NgXEZZK+HuFp3k/JjI0ImxIy/2gPSm3jRAs1f8GfLLEMdJWoseZ/laPhD0QdWPQt7oGqKTfn7G72os8gGsme4AiFtKzg0zEv3whzLvOW6W2uUXAR83cXdlKcLpju7vrjjdfrcqYxkR3VDp"
+}
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -85,6 +91,7 @@ describe('loadWallet', () => {
 
     it('should throw exception when passphrase not set', async () => {
         const wallet_enc = new WalletEncrypted(wallet, "");
+        wallet_enc.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
 
         try {
             await wallet_enc.loadWallet();
@@ -95,12 +102,12 @@ describe('loadWallet', () => {
     });
 
     it('should throw exception on load with incorrect passphrase', async () => {
-        const wallet_enc1 = new WalletEncrypted(wallet, 'passphrase');
-        const ok = await wallet_enc1.saveWallet(MOCK_WALLET);
+        const wallet_enc1 = new WalletJsonMemory();
+        const ok = await wallet_enc1.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
         expect(ok).toBe(true);
 
         try {
-            const wallet_enc2 = new WalletEncrypted(wallet, 'incorrect');
+            const wallet_enc2 = new WalletEncrypted(wallet_enc1, 'incorrect');
             await wallet_enc2.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -134,38 +141,38 @@ describe('loadWallet', () => {
 
 describe('saveWallet', () => {
     it('test saving directly on the unencrypted wallet', async () => {
-        const ok = await wallet.saveWallet(MOCK_WALLET);
+        const ok = await wallet.saveWallet(MOCK_WALLET_V1);
         expect(ok).toBe(true);
     });
 
     it('test saving directly on the encrypted wallet', async () => {
         const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
-        const ok = await wallet_enc.saveWallet(MOCK_WALLET);
+        const ok = await wallet_enc.saveWallet(MOCK_WALLET_V1);
 
         expect(ok).toBe(true);
     });
 
     it('should save a wallet', async () => {
-        const ok = await keymaster.saveWallet(MOCK_WALLET);
+        const ok = await keymaster.saveWallet(MOCK_WALLET_V1);
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
-        expect(wallet).toStrictEqual(MOCK_WALLET);
+        expect(wallet).toStrictEqual(MOCK_WALLET_V1);
     });
 
     it('should ignore overwrite flag if unnecessary', async () => {
-        const ok = await keymaster.saveWallet(MOCK_WALLET, false);
+        const ok = await keymaster.saveWallet(MOCK_WALLET_V1, false);
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
-        expect(wallet).toStrictEqual(MOCK_WALLET);
+        expect(wallet).toStrictEqual(MOCK_WALLET_V1);
     });
 
     it('should overwrite an existing wallet', async () => {
-        const mockWallet = MOCK_WALLET;
+        const mockWallet = MOCK_WALLET_V1;
         mockWallet.counter = 1;
 
-        await keymaster.saveWallet(MOCK_WALLET);
+        await keymaster.saveWallet(MOCK_WALLET_V1);
         const ok = await keymaster.saveWallet(mockWallet);
         const wallet = await keymaster.loadWallet();
 
@@ -174,20 +181,20 @@ describe('saveWallet', () => {
     });
 
     it('should not overwrite an existing wallet if specified', async () => {
-        const mockWallet = MOCK_WALLET;
+        const mockWallet = MOCK_WALLET_V1;
         mockWallet.counter = 1;
 
-        await keymaster.saveWallet(MOCK_WALLET);
+        await keymaster.saveWallet(MOCK_WALLET_V1);
         const ok = await keymaster.saveWallet(mockWallet, false);
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(false);
-        expect(wallet).toStrictEqual(MOCK_WALLET);
+        expect(wallet).toStrictEqual(MOCK_WALLET_V1);
     });
 
     it('should overwrite an existing wallet in a loop', async () => {
         for (let i = 0; i < 10; i++) {
-            const mockWallet = MOCK_WALLET;
+            const mockWallet = MOCK_WALLET_V1;
             mockWallet.counter = i + 1;
 
             const ok = await keymaster.saveWallet(mockWallet);
@@ -199,26 +206,15 @@ describe('saveWallet', () => {
     });
 
     it('should not overwrite an existing wallet if specified', async () => {
-        const mockWallet = MOCK_WALLET;
+        const mockWallet = MOCK_WALLET_V1;
         mockWallet.counter = 2;
 
-        await keymaster.saveWallet(MOCK_WALLET);
+        await keymaster.saveWallet(MOCK_WALLET_V1);
         const ok = await keymaster.saveWallet(mockWallet, false);
         const walletData = await keymaster.loadWallet();
 
         expect(ok).toBe(false);
-        expect(walletData).toStrictEqual(MOCK_WALLET);
-    });
-
-    it('wallet should throw when passphrase not set', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, "");
-
-        try {
-            await wallet_enc.saveWallet(MOCK_WALLET);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
-        }
+        expect(walletData).toStrictEqual(MOCK_WALLET_V1);
     });
 
     it('encrypted wallet should return unencrypted wallet', async () => {

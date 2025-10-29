@@ -15,6 +15,11 @@
       "require": "./dist/cjs/index.cjs",
       "types": "./dist/types/index.d.ts"
     },
+    "./inscription": {
+      "types": "./dist/types/inscription.d.ts",
+      "import": "./dist/esm/inscription.js",
+      "require": "./dist/cjs/inscription.cjs"
+    },
     "./types": {
       "types": "./dist/types/types.d.ts"
     }
