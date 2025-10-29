@@ -175,57 +175,6 @@ function App() {
         setModalAction(null);
     }
 
-    async function encryptWallet() {
-        if (isEncrypted) {
-            return;
-        }
-
-        const pass = keypassRef.current;
-        if (!pass) {
-            // Should not happen.
-            setPassphraseErrorText('Set a passphrase first to encrypt the wallet file.');
-            setModalAction('keypass');
-            return;
-        }
-
-        const walletWeb = new WalletWeb();
-        const kmPlain = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: pass });
-
-        // Generate a wallet if none exists. Should not happen.
-        await kmPlain.loadWallet();
-
-        const current = await walletWeb.loadWallet();
-        const walletEnc = new WalletWebEncrypted(walletWeb, pass);
-        await walletEnc.saveWallet(current, true);
-
-        const walletCached = new WalletCache(walletEnc);
-
-        setIsEncrypted(true);
-        backendKindRef.current = 'enc';
-
-        await buildKeymaster(walletCached, pass, 'keypass', 'enc', true);
-
-        setModalAction(null);
-    }
-
-    async function decryptWallet() {
-        if (!keymaster) {
-            return;
-        }
-
-        const decrypted = await keymaster.loadWallet();
-        const walletWeb = new WalletWeb();
-        await walletWeb.saveWallet(decrypted, true);
-
-        setIsEncrypted(false);
-        backendKindRef.current = 'plain';
-        setIsReady(false);
-        setKeymaster(null);
-
-        await buildKeymaster(walletWeb, keypassRef.current, 'keypass', 'plain');
-        setModalAction(null);
-    }
-
     function openKeypassModal() {
         setModalAction('keypass');
     }
@@ -262,8 +211,6 @@ function App() {
                     encryption={
                         isCryptoAvailable
                             ? {
-                                encryptWallet: encryptWallet,
-                                decryptWallet: decryptWallet,
                                 isWalletEncrypted: isEncrypted,
                                 setKeypass: openKeypassModal,
                             }

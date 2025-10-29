@@ -358,7 +358,7 @@ describe('rotateKeys', () => {
             const decipher2 = await keymaster.decryptMessage(secret);
             expect(decipher2).toBe(msg);
         }
-    }, 60_000);
+    });
 
     it('should raise an exception if latest version is not confirmed', async () => {
         await keymaster.createId('Alice', { registry: 'TFTC' });

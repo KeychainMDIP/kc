@@ -178,7 +178,7 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async loadWallet(): Promise<WalletFile> {
+    async loadWallet(includeKeys?: boolean): Promise<WalletFile> {
         if (this._walletCache) {
             return this._walletCache;
         }
@@ -205,6 +205,11 @@ export default class Keymaster implements KeymasterInterface {
 
         if (wallet.version !== CURRENT_WALLET_VERSION) {
             throw new KeymasterError(`Unsupported wallet version: ${wallet.version} expected: ${CURRENT_WALLET_VERSION}`);
+        }
+
+        if (!includeKeys) {
+            delete wallet.seed.hdkey;
+            return wallet;
         }
 
         this._walletCache = wallet;
@@ -3629,8 +3634,9 @@ export default class Keymaster implements KeymasterInterface {
 
         const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
 
-        const xpriv = hdkey.privateExtendedKey ?? hdkey.toJSON().xpriv;
-        const xpub  = hdkey.publicExtendedKey  ?? hdkey.toJSON().xpub;
+        const keyJson = hdkey.toJSON();
+        const xpriv = keyJson.xpriv;
+        const xpub = keyJson.xpub;
 
         if (xpriv && xpub) {
             wallet.seed.hdkey = { xpriv, xpub };

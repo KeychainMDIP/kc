@@ -191,7 +191,7 @@ const WalletTab = () => {
             return;
         }
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet(false);
             setJsonViewerOpen(true);
             setOpenBrowser({
                 tab: "wallet",

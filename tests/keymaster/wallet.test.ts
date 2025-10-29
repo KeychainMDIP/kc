@@ -29,7 +29,11 @@ const MOCK_WALLET: WalletFile = {
             "data": "p3gKBzVtJTflKBHSDgrMiuncBH4foJM++DyoQAZD/cVeQDCY4aFTxSC0nkylGcpi88Odq0SXkc2nAHyjA7+D6FZzbiTDdgqu3SJXznZEMCJDzHTkpLOa",
             "iv": "2mHu57FRcEERBLMv",
             "salt": "m74zOr/8etDRMoU8dnriXA==",
-        }
+        },
+        "hdkey": {
+            "xpriv": "xprv9s21ZrQH143K3suuYUV2FsEcvUf5eRUTUp9jWAkxom84ddRmcu2HBKSAFSYFrYPr5JvLuBcWrw5pf5hajWttjyNNfR1dRR6GvrmMWkFtDsW",
+            "xpub": "xpub661MyMwAqRbcGMzNeW22d1BMUWVa3tCJr35LJZAaN6f3WRkvASLXj7ke6iL3NkF1zjhiTgDib7P6ye9Bqs4ADPi16jVSE9Q88GeND2pPtW5",
+        },
     },
     "counter": 0,
     "ids": {}
@@ -469,7 +473,7 @@ describe('checkWallet', () => {
         expect(checked).toBe(16);
         expect(invalid).toBe(0);
         expect(deleted).toBe(4); // 2 credentials mentioned both in held and name lists
-    }, 60_000);
+    });
 });
 
 describe('fixWallet', () => {
@@ -544,7 +548,7 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
-    }, 60_000);
+    });
 
     describe('WalletEncrypted passthrough for unencrypted data', () => {
         it('returns the plain wallet when base wallet is not encrypted', async () => {

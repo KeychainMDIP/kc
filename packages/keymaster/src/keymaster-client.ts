@@ -121,9 +121,10 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async loadWallet(): Promise<WalletFile> {
+    async loadWallet(includeKeys?: boolean): Promise<WalletFile> {
         try {
-            const response = await axios.get(`${this.API}/wallet`);
+            const params = includeKeys !== undefined ? `?includeKeys=${includeKeys}` : '';
+            const response = await axios.get(`${this.API}/wallet${params}`);
             return response.data.wallet;
         }
         catch (error) {

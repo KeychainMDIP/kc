@@ -21,7 +21,7 @@ program
     .description('Create a new wallet (or show existing wallet)')
     .action(async () => {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet(false);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -93,7 +93,7 @@ program
     .description('Show wallet')
     .action(async () => {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet(false);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -1115,25 +1115,6 @@ program
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
-    .command('encrypt-wallet')
-    .description('Encrypt wallet')
-    .action(async () => {
-        try {
-            if (!process.env.KC_ENCRYPTED_PASSPHRASE) {
-                console.error('KC_ENCRYPTED_PASSPHRASE not set');
-                return;
-            }
-
-            const wallet = await keymaster.loadWallet();
-            const ok = await keymaster.saveWallet(wallet, true);
-            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
-
-        } catch (error) {
             console.error(error.error || error);
         }
     });

@@ -1702,7 +1702,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = 
 
     async function showWallet() {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.loadWallet(false);
             setWalletString(JSON.stringify(wallet, null, 4));
         } catch (error) {
             showError(error);
@@ -5179,24 +5179,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = 
                                 </Grid>
                             </Grid>
                             <p />
-                            {encryption && (
-                                <>
-                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                        <Grid item>
-                                            {encryption.isWalletEncrypted ? (
-                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
-                                                    Decrypt Wallet
-                                                </Button>
-                                            ) : (
-                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
-                                                    Encrypt Wallet
-                                                </Button>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-                                    <p />
-                                </>
-                            )}
                             <Box>
                                 <pre>{mnemonicString}</pre>
                             </Box>
