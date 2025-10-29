@@ -152,11 +152,6 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
-    private hashWalletData(w: WalletFile): string {
-        const { version, seed, ...rest } = w;
-        return this.cipher.hashJSON(rest);
-    }
-
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
@@ -168,9 +163,9 @@ export default class Keymaster implements KeymasterInterface {
         await this.db.updateWallet(async (stored: StoredWallet) => {
             const decrypted = this._walletCache!;
 
-            const before = this.hashWalletData(decrypted);
+            const before = JSON.stringify(decrypted);
             await mutator(decrypted);
-            const after = this.hashWalletData(decrypted);
+            const after = JSON.stringify(decrypted);
 
             if (before === after) {
                 return;
@@ -184,12 +179,11 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async loadWallet(): Promise<WalletFile> {
-        let stored = await this.db.loadWallet() as WalletFile | null;
-
-        // Do not use cache if stored is null, wallet might have been deleted externally
-        if (stored && this._walletCache) {
+        if (this._walletCache) {
             return this._walletCache;
         }
+
+        let stored = await this.db.loadWallet() as WalletFile | null;
 
         if (!stored) {
             await this.newWallet();

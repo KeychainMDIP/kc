@@ -30,6 +30,19 @@ program
     });
 
 program
+    .command('new-wallet')
+    .description('Create a new wallet')
+    .action(async () => {
+        try {
+            const wallet = await keymaster.newWallet("", true);
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('check-wallet')
     .description('Validate DIDs in wallet')
     .action(async () => {
