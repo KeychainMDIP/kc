@@ -110,6 +110,12 @@ v1router.get('/registries', async (req, res) => {
  * /wallet:
  *   get:
  *     summary: Retrieve the current wallet.
+ *    parameters:
+ *       - in: query
+ *         name: includeKeys
+ *         schema:
+ *           type: boolean
+ *         description: If true, includes the HD keys (xpriv and xpub) in the response. Defaults to true.
  *     responses:
  *       200:
  *         description: The wallet object.
@@ -168,7 +174,8 @@ v1router.get('/registries', async (req, res) => {
  */
 v1router.get('/wallet', async (req, res) => {
     try {
-        const wallet = await keymaster.loadWallet();
+        const { includeKeys } = req.body;
+        const wallet = await keymaster.loadWallet(includeKeys);
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
@@ -564,6 +571,65 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
     try {
         const mnemonic = await keymaster.decryptMnemonic();
         res.json({ mnemonic });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /export/wallet/encrypted:
+ *   get:
+ *     summary: Export the wallet in encrypted form.
+ *     description: >
+ *       Returns the wallet in its encrypted format, which includes the encrypted mnemonic
+ *       and encrypted wallet data. This format is secure for storage or backup purposes.
+ *     responses:
+ *       200:
+ *         description: The encrypted wallet object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 wallet:
+ *                   type: object
+ *                   properties:
+ *                     version:
+ *                       type: integer
+ *                       description: The wallet format version.
+ *                     seed:
+ *                       type: object
+ *                       properties:
+ *                         mnemonicEnc:
+ *                           type: object
+ *                           properties:
+ *                             salt:
+ *                               type: string
+ *                               description: Base64-encoded salt used for key derivation.
+ *                             iv:
+ *                               type: string
+ *                               description: Base64-encoded initialization vector for AES-GCM encryption.
+ *                             data:
+ *                               type: string
+ *                               description: Base64-encoded encrypted mnemonic.
+ *                     enc:
+ *                       type: string
+ *                       description: Encrypted wallet data (IDs, names, etc.).
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.get('/export/wallet/encrypted', async (req, res) => {
+    try {
+        const wallet = await keymaster.exportEncryptedWallet();
+        res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }

@@ -308,7 +308,7 @@ export interface NoticeMessage {
 
 export interface KeymasterInterface {
     // Wallet
-    loadWallet(includeKeys?: boolean): Promise<WalletFile>;
+    loadWallet(includeKeys: boolean): Promise<WalletFile>;
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<WalletFile>;
     backupWallet(): Promise<boolean | string>;
@@ -316,6 +316,7 @@ export interface KeymasterInterface {
     checkWallet(): Promise<CheckWalletResult>;
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;
+    exportEncryptedWallet(): Promise<WalletEncFile>;
 
     // IDs
     listIds(): Promise<string[]>;

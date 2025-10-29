@@ -28,6 +28,7 @@ import {
     ViewPollResult,
     WaitUntilReadyOptions,
     WalletFile,
+    WalletEncFile,
 } from './types.js'
 
 import { Buffer } from 'buffer';
@@ -121,7 +122,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async loadWallet(includeKeys?: boolean): Promise<WalletFile> {
+    async loadWallet(includeKeys = true): Promise<WalletFile> {
         try {
             const params = includeKeys !== undefined ? `?includeKeys=${includeKeys}` : '';
             const response = await axios.get(`${this.API}/wallet${params}`);
@@ -1404,6 +1405,16 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/notices/refresh`);
             return response.data.ok;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportEncryptedWallet(): Promise<WalletEncFile> {
+        try {
+            const response = await axios.get(`${this.API}/export/wallet/encrypted`);
+            return response.data.wallet;
         }
         catch (error) {
             throwError(error);

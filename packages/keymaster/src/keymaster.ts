@@ -178,8 +178,16 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async loadWallet(includeKeys?: boolean): Promise<WalletFile> {
+    async loadWallet(includeKeys = true): Promise<WalletFile> {
         if (this._walletCache) {
+            if (!includeKeys) {
+                const { seed, ...restOfWallet } = this._walletCache;
+                const { hdkey, ...restOfSeed } = seed;
+                return {
+                    ...restOfWallet,
+                    seed: restOfSeed
+                };
+            }
             return this._walletCache;
         }
 
@@ -3536,6 +3544,11 @@ export default class Keymaster implements KeymasterInterface {
     async refreshNotices(): Promise<boolean> {
         await this.searchNotices();
         return this.cleanupNotices();
+    }
+
+    async exportEncryptedWallet(): Promise<WalletEncFile> {
+        const wallet = await this.loadWallet();
+        return this.encryptWalletForStorage(wallet);
     }
 
     private async isBallot(ballotDid: string): Promise<boolean> {

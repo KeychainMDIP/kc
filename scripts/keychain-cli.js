@@ -106,7 +106,7 @@ program
     .description('Backup wallet to file')
     .action(async (file) => {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.exportEncryptedWallet();
             fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
             console.log(UPDATE_OK);
         }

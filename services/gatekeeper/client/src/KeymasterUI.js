@@ -1781,7 +1781,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = 
 
     async function downloadWallet() {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.exportEncryptedWallet();
             const walletJSON = JSON.stringify(wallet, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
