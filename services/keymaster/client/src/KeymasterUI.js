@@ -100,9 +100,6 @@ const DmailTags = {
 const isEncryptedBlob = (w) =>
     w && typeof w === 'object' && !!w.salt && !!w.iv && !!w.data;
 
-const isWalletFileV1 = (w) =>
-    w && typeof w === 'object' && w.version === 1 && w.seed && !!w.seed.mnemonicEnc;
-
 function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = false }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -5179,24 +5176,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = 
                                 </Grid>
                             </Grid>
                             <p />
-                            {encryption && (
-                                <>
-                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                        <Grid item>
-                                            {encryption.isWalletEncrypted ? (
-                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
-                                                    Decrypt Wallet
-                                                </Button>
-                                            ) : (
-                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
-                                                    Encrypt Wallet
-                                                </Button>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-                                    <p />
-                                </>
-                            )}
                             <Box>
                                 <pre>{mnemonicString}</pre>
                             </Box>

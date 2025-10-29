@@ -100,9 +100,6 @@ const DmailTags = {
 const isEncryptedBlob = (w) =>
     w && typeof w === 'object' && !!w.salt && !!w.iv && !!w.data;
 
-const isWalletFileV1 = (w) =>
-    w && typeof w === 'object' && w.version === 1 && w.seed && !!w.seed.mnemonicEnc;
-
 function KeymasterUI({ keymaster, title, challengeDID, encryption, serverMode = false }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
