@@ -87,6 +87,16 @@
     "/wallet": {
       "get": {
         "summary": "Retrieve the current wallet.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "includeKeys",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "If true, includes the HD keys (xpriv and xpub) in the response. Defaults to true."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The wallet object.",
@@ -646,6 +656,76 @@
                   "properties": {
                     "mnemonic": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/export/wallet/encrypted": {
+      "get": {
+        "summary": "Export the wallet in encrypted form.",
+        "description": "Returns the wallet in its encrypted format, which includes the encrypted mnemonic and encrypted wallet data. This format is secure for storage or backup purposes.\n",
+        "responses": {
+          "200": {
+            "description": "The encrypted wallet object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer",
+                          "description": "The wallet format version."
+                        },
+                        "seed": {
+                          "type": "object",
+                          "properties": {
+                            "mnemonicEnc": {
+                              "type": "object",
+                              "properties": {
+                                "salt": {
+                                  "type": "string",
+                                  "description": "Base64-encoded salt used for key derivation."
+                                },
+                                "iv": {
+                                  "type": "string",
+                                  "description": "Base64-encoded initialization vector for AES-GCM encryption."
+                                },
+                                "data": {
+                                  "type": "string",
+                                  "description": "Base64-encoded encrypted mnemonic."
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enc": {
+                          "type": "string",
+                          "description": "Encrypted wallet data (IDs, names, etc.)."
+                        }
+                      }
                     }
                   }
                 }
