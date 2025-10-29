@@ -110,7 +110,7 @@ v1router.get('/registries', async (req, res) => {
  * /wallet:
  *   get:
  *     summary: Retrieve the current wallet.
- *    parameters:
+ *     parameters:
  *       - in: query
  *         name: includeKeys
  *         schema:

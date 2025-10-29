@@ -85,6 +85,7 @@ Commands:
   list-issued                              List issued credentials
   list-names                               List DID names (aliases)
   list-schemas                             List schemas owned by current ID
+  new-wallet                               Create a new wallet
   perf-test [N]                            Performance test to create N credentials
   publish-credential <did>                 Publish the existence of a credential to the current user manifest
   publish-poll <poll>                      Publish results to poll, hiding ballots
