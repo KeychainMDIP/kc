@@ -34,7 +34,8 @@ program
     .description('Create a new wallet')
     .action(async () => {
         try {
-            const wallet = await keymaster.newWallet("", true);
+            await keymaster.newWallet("", true);
+            const wallet = await keymaster.loadWallet(false);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {

@@ -142,11 +142,15 @@ foreach {key val} $argv {
 
 spawn bash kc new-wallet
 expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
+    -re {"version"s*:s*1} {
+        send_user "
+✅ Wallet Reset Complete!
+"
     }
     timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
+        send_user "
+❌ Wallet Reset Timeout.
+";
         exit 1
     }
 }
