@@ -3,6 +3,17 @@
 # Set timeout for commands
 set timeout 10
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Generate a random number between 0 and 100
 set random_value [expr {int(rand() * 1000)}]
 
@@ -92,16 +103,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc new-wallet
-expect {
-    -re {"version"\s*:\s*1} {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Timeout.\n";
-        exit 1
     }
 }

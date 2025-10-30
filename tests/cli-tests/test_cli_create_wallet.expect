@@ -5,6 +5,17 @@
 # Set timeout for commands
 set timeout 30
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Enable Expect's debugging output
 log_user 1
 
@@ -130,16 +141,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc new-wallet
-expect {
-    -re {"version"\s*:\s*1} {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Timeout.\n";
-        exit 1
     }
 }

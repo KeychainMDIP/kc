@@ -5,6 +5,17 @@
 # Set timeout for commands
 set timeout 10
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Start the CLI program for wallet creation
 spawn bash kc show-wallet
 
@@ -149,16 +160,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc new-wallet
-expect {
-    -re {"version"\s*:\s*1} {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Timeout.\n";
-        exit 1
     }
 }
