@@ -22,6 +22,24 @@ let keymaster: Keymaster;
 let helper: TestHelper;
 const PASSPHRASE = 'passphrase';
 
+const MOCK_WALLET_V0_UNENCRYPTED: WalletFile = {
+    "seed": {
+        "mnemonic": "wp3keoeTNleruzCiTOrCgDmm6viThBq_GWdNIGzXKcS62XqtrBkm0-jDhEUoU1FvB5oWnmCqkSIhnKKeaUwPbK5ysjCHbIVrf9JAr-91FabxtX0B2dctgccg_MEVk88u6anmcFP4DAEhK5zUDXCYGgFR",
+        "hdkey": {
+            "xpriv": "xprv9s21ZrQH143K2JL3GWr8NVjn1XR9kpKpKX4G4g5cvYKyrGShVz7ro2zf75AYyArqm8b7VQGpbvcLXGw6Sp5sa5pAPfHMfbjsPkgiezjHSGN",
+            "xpub": "xpub661MyMwAqRbcEnQWNYP8jdgWZZFeAH3fgjyrs4VEUsrxj4mr3XS7LqK8xNiAKdSdnCb5zbdxPvgu49fdGgzMgDW8AfbyP6CQjWFkYgFbNdB"
+        }
+    },
+    "counter": 0,
+    "ids": {}
+}
+
+const MOCK_WALLET_V0_ENCRYPTED = {
+    "salt": "SHUIyrheMkaGv7uyV+6ZHw==",
+    "iv": "nW4a05eR2rxHY0T7",
+    "data": "O+UlnXsCA522UwUwpFqtybIKwrJsHrVatrUJgNVBjFUk6TAdMsdGzW49WiJt+lF4iJe6ftETd1wjSretZc97gi+VzZzX0Ggba6rmXnuD189jRFg7eudCqG4y6Rgt72SYxZu3pgaEJ146Ntj+H6cAcSIfYyhNgtPmlpWBZcm68wP8YRaP5i0/mZF89md4DjjyFOv8qTLG4m42fmoCmliIeJdmBChjPdpAm8V/ZOwkULjKQPpLAjDe4uCwvgenZduSJEDyP8m1jAcwGFxcI1mcXVYunR/YruczYXGY4dPnmW03lXinOX+5SR/bs9Z23uhqoVgUgW25Rfz/5zr4YFVXBQcVQXEvLtR38KPWeuOKltvU3FbysSgIrM6WBSkJt5chfYCGg7a554lqHyeGTxrlUa8th+hXSv/LVkvl+juhq+yd85QqyX8gLhxZxw4lx5eeaU3uJ+BJ33onI2y4sr02ZU5fYOIPFKS7IGCE0KK2hv0NwNvSv8oy402m9xU+iCIr19Xs28jm61/difLh/x1g/RXQUV/07b8tZLbB6n6hBC/h+3jLexJeFIpn1C1yBY+JQopTS+NgXEZZK+HuFp3k/JjI0ImxIy/2gPSm3jRAs1f8GfLLEMdJWoseZ/laPhD0QdWPQt7oGqKTfn7G72os8gGsme4AiFtKzg0zEv3whzLvOW6W2uUXAR83cXdlKcLpju7vrjjdfrcqYxkR3VDp"
+}
+
 const MOCK_WALLET_V1: WalletFile = {
     "version": 1,
     "seed": {
@@ -38,12 +56,6 @@ const MOCK_WALLET_V1: WalletFile = {
     "counter": 0,
     "ids": {}
 };
-
-const MOCK_WALLET_V0_ENCRYPTED = {
-    "salt": "SHUIyrheMkaGv7uyV+6ZHw==",
-    "iv": "nW4a05eR2rxHY0T7",
-    "data": "O+UlnXsCA522UwUwpFqtybIKwrJsHrVatrUJgNVBjFUk6TAdMsdGzW49WiJt+lF4iJe6ftETd1wjSretZc97gi+VzZzX0Ggba6rmXnuD189jRFg7eudCqG4y6Rgt72SYxZu3pgaEJ146Ntj+H6cAcSIfYyhNgtPmlpWBZcm68wP8YRaP5i0/mZF89md4DjjyFOv8qTLG4m42fmoCmliIeJdmBChjPdpAm8V/ZOwkULjKQPpLAjDe4uCwvgenZduSJEDyP8m1jAcwGFxcI1mcXVYunR/YruczYXGY4dPnmW03lXinOX+5SR/bs9Z23uhqoVgUgW25Rfz/5zr4YFVXBQcVQXEvLtR38KPWeuOKltvU3FbysSgIrM6WBSkJt5chfYCGg7a554lqHyeGTxrlUa8th+hXSv/LVkvl+juhq+yd85QqyX8gLhxZxw4lx5eeaU3uJ+BJ33onI2y4sr02ZU5fYOIPFKS7IGCE0KK2hv0NwNvSv8oy402m9xU+iCIr19Xs28jm61/difLh/x1g/RXQUV/07b8tZLbB6n6hBC/h+3jLexJeFIpn1C1yBY+JQopTS+NgXEZZK+HuFp3k/JjI0ImxIy/2gPSm3jRAs1f8GfLLEMdJWoseZ/laPhD0QdWPQt7oGqKTfn7G72os8gGsme4AiFtKzg0zEv3whzLvOW6W2uUXAR83cXdlKcLpju7vrjjdfrcqYxkR3VDp"
-}
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -69,11 +81,27 @@ describe('loadWallet', () => {
     it('should create a wallet on first load', async () => {
         const wallet = await keymaster.loadWallet();
 
-        expect(wallet.seed!.mnemonicEnc!.salt.length > 0).toBe(true);
-        expect(wallet.seed!.mnemonicEnc!.iv.length > 0).toBe(true);
-        expect(wallet.seed!.mnemonicEnc!.data.length > 0).toBe(true);
-        expect(wallet.counter).toBe(0);
-        expect(wallet.ids).toStrictEqual({});
+        expect(wallet).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: {
+                        salt: expect.any(String),
+                        iv: expect.any(String),
+                        data: expect.any(String),
+                    },
+                    hdkey: expect.any(Object),
+                }),
+                ids: {}
+            })
+        );
+    });
+
+    it('should not return hdkey when includeKeys set to false', async () => {
+        const wallet = await keymaster.loadWallet(false);
+
+        expect(wallet.seed.hdkey === undefined).toBe(true);
     });
 
     it('should return the same wallet on second load', async () => {
@@ -84,7 +112,7 @@ describe('loadWallet', () => {
     });
 
     it('should return null when loading non-existing encrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
         const check_wallet = await wallet_enc.loadWallet();
         expect(check_wallet).toBe(null);
     });
@@ -137,6 +165,42 @@ describe('loadWallet', () => {
             expect(error.message).toBe('Keymaster: Wallet is encrypted');
         }
     });
+
+    it('should upgrade a v0 unencrypted to v1', async () => {
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
+        await wallet_enc.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
+
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
+        const res = await keymaster.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                    hdkey: expect.any(Object),
+                }),
+            })
+        );
+    });
+
+    it('should upgrade a v0 encrypted to v1 without encryption wrapper', async () => {
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
+        await wallet_enc.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
+
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
+        const res = await keymaster.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                    hdkey: expect.any(Object),
+                }),
+            })
+        );
+    });
 });
 
 describe('saveWallet', () => {
@@ -146,7 +210,7 @@ describe('saveWallet', () => {
     });
 
     it('test saving directly on the encrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
         const ok = await wallet_enc.saveWallet(MOCK_WALLET_V1);
 
         expect(ok).toBe(true);
@@ -218,7 +282,7 @@ describe('saveWallet', () => {
     });
 
     it('encrypted wallet should return unencrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, 'passphrase');
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
         const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
         const testWallet = await keymaster.loadWallet();
         const expectedWallet = await keymaster.loadWallet();
@@ -237,6 +301,38 @@ describe('saveWallet', () => {
         const wallet2 = await keymaster.loadWallet();
 
         expect(wallet).toStrictEqual(wallet2);
+    });
+
+    it('should upgrade a v0 wallet to v1', async () => {
+        const ok = await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
+        expect(ok).toBe(true);
+
+        const res = await wallet.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                enc: expect.any(String),
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                }),
+            })
+        );
+    });
+
+    it('should encrypt an unencrypted v1 wallet contents and remove hdkey', async () => {
+        const ok = await keymaster.saveWallet(MOCK_WALLET_V1);
+        expect(ok).toBe(true);
+
+        const res = await wallet.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                enc: expect.any(String),
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                }),
+            })
+        );
     });
 });
 
@@ -551,7 +647,7 @@ describe('fixWallet', () => {
             const base = new WalletJsonMemory();
             const plain: WalletFile = { seed: {} as Seed, counter: 42, ids: {}, names: { foo: 'did:test:abc' } };
             await base.saveWallet(plain, true);
-            const wrapped = new WalletEncrypted(base, 'passphrase');
+            const wrapped = new WalletEncrypted(base, PASSPHRASE);
             const loaded = await wrapped.loadWallet();
 
             expect(loaded).toStrictEqual(plain);

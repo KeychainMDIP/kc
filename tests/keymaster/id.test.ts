@@ -290,7 +290,7 @@ describe('recoverId', () => {
         const name = 'Bob';
         const did = await keymaster.createId(name);
         let wallet = await keymaster.loadWallet();
-        const bob = wallet.ids['Bob'];
+        const bob = JSON.parse(JSON.stringify(wallet.ids['Bob']));
         const mnemonic = await keymaster.decryptMnemonic();
 
         await keymaster.backupId();
