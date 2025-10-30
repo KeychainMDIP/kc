@@ -174,7 +174,7 @@ v1router.get('/registries', async (req, res) => {
  */
 v1router.get('/wallet', async (req, res) => {
     try {
-        const { includeKeys } = req.body;
+        const includeKeys = req.query.includeKeys !== 'false';
         const wallet = await keymaster.loadWallet(includeKeys);
         res.json({ wallet });
     } catch (error: any) {

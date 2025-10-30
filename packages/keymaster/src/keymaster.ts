@@ -181,11 +181,12 @@ export default class Keymaster implements KeymasterInterface {
     async loadWallet(includeKeys = true): Promise<WalletFile> {
         if (this._walletCache) {
             if (!includeKeys) {
-                const { seed, ...restOfWallet } = this._walletCache;
+                const { version, seed, ...restOfWallet } = this._walletCache;
                 const { hdkey, ...restOfSeed } = seed;
                 return {
-                    ...restOfWallet,
-                    seed: restOfSeed
+                    version,
+                    seed: restOfSeed,
+                    ...restOfWallet
                 };
             }
             return this._walletCache;
