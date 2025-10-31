@@ -30,7 +30,6 @@ export default class WalletEncrypted extends AbstractBase {
         }
 
         if (!isEncryptedWallet(encryptedData)) {
-            // We'll assume here that the passphrase has just been set and the wallet is not yet encrypted
             return encryptedData;
         }
 

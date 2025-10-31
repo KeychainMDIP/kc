@@ -73,6 +73,7 @@ export function UIProvider(
         keymaster,
         setManifest,
         setRegistries,
+        refreshFlag,
     } = useWalletContext();
     const { setError } = useSnackbar();
     const {
@@ -110,6 +111,17 @@ export function UIProvider(
         refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (!refreshFlag) {
+            return;
+        }
+        const refresh = async () => {
+            await refreshAll();
+        };
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshFlag]);
 
     function arraysEqual(a: string[], b: string[]): boolean {
         return a.length === b.length && a.every((v, i) => v === b[i]);

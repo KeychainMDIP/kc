@@ -267,7 +267,6 @@ export function UIProvider(
             return;
         }
         const refresh = async () => {
-            await reloadBrowserWallet();
             await refreshAll();
         };
         refresh();

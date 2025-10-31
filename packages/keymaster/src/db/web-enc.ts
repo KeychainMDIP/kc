@@ -65,7 +65,7 @@ export default class WalletWebEncrypted extends AbstractBase {
         }
 
         if (!isEncryptedWallet(encryptedData)) {
-            throw new Error('Wallet not encrypted');
+            return encryptedData;
         }
 
         if (!this.passphrase) {

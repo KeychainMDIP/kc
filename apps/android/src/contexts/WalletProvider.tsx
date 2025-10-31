@@ -14,7 +14,6 @@ import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher";
 import WalletWeb from "@mdip/keymaster/wallet/web";
 import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
-import type { WalletFile } from '@mdip/keymaster/types';
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { useSnackbar } from "./SnackbarProvider";
@@ -148,6 +147,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    function needsPassphraseToUnlock(wallet: any): boolean {
+        if (!wallet) {
+            return false;
+        }
+        if (isEncryptedWallet(wallet)) {
+            return true;
+        }
+        return !!(wallet.version === 1 && wallet.seed?.mnemonicEnc);
+    }
+
     async function initialiseWallet() {
         const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY);
         const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY);
@@ -168,7 +177,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             clearSessionPassphrase();
         }
 
-        if (isEncryptedWallet(walletData)) {
+        if (needsPassphraseToUnlock(walletData)) {
             setWalletAction("decrypt");
         } else {
             setWalletAction("encrypt");
@@ -202,7 +211,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         try {
             if (intent === "unlock") {
                 const keymaster = await makeKeymaster(passphrase);
+
+                // loadWallet will upgrade to v1
                 await keymaster.loadWallet();
+
                 keymasterRef.current = keymaster;
             } else if (intent === "setup") {
                 const walletPlain = new WalletWeb();
@@ -214,17 +226,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                     passphrase,
                 });
 
-                const existing = await walletPlain.loadWallet();
-                if (existing) {
-                    await kmPlain.loadWallet();
-                } else {
-                    await kmPlain.newWallet();
-                }
+                // loadWallet will upgrade to v1
+                await kmPlain.loadWallet();
 
-                const v1Plain = await walletPlain.loadWallet() as WalletFile;
-                const walletEnc = new WalletWebEncrypted(walletPlain, passphrase);
-                await walletEnc.saveWallet(v1Plain!, true);
-                const walletCache = new WalletCache(walletEnc);
+                const walletCache = new WalletCache(walletPlain);
 
                 keymasterRef.current = new Keymaster({
                     gatekeeper,
@@ -247,9 +252,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setIsReady(true);
             setWalletAction("");
             setPassphraseErrorText("");
-            if (intent !== "unlock") {
-                setRefreshFlag(r => r + 1);
-            }
+            setRefreshFlag(r => r + 1);
             return true;
         } catch {
             setPassphraseErrorText(

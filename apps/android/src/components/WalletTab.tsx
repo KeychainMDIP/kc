@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
-import JsonViewer from "./JsonViewer";
+import { useState } from "react";
 import {
     Box,
     Button,
 } from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "./modals/WarningModal";
 import MnemonicModal from "./modals/MnemonicModal";
@@ -17,7 +15,6 @@ const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
-    const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
@@ -25,20 +22,12 @@ const WalletTab = () => {
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
     const {
         keymaster,
-        refreshFlag,
         initialiseWallet,
         pendingMnemonic,
         setPendingMnemonic,
         setWalletAction,
     } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
-    const { setOpenBrowser } = useUIContext();
-
-    useEffect(() => {
-        clearJsonWallet();
-        setMnemonicString("");
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshFlag]);
 
     const handleClickOpen = () => {
         setPendingWallet(null);
@@ -52,13 +41,6 @@ const WalletTab = () => {
         setPendingRecover(false);
     };
 
-    function clearJsonWallet() {
-        setJsonViewerOpen(false);
-        setOpenBrowser({
-            tab: "wallet",
-        });
-    }
-
     const handleCloseFixModal = () => {
         setShowFixModal(false);
         setCheckResultMessage("");
@@ -66,7 +48,6 @@ const WalletTab = () => {
 
     async function wipeStoredValues() {
         clearSessionPassphrase();
-        clearJsonWallet();
         setMnemonicString("");
         await initialiseWallet();
     }
@@ -83,7 +64,6 @@ const WalletTab = () => {
         const walletWeb = new WalletWeb();
         await walletWeb.saveWallet(wallet, true);
 
-        clearJsonWallet();
         setMnemonicString("");
         await initialiseWallet();
     }
@@ -91,7 +71,6 @@ const WalletTab = () => {
     async function restoreFromMnemonic() {
         setWalletAction("restore");
         clearSessionPassphrase();
-        clearJsonWallet();
         setMnemonicString("");
     }
 
@@ -133,7 +112,6 @@ const WalletTab = () => {
                 `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
             );
             await initialiseWallet();
-            clearJsonWallet();
             setMnemonicString("");
         } catch (error: any) {
             setError(error);
@@ -146,7 +124,6 @@ const WalletTab = () => {
         }
         await keymaster.recoverWallet();
         await initialiseWallet();
-        clearJsonWallet();
         setMnemonicString("");
     }
 
@@ -154,10 +131,10 @@ const WalletTab = () => {
         try {
             if (pendingRecover) {
                 await recoverWallet();
-            } else if (pendingMnemonic) {
-                await restoreFromMnemonic();
             } else if (pendingWallet) {
                 await uploadWallet(pendingWallet);
+            } else if (pendingMnemonic) {
+                await restoreFromMnemonic();
             } else {
                 await wipeAndClose();
             }
@@ -186,26 +163,6 @@ const WalletTab = () => {
         setMnemonicString("");
     }
 
-    async function showWallet() {
-        if (!keymaster) {
-            return;
-        }
-        try {
-            const wallet = await keymaster.loadWallet(false);
-            setJsonViewerOpen(true);
-            setOpenBrowser({
-                tab: "wallet",
-                contents: wallet,
-            });
-        } catch (error: any) {
-            setError(error);
-        }
-    }
-
-    async function hideWallet() {
-        clearJsonWallet();
-    }
-
     async function handleUploadClick() {
         const fileInput = document.createElement("input");
         fileInput.type = "file";
@@ -220,18 +177,18 @@ const WalletTab = () => {
                 try {
                     const contents = e.target?.result as string;
                     const json = JSON.parse(contents);
-                    const isUnencrypted =
-                        "seed" in json && "counter" in json && "ids" in json;
-                    const isEncrypted =
-                        "salt" in json && "iv" in json && "data" in json;
 
-                    if (!isUnencrypted && !isEncrypted) {
-                        setError(
-                            "Invalid wallet JSON. Missing required fields.",
-                        );
+                    const isEncryptedBlob = typeof json?.salt === "string" && typeof json?.iv === "string" && typeof json?.data === "string";
+                    const isV1Plain = json?.version === 1 && json?.seed && typeof json.seed?.mnemonicEnc?.data === "string";
+                    const isV0Plain = !json?.version && json?.seed?.mnemonic && json?.seed?.hdkey?.xpub && json?.seed?.hdkey?.xpriv;
+
+                    if (!isEncryptedBlob && !isV1Plain && !isV0Plain) {
+                        setError("Unsupported wallet file. Upload an encrypted blob, a v1 wallet, or a legacy v0 wallet.");
                         return;
                     }
 
+                    setPendingMnemonic("");
+                    setPendingRecover(false);
                     setPendingWallet(json);
                     setOpen(true);
                 } catch (err) {
@@ -413,28 +370,6 @@ const WalletTab = () => {
                             </Button>
                         )}
 
-                        {jsonViewerOpen ? (
-                            <Button
-                                className="mini-margin"
-                                variant="contained"
-                                color="primary"
-                                onClick={hideWallet}
-                                sx={{ width: '100%', mb: 1 }}
-                            >
-                                Hide Wallet
-                            </Button>
-                        ) : (
-                            <Button
-                                className="mini-margin"
-                                variant="contained"
-                                color="primary"
-                                onClick={showWallet}
-                                sx={{ width: '100%', mb: 1 }}
-                            >
-                                Show Wallet
-                            </Button>
-                        )}
-
                         <Button
                             className="mini-margin"
                             variant="contained"
@@ -470,10 +405,6 @@ const WalletTab = () => {
                         {mnemonicString}
                     </Box>
                 )}
-            </Box>
-
-            <Box sx={{ mt: 1, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <JsonViewer browserTab="wallet" />
             </Box>
         </Box>
     );

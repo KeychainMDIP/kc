@@ -208,6 +208,9 @@ export default class Keymaster implements KeymasterInterface {
             wallet = await this.upgradeWalletIfNeeded(stored);
         } else if (this.isV1WithEnc(stored)) {
             wallet = await this.decryptWalletFromStorage(stored);
+        } else if (this.isV1Decrypted(stored)) {
+            await this.saveWallet(stored, true);
+            wallet = this._walletCache!;
         } else {
             throw new KeymasterError("loadWallet: Unsupported wallet version");
         }
@@ -217,8 +220,9 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         if (!includeKeys) {
-            delete wallet.seed.hdkey;
-            return wallet;
+            const { version, seed, ...rest } = wallet;
+            const { hdkey, ...seedRest } = seed as any;
+            return { version, seed: seedRest, ...rest };
         }
 
         this._walletCache = wallet;
