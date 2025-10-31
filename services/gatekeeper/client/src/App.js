@@ -55,9 +55,7 @@ function App() {
     const challengeDID = searchParams.get('challenge');
     const [isReady, setIsReady] = useState(false);
     const [modalAction, setModalAction] = useState(null);
-    const [isEncrypted, setIsEncrypted] = useState(false);
     const [passphraseErrorText, setPassphraseErrorText] = useState(null);
-    const [isCryptoAvailable, setIsCryptoAvailable] = useState(false);
     const [cryptoError, setCryptoError] = useState('');
     const [keymaster, setKeymaster] = useState(null);
     const [kmEpoch, setKmEpoch] = useState(0);
@@ -114,13 +112,11 @@ function App() {
             initRanRef.current = true;
 
             const cryptoAvailable = !!(window.crypto && window.crypto.subtle);
-            setIsCryptoAvailable(cryptoAvailable);
 
             const walletWeb = new WalletWeb();
             const walletData = await walletWeb.loadWallet();
 
             if (!walletData) {
-                setIsEncrypted(false);
                 setIsFirstRun(true);
                 setModalAction('keypass');
                 return;
@@ -131,11 +127,9 @@ function App() {
                     setCryptoError('Wallet is encrypted but this environment is not secure. Use HTTPS or localhost.');
                     return;
                 }
-                setIsEncrypted(true);
                 setModalAction('decrypt');
                 setIsReady(false);
             } else {
-                setIsEncrypted(false);
                 setModalAction('keypass');
             }
         })();
@@ -146,7 +140,6 @@ function App() {
         const walletEnc = new WalletWebEncrypted(walletWeb, passphrase);
         const walletCached = new WalletCache(walletEnc);
         await buildKeymaster(walletCached, passphrase, 'upload', 'enc', true);
-        setIsEncrypted(true);
     }
 
     async function handlePassphraseSubmit(passphrase) {
@@ -186,14 +179,12 @@ function App() {
                         return;
                     } else {
                         await walletEnc.saveWallet(decrypted, true);
-                        setIsEncrypted(false);
                         setPendingAction('upload-plain-upgrade');
                         setModalAction('keypass');
                         return;
                     }
                 }
                 await buildKeymaster(walletCached, passphrase, 'decrypt', 'enc', true);
-                setIsEncrypted(true);
                 setModalAction(null);
                 return;
             } catch {
@@ -229,10 +220,8 @@ function App() {
                 setPassphraseErrorText('Incorrect passphrase');
                 return;
             }
-            setIsEncrypted(true);
             await buildKeymaster(walletCached, passphrase, 'keypass', 'enc', true);
         } else {
-            setIsEncrypted(false);
             if (isFirstRun) {
                 const kmPlainBootstrap = new Keymaster({
                     gatekeeper,
@@ -332,10 +321,6 @@ function App() {
 
     function handleModalClose() {
         setModalAction(null);
-    }
-
-    function openKeypassModal() {
-        setModalAction('keypass');
     }
 
     return (
