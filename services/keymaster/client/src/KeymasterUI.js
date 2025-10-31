@@ -75,7 +75,6 @@ import {
     RestoreFromTrash,
     Schema,
     Search,
-    Send,
     Token,
     Unarchive,
 } from "@mui/icons-material";
@@ -85,7 +84,6 @@ import './App.css';
 import PollResultsModal from "./PollResultsModal";
 import TextInputModal from "./TextInputModal";
 import WarningModal from "./WarningModal";
-import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
 
 // TBD figure out how to import an enum from keymaster package
 const DmailTags = {
