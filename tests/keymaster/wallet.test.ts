@@ -223,7 +223,7 @@ describe('loadWallet', () => {
         );
     });
 
-    it('should load a v1 encrypted wallet without hdkey', async () => {
+    it('should load a v1 encrypted wallet with hdkey', async () => {
         await wallet.saveWallet(MOCK_WALLET_V1_ENCRYPTED);
         const res = await keymaster.loadWallet();
         expect(res).toEqual(
@@ -233,6 +233,23 @@ describe('loadWallet', () => {
                 seed: expect.objectContaining({
                     mnemonicEnc: expect.any(Object),
                     hdkey: expect.any(Object),
+                })
+            })
+        );
+    });
+
+    it('should load a v1 encrypted wallet from cache without hdkey', async () => {
+        await wallet.saveWallet(MOCK_WALLET_V1_ENCRYPTED);
+        // prime cache
+        await keymaster.loadWallet();
+        // load from cache
+        const res = await keymaster.loadWallet(false);
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object)
                 })
             })
         );
