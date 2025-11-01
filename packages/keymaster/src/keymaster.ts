@@ -56,8 +56,6 @@ import {
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
 
-const CURRENT_WALLET_VERSION = 1;
-
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
@@ -195,8 +193,7 @@ export default class Keymaster implements KeymasterInterface {
         let stored = await this.db.loadWallet() as WalletFile | null;
 
         if (!stored) {
-            await this.newWallet();
-            stored = await this.db.loadWallet() as WalletFile;
+            stored = await this.newWallet();
         }
 
         if ('salt' in stored) {
@@ -204,25 +201,26 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         let wallet: WalletFile;
-        if ((stored.version ?? 0) < CURRENT_WALLET_VERSION) {
-            wallet = await this.upgradeWalletIfNeeded(stored);
-        } else if (this.isV1WithEnc(stored)) {
+        if (this.isV1WithEnc(stored)) {
             wallet = await this.decryptWalletFromStorage(stored);
         } else if (this.isV1Decrypted(stored)) {
             await this.saveWallet(stored, true);
-            wallet = this._walletCache!;
+            return this.loadWallet(includeKeys);
+        } else if (this.isLegacyV0(stored)) {
+            const converted = await this.convertLegacyToV1Inline(stored);
+            await this.saveWallet(converted, true);
+            return this.loadWallet(includeKeys);
         } else {
             throw new KeymasterError("loadWallet: Unsupported wallet version");
         }
 
-        if (wallet.version !== CURRENT_WALLET_VERSION) {
-            throw new KeymasterError(`Unsupported wallet version: ${wallet.version} expected: ${CURRENT_WALLET_VERSION}`);
-        }
-
         if (!includeKeys) {
+            console.log("loadWallet: Removing keys from wallet");
             const { version, seed, ...rest } = wallet;
             const { hdkey, ...seedRest } = seed as any;
             return { version, seed: seedRest, ...rest };
+        } else {
+            console.log("loadWallet: Not removing keys from wallet");
         }
 
         this._walletCache = wallet;
@@ -3572,18 +3570,6 @@ export default class Keymaster implements KeymasterInterface {
         try {
             await this.addName(fallbackName, did);
         } catch { }
-    }
-
-    private async upgradeWalletIfNeeded(wallet: WalletFile): Promise<WalletFile> {
-        const version = wallet.version ? wallet.version : 0;
-
-        if (this.isLegacyV0(wallet)) {
-            const upgraded = await this.convertLegacyToV1Inline(wallet);
-            await this.saveWallet(upgraded, true);
-            return this.loadWallet();
-        }
-
-        throw new KeymasterError(`Unsupported wallet version ${version}`);
     }
 
     private b64(buf: Uint8Array) { return Buffer.from(buf).toString('base64'); }
