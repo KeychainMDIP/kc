@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { StoredWallet, WalletBase } from '../types.js';
 import { AbstractBase } from './abstract-base.js';
-import { isEncryptedWallet } from './typeGuards.js';
+import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
 
 const algorithm = 'aes-256-gcm';      // Algorithm
 const keyLength = 32;                 // 256 bit AES-256

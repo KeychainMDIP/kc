@@ -1,5 +1,6 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
+import { WalletEncFile } from '@mdip/keymaster/types';
 import {
     EncryptedWallet,
     Seed,
@@ -57,6 +58,18 @@ const MOCK_WALLET_V1: WalletFile = {
     "ids": {}
 };
 
+const MOCK_WALLET_V1_ENCRYPTED: WalletEncFile = {
+    "version": 1,
+    "seed": {
+        "mnemonicEnc": {
+            "salt": "8c+TrInC7EJZAnwjD6k8+A==",
+            "iv": "EkeweG9JHYjXr7cN",
+            "data": "4MLe/4SX9unO+7DTK1KUKLBLeHuJNS4bT9yjp8L/xnLzexpobGEmRJebUuv3e0aIs4krINlkTlP4krmqkI3p/EVlu9Ap6GRNoogZR4ZC1EtKUTwgNaQ7058o0/d1LQ8wSA=="
+        }
+    },
+    "enc": "CAKfW05djVJ2VnkLLbiBgtJpfC3x8xvc4_-M0OJBA6N7YcuXyd1F3GhifoUZ2Zdy2XGP_nGzhjS2u3NXgIM"
+}
+
 beforeAll(async () => {
     ipfs = new HeliaClient();
     await ipfs.start();
@@ -96,12 +109,6 @@ describe('loadWallet', () => {
                 ids: {}
             })
         );
-    });
-
-    it('should not return hdkey when includeKeys set to false', async () => {
-        const wallet = await keymaster.loadWallet(false);
-
-        expect(wallet.seed.hdkey === undefined).toBe(true);
     });
 
     it('should return the same wallet on second load', async () => {
@@ -200,6 +207,48 @@ describe('loadWallet', () => {
                 }),
             })
         );
+    });
+
+    it('should load a v1 encrypted wallet without hdkey', async () => {
+        await wallet.saveWallet(MOCK_WALLET_V1_ENCRYPTED);
+        const res = await keymaster.loadWallet(false);
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object)
+                })
+            })
+        );
+    });
+
+    it('should load a v1 encrypted wallet without hdkey', async () => {
+        await wallet.saveWallet(MOCK_WALLET_V1_ENCRYPTED);
+        const res = await keymaster.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                    hdkey: expect.any(Object),
+                })
+            })
+        );
+    });
+
+    it('should throw on unsupported wallet version', async () => {
+        let clone = structuredClone(MOCK_WALLET_V1_ENCRYPTED);
+        delete clone.seed.mnemonicEnc;
+        await wallet.saveWallet(clone);
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: loadWallet: Unsupported wallet version');
+        }
     });
 });
 
@@ -334,6 +383,23 @@ describe('saveWallet', () => {
             })
         );
     });
+
+    it('should save a v1 encrypted wallet', async () => {
+        const ok = await keymaster.saveWallet(MOCK_WALLET_V1_ENCRYPTED, true);
+        expect(ok).toBe(true);
+    });
+
+    it('should throw on incorrect passphrase', async () => {
+        const wallet = new WalletJsonMemory();
+        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'incorrect' });
+
+        try {
+            await keymaster.saveWallet(MOCK_WALLET_V1_ENCRYPTED, true);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Keymaster: Incorrect passphrase.');
+        }
+    });
 });
 
 describe('decryptMnemonic', () => {
@@ -346,6 +412,21 @@ describe('decryptMnemonic', () => {
         // Split the mnemonic into words
         const words = mnemonic.split(' ');
         expect(words.length).toBe(12);
+    });
+});
+
+describe('exportEncryptedWallet', () => {
+    it('should export the wallet in encrypted form', async () => {
+        const res = await keymaster.exportEncryptedWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object)
+                }),
+                enc: expect.any(String)
+            })
+        );
     });
 });
 

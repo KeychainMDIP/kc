@@ -18,11 +18,13 @@ const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: 
 const helper = new TestHelper(gatekeeper, cipher);
 
 beforeAll(async () => {
+    await db.start();
     await ipfs.start();
 });
 
 afterAll(async () => {
     await ipfs.stop();
+    await db.stop();
 });
 
 beforeEach(async () => {

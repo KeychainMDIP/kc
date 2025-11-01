@@ -47,7 +47,12 @@ import {
     WalletEncFile,
     SearchEngine,
     Seed,
-} from './types.js';
+} from '@mdip/keymaster/types';
+import {
+    isV1WithEnc,
+    isV1Decrypted,
+    isLegacyV0
+} from '@mdip/keymaster/wallet/typeGuards';
 import {
     Cipher,
     EcdsaJwkPair,
@@ -134,18 +139,6 @@ export default class Keymaster implements KeymasterInterface {
         this.maxDataLength = 8 * 1024; // 8 KB max data to store in a JSON object
     }
 
-    private isV1WithEnc(obj: any): obj is WalletEncFile {
-        return !!obj && obj.version === 1 && typeof obj.enc === 'string' && obj.seed?.mnemonicEnc;
-    }
-
-    private isV1Decrypted(obj: any): obj is WalletFile {
-        return !!obj && obj.version === 1 && obj.seed?.mnemonicEnc && !('enc' in obj);
-    }
-
-    private isLegacyV0(obj: any): obj is WalletFile {
-        return !!obj && (!obj.version || obj.version === 0) && !!obj.seed?.hdkey && typeof obj.seed.mnemonic === 'string';
-    }
-
     async listRegistries(): Promise<string[]> {
         return this.gatekeeper.listRegistries();
     }
@@ -201,12 +194,12 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         let wallet: WalletFile;
-        if (this.isV1WithEnc(stored)) {
+        if (isV1WithEnc(stored)) {
             wallet = await this.decryptWalletFromStorage(stored);
-        } else if (this.isV1Decrypted(stored)) {
+        } else if (isV1Decrypted(stored)) {
             await this.saveWallet(stored, true);
             return this.loadWallet(includeKeys);
-        } else if (this.isLegacyV0(stored)) {
+        } else if (isLegacyV0(stored)) {
             const converted = await this.convertLegacyToV1Inline(stored);
             await this.saveWallet(converted, true);
             return this.loadWallet(includeKeys);
@@ -215,12 +208,9 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         if (!includeKeys) {
-            console.log("loadWallet: Removing keys from wallet");
             const { version, seed, ...rest } = wallet;
             const { hdkey, ...seedRest } = seed as any;
             return { version, seed: seedRest, ...rest };
-        } else {
-            console.log("loadWallet: Not removing keys from wallet");
         }
 
         this._walletCache = wallet;
@@ -233,11 +223,11 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<boolean> {
         let toStore: WalletEncFile;
 
-        if (this.isV1WithEnc(wallet)) {
+        if (isV1WithEnc(wallet)) {
             toStore = wallet;
-        } else if (this.isV1Decrypted(wallet)) {
+        } else if (isV1Decrypted(wallet)) {
             toStore = await this.encryptWalletForStorage(wallet);
-        } else if (this.isLegacyV0(wallet)) {
+        } else if (isLegacyV0(wallet)) {
             const upgraded = await this.convertLegacyToV1Inline(wallet);
             toStore = await this.encryptWalletForStorage(upgraded);
         } else {
@@ -288,9 +278,6 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async getMnemonicForDerivation(wallet: WalletFile): Promise<string> {
-        if (wallet.version !== 1 || !wallet.seed?.mnemonicEnc) {
-            throw new KeymasterError('Unsupported wallet version');
-        }
         return this.decMnemonic(wallet.seed.mnemonicEnc!, this.passphrase!);
     }
 
@@ -3599,10 +3586,6 @@ export default class Keymaster implements KeymasterInterface {
     private async encryptWalletForStorage(decrypted: WalletFile): Promise<WalletEncFile> {
         const { version, seed, ...rest } = decrypted;
 
-        if (version === undefined || seed === undefined) {
-            throw new KeymasterError("Wallet file is missing required version or seed.");
-        }
-
         const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
 
         const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
@@ -3611,18 +3594,10 @@ export default class Keymaster implements KeymasterInterface {
         const plaintext = JSON.stringify(rest);
         const enc = this.cipher.encryptMessage(publicJwk, privateJwk, plaintext);
 
-        return { version, seed: safeSeed, enc };
+        return { version: version!, seed: safeSeed, enc };
     }
 
     private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
-        if (this.isV1Decrypted(stored)) {
-            return stored as WalletFile;
-        }
-
-        if (!this.isV1WithEnc(stored)) {
-            throw new KeymasterError('Unsupported wallet shape for v1');
-        }
-
         let mnemonic: string;
         try {
             mnemonic = await this.decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
@@ -3650,13 +3625,9 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async convertLegacyToV1Inline(legacy: WalletFile): Promise<WalletFile> {
-        if (!legacy?.seed?.hdkey || !legacy?.seed?.mnemonic) {
-            throw new KeymasterError('Cannot upgrade wallet: missing legacy seed fields');
-        }
-
-        const hdkey = this.cipher.generateHDKeyJSON(legacy.seed.hdkey);
+        const hdkey = this.cipher.generateHDKeyJSON(legacy.seed.hdkey!);
         const keypair = this.cipher.generateJwk(hdkey.privateKey!);
-        const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, legacy.seed.mnemonic);
+        const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, legacy.seed.mnemonic!);
         const mnemonicEnc = await this.encMnemonic(plaintext, this.passphrase);
         const { seed: _legacySeed, version: _legacyVersion, ...rest } = legacy;
         return { version: 1, seed: { mnemonicEnc }, ...rest };

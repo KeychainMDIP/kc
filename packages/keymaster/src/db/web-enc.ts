@@ -1,6 +1,6 @@
 import { StoredWallet, WalletBase } from '../types.js';
 import { AbstractBase } from './abstract-base.js';
-import { isEncryptedWallet } from './typeGuards.js';
+import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
 
 const algorithm = 'AES-GCM';
 const kdf = 'PBKDF2';
