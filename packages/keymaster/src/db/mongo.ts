@@ -1,5 +1,5 @@
-import { StoredWallet } from '@mdip/keymaster/types';
-import { AbstractBase } from '@mdip/keymaster/wallet/abstract-base';
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 import { MongoClient, Db, Collection } from 'mongodb'
 
 export default class WalletMongo extends AbstractBase {

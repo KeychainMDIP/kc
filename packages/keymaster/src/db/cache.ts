@@ -1,5 +1,5 @@
-import { StoredWallet, WalletBase } from '@mdip/keymaster/types';
-import { AbstractBase } from '@mdip/keymaster/wallet/abstract-base';
+import { StoredWallet, WalletBase } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 
 export default class WalletCache extends AbstractBase {
     private baseWallet: WalletBase;

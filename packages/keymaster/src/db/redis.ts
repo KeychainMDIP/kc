@@ -1,5 +1,5 @@
-import { StoredWallet } from '@mdip/keymaster/types';
-import { AbstractBase } from '@mdip/keymaster/wallet/abstract-base';
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
 import { Redis } from 'ioredis'
 
 export default class WalletRedis extends AbstractBase {
