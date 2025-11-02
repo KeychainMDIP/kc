@@ -52,7 +52,7 @@ import {
     isV1WithEnc,
     isV1Decrypted,
     isLegacyV0
-} from '@mdip/keymaster/wallet/typeGuards';
+} from './db/typeGuards.js';
 import {
     Cipher,
     EcdsaJwkPair,
