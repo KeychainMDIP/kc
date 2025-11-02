@@ -1,5 +1,5 @@
-import { StoredWallet, WalletBase } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '@mdip/keymaster/types';
+import { AbstractBase } from '@mdip/keymaster/wallet/abstract-base';
 import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
 
 const algorithm = 'AES-GCM';

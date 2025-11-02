@@ -1,5 +1,5 @@
 
-import type { StoredWallet, WalletBase } from '../types.js';
+import type { StoredWallet, WalletBase } from '@mdip/keymaster/types';
 
 export abstract class AbstractBase implements WalletBase {
     private _lock: Promise<void> = Promise.resolve();

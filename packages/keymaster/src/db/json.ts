@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet } from '@mdip/keymaster/types';
+import { AbstractBase } from '@mdip/keymaster/wallet/abstract-base';
 
 export default class WalletJson extends AbstractBase {
     private readonly dataFolder: string;
