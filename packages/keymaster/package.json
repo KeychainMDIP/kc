@@ -85,6 +85,11 @@
       "require": "./dist/cjs/db/chrome.cjs",
       "types": "./dist/types/db/chrome.d.ts"
     },
+    "./wallet/abstract-base": {
+      "import": "./dist/esm/db/abstract-base.js",
+      "require": "./dist/cjs/db/abstract-base.cjs",
+      "types": "./dist/types/db/abstract-base.d.ts"
+    },
     "./wallet/typeGuards": {
       "import": "./dist/esm/db/typeGuards.js",
       "require": "./dist/cjs/db/typeGuards.cjs",
@@ -131,6 +136,9 @@
       ],
       "wallet/chrome": [
         "./dist/types/db/chrome.d.ts"
+      ],
+      "wallet/abstract-base": [
+        "./dist/types/db/abstract-base.d.ts"
       ],
       "wallet/typeGuards": [
         "./dist/types/db/typeGuards.d.ts"
