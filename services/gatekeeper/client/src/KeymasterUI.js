@@ -439,7 +439,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             const ok = await keymaster.backupId(selectedId);
 
             if (ok) {
-                showError(`${selectedId} backup succeeded`);
+                showSuccess(`${selectedId} backup succeeded`);
                 resolveId();
             }
             else {
@@ -1736,10 +1736,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                     window.alert('Upload rejected: failed to backup existing wallet.');
                     return;
                 }
-                await keymaster.saveWallet(wallet, true);
 
                 try {
-                    await keymaster.decryptMnemonic();
+                    await keymaster.saveWallet(wallet, true);
+                    await keymaster.loadWallet();
                     refreshAll();
                 } catch (e) {
                     try {

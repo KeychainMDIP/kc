@@ -16,7 +16,9 @@ const PassphraseModal = (
         title,
         errorText,
         onSubmit,
-        encrypt
+        onClose,
+        encrypt,
+        showCancel = false
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
@@ -28,13 +30,15 @@ const PassphraseModal = (
     function handleSubmit(e) {
         e.preventDefault();
         onSubmit(passphrase);
-        handleClose();
+        setPassphrase("");
+        setConfirmPassphrase("");
     }
 
     const handleClose = () => {
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
+        onClose();
     };
 
     function checkPassphraseMismatch(newPass, newConfirm) {
@@ -112,6 +116,15 @@ const PassphraseModal = (
                 </form>
             </DialogContent>
             <DialogActions>
+                {showCancel && (
+                    <Button
+                        onClick={handleClose}
+                        variant="contained"
+                        color="secondary"
+                    >
+                        Cancel
+                    </Button>
+                )}
                 <Button
                     type="submit"
                     form="passphrase-form"

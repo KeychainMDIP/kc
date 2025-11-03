@@ -131,10 +131,10 @@ const WalletTab = () => {
         try {
             if (pendingRecover) {
                 await recoverWallet();
-            } else if (pendingWallet) {
-                await uploadWallet(pendingWallet);
             } else if (pendingMnemonic) {
                 await restoreFromMnemonic();
+            } else if (pendingWallet) {
+                await uploadWallet(pendingWallet);
             } else {
                 await wipeAndClose();
             }
