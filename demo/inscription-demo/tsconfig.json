@@ -12,7 +12,27 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+        "baseUrl": ".",
+    "paths": {
+      "@mdip/cipher/node": ["packages/cipher/src/cipher-node.ts"],
+      "@mdip/cipher/web": ["packages/cipher/src/cipher-web.ts"],
+      "@mdip/cipher/types": ["packages/cipher/src/types.ts"],
+      "@mdip/common/errors": ["packages/common/src/errors.ts"],
+      "@mdip/common/utils": ["packages/common/src/utils.ts"],
+      "@mdip/inscription": ["packages/inscription/src/inscription.ts"],
+      "@mdip/gatekeeper": ["packages/gatekeeper/src/gatekeeper.ts"],
+      "@mdip/gatekeeper/types": ["packages/gatekeeper/src/types.ts"],
+      "@mdip/gatekeeper/client": ["packages/gatekeeper/src/gatekeeper-client.ts"],
+      "@mdip/gatekeeper/db/*": ["packages/gatekeeper/src/db/*"],
+      "@mdip/ipfs/helia": ["packages/ipfs/src/helia-client.ts"],
+      "@mdip/ipfs/utils": ["packages/ipfs/src/utils.ts"],
+      "@mdip/keymaster": ["packages/keymaster/src/keymaster.ts"],
+      "@mdip/keymaster/client": ["packages/keymaster/src/keymaster-client.ts"],
+      "@mdip/keymaster/types": ["packages/keymaster/src/types.ts"],
+      "@mdip/keymaster/search": ["packages/keymaster/src/search-client.ts"],
+      "@mdip/keymaster/wallet/*": ["packages/keymaster/src/db/*"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
