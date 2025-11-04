@@ -24,10 +24,12 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
     const handleSubmit = (event: MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
         onSubmit(mnemonic);
+        setMnemonic("");
     };
 
     const handleClose = () => {
         onClose();
+        setMnemonic("");
     };
 
     return (

@@ -67,12 +67,13 @@ function App() {
         setKeymaster(instance);
         setKmEpoch((e) => e + 1);
         setIsReady(true);
+        setIsFirstRun(false);
     };
 
     async function rebuildKeymaster(passphrase) {
         const walletWeb = new WalletWeb();
         const walletCached = new WalletCache(walletWeb);
-        await buildKeymaster(walletCached, passphrase, true);
+        await buildKeymaster(walletCached, passphrase);
     }
 
     async function handlePassphraseSubmit(passphrase) {
@@ -94,7 +95,7 @@ function App() {
                     } else { // upload-enc-v1 & upload-plain-v1
                         const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
                         // check pass
-                        await km.loadWallet(pendingWallet);
+                        await km.loadWallet();
                         await walletWeb.saveWallet(pendingWallet, true);
                     }
                 } catch {
@@ -120,7 +121,6 @@ function App() {
         }
 
         await rebuildKeymaster(passphrase);
-        setIsFirstRun(false);
     }
 
     async function handleWalletUploadFile(uploaded) {

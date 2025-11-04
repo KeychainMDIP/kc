@@ -1714,9 +1714,17 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
             fileInput.onchange = async (event) => {
                 const file = event.target.files[0];
+                if (!file) {
+                    return;
+                }
 
                 const text = await file.text();
-                const wallet = JSON.parse(text);
+                let wallet;
+                try {
+                    wallet = JSON.parse(text);
+                } catch {
+                    showError("Invalid JSON file.");
+                }
 
                 if (!window.confirm('Overwrite wallet with upload?')) {
                     return;

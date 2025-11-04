@@ -59,6 +59,7 @@ module.exports = {
             "@mdip/gatekeeper/client": path.resolve(__dirname, "../../packages/gatekeeper/dist/esm/gatekeeper-client.js"),
             "@mdip/gatekeeper/types": path.resolve(__dirname, "../../packages/gatekeeper/dist/types/types.d.js"),
             "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/chrome.js"),
+            "@mdip/keymaster/wallet/json-memory": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/json-memory.js"),
             "@mdip/keymaster/wallet/web-enc": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/web-enc.js"),
             "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/cache.js"),
             "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/typeGuards.js"),

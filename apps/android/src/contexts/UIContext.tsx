@@ -19,6 +19,7 @@ import {
 import { useWalletContext } from "./WalletProvider";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useSnackbar } from "./SnackbarProvider";
+import WalletWeb from "@mdip/keymaster/wallet/web";
 
 interface UIContextValue {
     selectedTab: string;
@@ -103,6 +104,8 @@ export function UIProvider(
         setDmailList,
         setAliasDID,
     } = useCredentialsContext();
+
+    const walletWeb = new WalletWeb();
 
     useEffect(() => {
         const refresh = async () => {
@@ -200,6 +203,10 @@ export function UIProvider(
         }
 
         const refresh = async () => {
+            const data = await walletWeb.loadWallet();
+            if (!data) {
+                return;
+            }
             try {
                 await keymaster.refreshNotices();
                 await refreshPoll();

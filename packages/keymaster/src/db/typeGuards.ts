@@ -1,6 +1,6 @@
-import {EncryptedWallet, StoredWallet, WalletFile, WalletEncFile} from "../types.js";
+import {EncryptedWallet, WalletFile, WalletEncFile} from "../types.js";
 
-export function isEncryptedWallet(obj: StoredWallet): obj is EncryptedWallet {
+export function isEncryptedWallet(obj: any): obj is EncryptedWallet {
     return obj != null
         && typeof obj === 'object'
         && 'salt' in obj

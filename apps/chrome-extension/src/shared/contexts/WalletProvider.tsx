@@ -14,16 +14,16 @@ import Keymaster from "@mdip/keymaster";
 import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
-import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards';
+import { isEncryptedWallet, isLegacyV0, isV1Decrypted, isV1WithEnc } from '@mdip/keymaster/wallet/typeGuards';
+import { StoredWallet, WalletBase } from "@mdip/keymaster/types";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { useSnackbar } from "./SnackbarProvider";
 import PassphraseModal from "../PassphraseModal";
+import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
-
-type InitIntent = "unlock" | "setup" | "restore";
 
 interface WalletContextValue {
     currentId: string;
@@ -44,10 +44,11 @@ interface WalletContextValue {
     setManifest: Dispatch<SetStateAction<Record<string, unknown> | undefined>>;
     pendingMnemonic: string;
     setPendingMnemonic: Dispatch<SetStateAction<string>>;
-    walletAction: "" | "decrypt" | "encrypt" | "restore";
-    setWalletAction: Dispatch<SetStateAction<"" | "decrypt" | "encrypt" | "restore">>;
+    pendingWallet: unknown;
+    setPendingWallet: Dispatch<SetStateAction<unknown>>;
     resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
+    handleWalletUploadFile: (uploaded: unknown) => Promise<void>;
     storeState: (key: string, value: string | boolean) => Promise<void>;
     refreshWalletStored: (state: Record<string, any>) => Promise<void>;
     resetWalletState: () => void;
@@ -61,6 +62,8 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 let search: SearchClient | undefined;
 
+const INCORRECT_PASSPHRASE = "Incorrect passphrase";
+
 export function WalletProvider({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
     const [currentId, setCurrentIdState] = useState<string>("");
     const [validId, setValidId] = useState<boolean>(false);
@@ -72,12 +75,158 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const [registries, setRegistries] = useState<string[]>([]);
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
-    const [walletAction, setWalletAction] = useState<"" | "decrypt" | "encrypt" | "restore">("");
+    const [pendingWallet, setPendingWallet] = useState<unknown>(null);
+    const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
+    const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-plain-v1" | "upload-enc-v0" | "upload-enc-v1">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
     const [refreshFlag, setRefreshFlag] = useState<number>(0);
+    const [isFirstRun, setIsFirstRun] = useState<boolean>(false);
     const { setError } = useSnackbar();
 
     const keymasterRef = useRef<Keymaster | null>(null);
+
+    const walletChrome = new WalletChrome();
+
+    useEffect(() => {
+        const initWallet = async () => {
+            await initialiseServices();
+            await initialiseWallet();
+        }
+
+        initWallet();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    async function initialiseWallet() {
+        const walletData = await walletChrome.loadWallet();
+
+        let response = await chrome.runtime.sendMessage({
+            action: "GET_PASSPHRASE",
+        });
+        const pass = response?.passphrase || "";
+
+        if (!pendingMnemonic && pass) {
+            let res = await rebuildKeymaster(pass);
+            if (res) {
+                return;
+            }
+            setPassphraseErrorText("");
+            await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
+        }
+
+        if (!walletData || pendingMnemonic) {
+            setIsFirstRun(true);
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            setModalAction('set-passphrase');
+        } else {
+            setModalAction('decrypt');
+        }
+    }
+
+    async function initialiseServices() {
+        const { gatekeeperUrl, searchServerUrl } = await chrome.storage.sync.get([
+            "gatekeeperUrl",
+            "searchServerUrl"
+        ]);
+        await gatekeeper.connect({ url: gatekeeperUrl });
+        search = await SearchClient.create({ url: searchServerUrl });
+    }
+
+    const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
+        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
+
+        if (pendingMnemonic) {
+            await instance.newWallet(pendingMnemonic, true);
+            await instance.recoverWallet();
+        } else {
+            try {
+                // check pass & convert to v1 if needed
+                await instance.loadWallet();
+            } catch {
+                setPassphraseErrorText(INCORRECT_PASSPHRASE);
+                return false;
+            }
+        }
+
+        setModalAction(null);
+        setPendingWallet(null);
+        setPendingMnemonic("");
+        setUploadAction(null);
+        setPassphraseErrorText("");
+        keymasterRef.current = instance;
+        setRefreshFlag(r => r + 1);
+        setIsReady(true);
+        await chrome.runtime.sendMessage({
+            action: "STORE_PASSPHRASE",
+            passphrase,
+        });
+
+        return true;
+    };
+
+    async function rebuildKeymaster(passphrase: string) {
+        const walletEnc = new WalletWebEncrypted(walletChrome, passphrase);
+        const walletCached = new WalletCache(walletEnc);
+        return await buildKeymaster(walletCached, passphrase);
+    }
+
+    async function handlePassphraseSubmit(passphrase: string) {
+        setPassphraseErrorText("");
+
+        const walletMemory = new WalletJsonMemory();
+
+        if (uploadAction && pendingWallet) {
+            if (modalAction === 'decrypt') {
+                await walletMemory.saveWallet(pendingWallet as StoredWallet, true);
+
+                try {
+                    if (uploadAction === 'upload-enc-v0') {
+                        const walletEnc = new WalletWebEncrypted(walletMemory, passphrase);
+                        // check pass & remove encyption wrapper
+                        const decrypted = await walletEnc.loadWallet();
+                        await walletChrome.saveWallet(decrypted, true);
+                    } else { // upload-enc-v1 & upload-plain-v1
+                        const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+                        // check pass
+                        await km.loadWallet();
+                        await walletChrome.saveWallet(pendingWallet as StoredWallet, true);
+                    }
+                } catch {
+                    setPassphraseErrorText(INCORRECT_PASSPHRASE);
+                    return;
+                }
+            } else { // upload-plain-v0
+                await walletChrome.saveWallet(pendingWallet as StoredWallet, true);
+            }
+        } else if (!pendingMnemonic) {
+            const wallet = await walletChrome.loadWallet();
+            if (isEncryptedWallet(wallet)) {
+                try {
+                    const walletEnc = new WalletWebEncrypted(walletChrome, passphrase);
+                    // check pass & remove encyption wrapper
+                    const decrypted = await walletEnc.loadWallet();
+                    await walletChrome.saveWallet(decrypted, true);
+                } catch {
+                    setPassphraseErrorText(INCORRECT_PASSPHRASE);
+                    return;
+                }
+            }
+        }
+
+        await rebuildKeymaster(passphrase);
+        setIsFirstRun(false);
+    }
+
+    async function handlePassphraseClose() {
+        setPendingWallet(null);
+        setPendingMnemonic("");
+        setPassphraseErrorText("");
+
+        const walletData = await walletChrome.loadWallet();
+        if (walletData) {
+            setModalAction(null);
+        }
+    }
 
     async function storeState(key: string, value: string | boolean) {
         if (isBrowser) {
@@ -89,12 +238,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             value,
         });
     }
-
-    useEffect(() => {
-        if (walletAction) {
-            setPassphraseErrorText("");
-        }
-    }, [walletAction]);
 
     function resetWalletState() {
         setCurrentIdState("");
@@ -117,47 +260,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
-    function needsPassphraseToUnlock(wallet: any): boolean {
-        if (!wallet) {
-            return false;
-        }
-        if (isEncryptedWallet(wallet)) {
-            return true;
-        }
-        return !!(wallet.version === 1 && wallet.seed?.mnemonicEnc);
-    }
-
-    async function initialiseWallet() {
-        const { gatekeeperUrl, searchServerUrl } = await chrome.storage.sync.get([
-            "gatekeeperUrl",
-            "searchServerUrl"
-        ]);
-        await gatekeeper.connect({ url: gatekeeperUrl });
-        search = await SearchClient.create({ url: searchServerUrl });
-
-        const wallet = new WalletChrome();
-        const walletData = await wallet.loadWallet();
-
-        let response = await chrome.runtime.sendMessage({
-            action: "GET_PASSPHRASE",
-        });
-        const pass = response?.passphrase || "";
-
-        if (pass) {
-            let res = await initWithPassphrase(pass, "unlock");
-            if (res) {
-                return;
-            }
-            await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        }
-
-        if (needsPassphraseToUnlock(walletData)) {
-            setWalletAction("decrypt");
-        } else {
-            setWalletAction("encrypt");
-        }
-    }
-
     async function reloadBrowserWallet() {
         if (!isBrowser) {
             return;
@@ -171,80 +273,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             return;
         }
 
-        await initWithPassphrase(pass, "unlock");
-    }
-
-    useEffect(() => {
-        const initWallet = async () => {
-            await initialiseWallet();
-        }
-
-        initWallet();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    async function initWithPassphrase(passphrase: string, intent: InitIntent) {
-        try {
-            if (intent === "unlock") {
-                const keymaster = await makeKeymaster(passphrase);
-
-                // loadWallet will upgrade to v1
-                await keymaster.loadWallet();
-
-                keymasterRef.current = keymaster;
-            } else if (intent === "setup") {
-                const walletChromePlain = new WalletChrome();
-                const kmPlain = new Keymaster({
-                    gatekeeper,
-                    wallet: walletChromePlain,
-                    cipher,
-                    search,
-                    passphrase,
-                });
-
-                // loadWallet will upgrade to v1
-                await kmPlain.loadWallet();
-
-                const walletCache = new WalletCache(walletChromePlain);
-
-                keymasterRef.current = new Keymaster({
-                    gatekeeper,
-                    wallet: walletCache,
-                    cipher,
-                    search,
-                    passphrase,
-                });
-            } else if (intent === "restore") {
-                const keymaster = await makeKeymaster(passphrase);
-                await keymaster.newWallet(pendingMnemonic, true);
-                await keymaster.recoverWallet();
-                await keymaster.loadWallet();
-                keymasterRef.current = keymaster;
-                await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
-                setPendingMnemonic("");
-            }
-
-            await chrome.runtime.sendMessage({ action: "STORE_PASSPHRASE", passphrase });
-
-            setIsReady(true);
-            setWalletAction("");
-            setPassphraseErrorText("");
-            setRefreshFlag(r => r + 1);
-            return true;
-        } catch {
-            setPassphraseErrorText(
-                intent === "unlock" ? "Incorrect passphrase" : "Failed to set/encrypt wallet"
-            );
-            return false;
-        }
-    }
-
-    async function handlePassphraseSubmit(passphrase: string) {
-        const intent: InitIntent =
-            walletAction === "decrypt" ? "unlock" :
-                walletAction === "restore" ? "restore" : "setup";
-
-        await initWithPassphrase(passphrase, intent);
+        await rebuildKeymaster(pass);
     }
 
     async function resolveDID() {
@@ -262,18 +291,24 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
-    async function makeKeymaster(passphrase: string) {
-        const walletChrome = new WalletChrome();
-        const walletEnc = new WalletWebEncrypted(walletChrome, passphrase);
-        const walletCache = new WalletCache(walletEnc);
+    async function handleWalletUploadFile(uploaded: unknown) {
+        setPendingWallet(uploaded);
 
-        return new Keymaster({
-            gatekeeper,
-            wallet: walletCache,
-            cipher,
-            search,
-            passphrase,
-        });
+        if (isLegacyV0(uploaded)) {
+            setUploadAction('upload-plain-v0');
+            setModalAction('set-passphrase');
+        } else if (isV1Decrypted(uploaded)) {
+            setUploadAction('upload-plain-v1');
+            setModalAction('decrypt');
+        } else if (isV1WithEnc(uploaded)) {
+            setUploadAction('upload-enc-v1');
+            setModalAction('decrypt');
+        } else if (isEncryptedWallet(uploaded)) {
+            setUploadAction('upload-enc-v0');
+            setModalAction('decrypt');
+        } else {
+            window.alert('Unsupported wallet type');
+        }
     }
 
     const value: WalletContextValue = {
@@ -295,10 +330,11 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         setManifest,
         pendingMnemonic,
         setPendingMnemonic,
-        walletAction,
-        setWalletAction,
+        pendingWallet,
+        setPendingWallet,
         resolveDID,
         initialiseWallet,
+        handleWalletUploadFile,
         storeState,
         resetWalletState,
         refreshWalletStored,
@@ -311,17 +347,16 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     return (
         <>
             <PassphraseModal
-                isOpen={walletAction !== ""}
+                isOpen={modalAction !== null}
                 title={
-                    walletAction === "decrypt"
-                        ? "Enter Your Wallet Passphrase"
-                        : walletAction === "restore"
-                            ? "Set a New Passphrase"
-                            : "Set Your Wallet Passphrase"
+                    isFirstRun || modalAction === 'set-passphrase'
+                        ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'
                 }
                 errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
-                encrypt={walletAction !== "decrypt"}
+                onClose={handlePassphraseClose}
+                encrypt={isFirstRun || modalAction === 'set-passphrase'}
+                showCancel={pendingWallet !== null}
             />
 
             {isReady && (

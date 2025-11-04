@@ -22,6 +22,7 @@ import { useAuthContext } from "./AuthContext";
 import { useCredentialsContext } from "./CredentialsProvider";
 import { useMessageContext} from "./MessageContext";
 import { useThemeContext } from "./ContextProviders";
+import WalletChrome from "@mdip/keymaster/wallet/chrome";
 
 export enum RefreshMode {
     NONE = 'NONE',
@@ -143,6 +144,8 @@ export function UIProvider(
         updateThemeFromStorage,
     } = useThemeContext();
 
+    const walletChrome = new WalletChrome();
+
     function arraysEqual(a: string[], b: string[]): boolean {
         return a.length === b.length && a.every((v, i) => v === b[i]);
     }
@@ -212,6 +215,10 @@ export function UIProvider(
         }
 
         const refresh = async () => {
+            const data = await walletChrome.loadWallet();
+            if (!data) {
+                return;
+            }
             try {
                 await keymaster.refreshNotices();
                 await refreshPoll();

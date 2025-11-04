@@ -15,7 +15,9 @@ interface PassphraseModalProps {
     title: string,
     errorText: string,
     onSubmit: (passphrase: string) => void,
+    onClose?: () => void,
     encrypt: boolean,
+    showCancel?: boolean,
 }
 
 const PassphraseModal: React.FC<PassphraseModalProps> = (
@@ -24,25 +26,33 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         title,
         errorText,
         onSubmit,
-        encrypt
+        onClose,
+        encrypt,
+        showCancel = false
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
     const combinedError = localError || errorText || "";
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
     function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         onSubmit(passphrase);
-        handleClose();
+        setPassphrase("");
+        setConfirmPassphrase("");
     }
 
     const handleClose = () => {
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
+        if (onClose) {
+            onClose();
+        }
     };
 
     function checkPassphraseMismatch(newPass: string, newConfirm: string) {
@@ -120,6 +130,15 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                 </form>
             </DialogContent>
             <DialogActions>
+                {showCancel && (
+                    <Button
+                        onClick={handleClose}
+                        variant="contained"
+                        color="secondary"
+                    >
+                        Cancel
+                    </Button>
+                )}
                 <Button
                     type="submit"
                     form="passphrase-form"

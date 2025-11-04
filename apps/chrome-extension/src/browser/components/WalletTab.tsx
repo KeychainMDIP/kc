@@ -1,5 +1,4 @@
-import React, {useState} from "react";
-import WalletChrome from "@mdip/keymaster/wallet/chrome";
+import React, { useState } from "react";
 import {
     Box,
     Button,
@@ -8,11 +7,10 @@ import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import WarningModal from "../../shared/WarningModal";
 import MnemonicModal from "./MnemonicModal";
-import { StoredWallet } from '@mdip/keymaster/types';
+import WalletChrome from "@mdip/keymaster/wallet/chrome";
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
-    const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
@@ -22,14 +20,15 @@ const WalletTab = () => {
     const {
         keymaster,
         initialiseWallet,
+        handleWalletUploadFile,
         pendingMnemonic,
         setPendingMnemonic,
-        setWalletAction,
+        pendingWallet,
+        setPendingWallet,
     } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
 
     const handleClickOpen = () => {
-        setPendingWallet(null);
         setOpen(true);
     };
 
@@ -45,36 +44,12 @@ const WalletTab = () => {
         setCheckResultMessage("");
     };
 
-    async function wipeStoredValues() {
-        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
-        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        setMnemonicString("");
+    async function createNewWallet() {
+        const chromeWallet = new WalletChrome();
+        await chrome.storage.local.remove([chromeWallet.walletName]);
+        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE"});
+        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE"});
         await initialiseWallet();
-    }
-
-    async function wipeAndClose() {
-        const wallet_chrome = new WalletChrome();
-        await chrome.storage.local.remove([wallet_chrome.walletName]);
-        await wipeStoredValues();
-    }
-
-    async function uploadWallet(wallet: StoredWallet) {
-        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
-
-        const wallet_chrome = new WalletChrome();
-        await chrome.storage.local.remove([wallet_chrome.walletName]);
-        await wallet_chrome.saveWallet(wallet, true);
-
-        setMnemonicString("");
-        await initialiseWallet();
-    }
-
-    async function restoreFromMnemonic() {
-        setWalletAction("restore");
-        await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
-        await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
-        setMnemonicString("");
     }
 
     async function checkWallet() {
@@ -114,8 +89,6 @@ const WalletTab = () => {
             setSuccess(
                 `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
             );
-            await initialiseWallet();
-            setMnemonicString("");
         } catch (error: any) {
             setError(error);
         }
@@ -126,7 +99,7 @@ const WalletTab = () => {
             return;
         }
         await keymaster.recoverWallet();
-        setMnemonicString("");
+        await initialiseWallet();
     }
 
     const handleConfirm = async () => {
@@ -134,18 +107,17 @@ const WalletTab = () => {
             if (pendingRecover) {
                 await recoverWallet();
             } else if (pendingMnemonic) {
-                await restoreFromMnemonic();
+                await initialiseWallet();
             } else if (pendingWallet) {
-                await uploadWallet(pendingWallet);
+                await handleWalletUploadFile(pendingWallet);
             } else {
-                await wipeAndClose();
+                await createNewWallet();
             }
         } catch (error: any) {
             setError(error);
         }
 
         setOpen(false);
-        setPendingWallet(null);
         setPendingRecover(false);
     };
 
@@ -172,36 +144,19 @@ const WalletTab = () => {
 
         fileInput.onchange = async (event: any) => {
             const file = event.target.files?.[0];
-            if (!file) return;
+            if (!file) {
+                return;
+            }
 
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const contents = e.target?.result as string;
-                    const json = JSON.parse(contents);
+            const text = await file.text();
 
-                    const isEncryptedBlob = typeof json?.salt === "string" && typeof json?.iv === "string" && typeof json?.data === "string";
-                    const isV1Plain = json?.version === 1 && json?.seed && typeof json.seed?.mnemonicEnc?.data === "string";
-                    const isV0Plain = !json?.version && json?.seed?.mnemonic && json?.seed?.hdkey?.xpub && json?.seed?.hdkey?.xpriv;
-
-                    if (!isEncryptedBlob && !isV1Plain && !isV0Plain) {
-                        setError("Unsupported wallet file. Upload an encrypted blob, a v1 wallet, or a legacy v0 wallet.");
-                        return;
-                    }
-
-                    setPendingMnemonic("");
-                    setPendingRecover(false);
-                    setPendingWallet(json);
-                    setOpen(true);
-                } catch (err) {
-                    setError("Invalid JSON file.");
-                }
-            };
-            reader.onerror = () => {
-                setError("Could not read the wallet file.");
-            };
-
-            reader.readAsText(file);
+            try {
+                const wallet = JSON.parse(text);
+                setPendingWallet(wallet);
+                setOpen(true);
+            } catch (err) {
+                setError("Invalid JSON file.");
+            }
         };
 
         fileInput.click();
@@ -240,7 +195,6 @@ const WalletTab = () => {
     function handleMnemonicSubmit(mnemonic: string) {
         setShowMnemonicModal(false);
         setPendingMnemonic(mnemonic);
-        setPendingWallet(null);
         setOpen(true);
     }
 
@@ -284,6 +238,7 @@ const WalletTab = () => {
                 onSubmit={handleMnemonicSubmit}
                 onClose={handleMnemonicModalClose}
             />
+
 
             <Box className="flex-box" sx={{ gap: 2 }}>
                 <Button
@@ -371,9 +326,20 @@ const WalletTab = () => {
                     Upload
                 </Button>
             </Box>
-            <Box>
-                <pre>{mnemonicString}</pre>
-            </Box>
+
+            {mnemonicString && (
+                <Box
+                    component="pre"
+                    sx={{
+                        m: 0,
+                        px: 2,
+                        whiteSpace: "pre-wrap",
+                        fontFamily: "inherit",
+                    }}
+                >
+                    {mnemonicString}
+                </Box>
+            )}
         </Box>
     );
 };
