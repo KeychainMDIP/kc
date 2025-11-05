@@ -28,7 +28,6 @@ function App() {
     const [passphraseErrorText, setPassphraseErrorText] = useState(null);
     const [keymaster, setKeymaster] = useState(null);
     const [kmEpoch, setKmEpoch] = useState(0);
-    const [isFirstRun, setIsFirstRun] = useState(false);
     const [uploadAction, setUploadAction] = useState(null);
     const [pendingWallet, setPendingWallet] = useState(null);
     const [searchParams] = useSearchParams();
@@ -39,8 +38,7 @@ function App() {
             const walletWeb = new WalletWeb();
             const walletData = await walletWeb.loadWallet();
 
-            if (!walletData) {
-                setIsFirstRun(true);
+            if (!walletData || isLegacyV0(walletData)) {
                 setModalAction('set-passphrase');
             } else {
                 setModalAction('decrypt');
@@ -67,7 +65,6 @@ function App() {
         setKeymaster(instance);
         setKmEpoch((e) => e + 1);
         setIsReady(true);
-        setIsFirstRun(false);
     };
 
     async function rebuildKeymaster(passphrase) {
@@ -154,13 +151,13 @@ function App() {
             <PassphraseModal
                 isOpen={modalAction !== null}
                 title={
-                    isFirstRun || modalAction === 'set-passphrase'
+                    modalAction === 'set-passphrase'
                         ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'
                 }
                 errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
                 onClose={handleModalClose}
-                encrypt={isFirstRun || modalAction === 'set-passphrase'}
+                encrypt={modalAction === 'set-passphrase'}
                 showCancel={pendingWallet !== null}
             />
 

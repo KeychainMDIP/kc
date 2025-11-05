@@ -87,7 +87,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-plain-v1" | "upload-enc-v0" | "upload-enc-v1">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
     const [refreshFlag, setRefreshFlag] = useState<number>(0);
-    const [isFirstRun, setIsFirstRun] = useState<boolean>(false);
     const { setError } = useSnackbar();
 
     const keymasterRef = useRef<Keymaster | null>(null);
@@ -116,8 +115,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             clearSessionPassphrase();
         }
 
-        if (!walletData || pendingMnemonic) {
-            setIsFirstRun(true);
+        if (!walletData || pendingMnemonic || isLegacyV0(walletData)) {
             // eslint-disable-next-line sonarjs/no-duplicate-string
             setModalAction('set-passphrase');
         } else {
@@ -213,7 +211,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
 
         await rebuildKeymaster(passphrase);
-        setIsFirstRun(false);
     }
 
     async function handlePassphraseClose() {
@@ -339,13 +336,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             <PassphraseModal
                 isOpen={modalAction !== null}
                 title={
-                    isFirstRun || modalAction === 'set-passphrase'
+                    modalAction === 'set-passphrase'
                         ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'
                 }
                 errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
                 onClose={handlePassphraseClose}
-                encrypt={isFirstRun || modalAction === 'set-passphrase'}
+                encrypt={modalAction === 'set-passphrase'}
                 showCancel={pendingWallet !== null}
             />
 
