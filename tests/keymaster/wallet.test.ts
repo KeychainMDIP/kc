@@ -161,7 +161,7 @@ describe('loadWallet', () => {
         }
     });
 
-    it('should throw exception on encrypted wallet', async () => {
+    it('should throw exception on invalid encrypted wallet', async () => {
         const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
         await wallet.saveWallet(mockWallet);
 
@@ -169,8 +169,26 @@ describe('loadWallet', () => {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Keymaster: Wallet is encrypted');
+            expect(error.message).toBe('Keymaster: loadWallet: Unsupported wallet version');
         }
+    });
+
+    it('should convert encrypted v0 wallet', async () => {
+        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
+        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
+        await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
+
+        const res = await keymaster.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                    hdkey: expect.any(Object),
+                }),
+            })
+        );
     });
 
     it('should upgrade a v0 unencrypted to v1', async () => {

@@ -51,7 +51,8 @@ import {
 import {
     isV1WithEnc,
     isV1Decrypted,
-    isLegacyV0
+    isLegacyV0,
+    isEncryptedWallet
 } from './db/typeGuards.js';
 import {
     Cipher,
@@ -230,6 +231,13 @@ export default class Keymaster implements KeymasterInterface {
         } else if (isLegacyV0(wallet)) {
             const upgraded = await this.convertLegacyToV1Inline(wallet);
             toStore = await this.encryptWalletForStorage(upgraded);
+        } else if (isEncryptedWallet(wallet)) {
+            await this.db.saveWallet(wallet, overwrite);
+            const converted = await this.db.loadWallet();
+            if (!isLegacyV0(converted)) {
+                throw new KeymasterError("saveWallet: Unsupported wallet version");
+            }
+            return this.saveWallet(converted, overwrite);
         } else {
             throw new KeymasterError("saveWallet: Unsupported wallet version");
         }
