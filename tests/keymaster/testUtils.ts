@@ -1,49 +1,15 @@
-
-if (typeof globalThis.atob === 'undefined') {
-    (globalThis as any).atob = (b64: string) => Buffer.from(b64, 'base64').toString('binary');
-}
-
-if (typeof globalThis.btoa === 'undefined') {
-    (globalThis as any).btoa = (bin: string) => Buffer.from(bin, 'binary').toString('base64');
-}
-
 type CryptoLike = typeof globalThis.crypto | undefined;
 
 export function disableSubtle(): () => void {
     const originalDesc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-    const originalCrypto: CryptoLike = (originalDesc?.value ?? (globalThis as any).crypto) as any;
+    const originalCrypto: CryptoLike = originalDesc?.value;
 
-    const mockCrypto: any = originalCrypto ? { ...originalCrypto } : undefined;
-    if (mockCrypto && 'subtle' in mockCrypto) {
-        delete mockCrypto.subtle;
-    }
+    const mockCrypto: any = { ...originalCrypto };
 
-    try {
-        Object.defineProperty(globalThis, 'crypto', { value: mockCrypto, configurable: true });
-        return () => {
-            if (originalDesc) {
-                Object.defineProperty(globalThis, 'crypto', originalDesc);
-            } else {
-                delete (globalThis as any).crypto;
-            }
-        };
-    } catch {
-        const target = (globalThis as any).crypto;
-        const desc = Object.getOwnPropertyDescriptor(target, 'subtle');
-        if (desc?.configurable) {
-            Object.defineProperty(target, 'subtle', { value: undefined, configurable: true });
-            return () => {
-                Object.defineProperty(target, 'subtle', desc);
-            };
-        }
-        const old = target?.subtle;
-        (globalThis as any).crypto && ((globalThis as any).crypto.subtle = undefined);
-        return () => {
-            if ((globalThis as any).crypto) {
-                (globalThis as any).crypto.subtle = old;
-            }
-        };
-    }
+    Object.defineProperty(globalThis, 'crypto', { value: mockCrypto, configurable: true });
+    return () => {
+        Object.defineProperty(globalThis, 'crypto', originalDesc!);
+    };
 }
 
 export async function restoreNodeWebcrypto(): Promise<() => void> {
@@ -56,10 +22,6 @@ export async function restoreNodeWebcrypto(): Promise<() => void> {
     });
 
     return () => {
-        if (origDesc) {
-            Object.defineProperty(globalThis, 'crypto', origDesc);
-        } else {
-            delete (globalThis as any).crypto;
-        }
+        Object.defineProperty(globalThis, 'crypto', origDesc!);
     };
 }
