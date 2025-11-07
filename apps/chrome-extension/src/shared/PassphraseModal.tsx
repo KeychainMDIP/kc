@@ -8,6 +8,7 @@ import {
     Button,
     Typography,
     Box,
+    CircularProgress,
 } from "@mui/material";
 
 interface PassphraseModalProps {
@@ -33,20 +34,35 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
     const combinedError = localError || errorText || "";
 
     if (!isOpen) {
         return null;
     }
 
-    function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        onSubmit(passphrase);
-        setPassphrase("");
-        setConfirmPassphrase("");
+        if (submitting) {
+            return;
+        }
+
+        setSubmitting(true);
+        await new Promise(requestAnimationFrame);
+
+        try {
+            onSubmit(passphrase);
+            setPassphrase("");
+            setConfirmPassphrase("");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     const handleClose = () => {
+        if (submitting) {
+            return;
+        }
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
@@ -83,10 +99,19 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     }
 
     const isSubmitDisabled = () => {
-        if (!passphrase) return true;
+        if (submitting) {
+            return true;
+        }
+        if (!passphrase) {
+            return true;
+        }
         if (encrypt) {
-            if (!confirmPassphrase) return true;
-            if (passphrase !== confirmPassphrase) return true;
+            if (!confirmPassphrase) {
+                return true;
+            }
+            if (passphrase !== confirmPassphrase) {
+                return true;
+            }
         }
         return false;
     };
@@ -111,6 +136,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         fullWidth
                         variant="outlined"
                         margin="dense"
+                        disabled={submitting}
                     />
 
                     {encrypt && (
@@ -125,6 +151,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                             fullWidth
                             variant="outlined"
                             margin="dense"
+                            disabled={submitting}
                         />
                     )}
                 </form>
@@ -135,6 +162,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         onClick={handleClose}
                         variant="contained"
                         color="secondary"
+                        disabled={submitting}
                     >
                         Cancel
                     </Button>
@@ -145,8 +173,9 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                     variant="contained"
                     color="primary"
                     disabled={isSubmitDisabled()}
+                    startIcon={submitting ? <CircularProgress size={18} /> : null}
                 >
-                    Submit
+                    {submitting ? "Working" : "Submit"}
                 </Button>
             </DialogActions>
         </Dialog>

@@ -8,6 +8,7 @@ import {
     Button,
     Typography,
     Box,
+    CircularProgress,
 } from "@mui/material";
 
 const PassphraseModal = (
@@ -23,22 +24,41 @@ const PassphraseModal = (
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
     const combinedError = localError || errorText || "";
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
-        onSubmit(passphrase);
-        setPassphrase("");
-        setConfirmPassphrase("");
+        if (submitting) {
+            return;
+        }
+
+        setSubmitting(true);
+        await new Promise(requestAnimationFrame);
+
+        try {
+            await onSubmit(passphrase);
+            setPassphrase("");
+            setConfirmPassphrase("");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     const handleClose = () => {
+        if (submitting) {
+            return;
+        }
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
-        onClose();
+        if (onClose) {
+            onClose();
+        }
     };
 
     function checkPassphraseMismatch(newPass, newConfirm) {
@@ -69,10 +89,19 @@ const PassphraseModal = (
     }
 
     const isSubmitDisabled = () => {
-        if (!passphrase) return true;
+        if (submitting) {
+            return true;
+        }
+        if (!passphrase) {
+            return true;
+        }
         if (encrypt) {
-            if (!confirmPassphrase) return true;
-            if (passphrase !== confirmPassphrase) return true;
+            if (!confirmPassphrase) {
+                return true;
+            }
+            if (passphrase !== confirmPassphrase) {
+                return true;
+            }
         }
         return false;
     };
@@ -97,6 +126,7 @@ const PassphraseModal = (
                         fullWidth
                         variant="outlined"
                         margin="dense"
+                        disabled={submitting}
                     />
 
                     {encrypt && (
@@ -111,6 +141,7 @@ const PassphraseModal = (
                             fullWidth
                             variant="outlined"
                             margin="dense"
+                            disabled={submitting}
                         />
                     )}
                 </form>
@@ -121,6 +152,7 @@ const PassphraseModal = (
                         onClick={handleClose}
                         variant="contained"
                         color="secondary"
+                        disabled={submitting}
                     >
                         Cancel
                     </Button>
@@ -131,8 +163,9 @@ const PassphraseModal = (
                     variant="contained"
                     color="primary"
                     disabled={isSubmitDisabled()}
+                    startIcon={submitting ? <CircularProgress size={18} /> : null}
                 >
-                    Submit
+                    {submitting ? "Working" : "Submit"}
                 </Button>
             </DialogActions>
         </Dialog>

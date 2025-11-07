@@ -3567,6 +3567,55 @@ export default class Keymaster implements KeymasterInterface {
         } catch { }
     }
 
+    private hasSubtle = () =>
+        typeof globalThis !== 'undefined' &&
+        !!(globalThis.crypto && globalThis.crypto.subtle);
+
+    private hasRand = () =>
+        typeof globalThis !== 'undefined' &&
+        (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function');
+
+    private u8ToStr(u8: Uint8Array): string {
+        let s = '';
+        for (let i = 0; i < u8.length; i++) {
+            s += String.fromCharCode(u8[i]);
+        }
+        return s;
+    }
+
+    private strToU8(s: string): Uint8Array {
+        const u8 = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i++) {
+            u8[i] = s.charCodeAt(i) & 0xff;
+        }
+        return u8;
+    }
+
+    private concatU8(a: Uint8Array, b: Uint8Array): Uint8Array {
+        const out = new Uint8Array(a.length + b.length);
+        out.set(a, 0);
+        out.set(b, a.length);
+        return out;
+    }
+
+    private async randBytes(len: number): Promise<Uint8Array> {
+        if (this.hasRand()) {
+            const u8 = new Uint8Array(len);
+            crypto.getRandomValues(u8);
+            return u8;
+        }
+        const mod = await import('node-forge');
+        const forge = (mod as any).default ?? mod;
+        const bytes = forge.random.getBytesSync(len);
+        return this.strToU8(bytes);
+    }
+
+    private async pbkdf2Sha512Fallback(pass: string, salt: Uint8Array, dkLen: number, iter: number): Promise<string /* raw-bytes */> {
+        const mod = await import('node-forge');
+        const forge = (mod as any).default ?? mod;
+        return forge.pkcs5.pbkdf2(pass, this.u8ToStr(salt), iter, dkLen, 'sha512');
+    }
+
     private b64(buf: Uint8Array) { return Buffer.from(buf).toString('base64'); }
     private ub64(b64: string) { return new Uint8Array(Buffer.from(b64, 'base64')); }
 
@@ -3580,6 +3629,11 @@ export default class Keymaster implements KeymasterInterface {
             false,
             ['encrypt', 'decrypt']
         );
+    }
+
+    private async deriveKeyRaw(pass: string, salt: Uint8Array): Promise<Uint8Array> {
+        const keyRawBytes = await this.pbkdf2Sha512Fallback(pass, salt, 32, Keymaster.ENC_ITER);
+        return this.strToU8(keyRawBytes);
     }
 
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
@@ -3642,18 +3696,62 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async encMnemonic(mnemonic: string, pass: string) {
-        const salt = crypto.getRandomValues(new Uint8Array(Keymaster.SALT_LEN));
-        const iv = crypto.getRandomValues(new Uint8Array(Keymaster.IV_LEN));
-        const key = await this.deriveKey(pass, salt);
-        const ct = await crypto.subtle.encrypt({ name: Keymaster.ENC_ALG, iv }, key, new TextEncoder().encode(mnemonic));
-        return { salt: this.b64(salt), iv: this.b64(iv), data: this.b64(new Uint8Array(ct)) };
+        const salt = await this.randBytes(Keymaster.SALT_LEN);
+        const iv = await this.randBytes(Keymaster.IV_LEN);
+
+        if (this.hasSubtle()) {
+            const key = await this.deriveKey(pass, salt);
+            const ct = await crypto.subtle.encrypt({ name: Keymaster.ENC_ALG, iv }, key, new TextEncoder().encode(mnemonic));
+            return { salt: this.b64(salt), iv: this.b64(iv), data: this.b64(new Uint8Array(ct)) };
+        }
+
+        const mod = await import('node-forge');
+        const forge = (mod as any).default ?? mod;
+
+        const keyRaw = await this.deriveKeyRaw(pass, salt);
+        const keyStr = this.u8ToStr(keyRaw);
+        const ivStr  = this.u8ToStr(iv);
+
+        const cipher = forge.cipher.createCipher('AES-GCM', keyStr);
+        cipher.start({ iv: ivStr, tagLength: 128 });
+        cipher.update(forge.util.createBuffer(mnemonic, 'utf8'));
+        cipher.finish();
+
+        const ct  = this.strToU8(cipher.output.getBytes());
+        const tag = this.strToU8(cipher.mode.tag.getBytes());
+        const packed = this.concatU8(ct, tag);
+
+        return { salt: this.b64(salt), iv: this.b64(iv), data: this.b64(packed) };
     }
 
     private async decMnemonic(blob: { salt: string; iv: string; data: string }, pass: string) {
         const salt = this.ub64(blob.salt);
         const iv = this.ub64(blob.iv);
-        const key = await this.deriveKey(pass, salt);
-        const pt = await crypto.subtle.decrypt({ name: Keymaster.ENC_ALG, iv }, key, this.ub64(blob.data));
-        return new TextDecoder().decode(pt);
+        const data = this.ub64(blob.data);
+
+        if (this.hasSubtle()) {
+            const key = await this.deriveKey(pass, salt);
+            const pt = await crypto.subtle.decrypt({ name: Keymaster.ENC_ALG, iv }, key, data);
+            return new TextDecoder().decode(pt);
+        }
+
+        const mod = await import('node-forge');
+        const forge = (mod as any).default ?? mod;
+
+        const keyRaw = await this.deriveKeyRaw(pass, salt);
+        const keyStr = this.u8ToStr(keyRaw);
+        const ivStr  = this.u8ToStr(iv);
+
+        const TAG_LEN = 16;
+        const ct  = data.slice(0, data.length - TAG_LEN);
+        const tag = data.slice(data.length - TAG_LEN);
+
+        const decipher = forge.cipher.createDecipher('AES-GCM', keyStr);
+        decipher.start({ iv: ivStr, tagLength: 128, tag: this.u8ToStr(tag) });
+        decipher.update(forge.util.createBuffer(this.u8ToStr(ct)));
+        decipher.finish();
+
+        const outBytes = this.strToU8(decipher.output.getBytes());
+        return new TextDecoder().decode(outBytes);
     }
 }

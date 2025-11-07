@@ -14,6 +14,7 @@ import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import { TestHelper } from './helper.ts';
+import { disableSubtle, restoreNodeWebcrypto } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -169,7 +170,7 @@ describe('loadWallet', () => {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Keymaster: loadWallet: Unsupported wallet version');
+            expect(error.message).toBe('Keymaster: Wallet is encrypted');
         }
     });
 
@@ -757,28 +758,96 @@ describe('fixWallet', () => {
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
     });
+});
 
-    describe('WalletEncrypted passthrough for unencrypted data', () => {
-        it('returns the plain wallet when base wallet is not encrypted', async () => {
-            const base = new WalletJsonMemory();
-            const plain: WalletFile = { seed: {} as Seed, counter: 42, ids: {}, names: { foo: 'did:test:abc' } };
-            await base.saveWallet(plain, true);
-            const wrapped = new WalletEncrypted(base, PASSPHRASE);
-            const loaded = await wrapped.loadWallet();
+describe('WalletEncrypted', () => {
+    it('returns the plain wallet when base wallet is not encrypted', async () => {
+        const base = new WalletJsonMemory();
+        const plain: WalletFile = { seed: {} as Seed, counter: 42, ids: {}, names: { foo: 'did:test:abc' } };
+        await base.saveWallet(plain, true);
+        const wrapped = new WalletEncrypted(base, PASSPHRASE);
+        const loaded = await wrapped.loadWallet();
 
-            expect(loaded).toStrictEqual(plain);
-        });
+        expect(loaded).toStrictEqual(plain);
+    });
+});
+
+describe('updateWallet', () => {
+    it('should throw when no wallet has been created', async () => {
+        const test = new WalletJsonMemory();
+        try {
+            await test.updateWallet(() => {});
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('updateWallet: no wallet found to update');
+        }
+    });
+});
+
+describe('fallback (no WebCrypto subtle)', () => {
+    let restore: () => void;
+
+    beforeAll(async () => {
+        restore = disableSubtle();
     });
 
-    describe('updateWallet', () => {
-        it('should throw when no wallet has been created', async () => {
-            const test = new WalletJsonMemory();
-            try {
-                await test.updateWallet(() => {});
-                throw new ExpectedExceptionError();
-            } catch (error: any) {
-                expect(error.message).toBe('updateWallet: no wallet found to update');
-            }
-        });
+    afterAll(async () => {
+        restore();
+    });
+
+    beforeEach(() => {
+        const db = new DbJsonMemory('test');
+        gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
+        wallet = new WalletJsonMemory();
+        cipher = new CipherNode();
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+    });
+
+    it('Keymaster: can create and decrypt mnemonic via fallback', async () => {
+        const walletFile = await keymaster.loadWallet();
+        expect(walletFile.seed?.mnemonicEnc).toBeTruthy();
+
+        const mnemonic = await keymaster.decryptMnemonic();
+        expect(mnemonic.split(' ').length).toBe(12);
+    });
+
+    it('WalletEncrypted: decrypts v0 encrypted wallet via fallback', async () => {
+        await wallet.saveWallet(MOCK_WALLET_V0_ENCRYPTED, true);
+
+        const wrapped = new WalletEncrypted(wallet, PASSPHRASE);
+        const loaded = await wrapped.loadWallet();
+        expect(loaded).toEqual(
+            expect.objectContaining({
+                counter: 0,
+                seed: expect.objectContaining({
+                    mnemonic: expect.any(String),
+                    hdkey: expect.any(Object),
+                }),
+                ids: {}
+            })
+        );
+    });
+
+    it('mnemonic encrypted under fallback decrypts under WebCrypto', async () => {
+        await keymaster.newWallet();
+        const res = await wallet.loadWallet();
+        expect(res).toEqual(
+            expect.objectContaining({
+                version: 1,
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object)
+                }),
+                enc: expect.any(String)
+            })
+        );
+
+        const doRestore2 = await restoreNodeWebcrypto();
+
+        try {
+            const mnemonic = await keymaster.decryptMnemonic();
+            expect(mnemonic.split(' ').length).toBe(12);
+        } finally {
+            doRestore2();
+        }
     });
 });
