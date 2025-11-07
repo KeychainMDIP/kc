@@ -5,6 +5,9 @@ import path from 'node:path';
 export default defineConfig({
     base: './',
     plugins: [react()],
+    server: {
+        host: true,
+    },
     resolve: {
         alias: {
             "@mdip/cipher/web": path.resolve(__dirname, "../../packages/cipher/dist/esm/cipher-web.js"),
