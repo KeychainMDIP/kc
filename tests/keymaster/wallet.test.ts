@@ -562,6 +562,35 @@ describe('recoverWallet', () => {
         expect(wallet).toStrictEqual(recovered);
     });
 
+    it('should recover over existing wallet', async () => {
+        await keymaster.createId('Bob');
+        await keymaster.loadWallet();
+        await keymaster.backupWallet();
+        await keymaster.createId('Alice');
+
+        // Recover over existing wallet
+        const recovered = await keymaster.recoverWallet();
+
+        expect(recovered).toEqual(
+            expect.objectContaining({
+                version: 1,
+                counter: 1,
+                current: "Bob",
+                seed: expect.objectContaining({
+                    mnemonicEnc: expect.any(Object),
+                    hdkey: expect.any(Object),
+                }),
+                ids: expect.objectContaining({
+                    Bob: expect.objectContaining({
+                        account: 0,
+                        did: expect.any(String),
+                        index: 0
+                    }),
+                })
+            })
+        );
+    });
+
     it('should recover augmented wallet from seed bank', async () => {
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
