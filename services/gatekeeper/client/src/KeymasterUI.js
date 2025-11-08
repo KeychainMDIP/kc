@@ -1655,7 +1655,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function backupWallet() {
         try {
             await keymaster.backupWallet();
-            showError('Wallet backup successful')
+            showSuccess('Wallet backup successful')
 
         } catch (error) {
             showError(error);
