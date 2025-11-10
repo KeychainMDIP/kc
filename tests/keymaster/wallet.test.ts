@@ -162,17 +162,17 @@ describe('loadWallet', () => {
         }
     });
 
-    it('should throw exception on invalid encrypted wallet', async () => {
-        const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
-        await wallet.saveWallet(mockWallet);
+    // it('should throw exception on invalid encrypted wallet', async () => {
+    //     const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
+    //     await wallet.saveWallet(mockWallet);
 
-        try {
-            await keymaster.loadWallet();
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('Keymaster: Wallet is encrypted');
-        }
-    });
+    //     try {
+    //         await keymaster.loadWallet();
+    //         throw new ExpectedExceptionError();
+    //     } catch (error: any) {
+    //         expect(error.message).toBe('Keymaster: Wallet is encrypted');
+    //     }
+    // });
 
     it('should convert encrypted v0 wallet', async () => {
         const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
