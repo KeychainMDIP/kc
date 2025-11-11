@@ -65,6 +65,7 @@ module.exports = {
             "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/typeGuards.js"),
             "@mdip/keymaster/types": path.resolve(__dirname, "../../packages/keymaster/dist/types/types.d.js"),
             "@mdip/keymaster/search": path.resolve(__dirname, "../../packages/keymaster/dist/esm/search-client.js"),
+            "@mdip/keymaster/encryption": path.resolve(__dirname, "../../packages/keymaster/dist/esm/encryption.js"),
             "@mdip/keymaster": path.resolve(__dirname, "../../packages/keymaster/dist/esm/keymaster.js"),
         },
         fallback: {
@@ -76,11 +77,7 @@ module.exports = {
         path: path.resolve("dist"),
     },
     optimization: {
-        splitChunks: {
-            chunks(chunk) {
-                return chunk.name !== 'contentScript' && chunk.name !== 'background'
-            }
-        }
+        splitChunks: false
     }
 }
 

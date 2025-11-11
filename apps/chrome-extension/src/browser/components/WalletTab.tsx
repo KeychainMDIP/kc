@@ -6,7 +6,7 @@ import {
 import { useWalletContext } from "../../shared/contexts/WalletProvider";
 import { useSnackbar } from "../../shared/contexts/SnackbarProvider";
 import WarningModal from "../../shared/WarningModal";
-import MnemonicModal from "./MnemonicModal";
+import MnemonicModal from "../../shared/MnemonicModal";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
 
 const WalletTab = () => {
