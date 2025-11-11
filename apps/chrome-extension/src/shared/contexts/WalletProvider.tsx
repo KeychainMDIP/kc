@@ -20,6 +20,9 @@ import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
 import { useSnackbar } from "./SnackbarProvider";
 import PassphraseModal from "../PassphraseModal";
+import WarningModal from "../WarningModal";
+import MnemonicModal from "../MnemonicModal";
+import { encMnemonic } from '@mdip/keymaster/encryption';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 
 const gatekeeper = new GatekeeperClient();
@@ -79,6 +82,12 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
     const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-plain-v1" | "upload-enc-v0" | "upload-enc-v1">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
+    const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+    const [showResetSetup, setShowResetSetup] = useState<boolean>(false);
+    const [showRecoverMnemonic, setShowRecoverMnemonic] = useState(false);
+    const [mnemonicErrorText, setMnemonicErrorText] = useState("");
+    const [recoveredMnemonic, setRecoveredMnemonic] = useState("");
+    const [showRecoverSetup, setShowRecoverSetup] = useState(false);
     const [refreshFlag, setRefreshFlag] = useState<number>(0);
     const { setError } = useSnackbar();
 
@@ -310,6 +319,100 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         }
     }
 
+    function handleStartReset() {
+        setPassphraseErrorText("");
+        setShowResetConfirm(true);
+    }
+
+    function handleStartRecover() {
+        setMnemonicErrorText("");
+        setShowRecoverMnemonic(true);
+        setPassphraseErrorText("");
+
+        // only nullify modalAction if we are uploading a wallet, otherwise
+        // leave passphrase modal open in case the user cancels
+        if (uploadAction !== null) {
+            setModalAction(null);
+        }
+    }
+
+    function handleConfirmReset() {
+        setShowResetConfirm(false);
+        setShowResetSetup(true);
+    }
+
+    function handleCancelReset() {
+        setShowResetConfirm(false);
+    }
+
+    async function handleResetPassphraseSubmit(newPassphrase: string) {
+        try {
+            const walletWeb = new WalletChrome();
+            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
+            await km.newWallet(undefined, true);
+            setShowResetSetup(false);
+            await rebuildKeymaster(newPassphrase);
+        } catch {
+            setPassphraseErrorText('Failed to reset wallet. Try again.');
+        }
+    }
+
+    async function handleRecoverMnemonicSubmit(mnemonic: string) {
+        setMnemonicErrorText("");
+        try {
+            const walletWeb = new WalletChrome();
+            let stored = pendingWallet && isV1WithEnc(pendingWallet)
+                ? pendingWallet
+                : await walletWeb.loadWallet();
+
+            if (!isV1WithEnc(stored)) {
+                setMnemonicErrorText('Recovery not available for this wallet type.');
+                return;
+            }
+
+            const hdkey = cipher.generateHDKey(mnemonic);
+            const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey!);
+            cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
+
+            setRecoveredMnemonic(mnemonic);
+            setShowRecoverMnemonic(false);
+            setShowRecoverSetup(true);
+        } catch {
+            setMnemonicErrorText('Mnemonic is incorrect. Try again.');
+        }
+    }
+
+    async function handleRecoverPassphraseSubmit(newPassphrase: string) {
+        if (!recoveredMnemonic) {
+            return;
+        }
+        try {
+            const walletWeb = new WalletChrome();
+            const base = pendingWallet && isV1WithEnc(pendingWallet)
+                ? pendingWallet
+                : await walletWeb.loadWallet();
+
+            if (!isV1WithEnc(base)) {
+                setPassphraseErrorText('Recovery not available for this wallet type.');
+                return;
+            }
+
+            const mnemonicEnc = await encMnemonic(recoveredMnemonic, newPassphrase);
+            const updated = {
+                version: base.version,
+                seed: { mnemonicEnc },
+                enc: base.enc
+            };
+
+            await walletWeb.saveWallet(updated, true);
+            setRecoveredMnemonic("");
+            setShowRecoverSetup(false);
+            await rebuildKeymaster(newPassphrase);
+        } catch {
+            setPassphraseErrorText('Failed to update passphrase. Try again.');
+        }
+    }
+
     const value: WalletContextValue = {
         currentId,
         setCurrentId,
@@ -346,16 +449,57 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     return (
         <>
             <PassphraseModal
-                isOpen={modalAction !== null}
-                title={
-                    modalAction === 'set-passphrase'
-                        ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'
-                }
+                isOpen={modalAction !== null && !showResetSetup && !showRecoverSetup}
+                title={modalAction === 'set-passphrase'
+                    ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'}
                 errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
                 onClose={handlePassphraseClose}
                 encrypt={modalAction === 'set-passphrase'}
                 showCancel={pendingWallet !== null}
+                upload={uploadAction !== null}
+                onStartReset={handleStartReset}
+                onStartRecover={
+                    modalAction === 'decrypt' &&
+                    (uploadAction === null || uploadAction === 'upload-enc-v1')
+                        ? handleStartRecover
+                        : undefined
+                }
+            />
+
+            <MnemonicModal
+                isOpen={showRecoverMnemonic}
+                errorText={mnemonicErrorText}
+                onSubmit={handleRecoverMnemonicSubmit}
+                onClose={() => setShowRecoverMnemonic(false)}
+            />
+
+            <WarningModal
+                isOpen={showResetConfirm}
+                title="Overwrite wallet with a new one?"
+                warningText="This will delete your current wallet data in this browser and create a brand new one."
+                onSubmit={handleConfirmReset}
+                onClose={handleCancelReset}
+            />
+
+            <PassphraseModal
+                isOpen={showResetSetup}
+                title="Set a Passphrase"
+                errorText={passphraseErrorText}
+                onSubmit={handleResetPassphraseSubmit}
+                onClose={() => setShowResetSetup(false)}
+                encrypt={true}
+                showCancel={true}
+            />
+
+            <PassphraseModal
+                isOpen={showRecoverSetup}
+                title="Set a New Passphrase"
+                errorText={passphraseErrorText}
+                onSubmit={handleRecoverPassphraseSubmit}
+                onClose={() => setShowRecoverSetup(false)}
+                encrypt={true}
+                showCancel={true}
             />
 
             {isReady && (

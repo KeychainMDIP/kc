@@ -34,17 +34,7 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
     };
 
     return (
-        <Dialog
-            open={isOpen}
-            onClose={handleClose}
-            maxWidth="lg"
-            fullWidth
-            sx={{
-                '& .MuiDialog-paper': {
-                    borderRadius: 0
-                }
-            }}
-        >
+        <Dialog open={isOpen} onClose={handleClose}>
             <DialogTitle>Import Mnemonic</DialogTitle>
             <DialogContent>
                 <DialogContentText>

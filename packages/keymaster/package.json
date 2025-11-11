@@ -35,6 +35,11 @@
       "require": "./dist/cjs/search-client.cjs",
       "types": "./dist/types/search-client.d.ts"
     },
+    "./encryption": {
+      "import": "./dist/esm/encryption.js",
+      "require": "./dist/cjs/encryption.cjs",
+      "types": "./dist/types/encryption.d.ts"
+    },
     "./wallet/json": {
       "import": "./dist/esm/db/json.js",
       "require": "./dist/cjs/db/json.cjs",
@@ -106,6 +111,9 @@
       ],
       "search": [
         "./dist/types/search-client.d.ts"
+      ],
+      "encryption": [
+        "./dist/types/encryption.d.ts"
       ],
       "wallet/json": [
         "./dist/types/db/json.d.ts"

@@ -61,6 +61,7 @@ import {
     EcdsaJwkPublic,
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
+import { decMnemonic, encMnemonic } from "./encryption.js";
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -103,13 +104,6 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
-
-    private static readonly ENC_ALG = 'AES-GCM';
-    private static readonly ENC_KDF = 'PBKDF2';
-    private static readonly ENC_HASH = 'SHA-512';
-    private static readonly ENC_ITER = 100_000;
-    private static readonly IV_LEN = 12;
-    private static readonly SALT_LEN = 16;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -264,7 +258,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('mnemonic');
         }
 
-        const mnemonicEnc = await this.encMnemonic(mnemonic, this.passphrase);
+        const mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
         const wallet: WalletFile = {
             version: 1,
             seed: { mnemonicEnc },
@@ -286,7 +280,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async getMnemonicForDerivation(wallet: WalletFile): Promise<string> {
-        return this.decMnemonic(wallet.seed.mnemonicEnc!, this.passphrase!);
+        return decMnemonic(wallet.seed.mnemonicEnc!, this.passphrase!);
     }
 
     async checkWallet(): Promise<CheckWalletResult> {
@@ -3570,75 +3564,6 @@ export default class Keymaster implements KeymasterInterface {
         } catch { }
     }
 
-    private hasSubtle = () =>
-        typeof globalThis !== 'undefined' &&
-        !!(globalThis.crypto && globalThis.crypto.subtle);
-
-    private hasRand = () =>
-        typeof globalThis !== 'undefined' &&
-        (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function');
-
-    private u8ToStr(u8: Uint8Array): string {
-        let s = '';
-        for (let i = 0; i < u8.length; i++) {
-            s += String.fromCharCode(u8[i]);
-        }
-        return s;
-    }
-
-    private strToU8(s: string): Uint8Array {
-        const u8 = new Uint8Array(s.length);
-        for (let i = 0; i < s.length; i++) {
-            u8[i] = s.charCodeAt(i) & 0xff;
-        }
-        return u8;
-    }
-
-    private concatU8(a: Uint8Array, b: Uint8Array): Uint8Array {
-        const out = new Uint8Array(a.length + b.length);
-        out.set(a, 0);
-        out.set(b, a.length);
-        return out;
-    }
-
-    private async randBytes(len: number): Promise<Uint8Array> {
-        if (this.hasRand()) {
-            const u8 = new Uint8Array(len);
-            crypto.getRandomValues(u8);
-            return u8;
-        }
-        const mod = await import('node-forge');
-        const forge = (mod as any).default ?? mod;
-        const bytes = forge.random.getBytesSync(len);
-        return this.strToU8(bytes);
-    }
-
-    private async pbkdf2Sha512Fallback(pass: string, salt: Uint8Array, dkLen: number, iter: number): Promise<string /* raw-bytes */> {
-        const mod = await import('node-forge');
-        const forge = (mod as any).default ?? mod;
-        return forge.pkcs5.pbkdf2(pass, this.u8ToStr(salt), iter, dkLen, 'sha512');
-    }
-
-    private b64(buf: Uint8Array) { return Buffer.from(buf).toString('base64'); }
-    private ub64(b64: string) { return new Uint8Array(Buffer.from(b64, 'base64')); }
-
-    private async deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
-        const enc = new TextEncoder();
-        const passKey = await crypto.subtle.importKey('raw', enc.encode(pass), { name: Keymaster.ENC_KDF }, false, ['deriveKey']);
-        return crypto.subtle.deriveKey(
-            { name: Keymaster.ENC_KDF, salt, iterations: Keymaster.ENC_ITER, hash: Keymaster.ENC_HASH },
-            passKey,
-            { name: Keymaster.ENC_ALG, length: 256 },
-            false,
-            ['encrypt', 'decrypt']
-        );
-    }
-
-    private async deriveKeyRaw(pass: string, salt: Uint8Array): Promise<Uint8Array> {
-        const keyRawBytes = await this.pbkdf2Sha512Fallback(pass, salt, 32, Keymaster.ENC_ITER);
-        return this.strToU8(keyRawBytes);
-    }
-
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
         const maybe = wallet.seed?.hdkey;
         if (maybe) {
@@ -3665,7 +3590,7 @@ export default class Keymaster implements KeymasterInterface {
     private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
         let mnemonic: string;
         try {
-            mnemonic = await this.decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
+            mnemonic = await decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
         } catch {
             throw new KeymasterError('Incorrect passphrase.');
         }
@@ -3693,68 +3618,9 @@ export default class Keymaster implements KeymasterInterface {
         const hdkey = this.cipher.generateHDKeyJSON(legacy.seed.hdkey!);
         const keypair = this.cipher.generateJwk(hdkey.privateKey!);
         const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, legacy.seed.mnemonic!);
-        const mnemonicEnc = await this.encMnemonic(plaintext, this.passphrase);
+        const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
         const { seed: _legacySeed, version: _legacyVersion, ...rest } = legacy;
         return { version: 1, seed: { mnemonicEnc }, ...rest };
     }
 
-    private async encMnemonic(mnemonic: string, pass: string) {
-        const salt = await this.randBytes(Keymaster.SALT_LEN);
-        const iv = await this.randBytes(Keymaster.IV_LEN);
-
-        if (this.hasSubtle()) {
-            const key = await this.deriveKey(pass, salt);
-            const ct = await crypto.subtle.encrypt({ name: Keymaster.ENC_ALG, iv }, key, new TextEncoder().encode(mnemonic));
-            return { salt: this.b64(salt), iv: this.b64(iv), data: this.b64(new Uint8Array(ct)) };
-        }
-
-        const mod = await import('node-forge');
-        const forge = (mod as any).default ?? mod;
-
-        const keyRaw = await this.deriveKeyRaw(pass, salt);
-        const keyStr = this.u8ToStr(keyRaw);
-        const ivStr  = this.u8ToStr(iv);
-
-        const cipher = forge.cipher.createCipher('AES-GCM', keyStr);
-        cipher.start({ iv: ivStr, tagLength: 128 });
-        cipher.update(forge.util.createBuffer(mnemonic, 'utf8'));
-        cipher.finish();
-
-        const ct  = this.strToU8(cipher.output.getBytes());
-        const tag = this.strToU8(cipher.mode.tag.getBytes());
-        const packed = this.concatU8(ct, tag);
-
-        return { salt: this.b64(salt), iv: this.b64(iv), data: this.b64(packed) };
-    }
-
-    private async decMnemonic(blob: { salt: string; iv: string; data: string }, pass: string) {
-        const salt = this.ub64(blob.salt);
-        const iv = this.ub64(blob.iv);
-        const data = this.ub64(blob.data);
-
-        if (this.hasSubtle()) {
-            const key = await this.deriveKey(pass, salt);
-            const pt = await crypto.subtle.decrypt({ name: Keymaster.ENC_ALG, iv }, key, data);
-            return new TextDecoder().decode(pt);
-        }
-
-        const mod = await import('node-forge');
-        const forge = (mod as any).default ?? mod;
-
-        const keyRaw = await this.deriveKeyRaw(pass, salt);
-        const keyStr = this.u8ToStr(keyRaw);
-        const ivStr  = this.u8ToStr(iv);
-
-        const TAG_LEN = 16;
-        const ct  = data.slice(0, data.length - TAG_LEN);
-        const tag = data.slice(data.length - TAG_LEN);
-
-        const decipher = forge.cipher.createDecipher('AES-GCM', keyStr);
-        decipher.start({ iv: ivStr, tagLength: 128, tag: this.u8ToStr(tag) });
-        decipher.update(forge.util.createBuffer(this.u8ToStr(ct)));
-        decipher.finish();
-
-        const outBytes = this.strToU8(decipher.output.getBytes());
-        return new TextDecoder().decode(outBytes);
-    }
 }

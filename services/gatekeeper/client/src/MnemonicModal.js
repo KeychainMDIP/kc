@@ -9,19 +9,13 @@ import {
     TextField,
 } from "@mui/material";
 
-interface MnemonicModalProps {
-    isOpen: boolean;
-    onSubmit: (mnemonic: string) => void;
-    onClose: () => void;
-}
-
-const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose }) => {
-    const [mnemonic, setMnemonic] = useState<string>("");
+const MnemonicModal = ({ isOpen, onSubmit, onClose, errorText }) => {
+    const [mnemonic, setMnemonic] = useState("");
 
     const words = mnemonic.trim().split(/\s+/).filter(Boolean);
     const canConfirm = words.length === 12;
 
-    const handleSubmit = (event: MouseEvent<HTMLButtonElement>) => {
+    const handleSubmit = (event) => {
         event.preventDefault();
         onSubmit(mnemonic);
         setMnemonic("");
@@ -49,6 +43,8 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
                     value={mnemonic}
                     onChange={(e) => setMnemonic(e.target.value)}
                     placeholder="word1 word2 word3... (12 words total)"
+                    error={!!errorText}
+                    helperText={errorText || " "}
                 />
             </DialogContent>
             <DialogActions>

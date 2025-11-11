@@ -19,6 +19,9 @@ interface PassphraseModalProps {
     onClose?: () => void,
     encrypt: boolean,
     showCancel?: boolean,
+    upload?: boolean,
+    onStartReset?: () => void,
+    onStartRecover?: () => void,
 }
 
 const PassphraseModal: React.FC<PassphraseModalProps> = (
@@ -29,7 +32,10 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         onSubmit,
         onClose,
         encrypt,
-        showCancel = false
+        showCancel = false,
+        upload = false,
+        onStartReset,
+        onStartRecover
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
@@ -156,27 +162,44 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                     )}
                 </form>
             </DialogContent>
-            <DialogActions>
-                {showCancel && (
-                    <Button
-                        onClick={handleClose}
-                        variant="contained"
-                        color="secondary"
-                        disabled={submitting}
-                    >
-                        Cancel
-                    </Button>
-                )}
-                <Button
-                    type="submit"
-                    form="passphrase-form"
-                    variant="contained"
-                    color="primary"
-                    disabled={isSubmitDisabled()}
-                    startIcon={submitting ? <CircularProgress size={18} /> : null}
-                >
-                    {submitting ? "Working" : "Submit"}
-                </Button>
+
+            <DialogActions sx={{ display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {!encrypt && !upload && onStartReset && (
+                            <Button onClick={onStartReset} variant="text" color="secondary" size="small">
+                                Reset
+                            </Button>
+                        )}
+                        {!encrypt && onStartRecover && (
+                            <Button onClick={onStartRecover} variant="text" color="secondary" size="small">
+                                Recover
+                            </Button>
+                        )}
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {showCancel && (
+                            <Button
+                                onClick={handleClose}
+                                variant="contained"
+                                color="secondary"
+                                disabled={submitting}
+                            >
+                                Cancel
+                            </Button>
+                        )}
+                        <Button
+                            type="submit"
+                            form="passphrase-form"
+                            variant="contained"
+                            color="primary"
+                            disabled={isSubmitDisabled()}
+                            startIcon={submitting ? <CircularProgress size={18} /> : null}
+                        >
+                            {submitting ? "Working" : "Submit"}
+                        </Button>
+                    </Box>
+                </Box>
             </DialogActions>
         </Dialog>
     );
