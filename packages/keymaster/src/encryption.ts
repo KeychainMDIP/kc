@@ -6,6 +6,18 @@ const ENC_ITER = 100_000;
 const IV_LEN = 12;
 const SALT_LEN = 16;
 
+let forgeInstance: any = null;
+
+async function getForge() {
+    if (forgeInstance) {
+        return forgeInstance;
+    }
+
+    const mod = await import('node-forge');
+    forgeInstance = mod.default ?? mod;
+    return forgeInstance;
+}
+
 export async function encMnemonic(mnemonic: string, pass: string) {
     const salt = await randBytes(SALT_LEN);
     const iv = await randBytes(IV_LEN);
@@ -16,8 +28,7 @@ export async function encMnemonic(mnemonic: string, pass: string) {
         return { salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ct)) };
     }
 
-    const mod = await import('node-forge');
-    const forge = (mod as any).default ?? mod;
+    const forge = await getForge();
 
     const keyRaw = await deriveKeyRaw(pass, salt);
     const keyStr = u8ToStr(keyRaw);
@@ -46,8 +57,7 @@ export async function decMnemonic(blob: { salt: string; iv: string; data: string
         return new TextDecoder().decode(pt);
     }
 
-    const mod = await import('node-forge');
-    const forge = (mod as any).default ?? mod;
+    const forge = await getForge();
 
     const keyRaw = await deriveKeyRaw(pass, salt);
     const keyStr = u8ToStr(keyRaw);
@@ -95,15 +105,13 @@ async function randBytes(len: number): Promise<Uint8Array> {
         crypto.getRandomValues(u8);
         return u8;
     }
-    const mod = await import('node-forge');
-    const forge = (mod as any).default ?? mod;
+    const forge = await getForge();
     const bytes = forge.random.getBytesSync(len);
     return strToU8(bytes);
 }
 
 async function pbkdf2Sha512Fallback(pass: string, salt: Uint8Array, dkLen: number, iter: number): Promise<string /* raw-bytes */> {
-    const mod = await import('node-forge');
-    const forge = (mod as any).default ?? mod;
+    const forge = await getForge();
     return forge.pkcs5.pbkdf2(pass, u8ToStr(salt), iter, dkLen, 'sha512');
 }
 
