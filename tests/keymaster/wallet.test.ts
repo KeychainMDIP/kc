@@ -250,7 +250,7 @@ describe('loadWallet', () => {
             await keymaster.loadWallet();
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Keymaster: Incorrect passphrase.');
+            expect(error.message).toBe('Keymaster: Unsupported wallet version.');
         }
     });
 });
