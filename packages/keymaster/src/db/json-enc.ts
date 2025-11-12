@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { StoredWallet, WalletBase } from '../types.js';
 import { AbstractBase } from './abstract-base.js';
-import { isEncryptedWallet } from './typeGuards.js';
+import { isWalletEncryptedV0 } from './typeGuards.js';
 
 const algorithm = 'aes-256-gcm';      // Algorithm
 const keyLength = 32;                 // 256 bit AES-256
@@ -29,7 +29,7 @@ export default class WalletEncrypted extends AbstractBase {
             return null;
         }
 
-        if (!isEncryptedWallet(encryptedData)) {
+        if (!isWalletEncryptedV0(encryptedData)) {
             return encryptedData;
         }
 
