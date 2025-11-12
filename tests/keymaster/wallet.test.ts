@@ -2,7 +2,7 @@ import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import { WalletEncFile } from '@mdip/keymaster/types';
 import {
-    EncryptedWalletV0,
+    EncryptedWallet,
     Seed,
     WalletFile,
 } from '@mdip/keymaster/types';
@@ -152,7 +152,7 @@ describe('loadWallet', () => {
     });
 
     it('should throw exception saving an encrypted wallet', async () => {
-        const mockWallet: EncryptedWalletV0 = { salt: "", iv: "", data: "" };
+        const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
 
         try {
             await keymaster.saveWallet(mockWallet);
@@ -161,6 +161,18 @@ describe('loadWallet', () => {
             expect(error.message).toBe('Keymaster: saveWallet: Unsupported wallet version');
         }
     });
+
+    // it('should throw exception on invalid encrypted wallet', async () => {
+    //     const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
+    //     await wallet.saveWallet(mockWallet);
+
+    //     try {
+    //         await keymaster.loadWallet();
+    //         throw new ExpectedExceptionError();
+    //     } catch (error: any) {
+    //         expect(error.message).toBe('Keymaster: Wallet is encrypted');
+    //     }
+    // });
 
     it('should convert encrypted v0 wallet', async () => {
         const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
@@ -793,7 +805,7 @@ describe('updateWallet', () => {
     it('should throw when no wallet has been created', async () => {
         const test = new WalletJsonMemory();
         try {
-            await test.updateWallet(() => { });
+            await test.updateWallet(() => {});
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('updateWallet: no wallet found to update');

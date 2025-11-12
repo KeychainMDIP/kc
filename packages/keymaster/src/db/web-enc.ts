@@ -1,6 +1,6 @@
 import { StoredWallet, WalletBase } from '../types.js';
 import { AbstractBase } from './abstract-base.js';
-import { isWalletEncryptedV0 } from './typeGuards.js';
+import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'AES-GCM';
 const kdf = 'PBKDF2';
@@ -92,7 +92,7 @@ export default class WalletWebEncrypted extends AbstractBase {
             return null;
         }
 
-        if (!isWalletEncryptedV0(encryptedData)) {
+        if (!isEncryptedWallet(encryptedData)) {
             return encryptedData;
         }
 
@@ -125,10 +125,10 @@ export default class WalletWebEncrypted extends AbstractBase {
 
         const keyRaw = await deriveKeyRaw(this.passphrase, salt); // 32 bytes
         const keyStr = u8ToStr(keyRaw);
-        const ivStr = u8ToStr(iv);
+        const ivStr  = u8ToStr(iv);
 
         const TAG_LEN = 16;
-        const ct = dataU8.subarray(0, dataU8.length - TAG_LEN);
+        const ct  = dataU8.subarray(0, dataU8.length - TAG_LEN);
         const tag = dataU8.subarray(dataU8.length - TAG_LEN);
 
         const decipher = forge.cipher.createDecipher('AES-GCM', keyStr);

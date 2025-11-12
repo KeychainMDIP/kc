@@ -5,7 +5,7 @@ import {
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 
-export interface EncryptedWalletV0 {
+export interface EncryptedWallet {
     salt: string;
     iv: string;
     data: string;
@@ -225,7 +225,7 @@ export interface GroupVaultLogin {
     password: string;
 }
 
-export type StoredWallet = EncryptedWalletV0 | WalletFile | WalletEncFile | null;
+export type StoredWallet = EncryptedWallet | WalletFile | WalletEncFile | null;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
