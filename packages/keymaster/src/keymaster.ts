@@ -3591,7 +3591,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         if (wallet.version !== 1) {
-            throw new KeymasterError("Unsupported wallet version");
+            throw new KeymasterError("Unsupported wallet version.");
         }
 
         return wallet;

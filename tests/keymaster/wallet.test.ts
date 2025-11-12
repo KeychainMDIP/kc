@@ -153,7 +153,7 @@ describe('loadWallet', () => {
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         } catch (error: any) {
-            expect(error.message).toBe('Keymaster: Unsupported wallet version');
+            expect(error.message).toBe('Keymaster: Unsupported wallet version.');
         }
     });
 
