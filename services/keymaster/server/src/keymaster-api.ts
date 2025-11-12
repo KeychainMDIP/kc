@@ -110,12 +110,6 @@ v1router.get('/registries', async (req, res) => {
  * /wallet:
  *   get:
  *     summary: Retrieve the current wallet.
- *     parameters:
- *       - in: query
- *         name: includeKeys
- *         schema:
- *           type: boolean
- *         description: If true, includes the HD keys (xpriv and xpub) in the response. Defaults to true.
  *     responses:
  *       200:
  *         description: The wallet object.
@@ -174,8 +168,7 @@ v1router.get('/registries', async (req, res) => {
  */
 v1router.get('/wallet', async (req, res) => {
     try {
-        const includeKeys = req.query.includeKeys !== 'false';
-        const wallet = await keymaster.loadWallet(includeKeys);
+        const wallet = await keymaster.loadWallet();
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

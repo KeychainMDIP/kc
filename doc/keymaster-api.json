@@ -87,16 +87,6 @@
     "/wallet": {
       "get": {
         "summary": "Retrieve the current wallet.",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "includeKeys",
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "If true, includes the HD keys (xpriv and xpub) in the response. Defaults to true."
-          }
-        ],
         "responses": {
           "200": {
             "description": "The wallet object.",

@@ -104,6 +104,7 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
+    private _hdkeyCache?: any;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -164,17 +165,8 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async loadWallet(includeKeys = true): Promise<WalletFile> {
+    async loadWallet(): Promise<WalletFile> {
         if (this._walletCache) {
-            if (!includeKeys) {
-                const { version, seed, ...restOfWallet } = this._walletCache;
-                const { hdkey, ...restOfSeed } = seed;
-                return {
-                    version,
-                    seed: restOfSeed,
-                    ...restOfWallet
-                };
-            }
             return this._walletCache;
         }
 
@@ -187,12 +179,8 @@ export default class Keymaster implements KeymasterInterface {
         let upgraded: WalletFile = await this.upgradeWallet(stored);
         let wallet: WalletFile = await this.decryptWallet(upgraded);
 
-        if (isV1Decrypted(wallet)) {
-            await this.saveWallet(wallet, true);
-            return this.loadWallet(includeKeys);
-        } else {
-            throw new KeymasterError("loadWallet: Unsupported wallet version");
-        }
+        await this.saveWallet(wallet, true);
+        return this.loadWallet();
     }
 
     async saveWallet(
@@ -216,10 +204,9 @@ export default class Keymaster implements KeymasterInterface {
         try {
             if (!mnemonic) {
                 mnemonic = this.cipher.generateMnemonic();
-            } else {
-                // Validate mnemonic
-                this.cipher.generateHDKey(mnemonic);
             }
+
+            this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
         } catch (error) {
             throw new InvalidParameterError('mnemonic');
         }
@@ -232,13 +219,14 @@ export default class Keymaster implements KeymasterInterface {
             ids: {}
         };
 
+        this._walletCache = wallet;
+
         const ok = await this.saveWallet(wallet, overwrite)
         if (!ok) {
             throw new KeymasterError('save wallet failed');
         }
 
-        //return this.loadWallet();
-        return wallet;
+        return this.loadWallet();
     }
 
     async decryptMnemonic(): Promise<string> {
@@ -3530,10 +3518,10 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
-        const maybe = wallet.seed?.hdkey;
-        if (maybe) {
-            return this.cipher.generateHDKeyJSON(maybe);
+        if (this._hdkeyCache) {
+            return this._hdkeyCache;
         }
+        
         const mnemonic = await this.getMnemonicForDerivation(wallet);
         return this.cipher.generateHDKey(mnemonic);
     }
@@ -3560,22 +3548,13 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('Incorrect passphrase.');
         }
 
-        const hdkey = this.cipher.generateHDKey(mnemonic);
-        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
+        this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
+        const { publicJwk, privateJwk } = this.cipher.generateJwk(this._hdkeyCache.privateKey!);
 
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
         const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
-
-        const keyJson = hdkey.toJSON();
-        const xpriv = keyJson.xpriv;
-        const xpub = keyJson.xpub;
-
-        if (xpriv && xpub) {
-            wallet.seed.hdkey = { xpriv, xpub };
-        }
-
         return wallet;
     }
 
