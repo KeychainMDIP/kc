@@ -164,18 +164,33 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async upgradeWallet(wallet: WalletFile): Promise<WalletFile> {
+    async upgradeWallet(wallet: any): Promise<any> {
         if (isLegacyV0(wallet)) {
-            const converted = await this.convertLegacyToV1Inline(wallet);
-            await this.saveWallet(converted, true);
+            return this.convertLegacyToV1Inline(wallet);
+        }
+
+        if (isEncryptedWallet(wallet)) {
+            await this.db.saveWallet(wallet, true);
+            const converted = await this.db.loadWallet();
+            if (!isLegacyV0(converted)) {
+                throw new KeymasterError("saveWallet: Unsupported wallet version");
+            }
             return converted;
         }
+
         return wallet;
     }
 
     async decryptWallet(wallet: WalletFile): Promise<WalletFile> {
         if (isV1WithEnc(wallet)) {
             return this.decryptWalletFromStorage(wallet);
+        }
+        return wallet;
+    }
+
+    async encryptWallet(wallet: WalletFile): Promise<WalletEncFile> {
+        if (isV1Decrypted(wallet)) {
+            return this.encryptWalletForStorage(wallet);
         }
         return wallet;
     }
@@ -215,25 +230,8 @@ export default class Keymaster implements KeymasterInterface {
         wallet: StoredWallet,
         overwrite = true
     ): Promise<boolean> {
-        let toStore: WalletEncFile;
-
-        if (isV1WithEnc(wallet)) {
-            toStore = wallet;
-        } else if (isV1Decrypted(wallet)) {
-            toStore = await this.encryptWalletForStorage(wallet);
-        } else if (isLegacyV0(wallet)) {
-            const upgraded = await this.convertLegacyToV1Inline(wallet);
-            toStore = await this.encryptWalletForStorage(upgraded);
-        } else if (isEncryptedWallet(wallet)) {
-            await this.db.saveWallet(wallet, overwrite);
-            const converted = await this.db.loadWallet();
-            if (!isLegacyV0(converted)) {
-                throw new KeymasterError("saveWallet: Unsupported wallet version");
-            }
-            return this.saveWallet(converted, overwrite);
-        } else {
-            throw new KeymasterError("saveWallet: Unsupported wallet version");
-        }
+        let upgraded: WalletFile = await this.upgradeWallet(wallet);
+        let toStore: WalletEncFile = await this.encryptWallet(upgraded);
 
         const ok = await this.db.saveWallet(toStore, overwrite);
         if (ok) {
