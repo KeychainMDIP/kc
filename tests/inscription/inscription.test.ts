@@ -88,12 +88,13 @@ function parseFeeFromReveal(
     return { fee, vsize, reveal, commit };
 }
 
-function smallOps(n = 3): Operation[] {
-    return Array.from({ length: n }, (_) => ({
+function smallOps(n = 3) {
+    const ops = Array.from({ length: n }, (_) => ({
         type: "create",
         created: new Date().toISOString(),
         mdip: { version: 1, type: "asset", registry: "mockRegistry" },
     }));
+    return Buffer.from(JSON.stringify(ops), 'utf8');
 }
 
 export function largeOps(leaves: number): Operation[] {
@@ -282,8 +283,10 @@ describe('Inscription createTransactions', () => {
             },
         ];
 
+        const payload = Buffer.from(JSON.stringify(largeOps(2)), 'utf8');
+
         const { commitHex, revealHex } = await lib.createTransactions(
-            largeOps(2),
+            payload,
             hdp(86, 0, 0),
             utxos,
             2,
@@ -319,8 +322,10 @@ describe('Inscription createTransactions', () => {
             batches.push(...largeOps(1));
         }
 
+        const payload = Buffer.from(JSON.stringify(batches), 'utf8');
+
         const { batch, commitHex, revealHex } = await lib.createTransactions(
-            batches,
+            payload,
             hdp(86, 0, 0),
             utxos,
             1,
@@ -630,8 +635,11 @@ describe('Inscription bumpTransactionFee', () => {
         const utxos: FundInput[] = [
             { type: 'p2tr', txid: makeTxid(9100), vout: 0, amount: 150_000, hdkeypath: hdp(86, 0, 11) },
         ];
+
+        const payload = Buffer.from(JSON.stringify(largeOps(2)), 'utf8');
+
         const { revealHex } = await (lib as Inscription).createTransactions(
-            largeOps(2),
+            payload,
             hdp(86, 0, 0),
             utxos,
             2,
@@ -862,8 +870,10 @@ describe('feeMax (commit-time enforcement)', () => {
             hdkeypath: hdp(86, 0, 3),
         }];
 
+        const payload = Buffer.from(JSON.stringify(largeOps(nLeaves)), 'utf8');
+
         await expect(
-            lib.createTransactions(largeOps(nLeaves), hdp(86, 0, 0), utxos, est, keys)
+            lib.createTransactions(payload, hdp(86, 0, 0), utxos, est, keys)
         ).rejects.toThrow(/Fee above maximum allowed/i);
     });
 });
