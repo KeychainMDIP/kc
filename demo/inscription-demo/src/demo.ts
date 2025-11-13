@@ -261,9 +261,11 @@ async function anchorBatch() {
         return;
     }
 
+    const payload = Buffer.from(JSON.stringify(queue), 'utf8');
+
     try {
         const { commitHex, revealHex, batch } = await inscription.createTransactions(
-            queue,
+            payload,
             TAPROOT_HDKEYPATH,
             utxos,
             estSatPerVByte,
