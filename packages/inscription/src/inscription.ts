@@ -42,30 +42,45 @@ export default class Inscription {
     }
 
     async createTransactions(
-        queue: Operation[],
+        payload: Buffer,
         hdkeypath: string,
         utxos: FundInput[],
         estSatPerVByte: number,
         keys: AccountKeys
     ) {
 
-        const batch: Operation[] = [];
-        for (const op of queue) {
-            const candidate = this.encodePayload([...batch, op]);
-            if (candidate.length > HARD_LIMIT) {
-                break;
+        const ops = this.tryParseOperationArray(payload);
+
+        let includeMdipTag = false;
+        let batch: Operation[] = [];
+        let payloadBuf: Buffer;
+
+        if (ops) {
+            includeMdipTag = true;
+            for (const op of ops) {
+                const candidate = this.encodePayload([...batch, op]);
+                if (candidate.length > HARD_LIMIT) {
+                    break;
+                }
+                batch.push(op);
             }
-            batch.push(op);
+            payloadBuf = this.encodePayload(batch);
+        } else {
+            payloadBuf = payload;
+            if (payloadBuf.length > HARD_LIMIT) {
+                throw new Error(`payload exceeds hard limit of ${HARD_LIMIT} bytes`);
+            }
         }
 
-        const slices = this.splitPayload(this.encodePayload(batch));
+
+        const slices = this.splitPayload(payloadBuf);
 
         const { xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
         const outputMap: Record<string, number> = {};
         const tapScripts: Buffer[] = [];
 
         for (const slice of slices) {
-            const tScript = this.buildInscriptionScript(xonly, slice);
+            const tScript = this.buildInscriptionScript(xonly, slice, includeMdipTag);
             tapScripts.push(tScript);
 
             const p2tr = bitcoin.payments.p2tr({
@@ -503,7 +518,8 @@ export default class Inscription {
 
         const revealTx = bitcoin.Transaction.fromHex(revealHex);
 
-        const tapScripts: Buffer[] = [];
+        const mdipScripts: Buffer[] = [];
+        const anyScripts: Buffer[] = [];
 
         for (const inp of revealTx.ins) {
             const w = inp.witness;
@@ -512,12 +528,13 @@ export default class Inscription {
             }
 
             const tScript = Buffer.from(w[w.length - 2]);
-            if (!tScript.includes(PROTOCOL_TAG)) {
-                continue;
+            anyScripts.push(tScript);
+            if (tScript.includes(PROTOCOL_TAG)) {
+                mdipScripts.push(tScript);
             }
-            tapScripts.push(tScript);
         }
 
+        const tapScripts = mdipScripts.length ? mdipScripts : anyScripts;
         if (tapScripts.length === 0) {
             throw new Error('no Taproot-inscription inputs found in reveal tx');
         }
@@ -539,7 +556,7 @@ export default class Inscription {
         return out;
     }
 
-    private buildInscriptionScript(xonly: Buffer, payload: Buffer): Buffer {
+    private buildInscriptionScript(xonly: Buffer, payload: Buffer, includeMdipTag: boolean): Buffer {
         const { script, opcodes } = bitcoin;
 
         const chunks: Buffer[] = [];
@@ -552,7 +569,7 @@ export default class Inscription {
             opcodes.OP_CHECKSIG,
             opcodes.OP_FALSE,
             opcodes.OP_IF,
-            PROTOCOL_TAG,
+            ...(includeMdipTag ? [PROTOCOL_TAG] : []),
             ...chunks,
             opcodes.OP_ENDIF,
         ]);
@@ -611,5 +628,24 @@ export default class Inscription {
         }
         return rel;
     }
-}
 
+    private tryParseOperationArray(buf: Buffer): Operation[] | null {
+        try {
+            const text = buf.toString('utf8');
+            const val = JSON.parse(text);
+            if (!Array.isArray(val)) {
+                return null;
+            }
+            const ok = val.every(
+                (o) =>
+                    o &&
+                    typeof o === 'object' &&
+                    typeof o.type === 'string' &&
+                    (o.type === 'create' || o.type === 'update' || o.type === 'delete')
+            );
+            return ok ? (val as Operation[]) : null;
+        } catch {
+            return null;
+        }
+    }
+}

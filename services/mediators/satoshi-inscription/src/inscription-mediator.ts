@@ -555,9 +555,10 @@ async function anchorBatch(): Promise<void> {
         const estSatPerVByte = feeResp.feerate ? Math.ceil(feeResp.feerate * 1e5) : config.feeFallback;
         const utxos = await getUnspentOutputs();
         const keys = await getAccountXprvsFromCore();
+        const payload = Buffer.from(JSON.stringify(queue), 'utf8');
 
         const { commitHex, revealHex, batch } = await inscription.createTransactions(
-            queue,
+            payload,
             tapInfo.hdkeypath,
             utxos,
             estSatPerVByte,

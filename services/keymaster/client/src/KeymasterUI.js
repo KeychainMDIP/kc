@@ -75,7 +75,6 @@ import {
     RestoreFromTrash,
     Schema,
     Search,
-    Send,
     Token,
     Unarchive,
 } from "@mui/icons-material";
