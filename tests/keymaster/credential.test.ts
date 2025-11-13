@@ -86,6 +86,7 @@ describe('getCredential', () => {
             await keymaster.getCredential(agentDID);
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
@@ -368,6 +369,35 @@ describe('issueCredential', () => {
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: credential.issuer');
+        }
+    });
+});
+
+describe('sendCredential', () => {
+    it('should create a notice for the credential', async () => {
+        const subject = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const boundCredential = await keymaster.bindCredential(schema, subject);
+        const credentialDID = await keymaster.issueCredential(boundCredential);
+        const noticeDID = await keymaster.sendCredential(credentialDID);
+
+        expect(noticeDID).toBeDefined();
+        const { notice } = await keymaster.resolveAsset(noticeDID!);
+
+        expect(notice).toBeDefined();
+        expect(notice.to).toStrictEqual([subject]);
+        expect(notice.dids).toStrictEqual([credentialDID]);
+    });
+
+    it('should throw an exception on invalid credential', async () => {
+        const bob = await keymaster.createId('Bob');
+
+        try {
+            await keymaster.sendCredential(bob);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
 });

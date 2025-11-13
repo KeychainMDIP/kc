@@ -4,6 +4,7 @@ import { BIP32Factory, BIP32Interface } from 'bip32';
 import { randomBytes } from 'crypto';
 import Inscription from '@mdip/inscription';
 import {Operation} from "@mdip/gatekeeper/types";
+import {ExpectedExceptionError} from "@mdip/common/errors";
 
 bitcoin.initEccLib(ecc);
 
@@ -88,12 +89,17 @@ function parseFeeFromReveal(
     return { fee, vsize, reveal, commit };
 }
 
-function smallOps(n = 3): Operation[] {
-    return Array.from({ length: n }, (_) => ({
-        type: "create",
-        created: new Date().toISOString(),
-        mdip: { version: 1, type: "asset", registry: "mockRegistry" },
-    }));
+function smallOps(n = 3) {
+    const types = ["create", "update", "delete"];
+    const ops = Array.from({ length: n }, (_, i) => {
+        const type = types[i % types.length];
+        return {
+            type,
+            created: new Date().toISOString(),
+            mdip: { version: 1, type: "asset", registry: "mockRegistry" },
+        }
+    });
+    return Buffer.from(JSON.stringify(ops), 'utf8');
 }
 
 export function largeOps(leaves: number): Operation[] {
@@ -124,7 +130,7 @@ describe('Inscription createTransactions', () => {
         }));
 
         const { commitHex, revealHex, batch } = await lib.createTransactions(
-            smallOps(3),
+            smallOps(),
             parentPath,
             utxos,
             3,
@@ -165,7 +171,7 @@ describe('Inscription createTransactions', () => {
         }));
 
         const { commitHex, revealHex } = await lib.createTransactions(
-            smallOps(3),
+            smallOps(),
             parentPath,
             utxos,
             3,
@@ -189,7 +195,7 @@ describe('Inscription createTransactions', () => {
         ];
 
         const { commitHex } = await lib.createTransactions(
-            smallOps(3),
+            smallOps(),
             hdp(86, 0, 0),
             utxos,
             3,
@@ -282,8 +288,10 @@ describe('Inscription createTransactions', () => {
             },
         ];
 
+        const payload = Buffer.from(JSON.stringify(largeOps(2)), 'utf8');
+
         const { commitHex, revealHex } = await lib.createTransactions(
-            largeOps(2),
+            payload,
             hdp(86, 0, 0),
             utxos,
             2,
@@ -319,8 +327,10 @@ describe('Inscription createTransactions', () => {
             batches.push(...largeOps(1));
         }
 
+        const payload = Buffer.from(JSON.stringify(batches), 'utf8');
+
         const { batch, commitHex, revealHex } = await lib.createTransactions(
-            batches,
+            payload,
             hdp(86, 0, 0),
             utxos,
             1,
@@ -404,6 +414,123 @@ describe('Inscription createTransactions', () => {
         await expect(
             lib.createCommitTransaction({}, 1, utxos, keys)
         ).rejects.toThrow(/no taproot outputs/i);
+    });
+
+    it('createCommitTransaction inscribe plaintext', async () => {
+        const keys: AccountKeys = acctXprvs();
+        const lib = new Inscription({ feeMax: 0.01, network: NETWORK });
+
+        const parentPath = hdp(86, 0, 0);
+
+        const utxos: FundInput[] = [5, 6].map((idx, i) => ({
+            type: 'p2tr',
+            txid: makeTxid(100 + i),
+            vout: 0,
+            amount: 546,
+            hdkeypath: hdp(86, 0, idx),
+        }));
+
+        const plaintext = 'plaintext';
+
+        const { commitHex, revealHex, batch } = await lib.createTransactions(
+            Buffer.from(plaintext, 'utf8'),
+            parentPath,
+            utxos,
+            3,
+            keys
+        );
+
+        const asciiString = Buffer.from(revealHex, 'hex').toString('ascii');
+        const hasPlaintext = asciiString.includes("plaintext");
+        expect(hasPlaintext).toBeTruthy();
+    });
+
+    it('createCommitTransaction test plaintext size limit', async () => {
+        const keys: AccountKeys = acctXprvs();
+        const lib = new Inscription({ feeMax: 0.01, network: NETWORK });
+
+        const parentPath = hdp(86, 0, 0);
+
+        const utxos: FundInput[] = [5, 6].map((idx, i) => ({
+            type: 'p2tr',
+            txid: makeTxid(100 + i),
+            vout: 0,
+            amount: 546,
+            hdkeypath: hdp(86, 0, idx),
+        }));
+
+        const targetLength = 500 * 1024;
+        const fillChar = 'a';
+        const plaintext = fillChar.repeat(targetLength);
+
+        try {
+            await lib.createTransactions(
+                Buffer.from(plaintext, 'utf8'),
+                parentPath,
+                utxos,
+                3,
+                keys
+            );
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('payload exceeds hard limit of 389120 bytes');
+        }
+    });
+
+    it('createCommitTransaction inscribe non-Operation JSON object', async () => {
+        const keys: AccountKeys = acctXprvs();
+        const lib = new Inscription({ feeMax: 0.01, network: NETWORK });
+
+        const parentPath = hdp(86, 0, 0);
+
+        const utxos: FundInput[] = [5, 6].map((idx, i) => ({
+            type: 'p2tr',
+            txid: makeTxid(100 + i),
+            vout: 0,
+            amount: 546,
+            hdkeypath: hdp(86, 0, idx),
+        }));
+
+        const json =  { "test" : "test" };
+
+        const { commitHex, revealHex, batch } = await lib.createTransactions(
+            Buffer.from(JSON.stringify(json), 'utf8'),
+            parentPath,
+            utxos,
+            3,
+            keys
+        );
+
+        const ascii = Buffer.from(revealHex, 'hex').toString('utf8');
+        expect(ascii).toContain(JSON.stringify(json));
+    });
+
+    it('createCommitTransaction inscribe non-Operation JSON array', async () => {
+        const keys: AccountKeys = acctXprvs();
+        const lib = new Inscription({ feeMax: 0.01, network: NETWORK });
+
+        const parentPath = hdp(86, 0, 0);
+
+        const utxos: FundInput[] = [5, 6].map((idx, i) => ({
+            type: 'p2tr',
+            txid: makeTxid(100 + i),
+            vout: 0,
+            amount: 546,
+            hdkeypath: hdp(86, 0, idx),
+        }));
+
+        const json =  [{ "test" : "test" }];
+
+        const { commitHex, revealHex, batch } = await lib.createTransactions(
+            Buffer.from(JSON.stringify(json), 'utf8'),
+            parentPath,
+            utxos,
+            3,
+            keys
+        );
+
+        const ascii = Buffer.from(revealHex, 'hex').toString('utf8');
+        expect(ascii).toContain(JSON.stringify(json));
     });
 });
 
@@ -630,8 +757,11 @@ describe('Inscription bumpTransactionFee', () => {
         const utxos: FundInput[] = [
             { type: 'p2tr', txid: makeTxid(9100), vout: 0, amount: 150_000, hdkeypath: hdp(86, 0, 11) },
         ];
+
+        const payload = Buffer.from(JSON.stringify(largeOps(2)), 'utf8');
+
         const { revealHex } = await (lib as Inscription).createTransactions(
-            largeOps(2),
+            payload,
             hdp(86, 0, 0),
             utxos,
             2,
@@ -862,8 +992,10 @@ describe('feeMax (commit-time enforcement)', () => {
             hdkeypath: hdp(86, 0, 3),
         }];
 
+        const payload = Buffer.from(JSON.stringify(largeOps(nLeaves)), 'utf8');
+
         await expect(
-            lib.createTransactions(largeOps(nLeaves), hdp(86, 0, 0), utxos, est, keys)
+            lib.createTransactions(payload, hdp(86, 0, 0), utxos, est, keys)
         ).rejects.toThrow(/Fee above maximum allowed/i);
     });
 });

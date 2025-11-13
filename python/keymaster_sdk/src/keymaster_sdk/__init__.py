@@ -75,6 +75,7 @@ from .keymaster_sdk import (
     revoke_credential,
     revoke_did,
     rotate_keys,
+    send_credential,
     send_dmail,
     set_current_id,
     set_schema,

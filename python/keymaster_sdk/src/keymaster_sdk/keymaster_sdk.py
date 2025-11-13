@@ -257,6 +257,17 @@ def issue_credential(credential, options=None):
     return response["did"]
 
 
+def send_credential(did, options=None):
+    if options is None:
+        options = {}
+    response = proxy_request(
+        "POST",
+        f"{_keymaster_api}/credentials/issued/{did}/send",
+        json={"options": options},
+    )
+    return response["did"]
+
+
 def update_credential(did, credential):
     response = proxy_request(
         "POST",
