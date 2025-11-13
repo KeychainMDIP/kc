@@ -224,7 +224,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('save wallet failed');
         }
 
-        return this.loadWallet();
+        return wallet;
     }
 
     async decryptMnemonic(): Promise<string> {
