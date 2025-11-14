@@ -8,6 +8,7 @@ import {
     Button,
     Typography,
     Box,
+    CircularProgress,
 } from "@mui/material";
 import { useThemeContext } from "../../contexts/ContextProviders";
 
@@ -16,7 +17,12 @@ interface PassphraseModalProps {
     title: string,
     errorText: string,
     onSubmit: (passphrase: string) => void,
+    onClose?: () => void,
     encrypt: boolean,
+    showCancel?: boolean,
+    upload?: boolean,
+    onStartReset?: () => void,
+    onStartRecover?: () => void,
 }
 
 const PassphraseModal: React.FC<PassphraseModalProps> = (
@@ -25,11 +31,17 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         title,
         errorText,
         onSubmit,
-        encrypt
+        onClose,
+        encrypt,
+        showCancel = false,
+        upload = false,
+        onStartReset,
+        onStartRecover
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
     const combinedError = localError || errorText || "";
     const { isTabletUp } = useThemeContext();
 
@@ -37,16 +49,34 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         return null;
     }
 
-    function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        onSubmit(passphrase);
-        handleClose();
+        if (submitting) {
+            return;
+        }
+
+        setSubmitting(true);
+        await new Promise(requestAnimationFrame);
+
+        try {
+            onSubmit(passphrase);
+            setPassphrase("");
+            setConfirmPassphrase("");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     const handleClose = () => {
+        if (submitting) {
+            return;
+        }
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
+        if (onClose) {
+            onClose();
+        }
     };
 
     function checkPassphraseMismatch(newPass: string, newConfirm: string) {
@@ -77,10 +107,19 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     }
 
     const isSubmitDisabled = () => {
-        if (!passphrase) return true;
+        if (!passphrase) {
+            return true;
+        }
+        if (!passphrase) {
+            return true;
+        }
         if (encrypt) {
-            if (!confirmPassphrase) return true;
-            if (passphrase !== confirmPassphrase) return true;
+            if (!confirmPassphrase) {
+                return true;
+            }
+            if (passphrase !== confirmPassphrase) {
+                return true;
+            }
         }
         return false;
     };
@@ -117,6 +156,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         fullWidth
                         variant="outlined"
                         margin="dense"
+                        disabled={submitting}
                     />
 
                     {encrypt && (
@@ -131,20 +171,49 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                             fullWidth
                             variant="outlined"
                             margin="dense"
+                            disabled={submitting}
                         />
                     )}
                 </form>
             </DialogContent>
-            <DialogActions>
-                <Button
-                    type="submit"
-                    form="passphrase-form"
-                    variant="contained"
-                    color="primary"
-                    disabled={isSubmitDisabled()}
-                >
-                    Submit
-                </Button>
+
+            <DialogActions sx={{ display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {!encrypt && !upload && onStartReset && (
+                            <Button onClick={onStartReset} variant="text" color="secondary" size="small">
+                                Reset
+                            </Button>
+                        )}
+                        {!encrypt && onStartRecover && (
+                            <Button onClick={onStartRecover} variant="text" color="secondary" size="small">
+                                Recover
+                            </Button>
+                        )}
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {showCancel && (
+                            <Button
+                                onClick={handleClose}
+                                variant="contained"
+                                color="secondary"
+                                disabled={submitting}
+                            >
+                                Cancel
+                            </Button>
+                        )}
+                        <Button
+                            type="submit"
+                            form="passphrase-form"
+                            variant="contained"
+                            color="primary"
+                            disabled={isSubmitDisabled()}
+                            startIcon={submitting ? <CircularProgress size={18} /> : null}
+                        >
+                            {submitting ? "Working" : "Submit"}
+                        </Button>
+                    </Box>
+                </Box>
             </DialogActions>
         </Dialog>
     );

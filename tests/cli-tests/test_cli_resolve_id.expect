@@ -5,14 +5,25 @@
 # Set timeout for commands
 set timeout 30
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Enable Expect's debugging output
 log_user 1
 
 # Generate a random number between 0 and 100
-set random_value [expr {int(rand() * 100)}]
+set random_value [expr {int(rand() * 1000)}]
 
 # Start the CLI program
-spawn bash kc create-id "$random_value" local
+spawn bash kc create-id -r local "$random_value"
 
 # Expect the output to match a string like did:test followed by some characters (e.g., did:test12345)
 expect {
@@ -152,16 +163,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc create-wallet
-expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
-        exit 1
     }
 }

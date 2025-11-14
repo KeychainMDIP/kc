@@ -25,7 +25,7 @@ export default class WalletJson extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!fs.existsSync(this.walletName)) {
             return null;
         }

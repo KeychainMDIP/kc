@@ -18,7 +18,7 @@ export default class WalletWeb extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         const walletJson = window.localStorage.getItem(this.walletName);
 
         if (walletJson) {

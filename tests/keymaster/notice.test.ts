@@ -52,7 +52,7 @@ beforeEach(() => {
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
     search = new MockSearch();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search });
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
 });
 
 describe('verifyNotice', () => {
@@ -418,7 +418,7 @@ describe('searchNotices', () => {
     });
 
     it('should return false if search engine not configured', async () => {
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher });
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
         await keymaster.createId('Alice');
 
         const ok = await keymaster.searchNotices();

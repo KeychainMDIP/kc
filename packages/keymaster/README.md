@@ -41,10 +41,12 @@ await gatekeeper.connect({
 });
 const wallet = new WalletJson();
 const cipher = new CipherNode();
+const passphrase = 'SuperSecurePassphrase';
 const keymaster = new Keymaster({
     gatekeeper,
     wallet,
-    cipher
+    cipher,
+    passphrase
 });
 
 const newId = await keymaster.createId('Bob');
@@ -73,10 +75,12 @@ await gatekeeper.connect({
 });
 const wallet = new WalletWeb();
 const cipher = new CipherWeb();
+const passphrase = 'SuperSecurePassphrase';
 const keymaster = new Keymaster({
     gatekeeper,
     wallet,
-    cipher
+    cipher,
+    passphrase
 });
 
 const newId = await keymaster.createId('Bob');

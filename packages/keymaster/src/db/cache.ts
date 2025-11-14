@@ -16,7 +16,7 @@ export default class WalletCache extends AbstractBase {
         return this.baseWallet.saveWallet(wallet, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.cachedWallet) {
             this.cachedWallet = await this.baseWallet.loadWallet();
         }

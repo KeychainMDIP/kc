@@ -1,45 +1,35 @@
 import { useState } from "react";
-import JsonViewer from "./JsonViewer";
 import {
     Box,
     Button,
 } from "@mui/material";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "./modals/WarningModal";
 import MnemonicModal from "./modals/MnemonicModal";
-import Keymaster from "@mdip/keymaster";
-import GatekeeperClient from "@mdip/gatekeeper/client";
-import CipherWeb from "@mdip/cipher/web";
 import WalletWeb from "@mdip/keymaster/wallet/web";
-import { StoredWallet } from '@mdip/keymaster/types';
-import {
-    DEFAULT_GATEKEEPER_URL,
-    GATEKEEPER_KEY
-} from "./SettingsTab"
 import {clearSessionPassphrase} from "../utils/sessionPassphrase";
-
-const gatekeeper = new GatekeeperClient();
-const cipher = new CipherWeb();
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
-    const [pendingWallet, setPendingWallet] = useState<StoredWallet | null>(null);
     const [mnemonicString, setMnemonicString] = useState<string>("");
-    const [jsonViewerOpen, setJsonViewerOpen] = useState<boolean>(false);
-    const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [showMnemonicModal, setShowMnemonicModal] = useState<boolean>(false);
     const [pendingRecover, setPendingRecover] = useState<boolean>(false);
     const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
     const [showFixModal, setShowFixModal] = useState<boolean>(false);
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
-    const { keymaster, initialiseWallet } = useWalletContext();
+    const {
+        keymaster,
+        initialiseWallet,
+        handleWalletUploadFile,
+        pendingMnemonic,
+        setPendingMnemonic,
+        pendingWallet,
+        setPendingWallet,
+    } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
-    const { setOpenBrowser } = useUIContext();
 
     const handleClickOpen = () => {
-        setPendingWallet(null);
         setOpen(true);
     };
 
@@ -50,55 +40,16 @@ const WalletTab = () => {
         setPendingRecover(false);
     };
 
-    function clearJsonWallet() {
-        setJsonViewerOpen(false);
-        setOpenBrowser({
-            tab: "wallet",
-        });
-    }
-
     const handleCloseFixModal = () => {
         setShowFixModal(false);
         setCheckResultMessage("");
     };
 
-    async function wipeStoredValues() {
-        clearSessionPassphrase();
-        await initialiseWallet();
-        clearJsonWallet();
-        setMnemonicString("");
-    }
-
-    async function wipeAndClose() {
+    async function createNewWallet() {
         const walletWeb = new WalletWeb();
         localStorage.removeItem(walletWeb.walletName);
-        await wipeStoredValues();
-    }
-
-    async function uploadWallet(wallet: StoredWallet) {
-        const walletWeb = new WalletWeb();
-        await walletWeb.saveWallet(wallet, true);
-        await wipeStoredValues();
-    }
-
-    async function getUnencryptedKeymaster() {
-        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY);
-        await gatekeeper.connect({ url: gatekeeperUrl || DEFAULT_GATEKEEPER_URL });
-
-        // Avoid using existing passphrase by using unencrypted keymaster
-        const wallet = new WalletWeb();
-        return new Keymaster({
-            gatekeeper,
-            wallet,
-            cipher,
-        });
-    }
-
-    async function restoreFromMnemonic() {
-        const localKeymaster = await getUnencryptedKeymaster();
-        await localKeymaster.newWallet(pendingMnemonic, true);
-        await localKeymaster.recoverWallet();
-        await wipeStoredValues();
+        clearSessionPassphrase();
+        await initialiseWallet();
     }
 
     async function checkWallet() {
@@ -138,9 +89,6 @@ const WalletTab = () => {
             setSuccess(
                 `${idsRemoved} IDs removed\n${ownedRemoved} owned DIDs removed\n${heldRemoved} held DIDs removed\n${namesRemoved} names removed`
             );
-            await initialiseWallet();
-            clearJsonWallet();
-            setMnemonicString("");
         } catch (error: any) {
             setError(error);
         }
@@ -152,8 +100,6 @@ const WalletTab = () => {
         }
         await keymaster.recoverWallet();
         await initialiseWallet();
-        clearJsonWallet();
-        setMnemonicString("");
     }
 
     const handleConfirm = async () => {
@@ -161,19 +107,17 @@ const WalletTab = () => {
             if (pendingRecover) {
                 await recoverWallet();
             } else if (pendingMnemonic) {
-                await restoreFromMnemonic();
+                await initialiseWallet();
             } else if (pendingWallet) {
-                await uploadWallet(pendingWallet);
+                await handleWalletUploadFile(pendingWallet);
             } else {
-                await wipeAndClose();
+                await createNewWallet();
             }
         } catch (error: any) {
             setError(error);
         }
 
         setOpen(false);
-        setPendingMnemonic("");
-        setPendingWallet(null);
         setPendingRecover(false);
     };
 
@@ -193,26 +137,6 @@ const WalletTab = () => {
         setMnemonicString("");
     }
 
-    async function showWallet() {
-        if (!keymaster) {
-            return;
-        }
-        try {
-            const wallet = await keymaster.loadWallet();
-            setJsonViewerOpen(true);
-            setOpenBrowser({
-                tab: "wallet",
-                contents: wallet,
-            });
-        } catch (error: any) {
-            setError(error);
-        }
-    }
-
-    async function hideWallet() {
-        clearJsonWallet();
-    }
-
     async function handleUploadClick() {
         const fileInput = document.createElement("input");
         fileInput.type = "file";
@@ -220,36 +144,19 @@ const WalletTab = () => {
 
         fileInput.onchange = async (event: any) => {
             const file = event.target.files?.[0];
-            if (!file) return;
+            if (!file) {
+                return;
+            }
 
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const contents = e.target?.result as string;
-                    const json = JSON.parse(contents);
-                    const isUnencrypted =
-                        "seed" in json && "counter" in json && "ids" in json;
-                    const isEncrypted =
-                        "salt" in json && "iv" in json && "data" in json;
+            const text = await file.text();
 
-                    if (!isUnencrypted && !isEncrypted) {
-                        setError(
-                            "Invalid wallet JSON. Missing required fields.",
-                        );
-                        return;
-                    }
-
-                    setPendingWallet(json);
-                    setOpen(true);
-                } catch (err) {
-                    setError("Invalid JSON file.");
-                }
-            };
-            reader.onerror = () => {
-                setError("Could not read the wallet file.");
-            };
-
-            reader.readAsText(file);
+            try {
+                const wallet = JSON.parse(text);
+                setPendingWallet(wallet);
+                setOpen(true);
+            } catch (err) {
+                setError("Invalid JSON file.");
+            }
         };
 
         fileInput.click();
@@ -260,8 +167,7 @@ const WalletTab = () => {
             return;
         }
         try {
-            const wallet_chrome = new WalletWeb();
-            const wallet = await wallet_chrome.loadWallet();
+            const wallet = await keymaster.exportEncryptedWallet();
             const walletJSON = JSON.stringify(wallet, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -289,7 +195,6 @@ const WalletTab = () => {
     function handleMnemonicSubmit(mnemonic: string) {
         setShowMnemonicModal(false);
         setPendingMnemonic(mnemonic);
-        setPendingWallet(null);
         setOpen(true);
     }
 
@@ -421,28 +326,6 @@ const WalletTab = () => {
                             </Button>
                         )}
 
-                        {jsonViewerOpen ? (
-                            <Button
-                                className="mini-margin"
-                                variant="contained"
-                                color="primary"
-                                onClick={hideWallet}
-                                sx={{ width: '100%', mb: 1 }}
-                            >
-                                Hide Wallet
-                            </Button>
-                        ) : (
-                            <Button
-                                className="mini-margin"
-                                variant="contained"
-                                color="primary"
-                                onClick={showWallet}
-                                sx={{ width: '100%', mb: 1 }}
-                            >
-                                Show Wallet
-                            </Button>
-                        )}
-
                         <Button
                             className="mini-margin"
                             variant="contained"
@@ -478,10 +361,6 @@ const WalletTab = () => {
                         {mnemonicString}
                     </Box>
                 )}
-            </Box>
-
-            <Box sx={{ mt: 1, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <JsonViewer browserTab="wallet" />
             </Box>
         </Box>
     );

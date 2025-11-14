@@ -74,6 +74,8 @@ export interface GatekeeperEvent {
 }
 
 export interface GatekeeperDb {
+    start(): Promise<void>;
+    stop(): Promise<void>;
     resetDb(): Promise<void | number | JsonDbFile>;
     addEvent(did: string, event: GatekeeperEvent): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;

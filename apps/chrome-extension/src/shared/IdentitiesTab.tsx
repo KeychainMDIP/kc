@@ -70,6 +70,18 @@ function IdentitiesTab() {
         }
     }
 
+    async function rotateKeys() {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            await keymaster.rotateKeys();
+            await refreshAll();
+        } catch (error) {
+            setError(error);
+        }
+    }
+
     const handleCloseWarningModal = () => {
         setWarningModal(false);
     };
@@ -201,45 +213,45 @@ function IdentitiesTab() {
                     Create
                 </Button>
             </Box>
-            <Box className="flex-box mt-2">
+            <Box display="flex" flexDirection="row" sx={{ gap: 1, mt: 2 }}>
                 <Button
-                    className="mini-margin"
                     variant="contained"
                     color="primary"
                     onClick={handleRenameId}
-                    sx={{ mr: 2 }}
                 >
                     Rename
                 </Button>
 
                 <Button
-                    className="mini-margin"
                     variant="contained"
                     color="primary"
                     onClick={handleRemoveId}
-                    sx={{ mr: 2 }}
                 >
                     Remove
                 </Button>
 
                 <Button
-                    className="mini-margin"
                     variant="contained"
                     color="primary"
                     onClick={backupId}
-                    sx={{ mr: 2 }}
                 >
                     Backup
                 </Button>
 
                 <Button
-                    className="mini-margin"
                     variant="contained"
                     color="primary"
                     onClick={handleRecoverId}
-                    sx={{ mr: 2 }}
                 >
                     Recover
+                </Button>
+
+                <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={rotateKeys}
+                >
+                    Rotate
                 </Button>
             </Box>
         </Box>

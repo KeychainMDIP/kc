@@ -30,6 +30,20 @@ program
     });
 
 program
+    .command('new-wallet')
+    .description('Create a new wallet')
+    .action(async () => {
+        try {
+            await keymaster.newWallet("", true);
+            const wallet = await keymaster.loadWallet();
+            console.log(JSON.stringify(wallet, null, 4));
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('check-wallet')
     .description('Validate DIDs in wallet')
     .action(async () => {
@@ -93,7 +107,7 @@ program
     .description('Backup wallet to file')
     .action(async (file) => {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.exportEncryptedWallet();
             fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
             console.log(UPDATE_OK);
         }
@@ -1102,25 +1116,6 @@ program
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
         catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
-    .command('encrypt-wallet')
-    .description('Encrypt wallet')
-    .action(async () => {
-        try {
-            if (!process.env.KC_ENCRYPTED_PASSPHRASE) {
-                console.error('KC_ENCRYPTED_PASSPHRASE not set');
-                return;
-            }
-
-            const wallet = await keymaster.loadWallet();
-            const ok = await keymaster.saveWallet(wallet, true);
-            console.log(ok ? UPDATE_OK : UPDATE_FAILED);
-
-        } catch (error) {
             console.error(error.error || error);
         }
     });

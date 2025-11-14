@@ -31,6 +31,14 @@ export abstract class AbstractJson implements GatekeeperDb {
 
     abstract resetDb(): Promise<void | number | JsonDbFile>;
 
+    async start(): Promise<void> {
+        return;
+    }
+
+    async stop(): Promise<void> {
+        return;
+    }
+
     private splitSuffix(did: string): string {
         if (!did) {
             throw new InvalidDIDError();

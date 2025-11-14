@@ -17,8 +17,16 @@ export interface HDKey {
 }
 
 export interface Seed {
-    mnemonic: string;
-    hdkey: HDKey;
+    // v0 legacy
+    mnemonic?: string;
+    hdkey?: HDKey;
+
+    // v1 (passphrase-encrypted mnemonic)
+    mnemonicEnc?: {
+        salt: string;
+        iv: string;
+        data: string;
+    };
 }
 
 export interface IDInfo {
@@ -32,7 +40,14 @@ export interface IDInfo {
     [key: string]: any; // Allow custom metadata fields
 }
 
+export interface WalletEncFile {
+    version: number;
+    seed: Seed;
+    enc: string
+}
+
 export interface WalletFile {
+    version?: number;
     seed: Seed;
     counter: number;
     ids: Record<string, IDInfo>;
@@ -210,11 +225,11 @@ export interface GroupVaultLogin {
     password: string;
 }
 
-export type StoredWallet = EncryptedWallet | WalletFile | null;
+export type StoredWallet = EncryptedWallet | WalletFile | WalletEncFile | null;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
-    loadWallet(): Promise<StoredWallet>;
+    loadWallet(): Promise<StoredWallet | null>;
     updateWallet(mutator: (wallet: StoredWallet) => void | Promise<void>): Promise<void>;
 }
 
@@ -223,6 +238,7 @@ export interface SearchEngine {
 }
 
 export interface KeymasterOptions {
+    passphrase: string;
     gatekeeper: GatekeeperInterface;
     wallet: WalletBase;
     cipher: Cipher;
@@ -300,6 +316,7 @@ export interface KeymasterInterface {
     checkWallet(): Promise<CheckWalletResult>;
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;
+    exportEncryptedWallet(): Promise<WalletEncFile>;
 
     // IDs
     listIds(): Promise<string[]>;

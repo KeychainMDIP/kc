@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -7,54 +7,186 @@ import {
     TextField,
     Button,
     Typography,
-    Box
-} from '@mui/material';
+    Box,
+    CircularProgress,
+} from "@mui/material";
 
-const PassphraseModal = ({ isOpen, title, errorText, onSubmit, onClose }) => {
-    const [passphrase, setPassphrase] = useState('');
+const PassphraseModal = (
+    {
+        isOpen,
+        title,
+        errorText,
+        onSubmit,
+        onClose,
+        encrypt,
+        showCancel = false,
+        upload = false,
+        onStartReset,
+        onStartRecover,
+    }) => {
+    const [passphrase, setPassphrase] = useState("");
+    const [confirmPassphrase, setConfirmPassphrase] = useState("");
+    const [localError, setLocalError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const combinedError = localError || errorText || "";
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
-        onSubmit(passphrase);
-        setPassphrase('');
+        if (submitting) {
+            return;
+        }
+
+        setSubmitting(true);
+        await new Promise(requestAnimationFrame);
+
+        try {
+            await onSubmit(passphrase);
+            setPassphrase("");
+            setConfirmPassphrase("");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
-    function handleClose(){
-        onClose();
-        setPassphrase('');
+    const handleClose = () => {
+        if (submitting) {
+            return;
+        }
+        setPassphrase("");
+        setConfirmPassphrase("");
+        setLocalError("");
+        if (onClose) {
+            onClose();
+        }
+    };
+
+    function checkPassphraseMismatch(newPass, newConfirm) {
+        if (!encrypt) {
+            return;
+        }
+
+        if (!newPass || !newConfirm) {
+            setLocalError("");
+            return;
+        }
+
+        if (newPass !== newConfirm) {
+            setLocalError("Passphrases do not match");
+        } else {
+            setLocalError("");
+        }
     }
+
+    function handlePassphraseChange(newValue) {
+        setPassphrase(newValue);
+        checkPassphraseMismatch(newValue, confirmPassphrase);
+    }
+
+    function handleConfirmChange(newValue) {
+        setConfirmPassphrase(newValue);
+        checkPassphraseMismatch(passphrase, newValue);
+    }
+
+    const isSubmitDisabled = () => {
+        if (submitting) {
+            return true;
+        }
+        if (!passphrase) {
+            return true;
+        }
+        if (encrypt) {
+            if (!confirmPassphrase) {
+                return true;
+            }
+            if (passphrase !== confirmPassphrase) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     return (
         <Dialog open={isOpen} onClose={handleClose}>
             <DialogTitle>{title}</DialogTitle>
             <DialogContent>
-                {errorText && (
+                {combinedError && (
                     <Box mb={2}>
-                        <Typography color="error">{errorText}</Typography>
+                        <Typography color="error">{combinedError}</Typography>
                     </Box>
                 )}
                 <form onSubmit={handleSubmit} id="passphrase-form">
                     <TextField
+                        label="Passphrase"
                         type="password"
                         value={passphrase}
-                        onChange={(e) => setPassphrase(e.target.value)}
+                        onChange={(e) => handlePassphraseChange(e.target.value)}
                         required
                         autoFocus
                         fullWidth
                         variant="outlined"
                         margin="dense"
+                        disabled={submitting}
                     />
+
+                    {encrypt && (
+                        <TextField
+                            label="Confirm Passphrase"
+                            type="password"
+                            value={confirmPassphrase}
+                            onChange={(e) =>
+                                handleConfirmChange(e.target.value)
+                            }
+                            required
+                            fullWidth
+                            variant="outlined"
+                            margin="dense"
+                            disabled={submitting}
+                        />
+                    )}
                 </form>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={handleClose} color="secondary">
-                    Cancel
-                </Button>
-                <Button type="submit" form="passphrase-form" variant="contained" color="primary">
-                    Submit
-                </Button>
+
+            <DialogActions sx={{ display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {!encrypt && !upload && onStartReset && (
+                            <Button onClick={onStartReset} variant="text" color="secondary" size="small">
+                                Reset
+                            </Button>
+                        )}
+                        {!encrypt && onStartRecover && (
+                            <Button onClick={onStartRecover} variant="text" color="secondary" size="small">
+                                Recover
+                            </Button>
+                        )}
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        {showCancel && (
+                            <Button
+                                onClick={handleClose}
+                                variant="contained"
+                                color="secondary"
+                                disabled={submitting}
+                            >
+                                Cancel
+                            </Button>
+                        )}
+                        <Button
+                            type="submit"
+                            form="passphrase-form"
+                            variant="contained"
+                            color="primary"
+                            disabled={isSubmitDisabled()}
+                            startIcon={submitting ? <CircularProgress size={18} /> : null}
+                        >
+                            {submitting ? "Working" : "Submit"}
+                        </Button>
+                    </Box>
+                </Box>
             </DialogActions>
         </Dialog>
     );

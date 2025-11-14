@@ -46,7 +46,7 @@ export default class WalletMongo extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.collection) {
             throw new Error('Not connected to MongoDB. Call connect() first or use WalletMongo.create().')
         }

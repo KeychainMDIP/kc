@@ -1,7 +1,7 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import { Seed, WalletFile } from "@mdip/keymaster/types";
+import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
@@ -43,6 +43,7 @@ const Endpoints = {
     groupVaults: `/api/v1/groupVaults`,
     dmail: '/api/v1/dmail',
     notices: '/api/v1/notices',
+    export_wallet_encrypted: '/api/v1/export/wallet/encrypted',
 };
 
 const mockConsole = {
@@ -3482,6 +3483,47 @@ describe('refreshNotices', () => {
 
         try {
             await keymaster.refreshNotices();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('exportEncryptedWallet', () => {
+    const mockEncWallet: WalletEncFile = {
+        version: 1,
+        seed: {
+            mnemonicEnc: {
+                salt: 'salt==',
+                iv: 'iviviviv',
+                data: 'ciphertext'
+            }
+        },
+        enc: 'top-level-seal'
+    };
+
+    it('should export encrypted wallet', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.export_wallet_encrypted)
+            .reply(200, { wallet: mockEncWallet });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const wallet = await keymaster.exportEncryptedWallet();
+
+        expect(wallet).toStrictEqual(mockEncWallet);
+    });
+
+    it('should throw exception on exportEncryptedWallet server error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.export_wallet_encrypted)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.exportEncryptedWallet();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
