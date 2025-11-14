@@ -217,8 +217,6 @@ export default class Keymaster implements KeymasterInterface {
             ids: {}
         };
 
-        this._walletCache = wallet;
-
         const ok = await this.saveWallet(wallet, overwrite)
         if (!ok) {
             throw new KeymasterError('save wallet failed');
@@ -3575,7 +3573,7 @@ export default class Keymaster implements KeymasterInterface {
         return wallet;
     }
 
-    private async upgradeWallet(wallet: any): Promise<any> {
+    private async upgradeWallet(wallet: any): Promise<WalletFile> {
         if (isEncryptedWallet(wallet)) {
             await this.db.saveWallet(wallet, true);
             wallet = await this.db.loadWallet();
@@ -3587,7 +3585,9 @@ export default class Keymaster implements KeymasterInterface {
             const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic!);
             const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
             const { seed: _legacySeed, version: _legacyVersion, ...rest } = wallet;
-            wallet = { version: 1, seed: { mnemonicEnc }, ...rest };
+            const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
+            wallet = await this.encryptWallet(newWallet);
+            await this.db.saveWallet(wallet, true);
         }
 
         if (wallet.version !== 1) {
