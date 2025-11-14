@@ -1695,7 +1695,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function showWallet() {
         try {
-            const wallet = await keymaster.loadWallet(false);
+            const wallet = await keymaster.loadWallet();
             setWalletString(JSON.stringify(wallet, null, 4));
         } catch (error) {
             showError(error);

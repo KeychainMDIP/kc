@@ -308,7 +308,7 @@ export interface NoticeMessage {
 
 export interface KeymasterInterface {
     // Wallet
-    loadWallet(includeKeys: boolean): Promise<WalletFile>;
+    loadWallet(): Promise<WalletFile>;
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<WalletFile>;
     backupWallet(): Promise<boolean | string>;

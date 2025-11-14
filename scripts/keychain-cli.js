@@ -21,7 +21,7 @@ program
     .description('Create a new wallet (or show existing wallet)')
     .action(async () => {
         try {
-            const wallet = await keymaster.loadWallet(false);
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -35,7 +35,7 @@ program
     .action(async () => {
         try {
             await keymaster.newWallet("", true);
-            const wallet = await keymaster.loadWallet(false);
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -94,7 +94,7 @@ program
     .description('Show wallet')
     .action(async () => {
         try {
-            const wallet = await keymaster.loadWallet(false);
+            const wallet = await keymaster.loadWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {

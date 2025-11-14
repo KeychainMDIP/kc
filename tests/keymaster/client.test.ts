@@ -137,7 +137,6 @@ describe('loadWallet', () => {
 
         nock(KeymasterURL)
             .get(Endpoints.wallet)
-            .query({ includeKeys: 'true' })
             .reply(200, { wallet: mockWallet });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -149,7 +148,6 @@ describe('loadWallet', () => {
     it('should throw exception on loadWallet server error', async () => {
         nock(KeymasterURL)
             .get(Endpoints.wallet)
-            .query({ includeKeys: 'true' })
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
