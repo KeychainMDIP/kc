@@ -3586,6 +3586,7 @@ export default class Keymaster implements KeymasterInterface {
             const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
             const { seed: _legacySeed, version: _legacyVersion, ...rest } = wallet;
             const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
+            this._hdkeyCache = this.cipher.generateHDKey(plaintext);
             wallet = await this.encryptWallet(newWallet);
             await this.db.saveWallet(wallet, true);
         }

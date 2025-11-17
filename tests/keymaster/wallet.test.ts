@@ -371,6 +371,13 @@ describe('saveWallet', () => {
         );
     });
 
+    it('v0 upgrade must not use stale _hdkeyCache', async () => {
+        await keymaster.newWallet(undefined, true);
+        expect(
+            await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED, true)
+        ).toBe(true);
+    });
+
     it('should encrypt an unencrypted v1 wallet contents and remove hdkey', async () => {
         const ok = await keymaster.saveWallet(MOCK_WALLET_V1);
         expect(ok).toBe(true);
