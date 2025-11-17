@@ -14,7 +14,7 @@ import Keymaster from "@mdip/keymaster";
 import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
-import { isEncryptedWallet, isLegacyV0, isV1Decrypted, isV1WithEnc } from '@mdip/keymaster/wallet/typeGuards';
+import { isEncryptedWallet, isLegacyV0, isV1WithEnc } from '@mdip/keymaster/wallet/typeGuards';
 import { StoredWallet, WalletBase } from "@mdip/keymaster/types";
 import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
 import WalletCache from "@mdip/keymaster/wallet/cache";
@@ -80,7 +80,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [pendingWallet, setPendingWallet] = useState<unknown>(null);
     const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
-    const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-plain-v1" | "upload-enc-v0" | "upload-enc-v1">(null);
+    const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-enc-v0" | "upload-enc-v1">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
     const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
     const [showResetSetup, setShowResetSetup] = useState<boolean>(false);
@@ -194,7 +194,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
                         // check pass & remove encyption wrapper
                         const decrypted = await walletEnc.loadWallet();
                         await walletChrome.saveWallet(decrypted, true);
-                    } else { // upload-enc-v1 & upload-plain-v1
+                    } else { // upload-enc-v1
                         const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
                         // check pass
                         await km.loadWallet();
@@ -305,9 +305,6 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         if (isLegacyV0(uploaded)) {
             setUploadAction('upload-plain-v0');
             setModalAction('set-passphrase');
-        } else if (isV1Decrypted(uploaded)) {
-            setUploadAction('upload-plain-v1');
-            setModalAction('decrypt');
         } else if (isV1WithEnc(uploaded)) {
             setUploadAction('upload-enc-v1');
             setModalAction('decrypt');
