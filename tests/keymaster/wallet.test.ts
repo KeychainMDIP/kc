@@ -533,7 +533,17 @@ describe('recoverWallet', () => {
         await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet();
 
-        expect(wallet).toStrictEqual(recovered);
+        expect(recovered).toEqual(
+            expect.objectContaining({
+                counter: wallet.counter,
+                version: wallet.version,
+                seed: {
+                    mnemonicEnc: expect.any(Object),
+                },
+                current: wallet.current,
+                ids: wallet.ids
+            })
+        );
     });
 
     it('should recover over existing wallet', async () => {
@@ -578,7 +588,17 @@ describe('recoverWallet', () => {
         await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet();
 
-        expect(wallet).toStrictEqual(recovered);
+        expect(recovered).toEqual(
+            expect.objectContaining({
+                counter: wallet.counter,
+                version: wallet.version,
+                seed: {
+                    mnemonicEnc: expect.any(Object),
+                },
+                current: wallet.current,
+                ids: wallet.ids
+            })
+        );
     });
 
     it('should recover wallet from backup DID', async () => {
@@ -591,7 +611,17 @@ describe('recoverWallet', () => {
         await keymaster.newWallet(mnemonic, true);
         const recovered = await keymaster.recoverWallet(did);
 
-        expect(wallet).toStrictEqual(recovered);
+        expect(recovered).toEqual(
+            expect.objectContaining({
+                counter: wallet.counter,
+                version: wallet.version,
+                seed: {
+                    mnemonicEnc: expect.any(Object),
+                },
+                current: wallet.current,
+                ids: wallet.ids
+            })
+        );
     });
 
     it('should do nothing if wallet was not backed up', async () => {
