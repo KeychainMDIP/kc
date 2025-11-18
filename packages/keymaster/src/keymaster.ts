@@ -535,6 +535,12 @@ export default class Keymaster implements KeymasterInterface {
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
             let wallet = JSON.parse(backup);
 
+            if (isV1Decrypted(wallet)) {
+                const mnemonic = await this.decryptMnemonic();
+                // Backup might have a different mnemonic passphase so re-encrypt
+                wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+            }
+
             await this.mutateWallet(async (current) => {
                 for (const k in current) {
                     delete current[k as keyof StoredWallet];
