@@ -4,6 +4,7 @@ import random
 import string
 import base64
 from unittest.mock import ANY
+from copy import deepcopy
 
 # Test vars
 expires = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -201,18 +202,10 @@ def test_wallet():
 
     recovered = keymaster.recover_wallet()
 
-    expected = {
-        "counter": wallet["counter"],
-        "version": wallet["version"],
-        "current": wallet["current"],
-        "ids": wallet["ids"],
-        "seed": {
-            "mnemonicEnc": ANY
-        },
-        "names": wallet["names"]
-    }
+    expected = deepcopy(wallet)
+    expected["seed"]["mnemonicEnc"] = ANY
 
-    assert_equal(expected, wallet)
+    assert_equal(expected, recovered)
 
     response = keymaster.check_wallet()
     assert "checked" in response, "checked not present in check_wallet response"
