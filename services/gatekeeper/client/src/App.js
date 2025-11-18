@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import CipherWeb from '@mdip/cipher/web';
@@ -9,7 +9,7 @@ import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
-import { isEncryptedWallet, isV1WithEnc, isV1Decrypted, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
+import { isEncryptedWallet, isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import KeymasterUI from './KeymasterUI.js';
 import PassphraseModal from './PassphraseModal';
 import WarningModal from './WarningModal';
@@ -41,7 +41,6 @@ function App() {
     const [showRecoverSetup, setShowRecoverSetup] = useState(false);
     const [searchParams] = useSearchParams();
     const challengeDID = searchParams.get('challenge');
-    const cachedPassRef = useRef("");
 
     useEffect(() => {
         const init = async () => {
@@ -67,8 +66,6 @@ function App() {
             setPassphraseErrorText('Incorrect passphrase');
             return;
         }
-
-        cachedPassRef.current = passphrase;
 
         setModalAction(null);
         setPendingWallet(null);
@@ -168,70 +165,6 @@ function App() {
         } catch {
             setPassphraseErrorText('Failed to reset wallet. Try again.');
         }
-    }
-
-    async function handleImportWallet() {
-        const mnemonic = window.prompt("Enter 12-word mnemonic");
-        if (!mnemonic) {
-            return;
-        }
-
-        const passphrase = window.prompt("Enter your wallet passphrase");
-        if (!passphrase) {
-            return;
-        }
-
-        await recoverFromSeedbank(mnemonic, passphrase);
-    }
-
-    async function handleRecoverWallet() {
-        const mnemonic = await keymaster.decryptMnemonic();
-        await recoverFromSeedbank(mnemonic, cachedPassRef.current);
-    }
-
-    async function recoverFromSeedbank(mnemonic, passphrase) {
-        if (!window.confirm(`Overwrite wallet from backup?`)) {
-            return;
-        }
-
-        const walletMemory = new WalletJsonMemory();
-        const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
-
-        try {
-            await km.newWallet(mnemonic, true);
-        } catch {
-            window.alert('Invalid mnemonic');
-            return;
-        }
-
-        const seedBank = await km.resolveSeedBank();
-        let backupEnc = null;
-
-        if (seedBank.didDocumentData?.wallet) {
-            const did = seedBank.didDocumentData?.wallet;
-            const asset = await keymaster.resolveAsset(did);
-            backupEnc = asset.backup ? asset.backup : null;
-        }
-
-        if (backupEnc) {
-            const hdkey = cipher.generateHDKey(mnemonic);
-            const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey);
-            const backupJson = cipher.decryptMessage(publicJwk, privateJwk, backupEnc);
-            let recovered = JSON.parse(backupJson);
-
-            console.log("recovered: ", recovered);
-
-            if (isV1Decrypted(recovered)) {
-                recovered.seed.mnemonicEnc = await encMnemonic(mnemonic, passphrase);
-            }
-
-            await km.saveWallet(recovered, true);
-        }
-
-        const finalStored = await walletMemory.loadWallet();
-        const walletWeb = new WalletWeb();
-        await walletWeb.saveWallet(finalStored, true);
-        await rebuildKeymaster(passphrase);
     }
 
     async function handleWalletUploadFile(uploaded) {
@@ -376,8 +309,6 @@ function App() {
                     title={'Keymaster Browser Wallet Demo'}
                     challengeDID={challengeDID}
                     onWalletUpload={handleWalletUploadFile}
-                    onImportWallet={handleImportWallet}
-                    onRecoverWallet={handleRecoverWallet}
                 />
             )}
         </>
