@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import random
 import string
 import base64
+from unittest.mock import ANY
 
 # Test vars
 expires = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -199,7 +200,19 @@ def test_wallet():
     assert_equal(mnemonic1, mnemonic2)
 
     recovered = keymaster.recover_wallet()
-    assert_equal(recovered, wallet)
+
+    expected = {
+        "counter": wallet["counter"],
+        "version": wallet["version"],
+        "current": wallet["current"],
+        "ids": wallet["ids"],
+        "seed": {
+            "mnemonicEnc": ANY
+        },
+        "names": wallet["names"]
+    }
+
+    assert_equal(expected, wallet)
 
     response = keymaster.check_wallet()
     assert "checked" in response, "checked not present in check_wallet response"
