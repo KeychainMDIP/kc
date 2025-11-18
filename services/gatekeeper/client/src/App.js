@@ -9,7 +9,7 @@ import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
-import { isEncryptedWallet, isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
+import { isEncryptedWallet, isV1WithEnc, isV1Decrypted, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import KeymasterUI from './KeymasterUI.js';
 import PassphraseModal from './PassphraseModal';
 import WarningModal from './WarningModal';
@@ -167,6 +167,55 @@ function App() {
         }
     }
 
+    async function handleImportUploadFile() {
+        const mnemonic = window.prompt("Enter 12-word mnemonic");
+        if (!mnemonic) {
+            return;
+        }
+
+        const passphrase = window.prompt("Enter your wallet passphrase");
+        if (!passphrase) {
+            return;
+        }
+
+        const walletMemory = new WalletJsonMemory();
+        const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+
+        try {
+            await km.newWallet(mnemonic, true);
+        } catch {
+            window.alert('Invalid mnemonic');
+            return;
+        }
+
+        const seedBank = await km.resolveSeedBank();
+        let backupEnc = null;
+
+        if (seedBank.didDocumentData?.wallet) {
+            const did = seedBank.didDocumentData?.wallet;
+            const asset = await keymaster.resolveAsset(did);
+            backupEnc = asset.backup ? asset.backup : null;
+        }
+
+        if (backupEnc) {
+            const hdkey = cipher.generateHDKey(mnemonic);
+            const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey);
+            const backupJson = cipher.decryptMessage(publicJwk, privateJwk, backupEnc);
+            let recovered = JSON.parse(backupJson);
+
+            if (isV1Decrypted(recovered)) {
+                recovered.seed.mnemonicEnc = await encMnemonic(mnemonic, passphrase);
+            }
+
+            await km.saveWallet(recovered, true);
+        }
+
+        const finalStored = await walletMemory.loadWallet();
+        const walletWeb = new WalletWeb();
+        await walletWeb.saveWallet(finalStored, true);
+        await rebuildKeymaster(passphrase);
+    }
+
     async function handleWalletUploadFile(uploaded) {
         setPendingWallet(uploaded);
 
@@ -309,6 +358,7 @@ function App() {
                     title={'Keymaster Browser Wallet Demo'}
                     challengeDID={challengeDID}
                     onWalletUpload={handleWalletUploadFile}
+                    onImportWallet={handleImportUploadFile}
                 />
             )}
         </>

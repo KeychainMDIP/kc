@@ -96,7 +96,7 @@ const DmailTags = {
     UNREAD: 'unread',
 };
 
-function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
+function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload, onImportWallet }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -1640,12 +1640,16 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function importWallet() {
         try {
-            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
+            if (onImportWallet) {
+                await onImportWallet();
+            } else {
+                const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
 
-            if (mnenomic) {
-                await keymaster.newWallet(mnenomic, true);
-                await keymaster.recoverWallet();
-                refreshAll();
+                if (mnenomic) {
+                    await keymaster.newWallet(mnenomic, true);
+                    await keymaster.recoverWallet();
+                    refreshAll();
+                }
             }
         } catch (error) {
             showError(error);
