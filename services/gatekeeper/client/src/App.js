@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import CipherWeb from '@mdip/cipher/web';
@@ -41,6 +41,7 @@ function App() {
     const [showRecoverSetup, setShowRecoverSetup] = useState(false);
     const [searchParams] = useSearchParams();
     const challengeDID = searchParams.get('challenge');
+    const cachedPassRef = useRef("");
 
     useEffect(() => {
         const init = async () => {
@@ -66,6 +67,8 @@ function App() {
             setPassphraseErrorText('Incorrect passphrase');
             return;
         }
+
+        cachedPassRef.current = passphrase;
 
         setModalAction(null);
         setPendingWallet(null);
@@ -167,7 +170,7 @@ function App() {
         }
     }
 
-    async function handleImportUploadFile() {
+    async function handleImportWallet() {
         const mnemonic = window.prompt("Enter 12-word mnemonic");
         if (!mnemonic) {
             return;
@@ -175,6 +178,19 @@ function App() {
 
         const passphrase = window.prompt("Enter your wallet passphrase");
         if (!passphrase) {
+            return;
+        }
+
+        await recoverFromSeedbank(mnemonic, passphrase);
+    }
+
+    async function handleRecoverWallet() {
+        const mnemonic = await keymaster.decryptMnemonic();
+        await recoverFromSeedbank(mnemonic, cachedPassRef.current);
+    }
+
+    async function recoverFromSeedbank(mnemonic, passphrase) {
+        if (!window.confirm(`Overwrite wallet from backup?`)) {
             return;
         }
 
@@ -202,6 +218,8 @@ function App() {
             const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey);
             const backupJson = cipher.decryptMessage(publicJwk, privateJwk, backupEnc);
             let recovered = JSON.parse(backupJson);
+
+            console.log("recovered: ", recovered);
 
             if (isV1Decrypted(recovered)) {
                 recovered.seed.mnemonicEnc = await encMnemonic(mnemonic, passphrase);
@@ -358,7 +376,8 @@ function App() {
                     title={'Keymaster Browser Wallet Demo'}
                     challengeDID={challengeDID}
                     onWalletUpload={handleWalletUploadFile}
-                    onImportWallet={handleImportUploadFile}
+                    onImportWallet={handleImportWallet}
+                    onRecoverWallet={handleRecoverWallet}
                 />
             )}
         </>

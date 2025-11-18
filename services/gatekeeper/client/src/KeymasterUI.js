@@ -96,7 +96,7 @@ const DmailTags = {
     UNREAD: 'unread',
 };
 
-function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload, onImportWallet }) {
+function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload, onImportWallet, onRecoverWallet }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -1668,9 +1668,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload, onImportW
 
     async function recoverWallet() {
         try {
-            if (window.confirm(`Overwrite wallet from backup?`)) {
-                await keymaster.recoverWallet();
-                refreshAll();
+            if (onRecoverWallet) {
+                onRecoverWallet();
+            } else {
+                if (window.confirm(`Overwrite wallet from backup?`)) {
+                    await keymaster.recoverWallet();
+                    refreshAll();
+                }
             }
         } catch (error) {
             showError(error);
