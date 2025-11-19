@@ -6,23 +6,17 @@ import {
     Toast,
     createToaster,
 } from "@chakra-ui/react"
-import { useSafeArea } from "../contexts/SafeAreaContext";
 
 export const toaster = createToaster({
-    placement: "bottom-end",
+    placement: "bottom",
     pauseOnPageIdle: true,
+    offsets: { bottom: "50px", left: "0px", right: "0px", top: "0px" },
 })
 
 export const Toaster = () => {
-    const { top } = useSafeArea();
-
     return (
         <Portal>
-            <ChakraToaster
-                toaster={toaster}
-                insetBlockStart={top ? `${top}px` : undefined}
-                insetInline={{ mdDown: "4" }}
-            >
+            <ChakraToaster toaster={toaster}>
                 {(toast) => (
                     <Toast.Root width={{ md: "sm" }}>
                         {toast.type === "loading" ? <Spinner size="sm" color="blue.solid" /> : <Toast.Indicator />}
