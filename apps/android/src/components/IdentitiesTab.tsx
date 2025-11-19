@@ -66,6 +66,18 @@ function IdentitiesTab() {
         }
     }
 
+    async function rotateKeys() {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            await keymaster.rotateKeys();
+            await refreshAll();
+        } catch (error) {
+            setError(error);
+        }
+    }
+
     const handleCloseWarningModal = () => {
         setWarningModal(false);
     };
@@ -200,7 +212,6 @@ function IdentitiesTab() {
                 </Box>
                 <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'nowrap', flexDirection: 'row' }}>
                     <Button
-                        className="mini-margin"
                         variant="contained"
                         color="primary"
                         onClick={handleRenameId}
@@ -209,7 +220,6 @@ function IdentitiesTab() {
                     </Button>
 
                     <Button
-                        className="mini-margin"
                         variant="contained"
                         color="primary"
                         onClick={handleRemoveId}
@@ -218,7 +228,6 @@ function IdentitiesTab() {
                     </Button>
 
                     <Button
-                        className="mini-margin"
                         variant="contained"
                         color="primary"
                         onClick={backupId}
@@ -227,12 +236,19 @@ function IdentitiesTab() {
                     </Button>
 
                     <Button
-                        className="mini-margin"
                         variant="contained"
                         color="primary"
                         onClick={handleRecoverId}
                     >
                         Recover
+                    </Button>
+
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={rotateKeys}
+                    >
+                        Rotate
                     </Button>
                 </Box>
             </Box>

@@ -5,8 +5,6 @@ import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'aes-256-gcm';      // Algorithm
 const keyLength = 32;                 // 256 bit AES-256
-const ivLength = 12;                  // 96-bit IV, standard for AES-GCM
-const saltLength = 16;                // 128-bit salt
 const iterations = 100000;            // PBKDF2 iterations
 const digest = 'sha512';              // PBKDF2 hash function
 
@@ -21,44 +19,22 @@ export default class WalletEncrypted extends AbstractBase {
     }
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
-        if (!this.passphrase) {
-            throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
-        }
-
-        const walletJson = JSON.stringify(wallet, null, 4);
-        const salt = crypto.randomBytes(saltLength);
-        const key = crypto.pbkdf2Sync(this.passphrase, salt, iterations, keyLength, digest);
-        const iv = crypto.randomBytes(ivLength);
-        const cipher = crypto.createCipheriv(algorithm, key, iv);
-
-        let encrypted = cipher.update(walletJson, 'utf8');
-        encrypted = Buffer.concat([encrypted, cipher.final()]);
-
-        const authTag = cipher.getAuthTag();
-        const combined = Buffer.concat([encrypted, authTag]);
-
-        const encryptedData = {
-            salt: salt.toString('base64'),
-            iv: iv.toString('base64'),
-            data: combined.toString('base64')
-        };
-
-        return this.baseWallet.saveWallet(encryptedData, overwrite);
+        // encryption wrapper deprecated, save without encrypting
+        return this.baseWallet.saveWallet(wallet, overwrite);
     }
 
-    async loadWallet(): Promise<StoredWallet> {
-        if (!this.passphrase) {
-            throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
-        }
-
+    async loadWallet(): Promise<StoredWallet | null> {
         const encryptedData = await this.baseWallet.loadWallet();
         if (!encryptedData) {
             return null;
         }
 
         if (!isEncryptedWallet(encryptedData)) {
-            // We'll assume here that the passphrase has just been set and the wallet is not yet encrypted
             return encryptedData;
+        }
+
+        if (!this.passphrase) {
+            throw new Error('KC_ENCRYPTED_PASSPHRASE not set');
         }
 
         const salt = Buffer.from(encryptedData.salt, 'base64');

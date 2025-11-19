@@ -571,6 +571,65 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
 
 /**
  * @swagger
+ * /export/wallet/encrypted:
+ *   get:
+ *     summary: Export the wallet in encrypted form.
+ *     description: >
+ *       Returns the wallet in its encrypted format, which includes the encrypted mnemonic
+ *       and encrypted wallet data. This format is secure for storage or backup purposes.
+ *     responses:
+ *       200:
+ *         description: The encrypted wallet object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 wallet:
+ *                   type: object
+ *                   properties:
+ *                     version:
+ *                       type: integer
+ *                       description: The wallet format version.
+ *                     seed:
+ *                       type: object
+ *                       properties:
+ *                         mnemonicEnc:
+ *                           type: object
+ *                           properties:
+ *                             salt:
+ *                               type: string
+ *                               description: Base64-encoded salt used for key derivation.
+ *                             iv:
+ *                               type: string
+ *                               description: Base64-encoded initialization vector for AES-GCM encryption.
+ *                             data:
+ *                               type: string
+ *                               description: Base64-encoded encrypted mnemonic.
+ *                     enc:
+ *                       type: string
+ *                       description: Encrypted wallet data (IDs, names, etc.).
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.get('/export/wallet/encrypted', async (req, res) => {
+    try {
+        const wallet = await keymaster.exportEncryptedWallet();
+        res.json({ wallet });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /did/{id}:
  *   get:
  *     summary: Resolve a DID Document.
@@ -6098,7 +6157,7 @@ const server = app.listen(port, async () => {
     const wallet = await initWallet();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry });
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, passphrase: config.keymasterPassphrase });
     console.log(`Keymaster server running on port ${port}`);
     console.log(`Keymaster server persisting to ${config.db}`);
 

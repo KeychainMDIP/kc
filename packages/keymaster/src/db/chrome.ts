@@ -21,7 +21,7 @@ export default class WalletChrome extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         const res = await chrome.storage.local.get([this.walletName]);
 
         if (res[this.walletName]) {

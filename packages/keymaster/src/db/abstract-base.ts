@@ -5,7 +5,7 @@ export abstract class AbstractBase implements WalletBase {
     private _lock: Promise<void> = Promise.resolve();
 
     abstract saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
-    abstract loadWallet(): Promise<StoredWallet>;
+    abstract loadWallet(): Promise<StoredWallet | null>;
 
     async updateWallet(
         mutator: (wallet: StoredWallet) => void | Promise<void>
@@ -15,7 +15,14 @@ export abstract class AbstractBase implements WalletBase {
             if (!wallet) {
                 throw new Error('updateWallet: no wallet found to update');
             }
+            const before = JSON.stringify(wallet);
             await mutator(wallet);
+            const after = JSON.stringify(wallet);
+
+            if (before === after) {
+                return;
+            }
+
             await this.saveWallet(wallet, true);
         };
 
